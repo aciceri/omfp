@@ -22,10 +22,23 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # TST-076: builds the Linux dev shell once (omp from source on a cold cache, ~26 min); its cachix daemon pushes it
+  # (on master), and every other Linux job waits for it instead of building it again in parallel.
+  dev-shell:
+    name: dev shell
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/dev-shell
+        with:
+          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          rust: "false"
+
   web:
     name: web bundle
+    needs: dev-shell
     runs-on: ubuntu-latest
-    # A cold Cachix cache builds omp from source in the dev shell (~26 min).
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
@@ -44,6 +57,7 @@ jobs:
 
   check:
     name: lint, versions, spec-trace, wasm, deny, workflow
+    needs: dev-shell
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -55,6 +69,7 @@ jobs:
 
   test:
     name: Rust tests
+    needs: dev-shell
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -66,6 +81,7 @@ jobs:
 
   test-ts:
     name: TypeScript tests
+    needs: dev-shell
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -77,6 +93,7 @@ jobs:
 
   test-contract:
     name: contract tests (pinned omp, fake LLM)
+    needs: dev-shell
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -88,7 +105,7 @@ jobs:
 
   test-e2e:
     name: E2E (headless Chromium)
-    needs: web
+    needs: [dev-shell, web]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -106,7 +123,7 @@ jobs:
 
   test-desktop:
     name: desktop (WebKitGTK under xvfb)
-    needs: web
+    needs: [dev-shell, web]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
@@ -147,6 +164,7 @@ jobs:
 
   package:
     name: Nix packages
+    needs: dev-shell
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -160,6 +178,7 @@ jobs:
 
   mutants:
     name: mutation gate (omfp-core, omfp-protocol)
+    needs: dev-shell
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -171,6 +190,7 @@ jobs:
 
   cov:
     name: coverage gate
+    needs: dev-shell
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:

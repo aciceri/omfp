@@ -93,6 +93,7 @@ Its jobs run in parallel on `ubuntu-latest`, each `nix develop -c just <recipe>`
 
 | Job | Runs |
 | --- | --- |
+| `dev-shell` | no recipe: builds (or fetches) the Linux dev shell once; every other Linux job `needs:` it (TST-076) |
 | `web` | `just build-web`; uploads `ui/packages/app/dist` as the `web-bundle` artifact |
 | `check` | `just check`: lints, version pins, spec-trace, wasm, `cargo deny`, the workflow itself (`actionlint`) |
 | `test`, `test-ts`, `test-contract` | `just test`, `just test-ts`, `just test-contract` (the pinned omp of the dev shell, the fake LLM) |
@@ -112,8 +113,9 @@ Caching (TST-072):
 - **Nix store**: Cachix `omfp`. Every run reads it; only pushes to `master` push what they built (the dev shell, Bun's
   install cache `OMFP_BUN_CACHE`, which is a store path, and the packages); pull requests only read. The Cachix daemon
   pushes each path as soon as it is built, so a job that fails (or runs out of time) still caches its work for the
-  rerun. A change of `flake.lock` or `ui/bun.nix` builds the new paths in every job of that run, then `master` caches
-  them.
+  rerun. The `dev-shell` job builds the Linux dev shell before any other Linux job starts (TST-076), so a cold cache on
+  `master` builds omp once, not once per job; `macos` builds its own. A pull request does not push, so there the other
+  jobs fetch what master cached and build only what the pull request changed.
 - **Cargo**: registry and `target/` per job, keyed on `Cargo.lock`, the manifests, `rust-toolchain.toml` and `rustc
   -vV`; saved on `master` only, restored by pull requests.
 - **Web bundle**: built once by `web`, shared as an artifact (7 days).

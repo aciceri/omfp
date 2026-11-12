@@ -14,6 +14,7 @@
  * - TST-075: before installing Nix, the dev-shell action pools the runner's disk into a Btrfs /nix with
  *   `wimpysworld/nothing-but-nix` (Linux runners), Nix builds in /nix/build, and the cachix daemon pushes every path as
  *   it is built.
+ * - TST-076: the `dev-shell` job runs no recipe and every other Linux job needs it; CARGO_HOME lives on the Nix volume.
  * - TST-092: one job on a macOS runner runs `just test-desktop` and `just package` on pushes to master only.
  */
 import { $ } from "bun";
@@ -161,6 +162,23 @@ if (!/^build-dir = \/nix\/build$/m.test(setup.runs.steps[install]?.with?.extra_n
 }
 if (cachix?.with?.useDaemon === "false") {
   problems.push(`${SETUP} must keep the cachix daemon, which pushes what a failing job built`);
+}
+
+// TST-076
+const SHELL_JOB = "dev-shell";
+const isLinux = (job: Job) => job["runs-on"]?.startsWith("ubuntu-") ?? false;
+const shellJob = workflow.jobs[SHELL_JOB];
+if (shellJob === undefined || !isLinux(shellJob) || (shellJob.steps ?? []).some((step) => step.run !== undefined)) {
+  problems.push(`job ${SHELL_JOB} must only set up the dev shell on a Linux runner`);
+}
+for (const [id, job] of Object.entries(workflow.jobs)) {
+  if (id !== SHELL_JOB && isLinux(job) && ![job.needs ?? []].flat().includes(SHELL_JOB)) {
+    problems.push(`job ${id} must need ${SHELL_JOB}, which builds the Linux dev shell once`);
+  }
+}
+const cargoHome = setup.runs.steps.find((step) => /CARGO_HOME=/.test(step.run ?? ""));
+if (!/^\s*echo "CARGO_HOME=\/var\/tmp\/nothing-but-nix\/[^"]+" >> "\$GITHUB_ENV"$/m.test(cargoHome?.run ?? "")) {
+  problems.push(`${SETUP} must put CARGO_HOME on the Nix volume (/var/tmp/nothing-but-nix)`);
 }
 
 // TST-092

@@ -134,7 +134,7 @@ spec-trace:
 deny:
     cargo deny check
 
-# spec: TST-070, TST-071, TST-072, TST-073, TST-075, TST-092, ENV-042 — the GitHub workflow (.github/workflows/ci.yml)
+# spec: TST-070, TST-071, TST-072, TST-073, TST-075, TST-076, TST-092, ENV-042 — the GitHub workflow (.github/workflows/ci.yml)
 # passes actionlint and runs what `just ci` runs, in the dev shell, with its caches, the shared web bundle, the
 # runner's disk pooled for Nix and a macOS job (.github/check-workflow.ts)
 check-workflow:

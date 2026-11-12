@@ -126,6 +126,13 @@ Secrets and variables (repository settings → Secrets and variables → Actions
 
 The cache name `omfp` is written in `.github/actions/dev-shell/action.yml`; no repository variable is needed.
 
+Dependency updates:
+
+| ID | Requirement |
+| --- | --- |
+| ENV-050 | `.github/dependabot.yml` MUST have Dependabot open one grouped weekly pull request (`ci(deps): …`) updating the GitHub Actions of `.github/workflows` and of the composite action `.github/actions/dev-shell` (listed as its own directory, which Dependabot does not scan under `/`). |
+| ENV-051 | `.github/workflows/update-flake-lock.yml` MUST open a weekly (and manually dispatchable) pull request `chore(nix): update flake.lock` with `DeterminateSystems/update-flake-lock`, updating every input but `oh-my-pi` (pinned by hand, ENV-020), with `contents: write` and `pull-requests: write` on its job only. Opened with `GITHUB_TOKEN`, the pull request does not start CI: close and reopen it, or store a fine-grained token (contents and pull requests read/write) as a secret and pass it as the action's `token`. |
+
 ## Version pinning
 
 The omp RPC protocol changes with every release, and `omp-rpc` is generated from it. The app MUST always run against the

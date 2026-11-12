@@ -1,0 +1,18 @@
+# ENV-050: weekly version updates of the GitHub Actions in .github/workflows and of the composite dev-shell action
+# (Dependabot reads only .github/workflows under `/`, so the action's directory is listed too), in one grouped pull
+# request titled `ci(deps): …`. Nix inputs are updated by .github/workflows/update-flake-lock.yml (ENV-051).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directories:
+      - /
+      - /.github/actions/dev-shell
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      github-actions:
+        patterns:
+          - "*"

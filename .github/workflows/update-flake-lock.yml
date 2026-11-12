@@ -1,0 +1,34 @@
+# ENV-051: weekly pull request updating flake.lock, every input but `oh-my-pi`, which is pinned by hand (ENV-020).
+#
+# The pull request is opened with the default GITHUB_TOKEN, and GitHub does not start workflows for events that token
+# causes: CI does not run on it by itself. Close and reopen the pull request to start CI, or add a fine-grained token
+# (contents and pull requests: read and write on this repository) as the `FLAKE_LOCK_TOKEN` secret and pass it as the
+# action's `token`.
+name: Update flake.lock
+
+on:
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  update-flake-lock:
+    name: update flake.lock
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31
+      - uses: DeterminateSystems/update-flake-lock@v29
+        with:
+          # Every input of flake.nix but oh-my-pi (ENV-020).
+          inputs: nixpkgs flake-parts rust-overlay git-hooks
+          commit-msg: "chore(nix): update flake.lock"
+          pr-title: "chore(nix): update flake.lock"
+          branch: update-flake-lock

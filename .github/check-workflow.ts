@@ -5,7 +5,8 @@
  * - TST-070: CI runs on pushes to master and on pull requests; each job sets up the dev shell and runs only `nix develop
  *   -c just <recipe>`; together the jobs run every recipe `just ci` runs, and nothing `just ci` does not (but the web
  *   bundle).
- * - TST-071: actionlint passes; every action is pinned by a major tag or a commit SHA.
+ * - TST-071: actionlint passes; every action of every workflow (ENV-051 too) is pinned by a major tag or a commit SHA.
+ *   The other rules are about `ci.yml` only.
  * - TST-072: the Nix store comes from the `omfp` Cachix cache, which only pushes to master fill; the cargo cache is
  *   saved on master only; every job hands the dev-shell action the Cachix token.
  * - TST-073: the web bundle is built once: the e2e and desktop jobs need the `build-web` job and serve its artifact
@@ -91,7 +92,15 @@ for (const [recipe, id] of ranBy) {
 
 // TST-071
 const PINNED = /^[^@]+@(v\d+|[0-9a-f]{40})$/;
-const steps = [...Object.values(workflow.jobs).flatMap((job) => job.steps ?? []), ...setup.runs.steps];
+const workflows = await Promise.all(
+  [...new Bun.Glob(".github/workflows/*.{yml,yaml}").scanSync()].map(
+    async (path) => Bun.YAML.parse(await Bun.file(path).text()) as Workflow,
+  ),
+);
+const steps = [
+  ...workflows.flatMap((other) => Object.values(other.jobs).flatMap((job) => job.steps ?? [])),
+  ...setup.runs.steps,
+];
 for (const { uses } of steps) {
   if (uses !== undefined && !uses.startsWith("./") && !PINNED.test(uses)) {
     problems.push(`${uses} is pinned neither by a major tag nor by a commit SHA`);

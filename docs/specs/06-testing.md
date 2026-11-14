@@ -124,6 +124,11 @@ refuses and records every connection. The discovery requests fail at once, so ru
 | TST-090 | (M11) On macOS the window tests of TST-033 run without a virtual display, on the logged-in user's GUI session (from an SSH session too; GitHub's macOS runners are logged in), and the integration tests that need D-Bus (the settings portal, TST-061) are Linux only. Their smoke deadline is 180 s instead of 60 s: on a locked screen WKWebView throttles the page and a window takes about 30 s to get ready, which put the macOS-only run at the 60 s limit. A macOS-only run checks what WKWebView brings: `RTCPeerConnection` (live voice over WebRTC, UI-188), `navigator.mediaDevices` (the embedded Info.plist, UI-251), the window's `Notification` with permission `granted` (UI-252), and the data directory's `webview/store-id` (UI-250). The microphone dialog and a delivered notification need a human (07, M11). |
 | TST-091 | (M11) The menu bar item has an integration test on macOS (`crates/omfp/tests/menu_bar.rs`, `just test-desktop`): `omfp daemon --tray` logs `in the menu bar`, LaunchServices lists the process as an accessory app (`lsappinfo` `ApplicationType` `UIElement`), and SIGTERM stops it cleanly (exit 0, `daemon stopped`, no panic, no `no menu bar item`, `daemon.json` gone). The menu is the shared model of the Linux tray (unit tests in `tray.rs`); clicking it needs a human (07, M11). |
 
+The Linux desktop smoke suite also opens an active WAV tab on a fake-launcher daemon, closes the window, restores it on
+the same origin and data directory, and closes it before a third start. Each start must answer the smoke probe; the
+first two require actual muted playback or the UI-542 message, and the last two check the persisted tab was removed.
+The Linux window process has an outer deadline so a blocked WebKit event loop fails the test rather than wedging CI.
+
 ## End-to-end scenarios (L5)
 
 Kept few and focused on journeys; everything else belongs to lower layers.

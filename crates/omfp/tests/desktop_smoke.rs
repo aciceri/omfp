@@ -28,9 +28,17 @@ fn desktop(home: &Path, smoke: &str, args: &[&str]) -> Output {
 fn desktop_with(home: &Path, env: &[(&str, &str)], args: &[&str]) -> Output {
     #[cfg(target_os = "linux")]
     let mut command = {
-        let mut command = Command::new("xvfb-run");
+        // A wedged WebKit main loop cannot process the smoke deadline or close request.
+        let mut command = Command::new("timeout");
         command
-            .args(["-a", "-s", "-screen 0 1280x800x24"])
+            .args([
+                "--kill-after=5s",
+                "90s",
+                "xvfb-run",
+                "-a",
+                "-s",
+                "-screen 0 1280x800x24",
+            ])
             .arg(env!("CARGO_BIN_EXE_omfp"))
             // Never the user's session bus (the window reads the settings portal, the background daemon shows a tray
             // icon): a bus that does not exist unless the test passes its own.
@@ -504,6 +512,153 @@ fn a_second_window_reuses_the_background_daemon_that_outlives_the_first() {
         .lock_shared()
         .unwrap();
     assert_eq!(omfp_daemon::discover(&data).unwrap(), None);
+}
+
+// spec: TST-033, UI-115, UI-541, UI-542
+#[cfg(target_os = "linux")]
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restored_audio_tab_keeps_the_desktop_responsive_and_can_be_closed() {
+    use clap::Parser as _;
+    use omfp::remote::{Connection, Target};
+    use omfp_daemon::agent::FakeLauncher;
+    use omfp_daemon::config::{Cli, Config};
+    use omfp_daemon::git::FakeGit;
+    use omfp_daemon::{Ports, start_with};
+    use omfp_protocol::method::{ThreadGit, ThreadsCreate, WorkspacesRescan};
+    use omfp_protocol::{
+        CreateThreadParams, CreateWorkspaceParams, ThreadRef, ThreadWorkspace, WorkspaceRef,
+    };
+    use std::sync::Arc;
+
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("data");
+    let workspaces = dir.path().join("workspaces");
+    let init = dir.path().join("init.ts");
+    std::fs::write(&init, r#"
+export default function init(omfp) {
+  const stage = localStorage.getItem("test.restore") || "open";
+  let restored = false;
+  const tick = setInterval(() => {
+    const tab = document.querySelector('[data-testid=file-tab][data-file="media/tone.wav"][aria-selected="true"]');
+    const player = document.querySelector('[data-testid=file-player]');
+    const error = document.querySelector('[data-testid=file-media-error]');
+    if (player && player.paused) {
+      player.muted = true;
+      player.play().catch(() => {});
+    }
+    const media = (player && player.currentTime > 0) || error?.textContent?.includes("This window cannot play this audio file");
+    if (stage === "open" && !tab) omfp.run("file.open", ["media/tone.wav"]);
+    if (stage === "open" && tab && media && localStorage.getItem("omfp.openFiles")?.includes("tone.wav")) {
+      localStorage.setItem("test.restore", "close");
+      document.body.dataset.restoreTest = "opened";
+    } else if (stage === "close" && tab && media) {
+      restored = true;
+      tab.querySelector('[data-testid=file-tab-close]')?.click();
+    } else if (stage === "close" && restored && !tab && !localStorage.getItem("omfp.openFiles")?.includes("tone.wav")) {
+      localStorage.setItem("test.restore", "done");
+      document.body.dataset.restoreTest = "closed";
+    } else if (stage === "done" && !tab && !localStorage.getItem("omfp.openFiles")?.includes("tone.wav")) {
+      document.body.dataset.restoreTest = "done";
+    }
+  }, 100);
+  return () => clearInterval(tick);
+}
+"#).unwrap();
+    let cli = Cli::try_parse_from([
+        "daemon",
+        "--bind",
+        "127.0.0.1:0",
+        "--data-dir",
+        data.to_str().unwrap(),
+        "--workspaces-root",
+        workspaces.to_str().unwrap(),
+        "--static-dir",
+        web_bundle().to_str().unwrap(),
+    ])
+    .unwrap();
+    let mut config = Config::from_cli(cli, None, None).unwrap();
+    config.init_file = Some(init);
+    let handle = start_with(
+        config,
+        Ports {
+            launcher: Arc::new(FakeLauncher::new()),
+            git: Arc::new(FakeGit::new()),
+            omp_program: "omp".into(),
+            omp_version: omfp_core::OMP_VERSION.into(),
+            omp_env: Vec::new(),
+            warnings: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+    let mut client = Connection::open(&Target {
+        url: format!("ws://{}/api/ws", handle.addr()),
+        token: handle.token().expose().to_owned(),
+    })
+    .await
+    .unwrap();
+    let thread = client
+        .call::<ThreadsCreate>(CreateThreadParams {
+            title: None,
+            workspace: ThreadWorkspace::New(CreateWorkspaceParams {
+                name: Some("media".into()),
+                link: None,
+            }),
+            model: None,
+            thinking_level: None,
+            approval_mode: None,
+            prompt: None,
+        })
+        .await
+        .unwrap();
+    let git = client
+        .call::<ThreadGit>(ThreadRef {
+            thread_id: thread.id.clone(),
+        })
+        .await
+        .unwrap();
+    let workspace = client
+        .call::<WorkspacesRescan>(WorkspaceRef {
+            workspace_id: git.workspace_id,
+        })
+        .await
+        .unwrap();
+    let mut wav = Vec::new();
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36_u32 + 16000).to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16_u32.to_le_bytes());
+    wav.extend_from_slice(&1_u16.to_le_bytes());
+    wav.extend_from_slice(&1_u16.to_le_bytes());
+    wav.extend_from_slice(&8000_u32.to_le_bytes());
+    wav.extend_from_slice(&16000_u32.to_le_bytes());
+    wav.extend_from_slice(&2_u16.to_le_bytes());
+    wav.extend_from_slice(&16_u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&16000_u32.to_le_bytes());
+    wav.resize(16044, 0);
+    std::fs::create_dir_all(Path::new(&workspace.path).join("media")).unwrap();
+    std::fs::write(Path::new(&workspace.path).join("media/tone.wav"), wav).unwrap();
+    let args = [
+        "--data-dir",
+        data.to_str().unwrap(),
+        "--thread",
+        thread.id.as_str(),
+    ];
+    for stage in ["opened", "closed", "done"] {
+        desktop_with(
+            dir.path(),
+            &[
+                ("OMFP_SMOKE", "local"),
+                (
+                    "OMFP_SMOKE_WAIT",
+                    &format!("body[data-restore-test=\"{stage}\"]"),
+                ),
+            ],
+            &args,
+        );
+    }
+    handle.shutdown().await.unwrap();
 }
 
 /// The settings portal's color scheme (UI-195, Linux only: on macOS the window follows `AppKit`'s appearance, UI-253).

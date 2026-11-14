@@ -1,6 +1,6 @@
 /**
- * UI settings kept by the daemon (DMN-009, UI-097): `[ui]` density, font size, motion, notifications, fonts and the
- * built-in theme (UI-510), and `[keymap]` entries, pushed on the `index` topic so every window applies changes live.
+ * UI settings kept by the daemon (DMN-009, UI-097): `[ui]` density, font size, motion, notifications, xdev notice
+ * visibility, fonts and theme (UI-510), and `[keymap]` entries, pushed on `index` so windows apply changes live.
  * `settings.set` merges a patch into the config file.
  */
 

@@ -232,6 +232,9 @@ pub struct UiSettings {
     /// The built-in colour theme (UI-510); absent is Synth, omfp's own. A user theme (`/theme.css`) still wins.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme: Option<BuiltinTheme>,
+    /// Show informational xdev notices in the transcript (UI-043); absent or false hides them, without dropping events.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub show_xdev_notices: Option<bool>,
 }
 
 /// Row height and spacing of the UI.

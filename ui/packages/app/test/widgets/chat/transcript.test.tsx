@@ -300,9 +300,17 @@ describe("transcript", () => {
       },
       { kind: "omp", frame: { type: "notice", level: "info", message: "xd://: mounted ast_edit", source: "xdev" } },
     ];
-    renderThread(<TranscriptWidget />, startup);
+    const { client, flush } = renderThread(<TranscriptWidget />, startup);
+    expect(screen.getAllByTestId("system-summary").map((row) => row.textContent)).toEqual([
+      "xd:// device inventory changed.",
+    ]);
+    expect(screen.queryAllByTestId("notice").length).toBe(0);
+    client.indexEvents({
+      kind: "settings_changed",
+      settings: { ui: { showXdevNotices: true }, keymap: [], error: null },
+    });
+    flush();
     const rows = screen.getAllByTestId("system-record");
-    expect(rows.map((row) => within(row).getByTestId("system-label").textContent)).toEqual(["system", "system"]);
     expect(rows.map((row) => within(row).getByTestId("system-summary").textContent)).toEqual([
       "xd:// device inventory changed.",
       "xd://: mounted ast_edit",
@@ -321,6 +329,15 @@ describe("transcript", () => {
     const [record, ...others] = screen.getAllByTestId("message");
     expect([record?.dataset.role, others.length]).toEqual(["record", 0]);
     expect(record && within(record).queryByTestId("toggle")).toBeNull();
+    client.indexEvents({
+      kind: "settings_changed",
+      settings: { ui: { showXdevNotices: false }, keymap: [], error: null },
+    });
+    flush();
+    expect(screen.getAllByTestId("system-summary").map((row) => row.textContent)).toEqual([
+      "xd:// device inventory changed.",
+    ]);
+    expect(screen.queryAllByTestId("notice").length).toBe(0);
   });
 
   // spec: UI-042

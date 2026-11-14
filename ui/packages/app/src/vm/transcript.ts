@@ -99,6 +99,7 @@ function runsById(tools: readonly ToolRun[]): ReadonlyMap<string, ToolRun> {
 interface ItemList {
   readonly notices: readonly Notice[];
   readonly streaming: boolean;
+  readonly showXdevNotices: boolean;
   readonly items: readonly Item[];
 }
 
@@ -107,13 +108,18 @@ const ITEM_LISTS = new WeakMap<readonly TranscriptEntry[], ItemList>();
 /**
  * The transcript's rows in order: each notice goes after the messages that preceded it, tool results shown inside
  * their call's card are left out, and the streaming reply comes last; each message and the streaming reply say
- * whether they continue their turn (UI-470). The same array while the transcript, the notices and whether a reply
- * streams stay the same.
+ * whether they continue their turn (UI-470). Informational xdev notices are hidden unless opted in (UI-043).
+ * The same array while the transcript, notices, streaming flag and visibility setting stay the same.
  */
-export function items(state: ThreadState): readonly Item[] {
+export function items(state: ThreadState, showXdevNotices = false): readonly Item[] {
   const streaming = state.streaming !== null;
   const known = ITEM_LISTS.get(state.transcript);
-  if (known !== undefined && known.notices === state.notices && known.streaming === streaming) {
+  if (
+    known !== undefined &&
+    known.notices === state.notices &&
+    known.streaming === streaming &&
+    known.showXdevNotices === showXdevNotices
+  ) {
     return known.items;
   }
   const { called } = transcriptIndex(state.transcript);
@@ -121,6 +127,10 @@ export function items(state: ThreadState): readonly Item[] {
   let notice = 0;
   const noticesUpTo = (position: number) => {
     for (; notice < state.notices.length && (state.notices[notice]?.position ?? 0) <= position; notice++) {
+      const entry = state.notices[notice];
+      if (!showXdevNotices && entry !== undefined && systemNotice(entry.frame) !== undefined) {
+        continue;
+      }
       result.push({ key: `n${notice}`, kind: { type: "notice", index: notice } });
     }
   };
@@ -139,7 +149,7 @@ export function items(state: ThreadState): readonly Item[] {
   if (streaming) {
     result.push({ key: "streaming", kind: { type: "streaming", continues: answered } });
   }
-  ITEM_LISTS.set(state.transcript, { notices: state.notices, streaming, items: result });
+  ITEM_LISTS.set(state.transcript, { notices: state.notices, streaming, showXdevNotices, items: result });
   return result;
 }
 

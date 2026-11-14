@@ -63,6 +63,72 @@ describe("transcript items", () => {
     expect(items(state).map((item) => item.key)).toEqual(["m0", "n0", "m1", "n1", "n2"]);
   });
 
+  // spec: UI-043
+  test("new and retained xdev info notices stay in state but only appear while opted in", () => {
+    const mounted: ThreadEvent = {
+      kind: "omp",
+      frame: { type: "notice", level: "info", source: "xdev", message: "xd://: mounted mcp__test" },
+    };
+    const unmounted: ThreadEvent = {
+      kind: "omp",
+      frame: { type: "notice", level: "info", source: "xdev", message: "xd://: unmounted mcp__test\nNo devices." },
+    };
+    const fresh = reduce(emptyThreadState(), mounted);
+    const retained = reduce(fixture("text_reply"), mounted);
+    const mountRow = { summary: "xd://: mounted mcp__test", text: undefined };
+    const unmountRow = { summary: "xd://: unmounted mcp__test", text: "xd://: unmounted mcp__test\nNo devices." };
+    for (const [state, expected] of [
+      [fresh, [mountRow]],
+      [retained, [mountRow]],
+      [reduce(retained, unmounted), [mountRow, unmountRow]],
+    ] as const) {
+      const before = structuredClone(state);
+      const visible = (show?: boolean) =>
+        items(state, show).flatMap((item) => {
+          const content = rowContent(state, item);
+          return content?.type === "system" ? [content.row] : [];
+        });
+      expect(items(state).filter((item) => item.kind.type === "notice")).toEqual([]);
+      expect(visible(false)).toEqual([]);
+      expect(visible(true)).toEqual([...expected]);
+      expect(visible(false)).toEqual([]);
+      expect(state).toEqual(before);
+    }
+  });
+
+  // spec: UI-043
+  test("filtering leaves warnings, errors, other sources, generic notices and custom system records untouched", () => {
+    const frames: NoticeFrame[] = [
+      { type: "notice", data: { level: "warning", source: "xdev", message: "mount warning" } },
+      { type: "notice", data: { level: "error", source: "xdev", message: "mount failed" } },
+      { type: "notice", data: { level: "info", source: "collab", message: "joined" } },
+      { type: "notice", data: { level: "info", message: "ordinary notice" } },
+      { type: "unknown", data: { type: "mystery", source: "xdev", level: "info" } },
+      { type: "manual_compaction_start", data: {} },
+    ];
+    const state: ThreadState = {
+      ...withMessage({
+        role: "custom",
+        display: false,
+        customType: "xdev-mount-notice",
+        content: "<system-notice>\nDevice inventory\n</system-notice>",
+      }),
+      notices: frames.map((frame) => ({ position: 1, frame })),
+    };
+    const rows = items(state).map((item) => rowContent(state, item));
+    expect(rows.map((row) => row?.type)).toEqual([
+      "system",
+      "notice",
+      "notice",
+      "notice",
+      "notice",
+      "notice",
+      "notice",
+    ]);
+    expect(rows[0]).toEqual({ type: "system", row: { summary: "Device inventory", text: undefined } });
+    expect(items(state, true).map((item) => rowContent(state, item))).toEqual(rows);
+  });
+
   // spec: UI-041
   test("thinking is its own block unless it is narration", () => {
     const state = withMessage({

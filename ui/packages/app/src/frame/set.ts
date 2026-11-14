@@ -1,6 +1,6 @@
 /**
  * `:set <key>=<value>` (UI-097): one setting of the daemon's `[ui]` or `[keymap]`, sent with `settings.set`. Keys:
- * `density`, `font_size` (px, 10..=28), `motion`, `notifications`, `theme` (a built-in theme, UI-510),
+ * `density`, `font_size` (px, 10..=28), `motion`, `notifications`, `show_xdev_notices`, `theme` (UI-510),
  * `fonts.prose|ui|code`, `keymap.<keys>` (normal mode) and `keymap.<mode>.<keys>`; a keymap value is a command id, `""`
  * removes the binding.
  */
@@ -37,6 +37,8 @@ export const SET_KEYS: readonly string[] = [
   "font_size=",
   ...MOTIONS.map((motion) => `motion=${motion}`),
   ...NOTIFICATIONS.map((mode) => `notifications=${mode}`),
+  "show_xdev_notices=false",
+  "show_xdev_notices=true",
   ...THEMES.map((theme) => `theme=${theme}`),
   ...FONT_ROLES.map((role) => `fonts.${role}=`),
   "keymap.",
@@ -100,6 +102,11 @@ export function parseSet(line: string): ParsedSet {
   if (key === "notifications") {
     const notifications = NOTIFICATIONS.find((candidate) => candidate === value);
     return notifications === undefined ? invalid(key, value) : { ok: true, patch: { ui: { notifications } } };
+  }
+  if (key === "show_xdev_notices") {
+    return value === "true" || value === "false"
+      ? { ok: true, patch: { ui: { showXdevNotices: value === "true" } } }
+      : invalid(key, value);
   }
   if (key === "theme") {
     const theme = THEMES.find((candidate) => candidate === value);

@@ -1,8 +1,8 @@
 /**
  * omp's own bookkeeping in the transcript (UI-043): `custom` records omp keeps out of its own transcript
  * (`display: false`, e.g. the `<system-notice>` device inventory it sends the model at startup) or that wrap a
- * `<system-notice>`, and its info notices about its own setup (the `xdev` mount notice). Each renders as one muted
- * `system` row: the first line of its text, expandable to the whole text when there is more.
+ * `<system-notice>`, and its info notices about its own setup (the `xdev` mount notice, hidden unless opted in).
+ * When visible, each renders as one muted `system` row: its first line, expandable to the whole text when there is more.
  */
 
 import type { AgentMessage, NoticeFrame } from "@omfp/core";

@@ -79,6 +79,7 @@ bind. The built-in ones (`omfp://keymap` has them all):
 | `:widget copy <reference> [<name>]` | Copy a built-in or user widget into `.omfp/widgets/<name>/`. |
 | `:widget save[!] <widget> [<name>]` | Save a workspace widget to the user library (`!` replaces). |
 | `:theme [light\|dark\|system] [<theme>]`, `:density compact\|normal`, `:set <key>=<value>` | Appearance and the daemon's settings: the scheme is the window's, the built-in theme (`synth`, `catppuccin`, `gruvbox`, `tokyo-night`, `nord`, `solarized`, `rose-pine`, `accent`: the macOS window's system accent, Synth elsewhere) every window's (`[ui] theme`); a user theme (`theme.css`) still wins. |
+| `:set show_xdev_notices=true\|false` | Show/hide informational MCP mount/unmount notices in new and retained transcripts, live (default `false`). Only presentation changes; other notices, startup inventory records, tools and omp configuration stay intact. The API field is `ui.showXdevNotices` in `settings.set`. |
 | `:help` | Every effective key and command, filterable (`?` too). |
 | `:describe-key`, `:describe-command <name>` | What a key runs and where it was bound; a command's names, keys and who registered it. |
 | `:notice` | Open the newest notice. |

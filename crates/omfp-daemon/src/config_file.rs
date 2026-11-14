@@ -16,6 +16,7 @@
 //! motion = "full"               # full | reduced | none
 //! notifications = "background"  # background | always | never
 //! theme = "catppuccin"          # synth | catppuccin | gruvbox | tokyo-night | nord | solarized | rose-pine | accent
+//! show_xdev_notices = false     # show informational MCP mount/unmount notices in the transcript
 //!
 //! [ui.fonts]
 //! prose = "Literata, serif"
@@ -106,6 +107,7 @@ struct RawUi {
     notifications: Option<NotificationMode>,
     fonts: Option<RawFonts>,
     theme: Option<BuiltinTheme>,
+    show_xdev_notices: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -152,6 +154,7 @@ impl ConfigFile {
                 notifications: raw.ui.notifications,
                 fonts,
                 theme: raw.ui.theme,
+                show_xdev_notices: raw.ui.show_xdev_notices,
             },
             keymap: keymap(&raw.keymap)?,
         })
@@ -252,6 +255,9 @@ pub fn write_back(text: &str, update: &SetSettingsParams) -> Result<String, Stri
         if let Some(theme) = ui.theme {
             set(table, "theme", theme_name(theme));
         }
+        if let Some(visible) = ui.show_xdev_notices {
+            set(table, "show_xdev_notices", visible);
+        }
         if let Some(fonts) = &ui.fonts {
             let table = child(table, "fonts")?;
             for (key, value) in [
@@ -348,6 +354,29 @@ fn theme_name(theme: BuiltinTheme) -> &'static str {
 mod tests {
     use super::*;
 
+    // spec: UI-043, UI-097
+    #[test]
+    fn xdev_visibility_round_trips_without_changing_other_settings() {
+        assert_eq!(ConfigFile::parse(FILE).unwrap().ui.show_xdev_notices, None);
+        let mut text = FILE.to_owned();
+        for visible in [true, false] {
+            text = write_back(
+                &text,
+                &SetSettingsParams {
+                    ui: Some(UiSettings {
+                        show_xdev_notices: Some(visible),
+                        ..UiSettings::default()
+                    }),
+                    keymap: None,
+                },
+            )
+            .unwrap();
+            let mut expected = ConfigFile::parse(FILE).unwrap();
+            expected.ui.show_xdev_notices = Some(visible);
+            assert_eq!(ConfigFile::parse(&text).unwrap(), expected);
+        }
+        assert!(ConfigFile::parse("[ui]\nshow_xdev_notices = \"true\"").is_err());
+    }
     const FILE: &str = r#"# My omfp.
 [daemon]
 max_processes = 4 # enough
@@ -396,6 +425,7 @@ prose = "Literata, serif"
                     code: None,
                 }),
                 theme: Some(BuiltinTheme::Gruvbox),
+                show_xdev_notices: None,
             }
         );
         assert_eq!(
@@ -472,6 +502,7 @@ prose = "Literata, serif"
                     code: Some("\"Iosevka\", monospace".into()),
                 }),
                 theme: Some(BuiltinTheme::TokyoNight),
+                show_xdev_notices: None,
             }),
             keymap: Some(vec![
                 entry(KeymapMode::Normal, "Space t", "density.set"),

@@ -140,6 +140,7 @@ pub fn settings() -> Settings {
                 code: Some("\"JetBrains Mono\", monospace".to_owned()),
             }),
             theme: Some(BuiltinTheme::RosePine),
+            show_xdev_notices: Some(true),
         },
         keymap: vec![
             KeymapEntry {

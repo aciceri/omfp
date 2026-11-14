@@ -570,7 +570,8 @@ export const shell = {
     saved: (reference: string) => `Saved to the user library as ${reference}`,
   },
   settings: {
-    setUsage: "Usage: :set <key>=<value> (density, notifications, theme, fonts.prose|ui|code, keymap[.<mode>].<keys>)",
+    setUsage:
+      "Usage: :set <key>=<value> (density, font_size, motion, notifications, show_xdev_notices, theme, fonts.prose|ui|code, keymap[.<mode>].<keys>)",
     unknownKey: (key: string) => `Unknown setting: ${key}`,
     themeUsage:
       "Usage: :theme [system|light|dark] [<theme>] (synth, catppuccin, gruvbox, tokyo-night, nord, solarized, rose-pine, accent)",

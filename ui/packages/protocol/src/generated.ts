@@ -1475,6 +1475,8 @@ export type UiSettings = {
   fonts?: FontSettings | null;
   motion?: Motion | null;
   notifications?: NotificationMode | null;
+  /** Show informational xdev notices in the transcript (UI-043); absent or false hides them, without dropping events. */
+  showXdevNotices?: boolean | null;
   /** The built-in colour theme (UI-510); absent is Synth, omfp's own. A user theme (`/theme.css`) still wins. */
   theme?: BuiltinTheme | null;
 };

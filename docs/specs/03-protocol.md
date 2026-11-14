@@ -60,7 +60,7 @@ The `index` state is `{ workspaces, threads, theme, settings, init, models }`; i
 `workspace_upserted` / `workspace_removed`, `thread_upserted` / `thread_removed`,
 `theme_changed { theme }` (`theme` is `{ css: string | null }`, DMN-075), `settings_changed { settings }` (DMN-009,
 UI-097), `init_changed { init }` (PRT-095) and `models_changed { models }` (the usable models, PRT-141). `settings` is
-`{ ui: { density?, fontSize?, motion?, notifications?, fonts?: { prose?, ui?, code? }, theme? }, keymap: { mode: "normal" |
+`{ ui: { density?, fontSize?, motion?, notifications?, showXdevNotices?: boolean, fonts?: { prose?, ui?, code? }, theme? }, keymap: { mode: "normal" |
 "insert" | "cmdline", keys, command }[], error: string | null }`: the `[ui]` and `[keymap]` tables of the daemon's
 config file (absent values are defaults; `command: ""` removes a default binding), and the last reload error (the
 previous settings stay). A thread summary carries `title` (`""` until the first message) and `titleSource`:

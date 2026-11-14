@@ -37,6 +37,7 @@ import {
   useAnnounce,
   useCommand,
   useReportError,
+  useSettings,
   useThreadActions,
   useVirtualizer,
   useWindowState,
@@ -132,7 +133,7 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
   /** Where the last scroll event or follow left the view; a scroll up from there unpins (UI-042). */
   const lastPosition = useRef<ScrollPosition | undefined>(undefined);
   // The same list (and so the same item keys) while only the streaming reply changes (UI-191).
-  const rows = items(state);
+  const rows = items(state, useSettings().ui.showXdevNotices === true);
   // Mounting returns to where the user had scrolled up to, else to the bottom. Until the content is tall enough to
   // reach that position (items are measured after they render), the target is re-applied and the clamped scroll
   // events it causes are not stored; any user scrolling ends the restore.

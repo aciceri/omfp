@@ -27,6 +27,11 @@ only be reachable from the human UI.
   no network beyond loopback, no real models.
 - **Conventional Commits** (checked by commitizen in the commit-msg hook). Commits are SSH-signed with the user's key:
   if signing fails, ask the user to load the key, never disable it.
+- Prefer rebasing PR branches onto the latest `origin/master` rather than merging `master` into them. Keep rewritten
+  commits signed; update a published branch with `git push --force-with-lease`, never plain `--force`, and wait for CI
+  on the rebased head before merging the PR.
+- Prefer `git absorb` for follow-up fixes to a PR's existing changes, then autosquash the fixups, rather than leaving
+  separate correction commits. Keep unrelated changes in their own commits and preserve signatures when rewriting.
 - Keep docs in sync: when behavior or a decision changes, update the spec rows (and spike results) in the same change.
 - No new dependencies without a reason; workspace dependencies live in the root `Cargo.toml`.
 - No `Box::leak`, no placeholder stubs, no `unwrap()` in non-test code where an error can be returned.

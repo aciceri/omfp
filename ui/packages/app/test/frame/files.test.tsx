@@ -5,8 +5,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import type { ViewsState } from "@omfp/protocol";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Frame } from "../../src/frame/frame.tsx";
 import { AgentFiles } from "../../src/frame/agent-files.tsx";
+import { Frame } from "../../src/frame/frame.tsx";
 import {
   EDITOR_MODE,
   FILE_PICKER,

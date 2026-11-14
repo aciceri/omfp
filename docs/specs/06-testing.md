@@ -104,6 +104,11 @@ Spike S-02 found that omp always runs a background model-catalog discovery at st
 `omfp_testkit::DenyProxy`, an HTTP(S) proxy set in `HTTP_PROXY`/`HTTPS_PROXY` (loopback excluded with `NO_PROXY`) that
 refuses and records every connection. The discovery requests fail at once, so runs stay offline and deterministic.
 
+The no-usable-model login contract removes the fake provider and disables implicit keyless providers (`local`, `web`,
+`ollama`, `llama.cpp`, `lm-studio`, `apple`) in its isolated `config.yml`. An empty credential store alone does not
+guarantee an empty usable-model list; discovery depends on the host and catalog. The contract still checks startup's
+`thread_failed` response and stderr, the zero model count, provider discovery and logout without stored credentials.
+
 | ID | Requirement |
 | --- | --- |
 | TST-020 | `fake-llm` itself is developed test-first: its own tests check SSE framing, tool-call chunking and request recording. |

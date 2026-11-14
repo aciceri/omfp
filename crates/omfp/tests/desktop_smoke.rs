@@ -26,6 +26,18 @@ fn desktop(home: &Path, smoke: &str, args: &[&str]) -> Output {
 /// `omfp desktop <args>` (under `xvfb-run` on Linux) with `env` and a temporary home; it must print
 /// `OMFP_SMOKE_READY`.
 fn desktop_with(home: &Path, env: &[(&str, &str)], args: &[&str]) -> Output {
+    desktop_with_store(home, env, args, false)
+}
+
+/// Keeps the store between launches when a test checks restoration.
+fn desktop_with_store(
+    home: &Path,
+    env: &[(&str, &str)],
+    args: &[&str],
+    keep_store: bool,
+) -> Output {
+    #[cfg(target_os = "linux")]
+    let _ = keep_store;
     #[cfg(target_os = "linux")]
     let mut command = {
         // A wedged WebKit main loop cannot process the smoke deadline or close request.
@@ -64,10 +76,11 @@ fn desktop_with(home: &Path, env: &[(&str, &str)], args: &[&str]) -> Output {
         .output()
         .unwrap();
     #[cfg(target_os = "macos")]
-    if let Some(data) = args
-        .iter()
-        .position(|arg| *arg == "--data-dir")
-        .and_then(|at| args.get(at + 1))
+    if !keep_store
+        && let Some(data) = args
+            .iter()
+            .position(|arg| *arg == "--data-dir")
+            .and_then(|at| args.get(at + 1))
     {
         forget_web_store(Path::new(data));
     }
@@ -113,6 +126,16 @@ fn forget_web_store(data: &Path) {
             .join("Library/WebKit/dev.omfp.desktop/WebsiteDataStore")
             .join(uuid),
     );
+}
+
+#[cfg(target_os = "macos")]
+struct RetainedWebStore(PathBuf);
+
+#[cfg(target_os = "macos")]
+impl Drop for RetainedWebStore {
+    fn drop(&mut self) {
+        forget_web_store(&self.0);
+    }
 }
 
 // spec: TST-033, TST-090, DMN-004
@@ -662,6 +685,323 @@ export default function init(omfp) {
             &args,
         );
     }
+    handle.shutdown().await.unwrap();
+}
+
+/// Two ASCII PDF pages with a selectable text layer.
+fn matrix_pdf() -> Vec<u8> {
+    use std::io::Write as _;
+    let mut objects = vec![
+        "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+        "<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 >>".to_owned(),
+        "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned(),
+    ];
+    for (index, text) in ["Hello PDF one", "Hello PDF two"].iter().enumerate() {
+        objects.push(format!(
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents {} 0 R >>",
+            5 + 2 * index
+        ));
+        let stream = format!("BT /F1 36 Tf 72 680 Td ({text}) Tj ET\n");
+        objects.push(format!(
+            "<< /Length {} >>\nstream\n{stream}endstream",
+            stream.len()
+        ));
+    }
+    let mut bytes = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    for (index, object) in objects.iter().enumerate() {
+        offsets.push(bytes.len());
+        write!(bytes, "{} 0 obj\n{object}\nendobj\n", index + 1).unwrap();
+    }
+    let xref = bytes.len();
+    write!(
+        bytes,
+        "xref\n0 {}\n0000000000 65535 f \n",
+        objects.len() + 1
+    )
+    .unwrap();
+    for offset in offsets {
+        writeln!(bytes, "{offset:010} 00000 n ").unwrap();
+    }
+    write!(
+        bytes,
+        "trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+        objects.len() + 1
+    )
+    .unwrap();
+    bytes
+}
+
+/// A 9 MB 24-bit image, larger than the daemon's inline image limit.
+fn matrix_bmp(red: bool) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(9_000_054);
+    bytes.extend_from_slice(b"BM");
+    bytes.extend_from_slice(&9_000_054_u32.to_le_bytes());
+    bytes.extend_from_slice(&0_u32.to_le_bytes());
+    bytes.extend_from_slice(&54_u32.to_le_bytes());
+    bytes.extend_from_slice(&40_u32.to_le_bytes());
+    bytes.extend_from_slice(&2000_u32.to_le_bytes());
+    bytes.extend_from_slice(&1500_u32.to_le_bytes());
+    bytes.extend_from_slice(&1_u16.to_le_bytes());
+    bytes.extend_from_slice(&24_u16.to_le_bytes());
+    bytes.extend_from_slice(&[0; 24]);
+    for _ in 0..3_000_000 {
+        bytes.extend_from_slice(if red { &[32, 32, 224] } else { &[224, 80, 32] });
+    }
+    bytes
+}
+
+// spec: TST-033, UI-115, UI-541, UI-542, UI-543, UI-544, UI-545, UI-546, UI-547, UI-548, UI-549, UI-551, UI-553, UI-560, UI-561, UI-562, UI-563, UI-567
+#[expect(
+    clippy::too_many_lines,
+    reason = "the fixture matrix shares one daemon and one persistent webview store"
+)]
+#[tokio::test(flavor = "multi_thread")]
+async fn desktop_file_viewers_open_restore_and_close() {
+    use clap::Parser as _;
+    use omfp::remote::{Connection, Target};
+    use omfp_daemon::agent::FakeLauncher;
+    use omfp_daemon::config::{Cli, Config};
+    use omfp_daemon::git::FakeGit;
+    use omfp_daemon::{Ports, start_with};
+    use omfp_protocol::method::{ThreadGit, ThreadsCreate, WorkspacesRescan};
+    use omfp_protocol::{
+        CreateThreadParams, CreateWorkspaceParams, ThreadRef, ThreadWorkspace, WorkspaceRef,
+    };
+    use std::sync::Arc;
+
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("data");
+    #[cfg(target_os = "macos")]
+    let _web_store = RetainedWebStore(data.clone());
+    let workspaces = dir.path().join("workspaces");
+    let init = dir.path().join("init.ts");
+    std::fs::write(&init, include_str!("fixtures/desktop-viewers/probe.ts")).unwrap();
+    let cli = Cli::try_parse_from([
+        "daemon",
+        "--bind",
+        "127.0.0.1:0",
+        "--data-dir",
+        data.to_str().unwrap(),
+        "--workspaces-root",
+        workspaces.to_str().unwrap(),
+        "--static-dir",
+        web_bundle().to_str().unwrap(),
+    ])
+    .unwrap();
+    let mut config = Config::from_cli(cli, None, None).unwrap();
+    config.init_file = Some(init);
+    let git = Arc::new(FakeGit::new());
+    let handle = start_with(
+        config,
+        Ports {
+            launcher: Arc::new(FakeLauncher::new()),
+            git: git.clone(),
+            omp_program: "omp".into(),
+            omp_version: omfp_core::OMP_VERSION.into(),
+            omp_env: Vec::new(),
+            warnings: Vec::new(),
+        },
+    )
+    .await
+    .unwrap();
+    let mut client = Connection::open(&Target {
+        url: format!("ws://{}/api/ws", handle.addr()),
+        token: handle.token().expose().to_owned(),
+    })
+    .await
+    .unwrap();
+    let thread = client
+        .call::<ThreadsCreate>(CreateThreadParams {
+            title: None,
+            workspace: ThreadWorkspace::New(CreateWorkspaceParams {
+                name: Some("viewers".into()),
+                link: None,
+            }),
+            model: None,
+            thinking_level: None,
+            approval_mode: None,
+            prompt: None,
+        })
+        .await
+        .unwrap();
+    let thread_git = client
+        .call::<ThreadGit>(ThreadRef {
+            thread_id: thread.id.clone(),
+        })
+        .await
+        .unwrap();
+    let workspace = client
+        .call::<WorkspacesRescan>(WorkspaceRef {
+            workspace_id: thread_git.workspace_id.clone(),
+        })
+        .await
+        .unwrap();
+    let folder = Path::new(&workspace.path);
+    let viewers = folder.join("viewers");
+    std::fs::create_dir_all(&viewers).unwrap();
+    for (name, bytes) in [
+        (
+            "video.mp4",
+            include_bytes!("fixtures/desktop-viewers/video.mp4").as_slice(),
+        ),
+        (
+            "video.webm",
+            include_bytes!("fixtures/desktop-viewers/video.webm").as_slice(),
+        ),
+        (
+            "video.ogv",
+            include_bytes!("fixtures/desktop-viewers/video.ogv").as_slice(),
+        ),
+        (
+            "unsupported.mkv",
+            include_bytes!("fixtures/desktop-viewers/unsupported.mkv").as_slice(),
+        ),
+        (
+            "audio.mp3",
+            include_bytes!("fixtures/desktop-viewers/audio.mp3").as_slice(),
+        ),
+        (
+            "audio.ogg",
+            include_bytes!("fixtures/desktop-viewers/audio.ogg").as_slice(),
+        ),
+        (
+            "audio.opus",
+            include_bytes!("fixtures/desktop-viewers/audio.opus").as_slice(),
+        ),
+        (
+            "audio.flac",
+            include_bytes!("fixtures/desktop-viewers/audio.flac").as_slice(),
+        ),
+        (
+            "audio.m4a",
+            include_bytes!("fixtures/desktop-viewers/audio.m4a").as_slice(),
+        ),
+        (
+            "image.png",
+            include_bytes!("fixtures/desktop-viewers/image.png").as_slice(),
+        ),
+        (
+            "image.jpg",
+            include_bytes!("fixtures/desktop-viewers/image.jpg").as_slice(),
+        ),
+        (
+            "image.gif",
+            include_bytes!("fixtures/desktop-viewers/image.gif").as_slice(),
+        ),
+        (
+            "image.webp",
+            include_bytes!("fixtures/desktop-viewers/image.webp").as_slice(),
+        ),
+    ] {
+        std::fs::write(viewers.join(name), bytes).unwrap();
+    }
+    let mut wav = Vec::new();
+    wav.extend_from_slice(b"RIFF");
+    wav.extend_from_slice(&(36_u32 + 16000).to_le_bytes());
+    wav.extend_from_slice(b"WAVEfmt ");
+    wav.extend_from_slice(&16_u32.to_le_bytes());
+    wav.extend_from_slice(&1_u16.to_le_bytes());
+    wav.extend_from_slice(&1_u16.to_le_bytes());
+    wav.extend_from_slice(&8000_u32.to_le_bytes());
+    wav.extend_from_slice(&16000_u32.to_le_bytes());
+    wav.extend_from_slice(&2_u16.to_le_bytes());
+    wav.extend_from_slice(&16_u16.to_le_bytes());
+    wav.extend_from_slice(b"data");
+    wav.extend_from_slice(&16000_u32.to_le_bytes());
+    wav.resize(16044, 0);
+    std::fs::write(viewers.join("audio.wav"), wav).unwrap();
+    std::fs::write(viewers.join("guide.pdf"), matrix_pdf()).unwrap();
+    for name in ["guide.md", "guide.mdx"] {
+        std::fs::write(
+            viewers.join(name),
+            "# Guide\n\n![sample](image.png)\n\n[Next](next.md)\n",
+        )
+        .unwrap();
+    }
+    for (name, text) in [
+        ("next.md", "# Next\n"),
+        ("data.csv", "name,value\nalpha,1\n"),
+        ("data.tsv", "name\tvalue\nalpha\t1\n"),
+        ("data.json", "{\"name\":\"alpha\"}\n"),
+        ("data.jsonc", "{ // comment\n \"name\":\"alpha\"\n}\n"),
+        ("data.yaml", "name: alpha\n"),
+    ] {
+        std::fs::write(viewers.join(name), text).unwrap();
+    }
+    git.add_repo(folder, "main");
+    git.commit_file(folder, "viewers/large.bmp", &matrix_bmp(false));
+    std::fs::write(viewers.join("large.bmp"), matrix_bmp(true)).unwrap();
+    client
+        .call::<WorkspacesRescan>(WorkspaceRef {
+            workspace_id: thread_git.workspace_id,
+        })
+        .await
+        .unwrap();
+    let args = [
+        "--data-dir",
+        data.to_str().unwrap(),
+        "--thread",
+        thread.id.as_str(),
+    ];
+    let files = [
+        "video.mp4",
+        "video.webm",
+        "video.ogv",
+        "unsupported.mkv",
+        "audio.wav",
+        "audio.mp3",
+        "audio.ogg",
+        "audio.opus",
+        "audio.flac",
+        "audio.m4a",
+        "guide.pdf",
+        "image.png",
+        "image.jpg",
+        "image.gif",
+        "image.webp",
+        "large.bmp",
+        "guide.md",
+        "guide.mdx",
+        "data.csv",
+        "data.tsv",
+        "data.json",
+        "data.jsonc",
+        "data.yaml",
+    ];
+    for name in files {
+        for phase in ["open", "restore", "reopen"] {
+            let output = desktop_with_store(
+                dir.path(),
+                &[
+                    ("OMFP_SMOKE", "local"),
+                    ("OMFP_SMOKE_WAIT", "body[data-matrix=ready]"),
+                ],
+                &args,
+                true,
+            );
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let state: serde_json::Value = stdout
+                .lines()
+                .find_map(|line| line.strip_prefix("OMFP_SMOKE_READY "))
+                .map(|line| serde_json::from_str(line).unwrap())
+                .unwrap();
+            let result: serde_json::Value =
+                serde_json::from_str(state["smoke"].as_str().unwrap()).unwrap();
+            assert_eq!(result["name"], name, "{result}");
+            assert_eq!(result["phase"], phase, "{result}");
+            println!("viewer: {result}");
+        }
+    }
+    desktop_with_store(
+        dir.path(),
+        &[
+            ("OMFP_SMOKE", "local"),
+            ("OMFP_SMOKE_WAIT", "body[data-matrix=done]"),
+        ],
+        &args,
+        true,
+    );
     handle.shutdown().await.unwrap();
 }
 

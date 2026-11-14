@@ -90,7 +90,7 @@ Acceptance: E2E-01, E2E-02, E2E-03, E2E-04, E2E-05, E2E-08 pass.
 
 Result: the journeys run in `e2e/` (L5: headless Chromium, in-process daemon serving the release bundle, real omp
 18.18.6, fake LLM), next to the transport suite in Chromium (`just test-wasm`); both are part of `just ci`. `just serve`
-builds the bundle and runs the daemon with the user's own omp configuration. The protocol client lives in its own crate
+builds the bundle and runs the daemon with omfp's isolated omp profile (ARC-021). The protocol client lives in its own crate
 (`omfp-client`); every method's result is decoded into its declared type by L2 tests and, for the methods forwarded to
 omp that the UI uses, by an L3 test. Known gaps: no browser test for the countdown ticking (UI-073); "answered
 elsewhere" covers only what happened while watching live; adding a pull request waits for
@@ -532,7 +532,7 @@ output. Workspaces with a `views.json` of their own keep it: `:widget add omfp:b
 ## M13 — MCP servers (done)
 
 Scope: see the MCP servers of the current workspace's threads, their state, and restart them. Each thread's omp runs in
-the workspace folder, so it loads the workspace's `.omp/mcp.json`, the user's `~/.omp/agent/mcp.json` and the configs
+the workspace folder, so it loads the workspace's `.omp/mcp.json`, omfp's `<data-dir>/omp-profile/agent/mcp.json` and the configs
 it imports from other tools. The daemon lists them (DMN-190, `workspaces.mcp_servers`, PRT-110), has the thread's omp
 check each of its own (DMN-191, `thread.mcp_servers`, PRT-111) and reconnects by restarting the thread (DMN-192,
 `thread.mcp_reconnect`, PRT-112); the built-in `omfp:mcp` shows a border box per server with its state, tools, error and

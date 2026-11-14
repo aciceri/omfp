@@ -224,7 +224,7 @@ impl Daemon {
         .unwrap();
         let config = Config::from_cli(cli, None, None).unwrap();
         let mut ports = Ports::resolve(&config).unwrap();
-        let mut env = harness.env.env_overrides();
+        let mut env = harness.env.prepare_omfp_profile(data.path()).unwrap();
         without_audio(&mut env, harness.env.root());
         ports.omp_env = env;
         let handle = start_with(config, ports).await.unwrap();

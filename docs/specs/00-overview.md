@@ -135,6 +135,8 @@ sequenceDiagram
 $XDG_DATA_HOME/omfp/            (default ~/.local/share/omfp; macOS ~/Library/Application Support/omfp, DMN-170)
   omfp.db                        SQLite: seen repositories, workspaces, threads, settings, widget state
   token                         access token (mode 0600)
+  omp-profile/                  isolated omp user configuration, credentials, models and runtime state (ARC-021)
+    agent/                      config.yml, models.yml, agent.db (provider and MCP credentials), mcp.json, agents/…
   threads/<thread-id>/sessions/ sessionDir passed to omp (open_session)
   threads/<thread-id>/omp.log   omp stderr
   widgets/<name>/               the user's widget library (`user:<name>`, AGT-023)
@@ -145,4 +147,4 @@ $XDG_DATA_HOME/omfp/            (default ~/.local/share/omfp; macOS ~/Library/Ap
 | ID | Requirement |
 | --- | --- |
 | ARC-020 | A thread's omp sessions MUST live in a dedicated directory opened with `open_session { sessionDir }`, so the thread resumes its session after a process restart, independent of which workspaces it uses. |
-| ARC-021 | The user's global omp configuration (`~/.omp/agent`: credentials, models, settings) MUST remain what agents use. The daemon does not modify it. |
+| ARC-021 | Every daemon-owned omp process MUST use the fresh isolated profile `<data-dir>/omp-profile`, with native user configuration in `agent/` and runtime/cache state contained in that profile. This includes launches/restarts/forks, session-lease/version probes, login/logout/provider and model enumeration, title generation, MCP credentials/configuration, user settings and agent discovery. The apps MUST NOT read or write each other's omp user-level state (`~/.omp`, including `~/.omp/agent`, or standalone omp's XDG state). There MUST be no sharing switch or fallback. Existing installations MUST NOT automatically import or copy credentials/configuration: users log in again in omfp and configure its profile anew. Workspace/project configuration, cwd, repository roots and `HOME` remain unchanged. Explicit provider keys in the daemon's environment remain supported; this is profile isolation, not a filesystem sandbox against agent tools. |

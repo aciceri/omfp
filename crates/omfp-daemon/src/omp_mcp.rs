@@ -17,7 +17,7 @@ use serde_json::{Map, Value};
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Homes {
     pub home: Option<PathBuf>,
-    /// `~/.omp/agent`.
+    /// `<data-dir>/omp-profile/agent` in production (ARC-021).
     pub agent_dir: Option<PathBuf>,
 }
 

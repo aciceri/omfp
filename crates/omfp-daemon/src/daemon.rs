@@ -75,7 +75,9 @@ impl Ports {
         )
         .context("cannot find omp: pass --omp-bin or put omp on PATH")?;
         info!(omp = %program.display(), "using omp");
-        let version = omp_binary::version(&program)?;
+        let data = DataDir::new(std::path::absolute(&config.data_dir)?);
+        let omp_env = crate::omp_profile::environment(&data, Vec::new())?;
+        let version = omp_binary::version(&program, &omp_env)?;
         let warning = omp_binary::accept(
             &program.display().to_string(),
             &version,
@@ -90,7 +92,7 @@ impl Ports {
             git: Arc::new(GitCli::new("git")),
             omp_program: program,
             omp_version: version,
-            omp_env: Vec::new(),
+            omp_env,
             warnings: warning.into_iter().collect(),
         })
     }
@@ -345,9 +347,12 @@ pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHa
         ports.git,
         workspaces_root,
     ));
+    let omp_env = crate::omp_profile::environment(&data, ports.omp_env)?;
+    let agent_dir = data.omp_profile().join("agent");
+    create_private_dir(&data.omp_profile())?;
+    create_private_dir(&agent_dir)?;
     let home = std::env::var_os("HOME");
-    let agent_dir = conventions::omp_agent_dir(&ports.omp_env, home.as_deref());
-    let omp_home = conventions::omp_home(&ports.omp_env, home.as_deref());
+    let omp_home = conventions::omp_home(&omp_env, home.as_deref());
     let widgets = Arc::new(Widgets::new(data.widgets(), config.static_dir.as_deref()));
     let supervisor = Supervisor::new(
         ports.launcher,
@@ -355,11 +360,11 @@ pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHa
         Arc::clone(&workspaces),
         data.clone(),
         SupervisorConfig {
-            omp_env: ports.omp_env,
+            omp_env,
             max_processes: config.max_processes,
             idle_timeout: config.idle_timeout,
             event_capacity: config.event_buffer,
-            agent_dir,
+            agent_dir: Some(agent_dir),
             home: omp_home,
             title_generation: config.title_generation,
             builtin_widgets: widgets.builtin_dir().map(Path::to_path_buf),

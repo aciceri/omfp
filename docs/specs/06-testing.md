@@ -102,6 +102,13 @@ providers:
 
 and a `config.yml` setting `modelRoles.default: fake/scripted`; omp is launched with `--model fake/scripted`.
 
+Daemon contract/E2E fixtures are placed explicitly in `<data-dir>/omp-profile/agent` before startup; that fixture
+setup is not a production import path. ARC-021's regression additionally keeps two physically separate profiles,
+checks fresh startup without importing a configured standalone profile, exercises real pinned omp credential
+storage/logout with inert login/MCP credentials and project model selection through the fake LLM, and compares
+file-content snapshots (including standalone XDG state and native addon extraction) in both directions. No test reads
+the real user's credentials, completes external OAuth or calls real models.
+
 Spike S-02 found that omp always runs a background model-catalog discovery at startup: the shared catalog
 (`catalog.stencil.so`) and the model lists of keyless providers. No setting turns it off entirely
 (`disabledProviders` removes the keyless providers but not the shared catalog). Contract tests therefore run omp behind

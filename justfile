@@ -102,7 +102,7 @@ build-web out="": ui-install
 build-site out="": ui-install
     cd ui && OMFP_SITE_OUT={{ quote(out) }} bun run build:site
 
-# Try the app: the release web bundle on a daemon with your own HOME, omp config (~/.omp) and default data dir;
+# Try the app: the release web bundle on a daemon with your HOME and its own omp profile in the default data dir;
 # arguments go to the daemon, e.g. `just serve --bind 127.0.0.1:7421`
 serve *args: build-web
     cargo run --release -p omfp -- daemon --static-dir ui/packages/app/dist {{ args }}

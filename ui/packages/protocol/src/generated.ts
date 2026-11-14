@@ -785,7 +785,7 @@ export type McpServers = {
   servers: McpServer[];
   /** The thread whose omp checked the servers; `null` for `workspaces.mcp_servers`. */
   threadId?: string | null;
-  /** omp's user config, `~/.omp/agent/mcp.json`, whether it exists or not; `null` when the daemon knows no home. */
+  /** omfp's isolated user config, `<data-dir>/omp-profile/agent/mcp.json`, whether it exists or not (ARC-021). */
   userConfig?: string | null;
   workspaceId: string;
 };

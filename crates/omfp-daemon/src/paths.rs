@@ -69,6 +69,12 @@ impl DataDir {
         self.root.join("omp")
     }
 
+    /// The isolated omp user configuration and state (ARC-021), never imported from standalone omp.
+    #[must_use]
+    pub fn omp_profile(&self) -> PathBuf {
+        self.root.join("omp-profile")
+    }
+
     /// The `widget-builder` agent definition (AGT-029, DMN-107).
     #[must_use]
     pub fn widget_builder(&self) -> PathBuf {

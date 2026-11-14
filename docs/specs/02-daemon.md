@@ -266,7 +266,7 @@ reauthorized, once the thread is free (DMN-200..204).
 
 | ID | Requirement |
 | --- | --- |
-| DMN-190 | **Configured servers** (`omp_mcp::configured`, PRT-110, PRT-113): the daemon MUST read, in omp's precedence order, the workspace's `.omp/mcp.json` and `.omp/.mcp.json`, the user's `~/.omp/agent/mcp.json` and `.mcp.json` (`HOME` of the omp environment, else the daemon's), Claude Code's project `.claude/.mcp.json` else `.claude/mcp.json` and user `~/.claude.json` else `~/.claude/mcp.json`, Cursor's project then user `.cursor/mcp.json`, VS Code's `.vscode/mcp.json` (`mcp.servers`), then the root `mcp.json` else `.mcp.json`; each server name once, from the first file defining it, in its file's order. Files that are missing, unreadable or not JSON are skipped. Codex, Gemini CLI, OpenCode, Windsurf and plugin configs are not read. |
+| DMN-190 | **Configured servers** (`omp_mcp::configured`, PRT-110, PRT-113): the daemon MUST read, in omp's precedence order, the workspace's `.omp/mcp.json` and `.omp/.mcp.json`, omfp's isolated `<data-dir>/omp-profile/agent/mcp.json` and `.mcp.json` (ARC-021; never standalone `~/.omp/agent`), Claude Code's project `.claude/.mcp.json` else `.claude/mcp.json` and user `~/.claude.json` else `~/.claude/mcp.json`, Cursor's project then user `.cursor/mcp.json`, VS Code's `.vscode/mcp.json` (`mcp.servers`), then the root `mcp.json` else `.mcp.json`; each server name once, from the first file defining it, in its file's order. Files that are missing, unreadable or not JSON are skipped. Codex, Gemini CLI, OpenCode, Windsurf and plugin configs are not read. MCP credentials belong to the isolated profile's `agent.db`; discovery of other tools' configuration is unchanged. |
 | DMN-191 | **Checks by omp** (PRT-111): for a running thread, the daemon MUST check each checkable server by sending its omp the local command `/mcp test <name>` as a `prompt` (no model turn; omp connects anew, lists the tools and disconnects) and reading the one `command_output` frame omp sends before its answer: `Server "<name>" connected (<n> tools).` is `connected`, `Connection to "<name>" failed: <error>` is `failed`, `Server "<name>" not found…` leaves it `configured`, and so does no matching frame within 10 s. Checks of one thread run one at a time (the frames carry no id); a stopped thread is not started. |
 | DMN-192 | **Reconnect** (PRT-112): omp 18.18.6 refuses `/mcp reconnect` over RPC (TUI only) and its `/mcp reload` reconnects nothing, so `thread.mcp_reconnect` MUST restart the thread's process like `thread.restart` (the session resumes, DMN-032; omp connects every server at startup), then check as DMN-191; a thread that is not settled is refused with `conflict` (a restart would abort its turn). |
 | DMN-200 | **Own checks stay out of the chat**: the `command_output` answering the daemon's own `/mcp test <name>` (DMN-191) MUST go to the check and not into the thread's log (`supervisor/mcp.rs`, matched by `omp_mcp::parse_check` while the check waits); every other `command_output` — a user's local command, `/add-dir` of a root sync, background ones like `/mcp reauth`'s — is logged and becomes a notice (PRT-120). |
@@ -283,6 +283,14 @@ omp 18.18.6 runs its OAuth logins over RPC (`get_login_providers`, `login`, `get
 `omp --mode rpc-ui` exits at startup when no model is usable (`No default model selected. Use /login, …` on stderr) —
 the state of a fresh install, where every thread start fails (DMN-212 carries those words to the window). The daemon
 therefore runs logins on a short-lived omp of its own (`supervisor/login.rs`, `server/services/logins.rs`).
+
+All uses of "user configuration" and "agent directory" in this document mean omfp's isolated
+`<data-dir>/omp-profile/agent` (ARC-021), never standalone `~/.omp/agent`. Login/logout, provider/model discovery,
+thread launches/restarts/forks, lease/version probes and the title print-mode run MUST use the same mandatory
+profile environment. Both native generic config lookup and runtime/XDG paths are contained in the profile;
+inherited `OMP_PROFILE`/`PI_PROFILE`, agent/config/XDG directory selectors and user config-file overlays MUST NOT
+redirect them to standalone state. `HOME`, cwd, project config and explicit provider API keys remain unchanged.
+No automatic import/copy or sharing/fallback mode is allowed; existing users log in again and configure the profile.
 
 | ID | Requirement |
 | --- | --- |

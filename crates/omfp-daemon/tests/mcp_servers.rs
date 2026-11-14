@@ -60,8 +60,8 @@ impl TestDaemon {
         Client::hello(self.handle.addr(), self.handle.token().expose(), "test").await
     }
 
-    fn home(&self) -> PathBuf {
-        self.dir.path().join("home")
+    fn profile_agent(&self) -> PathBuf {
+        self.dir.path().join("omp-profile/agent")
     }
 
     /// The `/mcp test …` prompts omp received, over every launch.
@@ -108,7 +108,7 @@ async fn thread_with_servers(
         r#"{"mcpServers":{"imported":{"command":"cursor-server"}}}"#,
     );
     write(
-        &daemon.home().join(".omp/agent/mcp.json"),
+        &daemon.profile_agent().join("mcp.json"),
         r#"{"mcpServers":{"mine":{"command":"my-server"}}}"#,
     );
     (
@@ -166,7 +166,7 @@ async fn a_workspace_lists_its_configured_servers_without_starting_omp() {
     assert_eq!(listing["running"], false);
     let project = folder.join(".omp/mcp.json");
     assert_eq!(listing["projectConfig"], project.to_str().unwrap());
-    let user = daemon.home().join(".omp/agent/mcp.json");
+    let user = daemon.profile_agent().join("mcp.json");
     assert_eq!(listing["userConfig"], user.to_str().unwrap());
     let good = &listing["servers"][0];
     assert_eq!(

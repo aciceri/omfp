@@ -110,8 +110,8 @@ on the user's machine — git, shells, build tools, the `nix` of a repository's 
 so the sandbox holds the window and the daemon while omp, git and the shells of jobs run **on the host** through
 `flatpak-spawn --host` (ENV-064): the permission `--talk-name=org.freedesktop.Flatpak` gives the app the host's
 privileges, deliberately. The other permissions: Wayland or X11, the GPU, PulseAudio (the microphone), the network,
-the notification and tray (`org.kde.*` names) buses, and the home directory, where workspaces (`~/.omfp`), omp's
-configuration (`~/.omp`) and the repositories linked into workspaces live at the same paths on both sides; the data
+the notification and tray (`org.kde.*` names) buses, and the home directory, where workspaces (`~/.omfp`), the isolated
+omp profile (`<data-dir>/omp-profile`, ARC-021) and linked repositories live at the same paths on both sides; the data
 and config directories are the host's (`~/.local/share/omfp`, `~/.config/omfp`, DMN-170, DMN-009), not `~/.var/app`,
 so the host's `omfp` commands find the Flatpak's daemon. Workspaces and repositories outside the home directory are
 out of reach. The bundled omp is a generic glibc binary, which runs on most distributions but not on NixOS (no

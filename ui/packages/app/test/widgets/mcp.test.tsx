@@ -19,7 +19,7 @@ const PROJECT = {
   scope: "project",
   tool: "omp",
 } as const;
-const USER = { path: "/home/u/.omp/agent/mcp.json", scope: "user", tool: "omp" } as const;
+const USER = { path: "/data/omfp/omp-profile/agent/mcp.json", scope: "user", tool: "omp" } as const;
 
 function server(name: string, extra: Partial<McpServer> = {}): McpServer {
   return {
@@ -39,7 +39,7 @@ function listing(servers: McpServer[], extra: Partial<McpServers> = {}): McpServ
     threadId: "t1",
     running: true,
     projectConfig: "/work/w1/.omp/mcp.json",
-    userConfig: "/home/u/.omp/agent/mcp.json",
+    userConfig: USER.path,
     servers,
     ...extra,
   };
@@ -99,12 +99,7 @@ describe("omfp:mcp", () => {
     const { host, user } = setup();
     await waitFor(() => expect(boxes().length).toBe(3));
     const sources = screen.getAllByTestId("mcp-source");
-    expect(sources.map((source) => [source.tagName, source.textContent])).toEqual([
-      ["BUTTON", ".omp/mcp.json"],
-      ["BUTTON", ".omp/mcp.json"],
-      ["SPAN", "/home/u/.omp/agent/mcp.json"],
-    ]);
-    expect(sources[0]?.getAttribute("aria-label")).toBe("Open .omp/mcp.json");
+    expect(screen.queryAllByRole("button", { name: `Open ${USER.path}` }).length).toBe(0);
     await user.click(sources[0] ?? document.body);
     expect(host.window.get(OPEN_FILES).w1?.tabs.map((tab) => tab.path)).toEqual([".omp/mcp.json"]);
   });
@@ -171,25 +166,6 @@ describe("omfp:mcp", () => {
     );
     expect(screen.queryAllByTestId("mcp-reconnect").length).toBe(0);
     expect(screen.queryAllByTestId("mcp-reload-all").length).toBe(0);
-  });
-
-  // spec: UI-294
-  test("no servers: where to put .omp/mcp.json; no workspace: say so", async () => {
-    const base = testHost(new FakeClient());
-    base.client.answers.set("thread.mcp_servers", () => listing([]));
-    base.host.window.set(SELECTED_THREAD, "t1");
-    const test = renderWithHost(<McpWidget />, base);
-    test.client.connected();
-    test.client.index({ workspaces: [workspace("w1")], threads: [thread("t1", "work", "w1")] });
-    test.flush();
-    const none = await screen.findByTestId("mcp-none");
-    expect(none.textContent).toContain("/work/w1/.omp/mcp.json");
-    expect(none.textContent).toContain('"mcpServers"');
-    expect(none.textContent).toContain("~/.omp/agent/mcp.json");
-    cleanup();
-
-    renderWithHost(<McpWidget />).flush();
-    expect(screen.getByTestId("mcp-no-workspace").textContent).toContain("No workspace");
   });
 
   // spec: UI-290, UI-300

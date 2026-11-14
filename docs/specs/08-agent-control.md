@@ -222,6 +222,10 @@ access (D-17), and what it does is logged and attributed to it.
 | AGT-053 | **MCP calls are logged**: the activity log (AGT-072) MUST record the calls of the MCP principal the way it records an agent's, with `threadId` `null` and the MCP client as `client` (PRT-094), so `omfp:activity` shows them as `mcp: <client>` (UI-241). |
 | AGT-054 | **Configuring a client**: `omfp mcp config` (DMN-159) prints the `mcp.json` entry for the local daemon. For omp, put it in `~/.omp/agent/mcp.json` (every session) or a project's `.omp/mcp.json`: omp 18.18.6 then mounts the tools as `xd://` devices (`xd://mcp__omfp_call`, `xd://mcp__omfp_thread_wait`, `xd://mcp__omfp_ui_mount`…, called with `write`, its `content` the JSON arguments) and puts the server's instructions in the system prompt. The header reads the token from the environment, `"Authorization": "Bearer ${OMFP_TOKEN}"` (omp expands `${VAR}` in `mcp.json`; set `OMFP_TOKEN="$(cat ~/.local/share/omfp/token)"` where omp runs), so no file holds the token, which grants full access to the daemon (shell commands included, D-17): never put the literal token (`omfp mcp config --literal-token`) in a project's `.omp/mcp.json`, which may be committed. `"timeout": 0` lets `omfp_thread_wait` outlast omp's 30 s request timeout. Other MCP clients take the same URL and `Authorization` header in their own format. |
 
+The `~/.omp/agent/mcp.json` example above is for an external **standalone omp client**. omfp's own threads already
+receive the host tools; their user-level MCP configuration and credentials live only in
+`<data-dir>/omp-profile/agent` (ARC-021). Do not configure omfp by changing standalone omp's user files.
+
 ### UI mounts and the component library (M10)
 
 Agents put UI in front of the user with **mounts**: a mount is a widget node of the workspace's `views.json` whose

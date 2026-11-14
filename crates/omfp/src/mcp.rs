@@ -15,8 +15,8 @@ pub const TOKEN_VARIABLE: &str = "OMFP_TOKEN";
 /// `omfp mcp …`.
 #[derive(Debug, Clone, PartialEq, Eq, clap::Subcommand)]
 pub enum Command {
-    /// Prints the `mcp.json` entry of the daemon's MCP server: put it in `~/.omp/agent/mcp.json` (every omp session)
-    /// or a project's `.omp/mcp.json`. Its header reads the token from `$OMFP_TOKEN` (set it where the client runs);
+    /// Prints the daemon's MCP entry for external clients: put it in standalone omp's `~/.omp/agent/mcp.json`
+    /// or a project's `.omp/mcp.json`. Its header reads `$OMFP_TOKEN` (set it where the external client runs);
     /// `--literal-token` writes the token itself instead, which then must never be committed or shared.
     Config(ConfigArgs),
 }

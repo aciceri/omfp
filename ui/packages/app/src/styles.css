@@ -1281,6 +1281,11 @@
     font-family: var(--omfp-font-code);
   }
 
+  .omfp-mcp .omfp-empty__hint {
+    max-inline-size: 100%;
+    overflow-wrap: anywhere;
+  }
+
   .omfp-mcp__bar,
   .omfp-mcp__reload,
   .omfp-mcp__source {

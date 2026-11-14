@@ -24,7 +24,7 @@ pub struct McpServers {
     pub running: bool,
     /// omp's project config of the workspace, `<workspace>/.omp/mcp.json`, whether it exists or not.
     pub project_config: String,
-    /// omp's user config, `~/.omp/agent/mcp.json`, whether it exists or not; `null` when the daemon knows no home.
+    /// omfp's isolated user config, `<data-dir>/omp-profile/agent/mcp.json`, whether it exists or not (ARC-021).
     pub user_config: Option<String>,
     /// In omp's precedence order (the first definition of a name wins): omp's own files, then the imported ones.
     pub servers: Vec<McpServer>,

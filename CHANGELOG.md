@@ -50,6 +50,14 @@ Initial release, planned as 0.1.0.
   prompt uses that model, and failed creation keeps the choice for retry. Existing threads cannot send while a model
   change is still being applied.
 
+### Changed
+
+- omfp now uses its own omp profile at `<data-dir>/omp-profile` (normally
+  `~/.local/share/omfp/omp-profile` on Linux, `~/Library/Application Support/omfp/omp-profile` on macOS).
+  Credentials, user settings, models, agents and MCP configuration no longer use standalone `~/.omp/agent`.
+  Existing users must log in again with `:login` and configure the new `agent/` directory explicitly: nothing is
+  imported or copied automatically and there is no sharing mode. Existing threads, history and project config stay.
+
 ### Release limitations
 
 - macOS downloads are signed ad-hoc and are not notarized unless the release explicitly says otherwise. On first

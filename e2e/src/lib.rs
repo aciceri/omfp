@@ -1017,7 +1017,7 @@ async fn start_daemon(
         }
     } else {
         let mut ports = Ports::resolve(&config)?;
-        ports.omp_env = env.env_overrides();
+        ports.omp_env = env.prepare_omfp_profile(data)?;
         ports
     };
     start_with(config, ports).await

@@ -55,7 +55,7 @@ just test-e2e                    # L5 journeys: builds a private web bundle, hea
 just bench                       # e2e benchmarks (`benchmark_*`, ignored elsewhere): timings by hand, not in `just ci`
 just test-desktop                # `omfp --features desktop`: desktop unit tests + the Tauri window under xvfb-run (TST-033)
 just build-web                   # release bundle of the TypeScript UI into ui/packages/app/dist (`bun run build`)
-just serve [daemon args]         # try the app: release bundle + `omfp daemon` with your HOME, ~/.omp, default data dir
+just serve [daemon args]         # try the app: release bundle + daemon with your HOME and isolated omp profile
 nix build .#omfp                 # the install: omfp with the desktop window, the web bundle and the pinned omp (nix/);
                                  # .#omfp-headless without WebKit
 just desktop [desktop args]      # try the desktop app: one more window on your local daemon (started in the background)

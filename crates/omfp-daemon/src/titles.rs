@@ -81,7 +81,7 @@ pub fn clean_title(output: &str) -> Option<String> {
     (!title.is_empty()).then_some(title)
 }
 
-/// One title generation: omp in print mode, with the user's configuration (same program, environment and working
+/// One title generation: omp in print mode, with omfp's isolated profile (same program, environment and working
 /// directory as the thread's omp), its small model role, no session and no tools.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TitleRequest {

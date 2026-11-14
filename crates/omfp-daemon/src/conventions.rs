@@ -244,15 +244,6 @@ pub fn omp_home(
     Some(PathBuf::from(home))
 }
 
-/// omp's user agent directory, `<HOME>/.omp/agent`, with `HOME` from [`omp_home`].
-#[must_use]
-pub fn omp_agent_dir(
-    overrides: &[(OsString, Option<OsString>)],
-    home: Option<&OsStr>,
-) -> Option<PathBuf> {
-    Some(omp_home(overrides, home)?.join(".omp").join("agent"))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -560,19 +551,5 @@ mod tests {
         std::fs::write(&path, "an older definition").unwrap();
         assert!(write_widget_builder(&data).unwrap());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), expected);
-    }
-
-    #[test]
-    fn the_agent_dir_follows_the_home_omp_runs_with() {
-        let overrides = vec![(OsString::from("HOME"), Some(OsString::from("/isolated")))];
-        assert_eq!(
-            omp_agent_dir(&overrides, Some(OsStr::new("/home/u"))),
-            Some(PathBuf::from("/isolated/.omp/agent"))
-        );
-        assert_eq!(
-            omp_agent_dir(&[], Some(OsStr::new("/home/u"))),
-            Some(PathBuf::from("/home/u/.omp/agent"))
-        );
-        assert_eq!(omp_agent_dir(&[], None), None);
     }
 }

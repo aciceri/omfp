@@ -98,10 +98,19 @@ pub fn accept(
 }
 
 /// Runs `program --version` and returns the version it prints.
-pub fn version(program: &Path) -> Result<String, VersionError> {
+pub fn version(
+    program: &Path,
+    env: &[(std::ffi::OsString, Option<std::ffi::OsString>)],
+) -> Result<String, VersionError> {
     let name = program.display().to_string();
     let mut command = Command::new(program);
     command.arg("--version");
+    for (key, value) in env {
+        match value {
+            Some(value) => command.env(key, value),
+            None => command.env_remove(key),
+        };
+    }
     // On the host when the daemon runs in Flatpak (ENV-064).
     let output =
         crate::flatpak::on_host(command)
@@ -119,7 +128,7 @@ pub fn version(program: &Path) -> Result<String, VersionError> {
 
 /// Runs `program --version` and applies [`accept`] against `omfp_core::OMP_VERSION`.
 pub fn check(program: &Path, allow_mismatch: bool) -> Result<Option<String>, VersionError> {
-    let found = version(program)?;
+    let found = version(program, &[])?;
     accept(
         &program.display().to_string(),
         &found,

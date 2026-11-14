@@ -4,7 +4,7 @@ use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::Receiver;
-use std::sync::{Arc, LazyLock, Mutex, PoisonError};
+use std::sync::{Arc, LazyLock, Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, bail};
@@ -61,6 +61,7 @@ pub fn require_pinned_omp() {
 pub struct OmpEnv {
     root: TempDir,
     proxy_url: Option<String>,
+    profile_agent: OnceLock<PathBuf>,
 }
 
 impl OmpEnv {
@@ -70,6 +71,7 @@ impl OmpEnv {
         let env = Self {
             root: tempfile::Builder::new().prefix("omfp-omp-").tempdir()?,
             proxy_url: proxy.map(DenyProxy::url),
+            profile_agent: OnceLock::new(),
         };
         for dir in [env.agent_dir(), env.work_dir(), env.root().join("xdg")] {
             std::fs::create_dir_all(dir)?;
@@ -106,7 +108,32 @@ impl OmpEnv {
 
     #[must_use]
     pub fn agent_dir(&self) -> PathBuf {
-        self.home().join(".omp").join("agent")
+        self.profile_agent
+            .get()
+            .cloned()
+            .unwrap_or_else(|| self.home().join(".omp").join("agent"))
+    }
+
+    /// Places this test's synthetic fixtures in a daemon's isolated profile before startup. This is test setup,
+    /// not application migration: production never moves or copies standalone credentials/configuration.
+    pub fn prepare_omfp_profile(
+        &self,
+        data: &Path,
+    ) -> anyhow::Result<Vec<(OsString, Option<OsString>)>> {
+        let agent = data.join("omp-profile/agent");
+        if let Some(current) = self.profile_agent.get() {
+            anyhow::ensure!(
+                current == &agent,
+                "test environment already belongs to another daemon"
+            );
+        } else {
+            std::fs::create_dir_all(data.join("omp-profile"))?;
+            std::fs::rename(self.agent_dir(), &agent)?;
+            self.profile_agent
+                .set(agent)
+                .map_err(|_| anyhow::anyhow!("test profile already prepared"))?;
+        }
+        Ok(self.env_overrides())
     }
 
     /// Default working directory for omp processes.

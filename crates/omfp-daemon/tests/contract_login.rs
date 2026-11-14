@@ -48,7 +48,7 @@ async fn daemon_on(harness: &Harness) -> (DaemonHandle, TempDir) {
     .unwrap();
     let config = Config::from_cli(cli, None, None).unwrap();
     let mut ports = Ports::resolve(&config).unwrap();
-    ports.omp_env = harness.env.env_overrides();
+    ports.omp_env = harness.env.prepare_omfp_profile(data.path()).unwrap();
     (start_with(config, ports).await.unwrap(), data)
 }
 

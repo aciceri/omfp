@@ -29,11 +29,30 @@ Everything runs inside the Nix dev shell:
 
 ```sh
 nix develop
-just serve      # build the web UI and run the daemon with your own ~/.omp; open the printed URL
+just serve      # build the web UI and run the daemon with omfp's isolated omp profile; open the printed URL
 just desktop    # the desktop window on your local daemon (started in the background if none runs)
 ```
 
 `just --list` shows the other recipes (tests, lints, fixtures); [AGENTS.md](../AGENTS.md) is the contributor guide.
+
+## Isolated omp profile
+
+omfp uses `<data-dir>/omp-profile`, with user configuration in `agent/`: `config.yml` (settings/model roles),
+`models.yml` (custom providers), `agent.db` (provider and MCP credentials), `mcp.json`, agents, extensions, skills and
+`APPEND_SYSTEM.md`. Runtime/cache state stays under the profile too. The default location is
+`$XDG_DATA_HOME/omfp/omp-profile` or `~/.local/share/omfp/omp-profile` on Linux, and
+`~/Library/Application Support/omfp/omp-profile` on macOS. `omfp daemon --data-dir <path>` relocates the whole profile.
+
+**Upgrading from shared configuration:** this is a fresh profile. Run `:login` in omfp again and explicitly configure
+the new `agent/` directory for the models, user settings and MCP servers you need. omfp never automatically imports
+or copies old credentials/configuration, never falls back to `~/.omp/agent` (or standalone omp's XDG state), and has
+no sharing switch. Login/logout and config changes in one app do not change the other's stored state. Existing
+threads, session history and workspace/repository configuration are preserved; `.omp/` project config still applies.
+
+This covers every daemon-owned omp, including login, model discovery, title generation and session probes.
+`HOME`, cwd and repository roots are unchanged; explicit API keys in the daemon's environment still work. This is
+user-profile isolation, not a filesystem sandbox: agent tools still have the user's normal file access. Home-based
+MCP imports from other tools (such as Claude Code and Cursor) keep their existing discovery paths.
 
 ## Agents outside omfp (MCP)
 
@@ -46,7 +65,10 @@ omfp mcp config > ~/.omp/agent/mcp.json   # or merge its "omfp" entry into an ex
 export OMFP_TOKEN="$(cat ~/.local/share/omfp/token)"   # where omp runs, e.g. in your shell profile
 ```
 
-prints the entry for the running local daemon (`--daemon <url>` for another one). omp then offers the tools as
+This example deliberately configures a **standalone** omp client, not omfp's internal profile. omfp's own threads
+already receive the host tools and do not need this MCP entry.
+
+The command prints the entry for the running local daemon (`--daemon <url>` for another one). omp then offers the tools as
 `xd://mcp__omfp_call` and so on; `"timeout": 0` in the entry lets `omfp_thread_wait` wait longer than omp's 30 s
 default. The entry's header is `"Bearer ${OMFP_TOKEN}"`: omp reads the token from the environment, so no file holds
 it. The token grants full access to the daemon (including shell commands): `--literal-token` writes it into the entry

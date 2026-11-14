@@ -20,6 +20,7 @@ pub mod names;
 pub mod omp;
 pub mod omp_binary;
 pub mod omp_mcp;
+pub mod omp_profile;
 pub mod paths;
 pub mod search;
 pub mod server;

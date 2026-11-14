@@ -123,7 +123,7 @@ pub struct SupervisorConfig {
     pub event_capacity: usize,
     /// How far a subscriber may fall behind before it must resynchronize (PRT-023).
     pub live_buffer: usize,
-    /// omp's user agent directory, where the user's `APPEND_SYSTEM.md` lives (DMN-030).
+    /// omfp's isolated omp agent directory, where the user's `APPEND_SYSTEM.md` lives (ARC-021, DMN-030).
     pub agent_dir: Option<PathBuf>,
     /// The home omp runs with, where it reads the MCP configs of other tools (`~/.claude.json`, …, DMN-190).
     pub home: Option<PathBuf>,

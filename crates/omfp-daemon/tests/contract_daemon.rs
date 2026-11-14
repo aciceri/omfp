@@ -55,7 +55,7 @@ impl Daemon {
         let cli = Cli::try_parse_from(args).unwrap();
         let config = Config::from_cli(cli, None, None).unwrap();
         let mut ports = Ports::resolve(&config).unwrap();
-        ports.omp_env = harness.env.env_overrides();
+        ports.omp_env = harness.env.prepare_omfp_profile(data.path()).unwrap();
         let handle = start_with(config, ports).await.unwrap();
         Self { handle, data }
     }

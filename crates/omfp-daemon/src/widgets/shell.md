@@ -130,8 +130,9 @@ layer wins over the ones before it).
 omp needs a model it can use: a provider it is logged in to, or an API key. A fresh install has neither: the window
 then welcomes you in place of the view (until a thread is selected) with **Log in to a provider**, and a thread would
 fail to start with omp's `No default model selected. Use /login, …` (`/login` is omp's own command; in omfp it is
-`:login`). omp keeps its credentials on the daemon's host, shared by every thread and window; once a login (or a
-logout) changes what omp can use, every window follows (`auth.status`).
+`:login`). omp keeps its credentials on the daemon's host in omfp's isolated `<data-dir>/omp-profile/agent/agent.db`,
+shared by every omfp thread and window, never with standalone omp; once a login (or a logout) changes what omp can
+use, every window follows (`auth.status`).
 
 - `:login` opens the provider picker: the providers omp can log in to (asking omp takes a few seconds), each with its
   id and `logged in` on those omp already holds a credential for; those it cannot log in to here are greyed out.
@@ -151,7 +152,14 @@ logout) changes what omp can use, every window follows (`auth.status`).
 
 Instead of logging in, give omp an API key: an environment variable such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or
 `GEMINI_API_KEY` in the daemon's environment (omp inherits it, so restart the daemon after setting one), providers and
-keys in `~/.omp/agent/models.yml`, or keys stored in `~/.omp/agent/agent.db`.
+keys in `<data-dir>/omp-profile/agent/models.yml`, or keys stored in that profile's `agent.db`.
+
+The profile is normally `~/.local/share/omfp/omp-profile` on Linux (`$XDG_DATA_HOME/omfp/omp-profile` when set) or
+`~/Library/Application Support/omfp/omp-profile` on macOS; `--data-dir` relocates it. User `config.yml`, `models.yml`,
+`mcp.json`, agent definitions and `APPEND_SYSTEM.md` belong in its `agent/` directory. Existing users must log in
+again and configure this fresh profile: omfp never imports/copies old credentials or configuration and has no sharing
+switch or standalone fallback. Threads/history and workspace `.omp/` config are kept. `HOME` stays unchanged, and
+explicit API keys inherited from the daemon's environment still work. `:logout` affects only this profile's store.
 
 ## Agents and the window
 

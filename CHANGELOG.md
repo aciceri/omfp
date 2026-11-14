@@ -28,6 +28,11 @@ Initial release, planned as 0.1.0.
 - Nix packages and standalone downloads bundling the pinned oh-my-pi: a headless Linux x86_64 tarball
   (glibc 2.34+), a Linux x86_64 desktop Flatpak, and macOS Apple silicon DMG and ZIP packages (macOS 14+).
 
+### Changed
+
+- `threads.create` requires an explicit `workspace`: use `{ "id": "…" }` for an existing workspace or
+  `{ "new": {} }` to create one. Clients that omitted it must add one of these choices.
+
 ### Release limitations
 
 - macOS downloads are signed ad-hoc and are not notarized unless the release explicitly says otherwise. On first

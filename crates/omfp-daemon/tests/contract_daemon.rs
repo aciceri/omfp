@@ -189,7 +189,7 @@ async fn a_thread_in_a_workspace_folder_sees_its_repositories_the_conventions_an
     let thread = client
         .ok(
             "threads.create",
-            json!({ "title": "Full stack", "model": model() }),
+            json!({ "workspace": { "new": {} }, "title": "Full stack", "model": model() }),
         )
         .await;
     let (thread, workspace) = (
@@ -216,6 +216,7 @@ async fn a_thread_in_a_workspace_folder_sees_its_repositories_the_conventions_an
     assert_eq!(workspace_roots(&system), [link.display().to_string()]);
     let daemon_text = omfp_daemon::conventions::daemon_text(
         "Full stack",
+        &workspace,
         &folder,
         &daemon.data.path().join("widgets"),
         &thread,
@@ -334,7 +335,7 @@ async fn approval_reconnects_crash_and_restart_with_history() {
     let thread = web
         .ok(
             "threads.create",
-            json!({ "title": "approvals", "model": model(), "approvalMode": "always-ask" }),
+            json!({ "workspace": { "new": {} }, "title": "approvals", "model": model(), "approvalMode": "always-ask" }),
         )
         .await;
     let thread = thread["id"].as_str().unwrap().to_owned();
@@ -474,7 +475,7 @@ async fn every_approval_mode_starts_a_working_thread_and_other_values_are_refuse
     let refused = client
         .call(
             "threads.create",
-            json!({ "model": model(), "approvalMode": "ask", "prompt": "hello" }),
+            json!({ "workspace": { "new": {} }, "model": model(), "approvalMode": "ask", "prompt": "hello" }),
         )
         .await
         .unwrap_err();
@@ -492,7 +493,7 @@ async fn every_approval_mode_starts_a_working_thread_and_other_values_are_refuse
         let thread = client
             .ok(
                 "threads.create",
-                json!({ "title": mode, "model": model(), "approvalMode": mode }),
+                json!({ "workspace": { "new": {} }, "title": mode, "model": model(), "approvalMode": mode }),
             )
             .await;
         let thread = thread["id"].as_str().unwrap().to_owned();
@@ -557,7 +558,7 @@ async fn ask_dialogs_round_trip_through_the_protocol() {
     let thread = client
         .ok(
             "threads.create",
-            json!({ "title": "ask", "model": model() }),
+            json!({ "workspace": { "new": {} }, "title": "ask", "model": model() }),
         )
         .await;
     let thread = thread["id"].as_str().unwrap().to_owned();
@@ -615,7 +616,7 @@ async fn the_first_message_names_the_thread_through_an_omp_print_mode_run() {
     let thread = client
         .ok(
             "threads.create",
-            json!({ "model": model(), "prompt": "Please fix the checkout flow" }),
+            json!({ "workspace": { "new": {} }, "model": model(), "prompt": "Please fix the checkout flow" }),
         )
         .await;
     assert_eq!(thread["titleSource"], "placeholder");
@@ -665,7 +666,7 @@ async fn thread_session_matches_omps_state_in_a_fraction_of_its_size() {
     let thread = client
         .ok(
             "threads.create",
-            json!({ "title": "facts", "model": model() }),
+            json!({ "workspace": { "new": {} }, "title": "facts", "model": model() }),
         )
         .await;
     let thread = thread["id"].as_str().unwrap().to_owned();

@@ -121,6 +121,12 @@ fn decode_value(value: Value) -> Result<Request, ProtocolError> {
         Some(params @ Value::Object(_)) => params,
         Some(_) => return Err(ProtocolError::new(Some(&id), "`params` must be an object")),
     };
+    if method == "threads.create" && params.get("workspace").is_none() {
+        return Err(ProtocolError::new(
+            Some(&id),
+            "threads.create requires workspace: use { id: \"…\" } for an existing workspace or { new: { … } } for a new workspace",
+        ));
+    }
     match Call::decode(&method, params) {
         Some(Ok(call)) => Ok(Request { id, call }),
         Some(Err(error)) => Err(ProtocolError::new(

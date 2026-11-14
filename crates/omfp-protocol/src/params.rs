@@ -284,12 +284,6 @@ pub enum ThreadWorkspace {
     New(CreateWorkspaceParams),
 }
 
-impl Default for ThreadWorkspace {
-    fn default() -> Self {
-        Self::New(CreateWorkspaceParams::default())
-    }
-}
-
 /// omp's `--approval-mode` (`tools.approvalMode`): which tool calls omp asks the user to approve (DMN-074, DMN-210).
 /// omp 18.18.6 exits at startup on any other value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -326,8 +320,7 @@ pub struct CreateThreadParams {
     /// For scripts and agents; without it the title is generated from the conversation (DMN-073).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
-    /// `{ "id": … }` or `{ "new": { "name"?, "link"? } }`; default: a new folder named after the first message.
-    #[serde(default)]
+    /// Required: `{ "id": … }` for an existing workspace or `{ "new": { "name"?, "link"? } }` for a new one.
     pub workspace: ThreadWorkspace,
     /// `provider/id`.
     #[serde(default, skip_serializing_if = "Option::is_none")]

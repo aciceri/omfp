@@ -183,7 +183,7 @@ function live(model: ModelView, topic: Topic, mode: StartMode): boolean {
 }
 
 async function createThread(client: Client, title: string): Promise<string> {
-  const thread = await client.call("threads.create", { title });
+  const thread = await client.call("threads.create", { workspace: { new: {} }, title });
   return thread.id;
 }
 

@@ -182,7 +182,7 @@ async fn omp_starts_in_its_workspace_folder_with_one_add_dir_per_repository() {
     std::fs::create_dir(folder.join("backend")).unwrap();
     h.git.add_repo(&folder.join("backend"), "main");
     std::fs::create_dir(folder.join("notes")).unwrap();
-    let mut new = NewThread::new("multi", ws);
+    let mut new = NewThread::new("multi", &ws);
     new.model = Some("fake/scripted".into());
     new.approval_mode = Some("always-ask".into());
     let id = h.threads.create(new).unwrap().id;
@@ -190,6 +190,15 @@ async fn omp_starts_in_its_workspace_folder_with_one_add_dir_per_repository() {
     h.supervisor.start(&id).await.unwrap();
 
     let launch = &h.launcher.launches()[0];
+    assert!(
+        launch
+            .spec
+            .append_system_prompt
+            .as_ref()
+            .unwrap()
+            .contains(&ws),
+        "the agent receives its actual workspace id"
+    );
     assert_eq!(launch.spec.cwd, folder);
     assert_eq!(
         launch.spec.add_dirs,
@@ -201,7 +210,7 @@ async fn omp_starts_in_its_workspace_folder_with_one_add_dir_per_repository() {
         Some(
             format!(
                 "{}\n\nAnswer in haiku.",
-                conventions::daemon_text("workspace", &folder, &h.data.widgets(), &id)
+                conventions::daemon_text("workspace", &ws, &folder, &h.data.widgets(), &id)
             )
             .as_str()
         ),

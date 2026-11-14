@@ -1788,10 +1788,11 @@ fn repository_sources_are_tagged_by_kind() {
 
 // spec: DMN-020
 #[test]
-fn a_new_thread_gets_a_new_workspace_unless_one_is_named() {
+fn a_new_thread_requires_an_explicit_workspace() {
     let decode = |params: Value| serde_json::from_value::<CreateThreadParams>(params).unwrap();
+    assert!(serde_json::from_value::<CreateThreadParams>(json!({})).is_err());
     assert_eq!(
-        decode(json!({})).workspace,
+        decode(json!({ "workspace": { "new": {} } })).workspace,
         ThreadWorkspace::New(CreateWorkspaceParams::default())
     );
     assert_eq!(
@@ -1811,9 +1812,14 @@ fn a_new_thread_gets_a_new_workspace_unless_one_is_named() {
 #[test]
 fn a_new_thread_takes_its_title_only_from_scripts_and_agents() {
     let decode = |params: Value| serde_json::from_value::<CreateThreadParams>(params).unwrap();
-    assert_eq!(decode(json!({ "prompt": "Fix the login" })).title, None);
     assert_eq!(
-        decode(json!({ "title": "Fix" })).title.as_deref(),
+        decode(json!({ "workspace": { "new": {} }, "prompt": "Fix the login" })).title,
+        None
+    );
+    assert_eq!(
+        decode(json!({ "workspace": { "new": {} }, "title": "Fix" }))
+            .title
+            .as_deref(),
         Some("Fix")
     );
     let summary = serde_json::to_value(thread()).unwrap();

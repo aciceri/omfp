@@ -191,8 +191,8 @@ export type CreateThreadParams = {
   thinkingLevel?: unknown;
   /** For scripts and agents; without it the title is generated from the conversation (DMN-073). */
   title?: string | null;
-  /** `{ "id": … }` or `{ "new": { "name"?, "link"? } }`; default: a new folder named after the first message. */
-  workspace?: ThreadWorkspace;
+  /** Required: `{ "id": … }` for an existing workspace or `{ "new": { "name"?, "link"? } }` for a new one. */
+  workspace: ThreadWorkspace;
 };
 
 /** `workspaces.create` params (DMN-020). */

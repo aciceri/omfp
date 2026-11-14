@@ -7,7 +7,7 @@
  * - Session: {@link connect} returns a {@link Client} that sends `system.hello`, correlates responses by id, keeps
  *   subscriptions with their `{epoch, seq}`, reconnects with capped exponential backoff and resubscribes (UI-003),
  *   queues calls made while disconnected, and stops on `unauthorized` / `version_mismatch`. Calls are typed by the
- *   protocol's `Methods` table: `client.call("threads.create", { title })`.
+ *   protocol's `Methods` table: `client.call("threads.create", { workspace: { new: {} }, title })`.
  * - Model: `client.model` ({@link ModelView}) holds the connection status, the index, per-thread `ThreadState` from
  *   the shared reducer with the interactions it closed, and workspace git status; its objects are immutable. Every
  *   change bumps `revision` and lands in a {@link Dirty} set the host drains with `client.takeDirty()`, and

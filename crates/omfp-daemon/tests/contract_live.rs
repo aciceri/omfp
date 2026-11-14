@@ -248,7 +248,7 @@ async fn the_daemon_names_the_missing_codex_login() {
     let thread = web
         .ok(
             "threads.create",
-            json!({ "title": "live", "model": format!("{FAKE_PROVIDER}/{FAKE_MODEL}") }),
+            json!({ "workspace": { "new": {} }, "title": "live", "model": format!("{FAKE_PROVIDER}/{FAKE_MODEL}") }),
         )
         .await;
     let thread = thread["id"].as_str().unwrap().to_owned();
@@ -297,7 +297,7 @@ async fn the_daemon_relays_a_failed_live_start() {
     let thread = desktop
         .ok(
             "threads.create",
-            json!({ "title": "live", "model": format!("{FAKE_PROVIDER}/{FAKE_MODEL}") }),
+            json!({ "workspace": { "new": {} }, "title": "live", "model": format!("{FAKE_PROVIDER}/{FAKE_MODEL}") }),
         )
         .await;
     let thread = thread["id"].as_str().unwrap().to_owned();

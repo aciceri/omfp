@@ -90,7 +90,12 @@ async fn thread_with_servers(
     daemon: &TestDaemon,
     client: &mut Client,
 ) -> (String, String, PathBuf) {
-    let thread = client.ok("threads.create", json!({ "title": "mcp" })).await;
+    let thread = client
+        .ok(
+            "threads.create",
+            json!({ "workspace": { "new": {} }, "title": "mcp" }),
+        )
+        .await;
     let workspace_id = thread["workspaceId"].as_str().unwrap().to_owned();
     let index = client.ok("subscribe", json!({ "topic": "index" })).await;
     let folder = PathBuf::from(index["state"]["workspaces"][0]["path"].as_str().unwrap());

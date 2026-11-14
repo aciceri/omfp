@@ -87,9 +87,64 @@ fn fixture(name: &str) -> FakeRun {
 
 async fn create_thread(client: &mut Client) -> String {
     let thread = client
-        .ok("threads.create", json!({ "title": "test thread" }))
+        .ok(
+            "threads.create",
+            json!({ "workspace": { "new": {} }, "title": "test thread" }),
+        )
         .await;
     thread["id"].as_str().unwrap().to_owned()
+}
+
+// spec: DMN-020
+#[tokio::test(flavor = "multi_thread")]
+async fn thread_creation_requires_an_explicit_workspace_without_side_effects() {
+    let daemon = daemon(&[]).await;
+    let mut client = daemon.client("test").await;
+    let error = client.call("threads.create", json!({})).await.unwrap_err();
+    assert_eq!(error["code"], "bad_request");
+    let message = error["message"].as_str().unwrap();
+    assert!(
+        message.contains("{ id:") && message.contains("{ new:"),
+        "{message}"
+    );
+    assert_eq!(
+        listed(&mut client, "threads.list", "threads").await,
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        listed(&mut client, "workspaces.list", "workspaces").await,
+        Vec::<String>::new()
+    );
+
+    let workspace = client
+        .ok("workspaces.create", json!({ "name": "existing" }))
+        .await;
+    let thread = client
+        .ok(
+            "threads.create",
+            json!({ "workspace": { "id": workspace["id"] } }),
+        )
+        .await;
+    assert_eq!(thread["workspaceId"], workspace["id"]);
+    assert_eq!(
+        listed(&mut client, "workspaces.list", "workspaces").await,
+        [workspace["id"].as_str().unwrap()]
+    );
+
+    let new_thread = client
+        .ok("threads.create", json!({ "workspace": { "new": {} } }))
+        .await;
+    assert_ne!(new_thread["workspaceId"], workspace["id"]);
+    assert_eq!(
+        listed(&mut client, "workspaces.list", "workspaces")
+            .await
+            .len(),
+        2
+    );
+    assert_eq!(
+        listed(&mut client, "threads.list", "threads").await.len(),
+        2
+    );
 }
 
 fn hello(token: &str, protocol: u32) -> String {
@@ -634,7 +689,10 @@ async fn every_method_is_served_to_a_script_client() {
     let daemon = daemon(&[]).await;
     let mut script = daemon.client("script/smoke").await;
     let thread = script
-        .ok("threads.create", json!({ "title": "smoke" }))
+        .ok(
+            "threads.create",
+            json!({ "workspace": { "new": {} }, "title": "smoke" }),
+        )
         .await;
     let params = superset_params(
         thread["id"].as_str().unwrap(),
@@ -703,7 +761,10 @@ async fn linking_a_repository_into_a_live_threads_workspace_adds_its_root_and_un
     let daemon = daemon(&[]).await;
     let mut client = daemon.client("test").await;
     let thread = client
-        .ok("threads.create", json!({ "title": "Checkout v2" }))
+        .ok(
+            "threads.create",
+            json!({ "workspace": { "new": {} }, "title": "Checkout v2" }),
+        )
         .await;
     let id = thread["id"].clone();
     let workspace_id = thread["workspaceId"].clone();
@@ -762,7 +823,10 @@ async fn a_repository_the_agent_links_appears_after_its_tool_run() {
     let daemon = daemon(&[]).await;
     let mut client = daemon.client("test").await;
     let thread = client
-        .ok("threads.create", json!({ "title": "agent work" }))
+        .ok(
+            "threads.create",
+            json!({ "workspace": { "new": {} }, "title": "agent work" }),
+        )
         .await;
     let (id, workspace_id) = (thread["id"].clone(), thread["workspaceId"].clone());
     client.ok("thread.state", json!({ "threadId": id })).await;
@@ -1281,7 +1345,7 @@ async fn a_thread_created_without_a_title_is_named_from_its_first_message() {
     let thread = client
         .ok(
             "threads.create",
-            json!({ "prompt": "say hi to everyone in the room please" }),
+            json!({ "workspace": { "new": {} }, "prompt": "say hi to everyone in the room please" }),
         )
         .await;
 
@@ -1315,7 +1379,7 @@ async fn a_thread_created_without_a_title_is_named_from_its_first_message() {
     let created = client
         .ok(
             "threads.create",
-            json!({ "title": "Given", "prompt": "hello" }),
+            json!({ "workspace": { "new": {} }, "title": "Given", "prompt": "hello" }),
         )
         .await;
     assert_eq!(created["titleSource"], "set");
@@ -1364,7 +1428,7 @@ async fn approval_modes_are_omps_values_and_others_are_refused_before_anything_c
         let thread = client
             .ok(
                 "threads.create",
-                json!({ "approvalMode": mode, "prompt": "hello" }),
+                json!({ "workspace": { "new": {} }, "approvalMode": mode, "prompt": "hello" }),
             )
             .await;
         assert!(thread["id"].is_string());
@@ -1381,7 +1445,7 @@ async fn approval_modes_are_omps_values_and_others_are_refused_before_anything_c
     for (method, params) in [
         (
             "threads.create",
-            json!({ "approvalMode": "ask", "prompt": "hello" }),
+            json!({ "workspace": { "new": {} }, "approvalMode": "ask", "prompt": "hello" }),
         ),
         (
             "threads.update",
@@ -1424,7 +1488,10 @@ async fn a_thread_whose_first_omp_start_fails_is_not_created() {
         .launcher
         .fail_next_launch(&format!("{OMP_USAGE_ERROR}\n"));
     let error = client
-        .call("threads.create", json!({ "prompt": "hello" }))
+        .call(
+            "threads.create",
+            json!({ "workspace": { "new": {} }, "prompt": "hello" }),
+        )
         .await
         .unwrap_err();
     assert_eq!(
@@ -1536,7 +1603,7 @@ async fn thread_session_answers_the_sessions_small_facts_without_starting_omp() 
     let created = client
         .ok(
             "threads.create",
-            json!({ "title": "facts", "model": "fake/scripted", "thinkingLevel": "high", "approvalMode": "write" }),
+            json!({ "workspace": { "new": {} }, "title": "facts", "model": "fake/scripted", "thinkingLevel": "high", "approvalMode": "write" }),
         )
         .await;
     let thread = created["id"].as_str().unwrap().to_owned();
@@ -1634,7 +1701,10 @@ async fn a_repository_linked_while_omp_starts_is_a_root_before_the_next_prompt()
     let launches = daemon.launcher.gate_launches();
     let mut client = daemon.client("test").await;
     let thread = client
-        .ok("threads.create", json!({ "title": "racing" }))
+        .ok(
+            "threads.create",
+            json!({ "workspace": { "new": {} }, "title": "racing" }),
+        )
         .await;
     let (id, workspace_id) = (thread["id"].clone(), thread["workspaceId"].clone());
     let index = client.ok("subscribe", json!({ "topic": "index" })).await;
@@ -3137,7 +3207,7 @@ async fn thread_with_session(
     let created = client
         .ok(
             "threads.create",
-            json!({ "title": "Fix the cart", "model": "fake/scripted", "approvalMode": "write" }),
+            json!({ "workspace": { "new": {} }, "title": "Fix the cart", "model": "fake/scripted", "approvalMode": "write" }),
         )
         .await;
     let thread = created["id"].as_str().unwrap().to_owned();

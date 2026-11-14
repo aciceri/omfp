@@ -1183,6 +1183,7 @@ impl Supervisor {
             approval_mode: thread.approval_mode.clone(),
             append_system_prompt: Some(conventions::append_system_prompt(
                 &ws.name,
+                &ws.id,
                 &ws.path,
                 self.inner.config.agent_dir.as_deref(),
                 &data.widgets(),

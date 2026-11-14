@@ -67,7 +67,10 @@ async fn on_a_fresh_install_threads_cannot_start_and_the_login_omp_lists_the_pro
 
     // omp in RPC mode exits at startup without a usable model: the error the UI offers a login for.
     let error = client
-        .call("threads.create", json!({ "prompt": "hello" }))
+        .call(
+            "threads.create",
+            json!({ "workspace": { "new": {} }, "prompt": "hello" }),
+        )
         .await
         .unwrap_err();
     assert_eq!(error["code"], "thread_failed", "{error}");

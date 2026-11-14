@@ -215,7 +215,10 @@ async fn a_legacy_session_lists_and_calls_the_agent_tools_as_the_mcp_principal()
     let daemon = daemon().await;
     let mut owner = daemon.owner().await;
     let existing = owner
-        .ok("threads.create", json!({ "title": "existing" }))
+        .ok(
+            "threads.create",
+            json!({ "workspace": { "new": {} }, "title": "existing" }),
+        )
         .await["id"]
         .as_str()
         .unwrap()
@@ -265,7 +268,7 @@ async fn a_legacy_session_lists_and_calls_the_agent_tools_as_the_mcp_principal()
     let (text, is_error) = session
         .tool(
             "omfp_call",
-            json!({ "method": "threads.create", "params": { "title": "from mcp" } }),
+            json!({ "method": "threads.create", "params": { "workspace": { "new": {} }, "title": "from mcp" } }),
         )
         .await;
     assert!(!is_error, "{text}");

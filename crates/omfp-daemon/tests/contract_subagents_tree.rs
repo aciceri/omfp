@@ -14,7 +14,7 @@ use omfp_core::wire::{AgentMessage, SubagentLifecycleStatus};
 use omfp_daemon::config::{Cli, Config};
 use omfp_daemon::{DaemonHandle, Ports, start_with};
 use omfp_protocol::method::ThreadsCreate;
-use omfp_protocol::{CreateThreadParams, ThreadWorkspace};
+use omfp_protocol::{CreateThreadParams, CreateWorkspaceParams, ThreadWorkspace};
 use omfp_testkit::{FAKE_MODEL, FAKE_PROVIDER, omp_bin};
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -48,7 +48,7 @@ async fn thread(client: &mut Client) -> (String, Follower) {
     let thread = client
         .typed::<ThreadsCreate>(CreateThreadParams {
             title: Some("m8".into()),
-            workspace: ThreadWorkspace::default(),
+            workspace: ThreadWorkspace::New(CreateWorkspaceParams::default()),
             model: Some(format!("{FAKE_PROVIDER}/{FAKE_MODEL}")),
             thinking_level: None,
             approval_mode: None,

@@ -8,15 +8,15 @@ use std::path::{Path, PathBuf};
 
 use crate::paths::{DataDir, replace_file};
 
-/// The daemon's workspace conventions for the agent of a thread living in workspace `name` at `path`.
+/// The daemon's workspace conventions for the agent of a thread living in workspace `name`, `id` and `path`.
 #[must_use]
-pub fn workspace_conventions(name: &str, path: &Path) -> String {
+pub fn workspace_conventions(name: &str, id: &str, path: &Path) -> String {
     let path = path.display();
     format!(
         "# omfp workspace\n\
          \n\
-         You work in the omfp workspace \"{name}\", the folder {path} (your working directory). Its repositories \
-         are its top-level entries; omfp finds them there and adds each one as a workspace root.\n\
+         You work in the omfp workspace \"{name}\" (ID: {id}), the folder {path} (your working directory). Its \
+         repositories are its top-level entries; omfp finds them there and adds each one as a workspace root.\n\
          \n\
          - Work on a project from elsewhere: link it with `ln -s <project> {path}/<name>`.\n\
          - Work on a separate branch: `git -C <repo> worktree add {path}/<name> -b <branch>`.\n\
@@ -198,10 +198,16 @@ pub fn control_note(thread_id: &str) -> String {
 /// What the daemon itself appends to the system prompt of thread `thread_id`: the workspace conventions, the widgets
 /// note, then the control note.
 #[must_use]
-pub fn daemon_text(name: &str, path: &Path, user_library: &Path, thread_id: &str) -> String {
+pub fn daemon_text(
+    name: &str,
+    id: &str,
+    path: &Path,
+    user_library: &Path,
+    thread_id: &str,
+) -> String {
     format!(
         "{}\n\n{}\n\n{}",
-        workspace_conventions(name, path),
+        workspace_conventions(name, id, path),
         widgets_note(path, user_library),
         control_note(thread_id)
     )
@@ -212,12 +218,13 @@ pub fn daemon_text(name: &str, path: &Path, user_library: &Path, thread_id: &str
 #[must_use]
 pub fn append_system_prompt(
     name: &str,
+    id: &str,
     path: &Path,
     agent_dir: Option<&Path>,
     user_library: &Path,
     thread_id: &str,
 ) -> String {
-    let text = daemon_text(name, path, user_library, thread_id);
+    let text = daemon_text(name, id, path, user_library, thread_id);
     match user_append(path, agent_dir) {
         Some(user) => format!("{text}\n\n{user}"),
         None => text,
@@ -253,10 +260,10 @@ mod tests {
     // spec: DMN-030
     #[test]
     fn conventions_name_the_workspace_and_how_to_bring_repositories_in() {
-        let text = workspace_conventions("checkout", Path::new("/ws/checkout"));
+        let text = workspace_conventions("checkout", "01WORKSPACE", Path::new("/ws/checkout"));
         assert!(text.starts_with("# omfp workspace\n"), "{text}");
         assert!(
-            text.contains("\"checkout\", the folder /ws/checkout"),
+            text.contains("\"checkout\" (ID: 01WORKSPACE), the folder /ws/checkout"),
             "{text}"
         );
         for rule in [
@@ -330,15 +337,26 @@ mod tests {
         let ws = tempfile::tempdir().unwrap();
         let agent = tempfile::tempdir().unwrap();
         let library = Path::new("/data/widgets");
-        let prompt =
-            |agent: &Path| append_system_prompt("w", ws.path(), Some(agent), library, "01THREAD");
+        let prompt = |agent: &Path| {
+            append_system_prompt(
+                "w",
+                "01WORKSPACE",
+                ws.path(),
+                Some(agent),
+                library,
+                "01THREAD",
+            )
+        };
         let daemon = format!(
             "{}\n\n{}\n\n{}",
-            workspace_conventions("w", ws.path()),
+            workspace_conventions("w", "01WORKSPACE", ws.path()),
             widgets_note(ws.path(), library),
             control_note("01THREAD")
         );
-        assert_eq!(daemon_text("w", ws.path(), library, "01THREAD"), daemon);
+        assert_eq!(
+            daemon_text("w", "01WORKSPACE", ws.path(), library, "01THREAD"),
+            daemon
+        );
         assert_eq!(prompt(agent.path()), daemon);
 
         std::fs::write(agent.path().join("APPEND_SYSTEM.md"), "  user rule\n").unwrap();

@@ -17,8 +17,8 @@ use omfp_protocol::method::{
     ThreadsCreate,
 };
 use omfp_protocol::{
-    CreateThreadParams, MessageParams, PromptParams, QueueMessageParams, SetModelParams,
-    SetThinkingParams, ThreadRef, ThreadWorkspace,
+    CreateThreadParams, CreateWorkspaceParams, MessageParams, PromptParams, QueueMessageParams,
+    SetModelParams, SetThinkingParams, ThreadRef, ThreadWorkspace,
 };
 use omfp_testkit::{FAKE_MODEL, FAKE_PROVIDER, omp_bin};
 use tempfile::TempDir;
@@ -78,7 +78,7 @@ async fn omp_forwarded_methods_return_their_declared_results() {
     let thread = client
         .typed::<ThreadsCreate>(CreateThreadParams {
             title: Some("typed results".into()),
-            workspace: ThreadWorkspace::default(),
+            workspace: ThreadWorkspace::New(CreateWorkspaceParams::default()),
             model: Some(format!("{FAKE_PROVIDER}/{FAKE_MODEL}")),
             thinking_level: None,
             approval_mode: None,

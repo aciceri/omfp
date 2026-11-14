@@ -164,7 +164,11 @@ describe("omfp:activity", () => {
   test("an MCP client's entry names the client, with no thread to select", async () => {
     const { poll, log } = setup();
     await waitFor(() => expect(seqs()).toEqual([3, 2]));
-    log.push({ ...entry(4, "", "threads.create", { title: "x" }), threadId: null, client: "claude-code" });
+    log.push({
+      ...entry(4, "", "threads.create", { workspace: { new: {} }, title: "x" }),
+      threadId: null,
+      client: "claude-code",
+    });
     poll.run();
     await waitFor(() => expect(seqs()).toEqual([4, 3, 2]));
     expect(texts("activity-mcp")).toEqual(["mcp: claude-code"]);

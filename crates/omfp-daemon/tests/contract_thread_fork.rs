@@ -204,7 +204,7 @@ async fn conversation(client: &mut Client) -> (String, Follower) {
     let source = client
         .ok(
             "threads.create",
-            json!({ "title": "m17", "model": format!("{FAKE_PROVIDER}/{FAKE_MODEL}") }),
+            json!({ "workspace": { "new": {} }, "title": "m17", "model": format!("{FAKE_PROVIDER}/{FAKE_MODEL}") }),
         )
         .await["id"]
         .as_str()

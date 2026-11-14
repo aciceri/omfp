@@ -85,7 +85,7 @@ fn script() -> Vec<Step> {
                     "omfp_call",
                     json!({
                         "method": "threads.create",
-                        "params": { "title": "child", "model": model(), "prompt": CHILD_TASK }
+                        "params": { "workspace": { "new": {} }, "title": "child", "model": model(), "prompt": CHILD_TASK }
                     }),
                 ),
             ]),
@@ -138,7 +138,7 @@ async fn an_orchestrator_lists_and_creates_threads_with_omfp_call_and_waits_for_
     let orchestrator = client
         .ok(
             "threads.create",
-            json!({ "title": "orchestrator", "model": model() }),
+            json!({ "workspace": { "new": {} }, "title": "orchestrator", "model": model() }),
         )
         .await["id"]
         .as_str()

@@ -81,7 +81,7 @@ async fn an_omp_outside_omfp_calls_omfp_call_through_mcp() {
             device_call(
                 "create",
                 "mcp__omfp_call",
-                &json!({ "method": "threads.create", "params": { "title": "made over mcp" } }),
+                &json!({ "method": "threads.create", "params": { "workspace": { "new": {} }, "title": "made over mcp" } }),
             ),
             device_call(
                 "list",

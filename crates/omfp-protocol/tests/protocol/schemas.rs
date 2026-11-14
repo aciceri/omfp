@@ -40,6 +40,20 @@ fn params_schemas_describe_the_wire_fields() {
     assert!(subscribe["properties"]["since"].is_object());
 }
 
+// spec: AGT-007, DMN-020
+#[test]
+fn thread_creation_schema_requires_an_explicit_workspace_without_a_default() {
+    let schemas = method_schemas();
+    let params = &schemas["threads.create"]["params"];
+    assert!(
+        params["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("workspace"))
+    );
+    assert!(params["properties"]["workspace"].get("default").is_none());
+}
+
 // spec: AGT-007
 #[test]
 fn type_schemas_are_titled_by_their_key() {

@@ -249,7 +249,13 @@ pub(super) mod tests {
         let mut texts = mentions::static_texts();
         texts.push((
             "the appended prompt".to_owned(),
-            conventions::daemon_text("w", std::path::Path::new("/ws"), library, "01THREAD"),
+            conventions::daemon_text(
+                "w",
+                "01WORKSPACE",
+                std::path::Path::new("/ws"),
+                library,
+                "01THREAD",
+            ),
         ));
         for tool in &host {
             let definition = tool.definition();

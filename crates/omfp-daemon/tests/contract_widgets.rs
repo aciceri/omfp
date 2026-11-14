@@ -60,7 +60,7 @@ async fn thread(client: &mut Client) -> (String, Follower) {
     let thread = client
         .ok(
             "threads.create",
-            json!({ "title": "widgets", "model": format!("{FAKE_PROVIDER}/{FAKE_MODEL}") }),
+            json!({ "workspace": { "new": {} }, "title": "widgets", "model": format!("{FAKE_PROVIDER}/{FAKE_MODEL}") }),
         )
         .await;
     let id = thread["id"].as_str().unwrap().to_owned();

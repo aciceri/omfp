@@ -99,7 +99,7 @@ fn fixture(name: &str) -> FakeRun {
 fn new_thread(title: &str) -> CreateThreadParams {
     CreateThreadParams {
         title: Some(title.into()),
-        workspace: ThreadWorkspace::default(),
+        workspace: ThreadWorkspace::New(CreateWorkspaceParams::default()),
         model: None,
         thinking_level: None,
         approval_mode: None,

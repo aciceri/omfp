@@ -177,6 +177,8 @@
     --omfp-tip-w: 24rem;
     --omfp-toast-w: 22rem;
     --omfp-key-col: 13em;
+    /* Native overlay scrollbars do not shrink with text or density (UI-159, UI-165, UI-166). */
+    --omfp-scrollbar-clearance: 20px;
 
     /* Radii and borders (UI-129) */
     --omfp-r-ctl: 0.375rem;

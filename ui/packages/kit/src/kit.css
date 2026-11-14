@@ -1536,7 +1536,7 @@
     flex: 1 1 auto;
     min-block-size: 0;
     overflow: auto;
-    padding: 0 0 max(20px, var(--omfp-s3));
+    padding: 0 0 max(var(--omfp-scrollbar-clearance), var(--omfp-s3));
     font-family: inherit;
     font-size: inherit;
     color: inherit;
@@ -1595,7 +1595,7 @@
 
   .omfp-log,
   .omfp-diff {
-    padding-block-end: max(20px, var(--omfp-s3));
+    padding-block-end: max(var(--omfp-scrollbar-clearance), var(--omfp-s3));
   }
 
   .omfp-log__line {

@@ -17,6 +17,7 @@
   libsoup_3,
   glib-networking,
   gsettings-desktop-schemas,
+  gstPlugins,
   gitMinimal,
   libicns,
   rcodesign,
@@ -53,6 +54,12 @@ let
     "PATH"
     ":"
     (lib.makeBinPath [ gitMinimal ])
+  ];
+  gstArgs = [
+    "--prefix"
+    "GST_PLUGIN_SYSTEM_PATH_1_0"
+    ":"
+    (lib.makeSearchPath "lib/gstreamer-1.0" gstPlugins)
   ];
 in
 rustPlatform.buildRustPackage {
@@ -96,15 +103,20 @@ rustPlatform.buildRustPackage {
   # nixpkgs' cargo setup hook sets LIBSQLITE3_SYS_USE_PKG_CONFIG=1: rusqlite links nixpkgs' sqlite instead of its
   # bundled copy. GTK3, GLib and cairo come through webkitgtk's .pc files; glib-networking is TLS for `omfp desktop
   # --connect https://…` (GIO_EXTRA_MODULES, set by the wrapper), gsettings-desktop-schemas the GTK settings schemas.
+  # WebKitGTK delegates HTML media to GStreamer; the explicit plug-ins provide the demuxers and codecs in Nix's
+  # isolated runtime.
   buildInputs = [
     sqlite
   ]
-  ++ lib.optionals linuxDesktop [
-    webkitgtk_4_1
-    libsoup_3
-    glib-networking
-    gsettings-desktop-schemas
-  ];
+  ++ lib.optionals linuxDesktop (
+    [
+      webkitgtk_4_1
+      libsoup_3
+      glib-networking
+      gsettings-desktop-schemas
+    ]
+    ++ gstPlugins
+  );
 
   # `just ci` runs the tests (several need omp, a browser or a display).
   doCheck = false;
@@ -132,7 +144,7 @@ rustPlatform.buildRustPackage {
   '';
 
   preFixup = lib.optionalString linuxDesktop ''
-    gappsWrapperArgs+=(${lib.escapeShellArgs pathArgs})
+    gappsWrapperArgs+=(${lib.escapeShellArgs (pathArgs ++ gstArgs)})
   '';
 
   postFixup =

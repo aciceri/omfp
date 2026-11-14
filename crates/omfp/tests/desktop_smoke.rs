@@ -217,6 +217,58 @@ fn serve_framed_page() -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>
     (base, requests)
 }
 
+/// A page whose first decoded frame proves the Linux desktop has an H.264 pipeline; an error reports without waiting
+/// for the smoke deadline.
+#[cfg(target_os = "linux")]
+const H264_PAGE: &str = r#"<!doctype html><title>H.264</title>
+<video muted preload="auto" src="/h264.mp4"></video>
+<script>
+  const video = document.querySelector("video");
+  const report = (state) => parent.postMessage(`h264 ${state}`, "*");
+  video.addEventListener("loadeddata", () =>
+    report(video.videoWidth === 16 && video.videoHeight === 16 ? "loaded" : "wrong-size"));
+  video.addEventListener("error", () => report(`error-${video.error?.code ?? 0}`));
+  video.load();
+</script>
+"#;
+
+#[cfg(target_os = "linux")]
+const H264: &[u8] = include_bytes!("fixtures/h264.mp4");
+
+/// Serves [`H264_PAGE`] and its tiny H.264 video on a loopback port until the test process ends.
+#[cfg(target_os = "linux")]
+fn serve_h264_page() -> String {
+    use std::io::{BufRead as _, BufReader, Write as _};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    std::thread::spawn(move || {
+        for mut stream in listener.incoming().flatten() {
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut line = String::new();
+            if reader.read_line(&mut line).is_err() {
+                continue;
+            }
+            let mut header = String::new();
+            while reader.read_line(&mut header).is_ok_and(|read| read > 2) {
+                header.clear();
+            }
+            let (content_type, body): (&str, &[u8]) = if line.starts_with("GET /h264.mp4 ") {
+                ("video/mp4", H264)
+            } else {
+                ("text/html; charset=utf-8", H264_PAGE.as_bytes())
+            };
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\n\
+                 Connection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = stream.write_all(body);
+        }
+    });
+    base
+}
+
 // spec: TST-033, UI-677, UI-670, UI-672
 #[test]
 fn a_web_frame_loads_another_origin_and_the_window_stays_on_the_daemon() {
@@ -292,6 +344,64 @@ fn a_web_frame_loads_another_origin_and_the_window_stays_on_the_daemon() {
         .cloned()
         .collect();
     assert_eq!(pages, ["GET /page HTTP/1.1"], "{state}");
+}
+
+// spec: TST-033, ENV-030, UI-541
+#[cfg(target_os = "linux")]
+#[test]
+fn the_linux_desktop_decodes_h264_and_stays_responsive() {
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("data");
+    let workspaces = dir.path().join("workspaces");
+    let base = serve_h264_page();
+    let config = dir.path().join(".config/omfp");
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::write(
+        config.join("init.ts"),
+        format!(
+            r#"export default function init(omfp) {{
+  const media = (event) => {{
+    if (typeof event.data === "string" && event.data.startsWith("h264 ")) {{
+      document.body.dataset.smoke = event.data.slice(5);
+    }}
+  }};
+  window.addEventListener("message", media);
+  omfp.views.transform((views) =>
+    views.update("default", () => ["row", {{}}, ["omfp:web", {{ url: "{base}/page", title: "H.264" }}]]),
+  );
+  return () => window.removeEventListener("message", media);
+}}
+"#
+        ),
+    )
+    .unwrap();
+    let _daemon = BackgroundDaemon(&data);
+    let output = desktop_with(
+        dir.path(),
+        &[
+            ("OMFP_SMOKE", "local"),
+            ("OMFP_SMOKE_WAIT", "body[data-smoke]"),
+            ("ANTHROPIC_API_KEY", "sk-ant-omfp-test"),
+        ],
+        &[
+            "--data-dir",
+            data.to_str().unwrap(),
+            "--",
+            "--static-dir",
+            web_bundle().to_str().unwrap(),
+            "--workspaces-root",
+            workspaces.to_str().unwrap(),
+            "--bind",
+            "127.0.0.1:0",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let state: serde_json::Value = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("OMFP_SMOKE_READY "))
+        .map(|json| serde_json::from_str(json).unwrap())
+        .unwrap();
+    assert_eq!(state["smoke"], "loaded", "{state}");
 }
 
 /// Stops the background daemon of a test, also when the test fails.

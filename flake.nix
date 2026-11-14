@@ -68,6 +68,18 @@
 
           rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
           omp = inputs.oh-my-pi.packages.${system}.omp;
+          # Linux WebKitGTK decodes HTML media through GStreamer. Keep the runtime codecs explicit: Nix does not
+          # discover plug-ins outside this closure, and WebKit's own dependency carries only core/base.
+          gstPlugins = lib.optionals pkgs.stdenv.hostPlatform.isLinux (
+            with pkgs.gst_all_1;
+            [
+              gstreamer
+              gst-plugins-base
+              gst-plugins-good
+              gst-plugins-bad
+              gst-libav
+            ]
+          );
 
           # bun2nix (the oh-my-pi input's, shared via `follows`) with nix-community/bun2nix#110 (open, commit
           # 0456acb): 2.1.2 refuses the `lockfileVersion: 2` of Bun 1.4 although the `packages` layout is
@@ -119,7 +131,12 @@
           omfpPackage =
             desktop:
             pkgs.callPackage ./nix/package.nix {
-              inherit rustPlatform omp desktop;
+              inherit
+                rustPlatform
+                omp
+                desktop
+                gstPlugins
+                ;
               web = omfpWeb;
             };
         in
@@ -249,13 +266,15 @@
               pkgs.flatpak-builder
               # flatpak-builder composes the AppStream metadata with appstreamcli
               pkgs.appstream
-            ];
+            ]
+            ++ gstPlugins;
 
             env = {
               RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
               OMFP_BUN_CACHE = "${uiBunDeps}/share/bun-cache";
             }
             // lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+              GST_PLUGIN_SYSTEM_PATH_1_0 = lib.makeSearchPath "lib/gstreamer-1.0" gstPlugins;
               CHROME_BIN = lib.getExe pkgs.chromium;
               # The WebKitGTK journeys' driver (e2e::WebKitDriver): `cargo test` does not find it on PATH, whose
               # entry for it holds a `=`.

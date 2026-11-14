@@ -15,15 +15,16 @@ nix develop          # or: direnv allow (.envrc contains `use flake`)
 | Testing | `cargo-nextest`, `cargo-insta`, `cargo-llvm-cov`, `cargo-mutants`, `cargo-deny`, `bacon` |
 | TypeScript (`ui/`) | `bun` 1.4.4 (runtime, package manager, test runner), `bun2nix` 2.1.2 (patched, see below), `biome` 2.6.5 (format and lint; from nixpkgs because the npm build is a glibc binary NixOS cannot run); `typescript` 7.0.2 (native `tsc`) and `@types/bun` come from `ui/bun.lock` through `ui/bun.nix` |
 | E2E / smoke (Linux) | `chromium`, `chromedriver`, `xvfb-run` |
-| Desktop (Linux, M7) | `pkg-config`, `webkitgtk_4_1` (WebKitGTK 2.54, ABI 4.1; GTK3, GLib, cairo come through its `.pc` files), `libsoup_3`, `glib-networking` (TLS for `omfp desktop --connect https://…`), `dbus` (the private session bus of the color-scheme tests, UI-195). No Tauri CLI and no libxdo/appindicator: `cargo build -p omfp --features desktop` is enough (S-04) |
+| Desktop (Linux, M7) | `pkg-config`, `webkitgtk_4_1` (WebKitGTK 2.54, ABI 4.1; GTK3, GLib, cairo come through its `.pc` files), `libsoup_3`, `glib-networking` (TLS for `omfp desktop --connect https://…`), GStreamer core/base/good/bad/libav (HTML media demuxers and codecs, including H.264), `dbus` (the private session bus of the color-scheme tests, UI-195). No Tauri CLI and no libxdo/appindicator: `cargo build -p omfp --features desktop` is enough (S-04) |
 | Utilities | `just`, `git`, `jq`, `websocat`, `nixfmt`, `actionlint`, `curl` (the release packages download omp, ENV-061) |
 | Release packages (Linux) | `cargo-zigbuild` and `zig` (`just package-linux` links against glibc 2.34's symbols, ENV-062); `flatpak`, `flatpak-builder` and `appstream` (`just package-flatpak`, ENV-065) |
 
 Environment set by the shell: `RUST_SRC_PATH`, `OMFP_BUN_CACHE` (the Bun install cache of `ui/`'s dependencies, built by
 Nix from `ui/bun.nix`); on Linux also `CHROME_BIN`, `OMFP_E2E_FONTCONFIG_FILE` (a fontconfig file with DejaVu, the only
 fonts of the e2e browsers: the host's fonts would change text metrics, and CI's purged runner has none, without which
-Chromium's renderer crashes, TST-075) and `GIO_EXTRA_MODULES` (glib-networking's GIO modules: listing the package in the
-shell does not set it, and WebKitGTK shows "TLS support is not available" without it).
+Chromium's renderer crashes, TST-075), `GST_PLUGIN_SYSTEM_PATH_1_0` (the GStreamer plug-ins WebKitGTK uses for HTML
+media) and `GIO_EXTRA_MODULES` (glib-networking's GIO modules: listing the package in the shell does not set it, and
+WebKitGTK shows "TLS support is not available" without it).
 
 Known workarounds:
 
@@ -64,7 +65,7 @@ links nixpkgs' sqlite where the dev build compiles rusqlite's bundled copy. Inst
 
 | ID | Requirement |
 | --- | --- |
-| ENV-030 | `nix build .#omfp` (also `packages.default`) MUST build the `omfp` binary with the `desktop` feature, on Linux wrapped by `wrapGAppsHook3` with `webkitgtk_4_1`, `libsoup_3`, `glib-networking` (`GIO_EXTRA_MODULES`, TLS for `--connect https://…`) and `gsettings-desktop-schemas` (`XDG_DATA_DIRS`), so `omfp desktop` runs outside the dev shell (macOS: ENV-041). The `omp-rpc` git dependency is vendored by `cargoLock.outputHashes` in `nix/package.nix`, which changes with every omp upgrade (ENV-020). |
+| ENV-030 | `nix build .#omfp` (also `packages.default`) MUST build the `omfp` binary with the `desktop` feature, on Linux wrapped by `wrapGAppsHook3` with `webkitgtk_4_1`, `libsoup_3`, `glib-networking` (`GIO_EXTRA_MODULES`, TLS for `--connect https://…`), `gsettings-desktop-schemas` (`XDG_DATA_DIRS`) and GStreamer core/base/good/bad/libav under `GST_PLUGIN_SYSTEM_PATH_1_0`, so `omfp desktop` runs outside the dev shell and decodes common HTML media including H.264 (macOS: ENV-041). The `omp-rpc` git dependency is vendored by `cargoLock.outputHashes` in `nix/package.nix`, which changes with every omp upgrade (ENV-020). |
 | ENV-031 | The package MUST ship the release web bundle built by Nix from `ui/` with bun2nix (`ui/bun.nix`, offline, `--frozen-lockfile`) where the daemon finds it without `--static-dir` (`bin/web`, DMN-008): `omfp daemon` serves the UI at `/` and `/theme.css`. |
 | ENV-032 | The wrapper MUST put the pinned omp (the `oh-my-pi` input's `omp`) first on `PATH` (DMN-006, DMN-001) and `gitMinimal` last, so the user's own git wins; no `omp` is installed into `bin/`, so the package does not shadow another omp in a profile. |
 | ENV-033 | `nix build .#omfp-headless` MUST build the daemon-only binary (no `desktop` feature, no WebKitGTK in its closure) with the same web bundle and `PATH`, for servers. |

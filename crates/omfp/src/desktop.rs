@@ -397,6 +397,7 @@ const PROBE: &str = r#"((wait) => {
     rtcPeerConnection: typeof RTCPeerConnection,
     notification: typeof Notification === "function" ? Notification.permission : "undefined",
     mediaDevices: typeof navigator.mediaDevices,
+    smoke: document.body.dataset.smoke ?? null,
   };
 })"#;
 

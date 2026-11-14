@@ -165,3 +165,55 @@ async fn the_kit_gallery_text_reaches_aa_in_every_theme() -> anyhow::Result<()> 
     }
     Ok(())
 }
+
+// spec: UI-166
+#[tokio::test(flavor = "multi_thread")]
+async fn code_scrolls_without_moving_its_label_or_covering_its_last_line() -> anyhow::Result<()> {
+    let journey = Journey::start(Vec::new()).await?;
+    open(&journey, "theme=synth", "dark").await?;
+    let failures = journey
+        .eval(
+            r"
+            const blocks = [...document.querySelectorAll('.omfp-code--block[data-lang]')];
+            const failures = [];
+            for (const block of blocks) {
+                // Constrain the real Code and Markdown specimens, including those inside tool cards.
+                block.style.width = '120px';
+                block.style.maxHeight = '72px';
+                const code = block.querySelector('code');
+                const before = code.getBoundingClientRect();
+                const range = document.createRange();
+                range.selectNodeContents(code);
+                const textBefore = range.getBoundingClientRect();
+                code.scrollLeft = code.scrollWidth;
+                code.scrollTop = code.scrollHeight;
+                const textAfter = range.getBoundingClientRect();
+                if (code.scrollLeft <= 0 || textAfter.left >= textBefore.left) {
+                    failures.push('Long code did not scroll horizontally: ' + block.dataset.lang);
+                }
+                if (block.scrollLeft !== 0 || block.scrollTop !== 0 ||
+                    code.getBoundingClientRect().top !== before.top) {
+                    failures.push('The code frame and language label moved with the text');
+                }
+                const bottom = code.getBoundingClientRect().top + code.clientTop + code.clientHeight;
+                if (bottom - textAfter.bottom < 19) {
+                    failures.push('The last line has no clearance for an expanded overlay scrollbar');
+                }
+                if (block.getBoundingClientRect().height > 73) {
+                    failures.push('The code block no longer respects its height limit');
+                }
+            }
+            if (!blocks.some(block => block.closest('.omfp-markdown'))) {
+                failures.push('No Markdown fence exercised');
+            }
+            if (!blocks.some(block => block.closest('.omfp-tool'))) {
+                failures.push('No tool code exercised');
+            }
+            return failures;
+            ",
+            Vec::new(),
+        )
+        .await?;
+    assert_eq!(failures, json!([]));
+    journey.finish("code scrolling").await
+}

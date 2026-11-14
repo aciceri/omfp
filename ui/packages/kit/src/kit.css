@@ -1529,8 +1529,14 @@
     font-family: var(--omfp-font-code);
   }
 
-  .omfp-code--block code {
-    padding: 0;
+  /* Scroll only the text: the frame and language remain anchored (UI-166). Keep a lane below the last line for
+     overlay scrollbars, including their expanded hover state; scrollbar-gutter does not reserve overlay space. */
+  .omfp-code--block > code {
+    display: block;
+    flex: 1 1 auto;
+    min-block-size: 0;
+    overflow: auto;
+    padding: 0 0 max(20px, var(--omfp-s3));
     font-family: inherit;
     font-size: inherit;
     color: inherit;
@@ -1549,10 +1555,12 @@
   }
 
   .omfp-code--block {
-    position: relative;
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
     margin: 0;
     padding: var(--omfp-s3) var(--omfp-s4);
-    overflow: auto;
+    overflow: hidden;
     border: var(--omfp-bw) solid var(--omfp-rule);
     border-inline-start: 2px solid var(--omfp-primary);
     border-radius: var(--omfp-r-card);
@@ -1565,9 +1573,9 @@
 
   .omfp-code--block[data-lang]::before {
     content: attr(data-lang);
-    position: absolute;
-    inset-block-start: var(--omfp-s1);
-    inset-inline-end: var(--omfp-s2);
+    flex: none;
+    align-self: flex-end;
+    padding: 0 var(--omfp-s2) var(--omfp-s1);
     font-size: var(--omfp-fs-2xs);
     color: var(--omfp-on-surface-variant);
   }
@@ -1583,6 +1591,11 @@
     white-space: pre;
     color: var(--omfp-on-surface);
     background: var(--omfp-code-bg);
+  }
+
+  .omfp-log,
+  .omfp-diff {
+    padding-block-end: max(20px, var(--omfp-s3));
   }
 
   .omfp-log__line {

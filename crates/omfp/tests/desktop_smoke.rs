@@ -516,6 +516,10 @@ fn a_second_window_reuses_the_background_daemon_that_outlives_the_first() {
 
 // spec: TST-033, UI-115, UI-541, UI-542
 #[cfg(target_os = "linux")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the three launches form one persistence scenario"
+)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_restored_audio_tab_keeps_the_desktop_responsive_and_can_be_closed() {
     use clap::Parser as _;

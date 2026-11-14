@@ -20,7 +20,7 @@ async fn an_opened_url_toasts_with_open_and_copy_and_a_local_command_shows_its_o
     launcher.local_output("/dirs", &["Workspace roots:\n  /w/app"]);
     let journey = Journey::start_fake(launcher.clone()).await?;
     journey.connected().await?;
-    journey.create_thread("login").await?;
+    let thread = journey.create_thread("login").await?;
 
     // omp asks the client to open a login page: the window offers it as a toast and in the transcript.
     let open_url: RpcNotification = serde_json::from_value(json!({
@@ -29,7 +29,10 @@ async fn an_opened_url_toasts_with_open_and_copy_and_a_local_command_shows_its_o
         "id": "open-1",
         "url": LOGIN,
     }))?;
-    launcher.process(0).emit(vec![open_url]);
+    journey
+        .fake_process(&launcher, &thread)
+        .await?
+        .emit(vec![open_url]);
     journey
         .until("the opened-URL toast", async |page| {
             let urls = page.attrs(TOAST, "data-url").await?;

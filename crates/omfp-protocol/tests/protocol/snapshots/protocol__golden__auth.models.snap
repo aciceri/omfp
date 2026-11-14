@@ -1,0 +1,40 @@
+---
+source: crates/omfp-protocol/tests/protocol/golden.rs
+expression: golden
+---
+{
+  "request": {
+    "id": "c42",
+    "method": "auth.models",
+    "params": {},
+    "type": "request"
+  },
+  "response": {
+    "id": "c42",
+    "ok": true,
+    "result": {
+      "models": [
+        {
+          "api": "openai-completions",
+          "baseUrl": "http://127.0.0.1:4000/v1",
+          "contextWindow": 128000,
+          "cost": {
+            "cacheRead": 0.0,
+            "cacheWrite": 0.0,
+            "input": 0.0,
+            "output": 0.0
+          },
+          "id": "scripted",
+          "input": [
+            "text"
+          ],
+          "maxTokens": 8192,
+          "name": "Scripted",
+          "provider": "fake",
+          "reasoning": false
+        }
+      ]
+    },
+    "type": "response"
+  }
+}

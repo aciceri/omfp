@@ -18,7 +18,7 @@ use anyhow::{Context, bail};
 use clap::Parser;
 use fake_llm::{FakeLlm, Script, Step};
 use omfp::remote::{Connection, Target};
-use omfp_daemon::agent::FakeLauncher;
+use omfp_daemon::agent::{FakeLauncher, FakeProcess};
 use omfp_daemon::config::{Cli, Config};
 use omfp_daemon::git::FakeGit;
 use omfp_daemon::{DaemonHandle, Ports, start_with};
@@ -58,6 +58,23 @@ pub fn web_bundle() -> PathBuf {
 #[must_use]
 pub fn row(id: &str) -> String {
     format!("[data-testid=thread-row][data-thread-id=\"{id}\"]")
+}
+
+/// The latest omp of a thread, excluding transient provider/model discovery processes.
+#[must_use]
+pub fn fake_thread(launcher: &FakeLauncher, thread: &str) -> Option<FakeProcess> {
+    launcher
+        .launches()
+        .into_iter()
+        .rev()
+        .find(|launch| {
+            launch
+                .spec
+                .session_dir
+                .parent()
+                .is_some_and(|dir| dir.ends_with(thread))
+        })
+        .map(|launch| launch.process)
 }
 
 /// The browsers' fontconfig file, never the host's fonts: `OMFP_E2E_FONTCONFIG_FILE`, `DejaVu` from the dev shell. CI's
@@ -675,6 +692,18 @@ impl Journey {
         self.click(&row(&thread.id)).await?;
         self.opened(&thread.id).await?;
         Ok(thread.id)
+    }
+
+    /// Waits for a specific thread's fake omp, never a short-lived discovery process.
+    pub async fn fake_process(
+        &self,
+        launcher: &FakeLauncher,
+        thread: &str,
+    ) -> anyhow::Result<FakeProcess> {
+        self.until("the thread's omp", async |_| {
+            Ok(fake_thread(launcher, thread))
+        })
+        .await
     }
 
     /// Types `typed` into the path field `input` (a CSS selector) and picks the offered option for `path`: a

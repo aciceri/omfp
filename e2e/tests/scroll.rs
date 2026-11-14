@@ -203,20 +203,17 @@ async fn create_thread(journey: &Journey) -> anyhow::Result<String> {
 async fn scrolling_up_while_a_tool_streams_output_stays_where_the_user_scrolled()
 -> anyhow::Result<()> {
     let launcher = FakeLauncher::new();
-    launcher.push_run(FakeRun::fresh().with_history(history()));
     let journey = Journey::start_fake(launcher.clone()).await?;
+    launcher.push_run_for(
+        journey.data_dir().join("workspaces/scroll"),
+        FakeRun::fresh().with_history(history()),
+    );
     let thread = create_thread(&journey).await?;
     journey.click(&row(&thread)).await?;
     journey.opened(&thread).await?;
 
-    // Opening the thread starts omp asynchronously: wait for the launch before driving it.
-    journey
-        .until("the thread's omp to start", async |_| {
-            Ok((!launcher.launches().is_empty()).then_some(()))
-        })
-        .await?;
     // A running bash call whose card the user expanded: its output grows the transcript.
-    let process = launcher.process(0);
+    let process = journey.fake_process(&launcher, &thread).await?;
     process.emit(start_running());
     journey
         .until("the running card", async |page| {
@@ -577,19 +574,20 @@ async fn to_bottom(driver: &WebDriver, reply: &Reply) -> anyhow::Result<()> {
     .await
 }
 
-/// The streaming reply's case of UI-042 in `driver`'s page, which shows the thread `launcher`'s first omp runs.
+/// The streaming reply's case of UI-042 in `driver`'s page, showing `thread`'s omp.
 /// `gestures` are the wheel gestures to try: what they stand for, turns, pixels a turn.
 async fn scroll_up_while_a_reply_streams(
     driver: &WebDriver,
     launcher: &FakeLauncher,
+    thread: &str,
     wheel: &Wheel,
     gestures: &[(&str, usize, i64)],
 ) -> anyhow::Result<()> {
-    until_on(driver, "the thread's omp to start", async |_| {
-        Ok((!launcher.launches().is_empty()).then_some(()))
+    let process = until_on(driver, "the thread's omp to start", async |_| {
+        Ok(e2e::fake_thread(launcher, thread))
     })
     .await?;
-    let reply = Reply::start(launcher.process(0));
+    let reply = Reply::start(process);
     until_on(driver, "the streaming reply at the bottom", async |page| {
         let shown = eval_on(
             page,
@@ -627,14 +625,18 @@ async fn scroll_up_while_a_reply_streams(
 #[tokio::test(flavor = "multi_thread")]
 async fn scrolling_up_while_a_reply_streams_stays_where_the_user_scrolled() -> anyhow::Result<()> {
     let launcher = FakeLauncher::new();
-    launcher.push_run(FakeRun::fresh().with_history(history()));
     let journey = Journey::start_fake(launcher.clone()).await?;
+    launcher.push_run_for(
+        journey.data_dir().join("workspaces/scroll"),
+        FakeRun::fresh().with_history(history()),
+    );
     let thread = create_thread(&journey).await?;
     journey.click(&row(&thread)).await?;
     journey.opened(&thread).await?;
     scroll_up_while_a_reply_streams(
         &journey.driver,
         &launcher,
+        &thread,
         &Wheel::WebDriver,
         &[
             ("a touchpad (many small wheel deltas)", 15, -16),
@@ -650,8 +652,11 @@ async fn scrolling_up_while_a_reply_streams_stays_where_the_user_scrolled() -> a
 async fn scrolling_up_while_a_reply_streams_stays_where_the_user_scrolled_in_webkitgtk()
 -> anyhow::Result<()> {
     let launcher = FakeLauncher::new();
-    launcher.push_run(FakeRun::fresh().with_history(history()));
     let journey = Journey::start_fake(launcher.clone()).await?;
+    launcher.push_run_for(
+        journey.data_dir().join("workspaces/scroll"),
+        FakeRun::fresh().with_history(history()),
+    );
     journey.connected().await?;
     let thread = create_thread(&journey).await?;
     let webkit = WebKitDriver::start().await?;
@@ -682,6 +687,7 @@ async fn scrolling_up_while_a_reply_streams_stays_where_the_user_scrolled_in_web
         scroll_up_while_a_reply_streams(
             &driver,
             &launcher,
+            &thread,
             &wheel,
             &[("a wheel notch", 1, -1), ("three wheel notches", 3, -1)],
         )
@@ -808,8 +814,11 @@ async fn page_through(
 #[tokio::test(flavor = "multi_thread")]
 async fn a_long_reply_is_read_by_keyboard_before_the_focus_moves_on() -> anyhow::Result<()> {
     let launcher = FakeLauncher::new();
-    launcher.push_run(FakeRun::fresh().with_history(long_reply_history()));
     let journey = Journey::start_fake(launcher.clone()).await?;
+    launcher.push_run_for(
+        journey.data_dir().join("workspaces/scroll"),
+        FakeRun::fresh().with_history(long_reply_history()),
+    );
     let thread = create_thread(&journey).await?;
     journey.click(&row(&thread)).await?;
     journey.opened(&thread).await?;

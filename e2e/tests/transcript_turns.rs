@@ -82,8 +82,11 @@ fn history() -> Vec<AgentMessage> {
 async fn a_turn_shows_one_assistant_name_line_and_a_tool_results_image_opens_full_size()
 -> anyhow::Result<()> {
     let launcher = FakeLauncher::new();
-    launcher.push_run(FakeRun::fresh().with_history(history()));
-    let journey = Journey::start_fake(launcher).await?;
+    let journey = Journey::start_fake(launcher.clone()).await?;
+    launcher.push_run_for(
+        journey.data_dir().join("workspaces/turns"),
+        FakeRun::fresh().with_history(history()),
+    );
     journey.connected().await?;
     journey.create_thread("turns").await?;
     journey

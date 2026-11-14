@@ -15,11 +15,11 @@ async fn a_notice_gone_from_the_mode_line_is_listed_by_messages() -> anyhow::Res
     let launcher = FakeLauncher::new();
     let journey = Journey::start_fake(launcher.clone()).await?;
     journey.connected().await?;
-    journey.create_thread("first").await?;
+    let first = journey.create_thread("first").await?;
     journey.create_thread("second").await?;
 
     // The first thread's omp dies while the user is on the second: a notice in the mode line, gone after 8 s.
-    launcher.process(0).exit();
+    journey.fake_process(&launcher, &first).await?.exit();
     journey
         .until("the failure notice", async |page| {
             let tones = page.attrs("[data-testid=mode-notice]", "data-tone").await?;

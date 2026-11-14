@@ -5,7 +5,7 @@
 mod live;
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Sender, channel};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
 
@@ -205,6 +205,7 @@ impl Gate {
 #[derive(Debug, Default)]
 struct Script {
     runs: VecDeque<FakeRun>,
+    runs_by_cwd: HashMap<PathBuf, VecDeque<FakeRun>>,
     replies: HashMap<String, FakeReply>,
     gates: HashMap<String, Gate>,
     held: HashSet<String>,
@@ -251,6 +252,15 @@ impl FakeLauncher {
     /// Queues the run the next launch plays.
     pub fn push_run(&self, run: FakeRun) {
         lock(&self.script).runs.push_back(run);
+    }
+
+    /// Queues a run for the next launch in `cwd`, unaffected by transient launches elsewhere.
+    pub fn push_run_for(&self, cwd: PathBuf, run: FakeRun) {
+        lock(&self.script)
+            .runs_by_cwd
+            .entry(cwd)
+            .or_default()
+            .push_back(run);
     }
 
     /// Answers every later `command` (omp name, e.g. `get_state`) with `reply`; default: the smallest response data
@@ -376,7 +386,12 @@ impl AgentLauncher for FakeLauncher {
             std::fs::write(&spec.stderr_log, stderr)?;
             return Err(StartError::Connect(omp_rpc::Error::Closed));
         }
-        let mut run = script.runs.pop_front().unwrap_or_else(FakeRun::fresh);
+        let mut run = script
+            .runs_by_cwd
+            .get_mut(&spec.cwd)
+            .and_then(VecDeque::pop_front)
+            .or_else(|| script.runs.pop_front())
+            .unwrap_or_else(FakeRun::fresh);
         let (sender, events) = channel();
         let startup_frames = run.segments.pop_front().unwrap_or_default();
         let process = FakeProcess {

@@ -59,7 +59,8 @@ async fn finished_background_jobs_collapse_and_clear_finished_hides_them_across_
         frames.extend(job(n, true)?);
     }
     frames.extend(job(8, false)?);
-    launcher.process(0).emit(frames);
+    let process = journey.fake_process(&launcher, &thread).await?;
+    process.emit(frames);
 
     // The badge shows the Background tab: the running job, the five most recent finished, two collapsed.
     journey

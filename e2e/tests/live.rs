@@ -7,7 +7,9 @@
 //! starts omp's own session (`live_start`).
 
 use e2e::Journey;
-use omfp_daemon::agent::{FakeCall, FakeLauncher, FakeLive, OmpCall, live_levels, live_phase};
+use omfp_daemon::agent::{
+    FakeCall, FakeLauncher, FakeLive, FakeProcess, OmpCall, live_levels, live_phase,
+};
 use omfp_protocol::LiveConnectParams;
 use omfp_protocol::method::ThreadLiveConnect;
 use thirtyfour::prelude::*;
@@ -17,9 +19,8 @@ const LOGIN: &str =
     "live voice needs an `openai-codex` login in omp: run `:login openai-codex`, then try again";
 
 /// The live commands the thread's omp received, in order: `connect`, `start`, `mute <bool>`, `stop`.
-fn live_calls(launcher: &FakeLauncher) -> Vec<String> {
-    launcher
-        .process(0)
+fn live_calls(process: &FakeProcess) -> Vec<String> {
+    process
         .calls()
         .into_iter()
         .filter_map(|call| match call {
@@ -38,11 +39,13 @@ fn live_calls(launcher: &FakeLauncher) -> Vec<String> {
 async fn until_calls(
     journey: &Journey,
     launcher: &FakeLauncher,
+    thread: &str,
     expected: &[&str],
 ) -> anyhow::Result<()> {
+    let process = journey.fake_process(launcher, thread).await?;
     journey
         .until(&format!("omp to receive {expected:?}"), async |_| {
-            Ok((live_calls(launcher) == expected).then_some(()))
+            Ok((live_calls(&process) == expected).then_some(()))
         })
         .await
 }
@@ -72,7 +75,7 @@ async fn live_voice_from_the_mic_button_mute_end_and_the_login_message() -> anyh
 
     // The mic button opens the fake microphone and a peer; the daemon relays the offer to omp.
     journey.click("[data-testid=live-mic]").await?;
-    until_calls(&journey, &launcher, &["connect"]).await?;
+    until_calls(&journey, &launcher, &thread, &["connect"]).await?;
     journey
         .until("the scripted transcript", async |page| {
             let lines = page.texts(&format!("{PANEL} .omfp-live__line")).await?;
@@ -93,7 +96,7 @@ async fn live_voice_from_the_mic_button_mute_end_and_the_login_message() -> anyh
 
     // Space mutes: the local track and `live_mute` (omp moves to `muted`).
     journey.keys(" ").await?;
-    until_calls(&journey, &launcher, &["connect", "mute true"]).await?;
+    until_calls(&journey, &launcher, &thread, &["connect", "mute true"]).await?;
     journey
         .until("the unmute hint", async |page| {
             let muted = page.attr(PANEL, "data-muted").await?;
@@ -105,7 +108,13 @@ async fn live_voice_from_the_mic_button_mute_end_and_the_login_message() -> anyh
 
     // Esc ends the session: `live_stop`, the panel goes with omp's `live_end`.
     journey.keys(Key::Escape).await?;
-    until_calls(&journey, &launcher, &["connect", "mute true", "stop"]).await?;
+    until_calls(
+        &journey,
+        &launcher,
+        &thread,
+        &["connect", "mute true", "stop"],
+    )
+    .await?;
     journey.gone(PANEL).await?;
 
     // A session another client started shows its state and an end button.
@@ -126,6 +135,7 @@ async fn live_voice_from_the_mic_button_mute_end_and_the_login_message() -> anyh
     until_calls(
         &journey,
         &launcher,
+        &thread,
         &["connect", "mute true", "stop", "connect", "stop"],
     )
     .await?;
@@ -166,19 +176,25 @@ async fn without_webrtc_on_the_daemons_machine_the_mic_starts_omps_own_session()
     journey
         .eval("delete window.RTCPeerConnection;", Vec::new())
         .await?;
-    journey.create_thread("desktop voice").await?;
+    let thread = journey.create_thread("desktop voice").await?;
 
     journey.click("[data-testid=live-mic]").await?;
-    until_calls(&journey, &launcher, &["start"]).await?;
+    until_calls(&journey, &launcher, &thread, &["start"]).await?;
     // omp's own phases, `speaking` included (UI-189).
     until_panel(&journey, "own", "speaking").await?;
     journey.until_focused("live-panel").await?;
     journey.screenshot("live-host-speaking").await?;
 
     journey.keys(" ").await?;
-    until_calls(&journey, &launcher, &["start", "mute true"]).await?;
+    until_calls(&journey, &launcher, &thread, &["start", "mute true"]).await?;
     journey.keys(Key::Escape).await?;
-    until_calls(&journey, &launcher, &["start", "mute true", "stop"]).await?;
+    until_calls(
+        &journey,
+        &launcher,
+        &thread,
+        &["start", "mute true", "stop"],
+    )
+    .await?;
     journey.gone(PANEL).await?;
 
     journey.finish("live voice on the daemon's machine").await

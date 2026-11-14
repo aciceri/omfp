@@ -30,6 +30,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use anyhow::Context;
 use e2e::{Journey, WebKitDriver, row};
 use omfp_core::wire::{AgentMessage, RpcNotification};
 use omfp_daemon::agent::{FakeLauncher, FakeProcess, FakeRun};
@@ -498,8 +499,11 @@ async fn scroll_to_bottom(journey: &Journey) -> anyhow::Result<()> {
 async fn a_long_transcript_keeps_a_bounded_dom_and_a_delta_rerenders_only_the_streaming_row()
 -> anyhow::Result<()> {
     let launcher = FakeLauncher::new();
-    launcher.push_run(FakeRun::fresh().with_history(history(10_000)));
     let journey = Journey::start_fake(launcher.clone()).await?;
+    launcher.push_run_for(
+        journey.data_dir().join("workspaces/long"),
+        FakeRun::fresh().with_history(history(10_000)),
+    );
     install_probe(&journey).await?;
     let thread = create_thread(&journey, "long").await?;
     click(&journey, &row(&thread)).await?;
@@ -518,7 +522,7 @@ async fn a_long_transcript_keeps_a_bounded_dom_and_a_delta_rerenders_only_the_st
     scroll_to_bottom(&journey).await?;
 
     // Each delta commits and renders the streaming row only (UI-191).
-    let process = launcher.process(0);
+    let process = journey.fake_process(&launcher, &thread).await?;
     open_stream(&journey, &process).await?;
     start_recording(&journey.driver, true).await?;
     let deltas = streamed_deltas(20);
@@ -803,8 +807,11 @@ async fn switch_timed(journey: &Journey, name: &str, id: &str, shown: &str) -> a
 /// The transcript benchmark on a thread of `messages` messages, streaming at `rate` events per second for `seconds`.
 async fn transcript_benchmark(messages: usize, rate: u64, seconds: u64) -> anyhow::Result<()> {
     let launcher = FakeLauncher::new();
-    launcher.push_run(FakeRun::fresh().with_history(history(messages)));
     let journey = Journey::start_fake(launcher.clone()).await?;
+    launcher.push_run_for(
+        journey.data_dir().join("workspaces/long"),
+        FakeRun::fresh().with_history(history(messages)),
+    );
     journey
         .driver
         .set_script_timeout(Duration::from_secs(120))
@@ -850,7 +857,7 @@ async fn transcript_benchmark(messages: usize, rate: u64, seconds: u64) -> anyho
         .await?;
     }
 
-    let process = launcher.process(0);
+    let process = journey.fake_process(&launcher, &long).await?;
     let count = usize::try_from(rate * seconds)?;
     let deltas = streamed_deltas(count);
     let before = metrics(&journey).await?;
@@ -997,8 +1004,11 @@ async fn open_composer(driver: &WebDriver, id: &str) -> anyhow::Result<()> {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_key_press_in_the_composer_renders_the_input_only() -> anyhow::Result<()> {
     let launcher = FakeLauncher::new();
-    launcher.push_run(FakeRun::fresh().with_history(history(300)));
     let journey = Journey::start_fake(launcher.clone()).await?;
+    launcher.push_run_for(
+        journey.data_dir().join("workspaces/typing"),
+        FakeRun::fresh().with_history(history(300)),
+    );
     install_probe(&journey).await?;
     let thread = create_thread(&journey, "typing").await?;
     open_composer(&journey.driver, &thread).await?;
@@ -1122,7 +1132,7 @@ async fn typing_runs(
         stats(&mut spent),
         float(rendered) / 10.0
     );
-    let process = launcher.process(0);
+    let process = e2e::fake_thread(launcher, thread).context("the thread's omp has started")?;
     let pause = Some(Duration::from_millis(120));
     for busy in [false, true] {
         let streaming = Arc::new(AtomicBool::new(busy));
@@ -1198,8 +1208,11 @@ async fn typing_runs(
 async fn benchmark_typing_chromium() -> anyhow::Result<()> {
     let messages = usize::try_from(env_number("OMFP_PERF_MESSAGES", 300))?;
     let launcher = FakeLauncher::new();
-    launcher.push_run(FakeRun::fresh().with_history(history(messages)));
     let journey = Journey::start_fake(launcher.clone()).await?;
+    launcher.push_run_for(
+        journey.data_dir().join("workspaces/typing"),
+        FakeRun::fresh().with_history(history(messages)),
+    );
     install_probe(&journey).await?;
     let thread = create_thread(&journey, "typing").await?;
     eprintln!("typing benchmark: {messages} messages");
@@ -1236,10 +1249,13 @@ fn probed_bundle(source: &Path, into: &Path) -> anyhow::Result<PathBuf> {
 async fn benchmark_typing_webkit() -> anyhow::Result<()> {
     let messages = usize::try_from(env_number("OMFP_PERF_MESSAGES", 300))?;
     let launcher = FakeLauncher::new();
-    launcher.push_run(FakeRun::fresh().with_history(history(messages)));
     let scratch = tempfile::tempdir()?;
     let bundle = probed_bundle(&e2e::web_bundle(), scratch.path())?;
     let journey = Journey::start_fake_with_bundle(launcher.clone(), bundle).await?;
+    launcher.push_run_for(
+        journey.data_dir().join("workspaces/typing"),
+        FakeRun::fresh().with_history(history(messages)),
+    );
     journey.connected().await?;
     let thread = create_thread(&journey, "typing").await?;
     let webkit = WebKitDriver::start().await?;

@@ -1256,6 +1256,7 @@ fn auth_examples() -> Vec<(&'static str, Value)> {
     };
     vec![
         example::<method::AuthStatus>(Empty {}, &AuthStatus { models: 0 }),
+        example::<method::AuthModels>(Empty {}, &wire(json!({ "models": [model_info()] }))),
         example::<method::AuthProviders>(
             Empty {},
             &AuthProviders {

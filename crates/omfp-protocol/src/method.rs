@@ -306,6 +306,8 @@ methods! {
     ThreadMcpReconnect = "thread.mcp_reconnect" (mcp::McpReconnectParams) -> mcp::McpServers;
     /// How many models omp can use; checked by a short-lived omp the first time, then kept current (PRT-140).
     AuthStatus = "auth.status" (params::Empty) -> auth::AuthStatus;
+    /// Available usable models before creating a thread, from a short-lived omp (UI-023, UI-030).
+    AuthModels = "auth.models" (params::Empty) -> wire::GetAvailableModelsResult as Value;
     /// The providers omp can log in to with OAuth and whether it holds a credential for each, from a short-lived omp
     /// (PRT-129).
     AuthProviders = "auth.providers" (params::Empty) -> auth::AuthProviders;

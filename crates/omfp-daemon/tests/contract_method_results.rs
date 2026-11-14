@@ -12,12 +12,12 @@ use omfp_core::wire::QueuedMessageQueue;
 use omfp_daemon::config::{Cli, Config};
 use omfp_daemon::{DaemonHandle, Ports, start_with};
 use omfp_protocol::method::{
-    ThreadAbort, ThreadCommands, ThreadFollowUp, ThreadModels, ThreadPrompt, ThreadQueuePromote,
-    ThreadQueueRemove, ThreadSetModel, ThreadSetThinking, ThreadState, ThreadThinkingLevels,
-    ThreadsCreate,
+    AuthModels, ThreadAbort, ThreadCommands, ThreadFollowUp, ThreadModels, ThreadPrompt,
+    ThreadQueuePromote, ThreadQueueRemove, ThreadSetModel, ThreadSetThinking, ThreadState,
+    ThreadThinkingLevels, ThreadsCreate,
 };
 use omfp_protocol::{
-    CreateThreadParams, CreateWorkspaceParams, MessageParams, PromptParams, QueueMessageParams,
+    CreateThreadParams, CreateWorkspaceParams, Empty, MessageParams, PromptParams, QueueMessageParams,
     SetModelParams, SetThinkingParams, ThreadRef, ThreadWorkspace,
 };
 use omfp_testkit::{FAKE_MODEL, FAKE_PROVIDER, omp_bin};
@@ -69,12 +69,19 @@ async fn follow_up(client: &mut Client, view: &mut Follower, thread: &str, text:
     .await;
 }
 
-// spec: TST-117
+// spec: TST-117, PRT-140, DMN-235
 #[tokio::test(flavor = "multi_thread")]
 async fn omp_forwarded_methods_return_their_declared_results() {
     let harness = Harness::new(vec![Step::reply(Reply::text("slow answer")).gated()]).await;
     let (daemon, _data) = start(&harness).await;
     let mut client = Client::hello(daemon.addr(), daemon.token().expose(), "test").await;
+    let models = client.typed::<AuthModels>(Empty {}).await.models;
+    assert!(
+        models
+            .iter()
+            .any(|model| model.id == FAKE_MODEL && model.provider == FAKE_PROVIDER),
+        "{models:?}"
+    );
     let thread = client
         .typed::<ThreadsCreate>(CreateThreadParams {
             title: Some("typed results".into()),

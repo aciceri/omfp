@@ -37,6 +37,8 @@ import {
   forkLineage,
   type HeaderView,
   headerView,
+  MODEL_CHANGING,
+  modelOption,
   NO_DETAILS,
   RENAMING_THREAD,
   REVEAL_WIDGET,
@@ -94,12 +96,28 @@ export function HeaderWidget(_props: WidgetProps): ReactNode {
 function DraftHeader({ draft }: { draft: DraftThread }): ReactNode {
   const workspaces = useWorkspaces();
   const chip = useMemo(() => workspaceChip(draft.workspaceId, [...workspaces.values()]), [draft, workspaces]);
+  const [details] = useThreadDetails(undefined, false);
+  const [, setDraft] = useWindowState(DRAFT_THREAD);
   return (
     <ChatHeader
       className="omfp-thread-header"
       data-testid="thread-header"
       data-draft="true"
-      bar={<WorkspaceChipButton chip={chip} />}
+      bar={
+        <>
+          <WorkspaceChipButton chip={chip} />
+          <ModelPicker
+            model={draft.model}
+            models={details.models.map(modelOption)}
+            noModels={details.modelsLoaded && details.models.length === 0}
+            onSelectionChange={(key) => {
+              if (key !== null) {
+                setDraft((current) => (current === undefined ? current : { ...current, model: String(key) }));
+              }
+            }}
+          />
+        </>
+      }
     >
       <ChatTitle data-testid="thread-title" placeholder>
         {strings.shell.untitled}
@@ -219,30 +237,45 @@ function More({
   );
 }
 
-/** `thread.state`, `thread.models` and `thread.thinking_levels` while the process runs, read again after a login or
- * logout of this window (`AUTH_REVISION`, UI-385); the function refreshes the session after a model or thinking
- * change. */
-function useThreadDetails(threadId: string, running: boolean): [ThreadDetails, () => void] {
+/** Reads thread details while running, otherwise discovers models without starting a thread. Login/logout changes
+ * refresh either list; the function refreshes a thread's session after a model or thinking change. */
+function useThreadDetails(threadId: string | undefined, running: boolean): [ThreadDetails, () => void] {
   const call = useCall();
   const [details, setDetails] = useState<ThreadDetails>(NO_DETAILS);
   const [authRevision] = useWindowState(AUTH_REVISION);
+  const report = useReportError();
   useEffect(() => {
-    if (!running) {
-      return;
-    }
     // Read again on every login or logout.
     void authRevision;
     let live = true;
-    void fetchDetails(call, threadId).then((fetched) => {
-      if (live) {
-        setDetails(fetched);
-      }
-    });
+    const request =
+      running && threadId !== undefined
+        ? fetchDetails(call, threadId)
+        : call("auth.models", {}).then((result) => ({
+            ...NO_DETAILS,
+            models: decodeModels(result),
+            modelsLoaded: true,
+          }));
+    void request.then(
+      (fetched) => {
+        if (live) {
+          setDetails((previous) => ({ ...fetched, session: running ? fetched.session : previous.session }));
+        }
+      },
+      (error: unknown) => {
+        if (live) {
+          report(error);
+        }
+      },
+    );
     return () => {
       live = false;
     };
-  }, [call, threadId, running, authRevision]);
+  }, [call, threadId, running, authRevision, report]);
   const refresh = () => {
+    if (threadId === undefined) {
+      return;
+    }
     void call("thread.state", { threadId }).then(
       (session) => setDetails((previous) => ({ ...previous, session: decodeSession(session) })),
       () => {},
@@ -479,15 +512,34 @@ function useSessionChange(onChanged: () => void): (request: Promise<unknown>) =>
 /** The model list; when omp offers no model, Log in instead (UI-388). */
 function ModelSelect({ threadId, view, onChanged }: SessionProps): ReactNode {
   const call = useCall();
-  const host = useHost();
-  const change = useSessionChange(onChanged);
+  const report = useReportError();
+  const [changing, setChanging] = useWindowState(MODEL_CHANGING);
+  const pending = changing.includes(threadId);
   const onModel = (key: Key | null) => {
     const model = splitModel(String(key ?? ""));
-    if (model !== undefined && String(key) !== view.model) {
-      change(call("thread.set_model", { threadId, ...model }));
+    if (!pending && model !== undefined && String(key) !== view.model) {
+      setChanging((previous) => [...previous, threadId]);
+      void call("thread.set_model", { threadId, ...model })
+        .then(onChanged, report)
+        .finally(() => setChanging((previous) => previous.filter((id) => id !== threadId)));
     }
   };
-  if (view.noModels) {
+  return <ModelPicker {...view} disabled={pending} onSelectionChange={onModel} />;
+}
+
+/** The same usable-model control before and after daemon thread creation. */
+function ModelPicker({
+  model,
+  models,
+  noModels,
+  onSelectionChange,
+  disabled = false,
+}: Pick<HeaderView, "model" | "models" | "noModels"> & {
+  onSelectionChange: (key: Key | null) => void;
+  disabled?: boolean;
+}): ReactNode {
+  const host = useHost();
+  if (noModels) {
     return (
       <span className="omfp-thread-header__no-models" data-testid="no-models">
         {text.noModels}
@@ -511,9 +563,10 @@ function ModelSelect({ threadId, view, onChanged }: SessionProps): ReactNode {
       placeholder={text.modelPlaceholder}
       data-testid="model-select"
       className="omfp-thread-header__model"
-      items={view.models.map((model) => ({ id: model.value, label: model.label }))}
-      selectedKey={view.model ?? null}
-      onSelectionChange={onModel}
+      isDisabled={disabled || models.length === 0}
+      items={models.map((option) => ({ id: option.value, label: option.label }))}
+      selectedKey={model ?? null}
+      onSelectionChange={onSelectionChange}
     />
   );
 }

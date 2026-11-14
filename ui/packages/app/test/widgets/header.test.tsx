@@ -14,6 +14,7 @@ import {
   REVEAL_WIDGET,
   SELECTED_THREAD,
 } from "../../src/sdk/index.ts";
+import { Composer } from "../../src/widgets/chat/composer.tsx";
 import { HeaderWidget } from "../../src/widgets/header/index.ts";
 import { repo, thread, workspace } from "../support/fixtures.ts";
 import { type FakeClient, renderWithHost, testHost } from "../support/host.tsx";
@@ -214,6 +215,37 @@ describe("omfp:header", () => {
       { threadId: "t1", level: "off" },
     ]);
     await waitFor(() => expect(client.callsTo("thread.state")).toHaveLength(3));
+  });
+
+  // spec: UI-030
+  test("sending waits for the selected model to be applied without losing the first message", async () => {
+    const base = testHost();
+    answer(base.client);
+    base.client.answers.delete("thread.set_model");
+    base.host.window.set(SELECTED_THREAD, "t1");
+    const { client, flush } = renderWithHost(
+      <>
+        <HeaderWidget />
+        <Composer threadId="t1" busy={false} abortable={false} commands={[]} />
+      </>,
+      base,
+    );
+    client.connected();
+    client.index({ workspaces: [workspace("w1")], threads: [thread("t1", "", "w1")] });
+    flush();
+    const user = userEvent.setup();
+    await user.type(screen.getByTestId("composer-input"), "first message");
+    await choose(user, "model-select", "Haiku (anthropic)");
+    expect(screen.getByTestId("send").hasAttribute("disabled")).toBe(true);
+    await user.type(screen.getByTestId("composer-input"), "{Enter}");
+    expect(client.callsTo("thread.prompt")).toHaveLength(0);
+    expect(screen.getByTestId("composer-input")).toHaveProperty("value", "first message");
+    act(() => client.callsTo("thread.set_model")[0]?.resolve({}));
+    await waitFor(() => expect(screen.getByTestId("send").hasAttribute("disabled")).toBe(false));
+    await user.click(screen.getByTestId("send"));
+    expect(client.callsTo("thread.prompt").map((call) => call.params)).toEqual([
+      { threadId: "t1", text: "first message" },
+    ]);
   });
 
   // spec: UI-030, UI-482, UI-524

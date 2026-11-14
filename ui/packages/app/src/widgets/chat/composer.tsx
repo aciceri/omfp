@@ -44,6 +44,7 @@ import {
   isBusy,
   keyAction,
   keyLabel,
+  MODEL_CHANGING,
   type Modifiers,
   queueKeys,
   queueModifier,
@@ -452,7 +453,7 @@ export const Composer = memo(function Composer({
   const open = suggestions.length > 0 && !dismissed;
 
   const send = (chosen: SendMode) => {
-    if (isBlank(draft)) {
+    if (isBlank(draft) || host.window.get(MODEL_CHANGING).includes(threadId)) {
       return;
     }
     const message = expandPastes(draft.text, draft.pastes).trim();
@@ -728,6 +729,8 @@ const ComposerActions = memo(function ComposerActions({
   onAbort: () => void;
   onSend: (mode: SendMode) => void;
 }) {
+  const [changing] = useWindowState(MODEL_CHANGING);
+  const modelPending = changing.includes(threadId);
   const short = touch || tight;
   const labels = short ? text.sendShort : text.send;
   return (
@@ -753,6 +756,7 @@ const ComposerActions = memo(function ComposerActions({
           kbd={touch ? undefined : sendKey(other)}
           data-testid="send-alternative"
           data-mode={other}
+          isDisabled={modelPending}
           onPress={() => onSend(other)}
         >
           {labels[other]}
@@ -766,6 +770,7 @@ const ComposerActions = memo(function ComposerActions({
         kbd={touch ? undefined : sendKey(mode)}
         data-testid="send"
         data-mode={mode}
+        isDisabled={modelPending}
       >
         {labels[mode]}
       </Button>

@@ -192,6 +192,7 @@ async fn run(services: &Services, principal: &Principal, call: Call) -> Reply {
         Call::ActivityList(params) => ok(&activity::list(services, params).await?),
         Call::PromptsHistory(params) => ok(&prompts::history(services, params).await?),
         Call::AuthStatus(_) => ok(&services.auth_status().await?),
+        Call::AuthModels(_) => ok(&services.auth_models().await?),
         Call::AuthProviders(_) => ok(&services.auth_providers().await?),
         // A window's own `auth.login` is the connection's (DMN-221); an agent's goes to the focused window.
         Call::AuthLogin(params) => ok(&services.auth_login(None, params.provider_id).await?),

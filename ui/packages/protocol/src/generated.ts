@@ -2061,6 +2061,7 @@ export interface Methods {
   "thread.mcp_servers": { params: ThreadRef; result: McpServers };
   "thread.mcp_reconnect": { params: McpReconnectParams; result: McpServers };
   "auth.status": { params: Empty; result: AuthStatus };
+  "auth.models": { params: Empty; result: unknown };
   "auth.providers": { params: Empty; result: AuthProviders };
   "auth.login": { params: ProviderRef; result: LoggedIn };
   "auth.login_cancel": { params: Empty; result: LoginCancelled };
@@ -2160,6 +2161,7 @@ export const METHODS: readonly MethodName[] = [
   "thread.mcp_servers",
   "thread.mcp_reconnect",
   "auth.status",
+  "auth.models",
   "auth.providers",
   "auth.login",
   "auth.login_cancel",

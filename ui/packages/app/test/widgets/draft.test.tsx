@@ -63,6 +63,28 @@ describe("draft thread", () => {
     expect(host.window.get(DRAFT_MESSAGE).text).toBe("");
   });
 
+  // spec: UI-023, UI-030
+  test("a model selected before creation stays through a failed send and is used on retry", async () => {
+    const { client, host, user } = setup();
+    act(() =>
+      client.callsTo("auth.models")[0]?.resolve({
+        models: [{ id: "chosen", name: "Chosen model", provider: "fake" }],
+      }),
+    );
+    await user.click(within(screen.getByTestId("model-select")).getByRole("button"));
+    await user.click(await screen.findByRole("option", { name: "Chosen model (fake)" }));
+    expect(client.callsTo("threads.create")).toHaveLength(0);
+    await user.type(screen.getByTestId("composer-input"), "first prompt{Enter}");
+    act(() => client.callsTo("threads.create")[0]?.reject(new Error("try again")));
+    await waitFor(() => expect(screen.getByTestId("send").hasAttribute("disabled")).toBe(false));
+    expect(host.window.get(DRAFT_THREAD)).toEqual({ workspaceId: "w1", model: "fake/chosen" });
+    await user.click(screen.getByTestId("send"));
+    expect(client.callsTo("threads.create").map((call) => call.params)).toEqual([
+      { workspace: { id: "w1" }, prompt: "first prompt", model: "fake/chosen" },
+      { workspace: { id: "w1" }, prompt: "first prompt", model: "fake/chosen" },
+    ]);
+  });
+
   // spec: UI-023
   test("when the creation fails, the draft and its text stay and the error is reported", async () => {
     const { client, host, user } = setup();

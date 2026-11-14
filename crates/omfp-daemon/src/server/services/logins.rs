@@ -266,6 +266,14 @@ impl Services {
         Ok(AuthStatus { models })
     }
 
+    /// Lists usable models without creating or starting a thread (UI-023, UI-030).
+    pub async fn auth_models(&self) -> Result<omp_rpc::GetAvailableModelsResult, ErrorBody> {
+        let omp = self.supervisor.auth_omp().await.map_err(supervisor_error)?;
+        let listed = run(&omp.process, OmpCall::AvailableModels).await;
+        close(omp.process).await;
+        listed
+    }
+
     /// `auth.providers` (PRT-129, DMN-219): omp's OAuth providers, from a login omp started for the question.
     pub async fn auth_providers(&self) -> Result<AuthProviders, ErrorBody> {
         let omp = self.supervisor.auth_omp().await.map_err(supervisor_error)?;

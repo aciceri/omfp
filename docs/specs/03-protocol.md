@@ -176,6 +176,7 @@ previous settings stay). A thread summary carries `title` (`""` until the first 
 | `thread.mcp_servers` | `threadId` | `McpServers`: the servers of the thread's workspace, checked by its running omp (PRT-111) |
 | `thread.mcp_reconnect` | `threadId`, `name?` | `McpServers` after restarting the idle thread; `conflict` while it works (PRT-112) |
 | `auth.status` | — | `AuthStatus { models }`: how many models omp can use; the first call starts an omp (PRT-140) |
+| `auth.models` | — | `{ models }`: the usable models from a short-lived omp, without creating a thread (PRT-140, UI-030) |
 | `auth.providers` | — | `AuthProviders { providers: [{ id, name, available, authenticated }] }`: omp's OAuth providers (PRT-129) |
 | `auth.login` | `providerId` | `LoggedIn { providerId, name }` once omp stored the credential; the flow reaches the window as `login_*` window requests (PRT-130, PRT-131) |
 | `auth.login_cancel` | — | `{ providerId }`: the login it cancelled, `null` when none ran (PRT-132) |
@@ -249,7 +250,7 @@ The daemon runs them on a short-lived omp of its own (DMN-219..DMN-224) and show
 | PRT-131 | **The flow of a login** reaches one window (DMN-221) as `window_request` frames (PRT-124) carrying `providerId` and `name`: `{ kind: "login_url", url, launchUrl, instructions }` (open `url` in the browser; `launchUrl`, a short loopback redirect to it on the daemon's host, and `instructions` may be `null`) and `{ kind: "login_progress", message }` are notices the window does not answer; `{ kind: "login_input", message, placeholder }` asks for the code or redirect URL the provider's page shows, answered with `windows.answer { requestId, answer: { kind: "login_input", value } }`, `value: null` cancelling. |
 | PRT-132 | `auth.login_cancel {}` (permission `Drive`) MUST cancel the running login (DMN-222) and answer `LoginCancelled { providerId }`, `null` when none ran; the cancelled `auth.login` fails with `conflict`. A new `auth.login` and closing the window that shows a login cancel it too. |
 | PRT-133 | `auth.logout { providerId }` (permission `Drive`) MUST remove every credential omp stored for the provider (DMN-223) and answer `LoggedOut { providerId, removed, remainingSource }`: how many it removed, and what still authenticates the provider (omp's words, e.g. an environment variable), `null` when nothing does. |
-| PRT-140 | (QA) `auth.status {}` (permission `Read`) MUST answer `AuthStatus { models }`: how many models omp can use (DMN-235), `0` on a fresh install where every thread start fails until a login. The first call starts an omp, so it takes seconds; later calls answer the count the daemon keeps current (DMN-236, DMN-237), which the `index` topic also carries (PRT-141). |
+| PRT-140 | (QA) `auth.status {}` (permission `Read`) MUST answer `AuthStatus { models }`: how many models omp can use (DMN-235), `0` on a fresh install where every thread start fails until a login. The first call starts an omp, so it takes seconds; later calls answer the count the daemon keeps current (DMN-236, DMN-237), which the `index` topic also carries (PRT-141). `auth.models {}` (permission `Read`) MUST return `{ models }`, omp's `GetAvailableModelsResult`, from a fresh short-lived login omp on every call, stopping it on success or error; it creates no thread or workspace and sends no prompt. |
 
 ## Thread session
 

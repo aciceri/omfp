@@ -44,6 +44,12 @@ Initial release, planned as 0.1.0.
 - Linux Tauri development builds and the Nix desktop package now include the GStreamer demuxers and codecs needed
   for common video, including H.264, instead of leaving unsupported media capable of stalling its WebKit window.
 
+### Fixed
+
+- Select a model before the first message, including in a draft that has not created a daemon thread yet. The first
+  prompt uses that model, and failed creation keeps the choice for retry. Existing threads cannot send while a model
+  change is still being applied.
+
 ### Release limitations
 
 - macOS downloads are signed ad-hoc and are not notarized unless the release explicitly says otherwise. On first

@@ -214,7 +214,7 @@ export function threadActions(host: OmfpHost): ThreadActions {
     },
     openDraft: (workspaceId) => {
       // A new object each time: the draft's composer takes the focus again.
-      window.set(DRAFT_THREAD, { workspaceId });
+      window.set(DRAFT_THREAD, { ...window.get(DRAFT_THREAD), workspaceId });
       window.set(SELECTED_THREAD, undefined);
     },
     discardDraft: () => discardDraft(host),
@@ -226,7 +226,11 @@ export function threadActions(host: OmfpHost): ThreadActions {
         return false;
       }
       try {
-        const thread = await client.call("threads.create", { workspace: { id: draft.workspaceId }, prompt });
+        const thread = await client.call("threads.create", {
+          workspace: { id: draft.workspaceId },
+          prompt,
+          ...(draft.model === undefined ? {} : { model: draft.model }),
+        });
         if (window.get(DRAFT_THREAD)?.workspaceId === draft.workspaceId) {
           discardDraft(host);
         }

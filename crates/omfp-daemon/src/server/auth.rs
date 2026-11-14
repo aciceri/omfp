@@ -93,6 +93,7 @@ pub fn permission(method: &str) -> Option<Permission> {
         | "workspaces.mcp_servers"
         | "thread.mcp_servers"
         | "auth.status"
+        | "auth.models"
         | "auth.providers" => Read,
         "workspaces.create"
         | "workspaces.update"

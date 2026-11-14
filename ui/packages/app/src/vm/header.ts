@@ -148,7 +148,7 @@ function modelValue(model: ModelInfo): string {
   return `${model.provider}/${model.id}`;
 }
 
-function modelOption(model: ModelInfo): ModelOption {
+export function modelOption(model: ModelInfo): ModelOption {
   return { value: modelValue(model), label: `${model.name} (${model.provider})` };
 }
 

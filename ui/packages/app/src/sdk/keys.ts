@@ -57,7 +57,12 @@ export const VIEW_CHOICES = windowKey<ViewChoices>("viewChoices", NO_VIEW_CHOICE
  * when its first message is sent. One per window. */
 export interface DraftThread {
   readonly workspaceId: string;
+  /** Explicit `provider/id` for the first prompt; absent means omp's default. */
+  readonly model?: string;
 }
+
+/** Threads whose model change is awaiting acknowledgement; their composers cannot send yet (UI-030). */
+export const MODEL_CHANGING = windowKey<readonly string[]>("modelChanging", []);
 
 export const DRAFT_THREAD = windowKey<DraftThread | undefined>("draftThread", undefined);
 

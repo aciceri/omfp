@@ -1,11 +1,10 @@
-//! Thread titles (DMN-073): the first message's placeholder, the generated title that replaces it, titles set by a
-//! client or the agent, and the omp session named after them.
+//! Automatic and explicit thread titles, and their omp session names (DMN-073).
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::Ordering;
 
 use omp_rpc::SetSessionNameCommand;
+use tokio::time::Instant;
 use tracing::warn;
 
 use super::{Actor, Result, Supervisor, SupervisorError, blocking, lock};
@@ -14,45 +13,75 @@ use crate::store::{Thread, TitleSource};
 use crate::titles::{self, TitleRequest};
 
 impl Supervisor {
-    /// Gives an unnamed thread the placeholder of its first message and starts generating its title (DMN-073).
-    pub(super) async fn name_from_first_message(&self, actor: &Actor, message: String) {
-        let placeholder = titles::placeholder(&message);
-        if placeholder.is_empty() || actor.titled.load(Ordering::SeqCst) {
+    /// Names a new thread immediately, then reconsiders only after meaningful admitted conversation.
+    pub(super) async fn consider_title(&self, actor: &Arc<Actor>, message: String) {
+        if message.trim().is_empty() {
             return;
         }
+        // Serialize admission bookkeeping and task installation, not the model call itself.
+        let mut policy = actor.title_policy.lock().await;
         let threads = Arc::clone(&self.inner.threads);
         let workspaces = Arc::clone(&self.inner.workspaces);
         let id = actor.id.clone();
-        let named = blocking(move || {
-            let thread = threads.get(&id)?;
-            if thread.title_source != TitleSource::Placeholder || !thread.title.is_empty() {
+        let placeholder = titles::placeholder(&message);
+        let prepared = blocking(move || {
+            let mut thread = threads.get(&id)?;
+            if thread.title_source == TitleSource::Set {
                 return Ok::<_, SupervisorError>(None);
             }
+            let unnamed =
+                thread.title_source == TitleSource::Placeholder && thread.title.is_empty();
+            if unnamed
+                && threads.replace_placeholder(&id, &placeholder, TitleSource::Placeholder)?
+            {
+                thread.title = placeholder;
+            }
             let cwd = workspaces.get(&thread.workspace_id)?.path;
-            threads.replace_placeholder(&id, &placeholder, TitleSource::Placeholder)?;
-            Ok(Some(cwd))
+            Ok(Some((thread, cwd, unnamed)))
         })
         .await;
-        let cwd = match named {
-            Ok(Ok(Some(cwd))) => cwd,
+        let (thread, cwd, unnamed) = match prepared {
+            Ok(Ok(Some(prepared))) => prepared,
             Ok(Ok(None)) => return,
             Ok(Err(error)) | Err(error) => {
-                warn!(thread = %actor.id, %error, "cannot store the placeholder title");
+                warn!(thread = %actor.id, %error, "cannot prepare the thread title");
                 return;
             }
         };
-        if actor.titled.swap(true, Ordering::SeqCst) {
+        if unnamed {
+            let _ = self.inner.changes.send(actor.id.clone());
+        }
+        if !self.inner.config.title_generation {
             return;
         }
-        let _ = self.inner.changes.send(actor.id.clone());
-        if self.inner.config.title_generation {
-            self.spawn_title_generation(actor, cwd, message);
+        policy.observe(&message);
+        let initial = thread.title_source == TitleSource::Placeholder;
+        let running = lock(&actor.title_task)
+            .as_ref()
+            .is_some_and(|task| !task.is_finished());
+        let now = Instant::now();
+        if running || !policy.ready(initial, now) {
+            return;
         }
+        let context = if unnamed {
+            message.chars().take(4000).collect()
+        } else {
+            actor
+                .log
+                .with_state(|state| policy.context(&thread.title, state))
+        };
+        policy.begin(now);
+        self.spawn_title_generation(actor, cwd, context, thread);
     }
 
-    /// Runs omp in print mode for the thread's title; the title replaces the placeholder unless a title was set
-    /// meanwhile, and names the omp session (DMN-073).
-    fn spawn_title_generation(&self, actor: &Actor, cwd: PathBuf, message: String) {
+    /// Reuses the isolated print-mode launcher; publication checks the source and starting title atomically.
+    fn spawn_title_generation(
+        &self,
+        actor: &Arc<Actor>,
+        cwd: PathBuf,
+        message: String,
+        previous: Thread,
+    ) {
         let request = TitleRequest {
             program: self.inner.config.omp_program.clone(),
             cwd,
@@ -60,30 +89,40 @@ impl Supervisor {
             message,
         };
         let supervisor = self.clone();
-        let id = actor.id.clone();
+        let actor = Arc::clone(actor);
+        let task_actor = Arc::clone(&actor);
         let task = tokio::spawn(async move {
+            let id = &task_actor.id;
             let launcher = Arc::clone(&supervisor.inner.launcher);
             let title = match blocking(move || launcher.generate_title(&request)).await {
                 Ok(Ok(title)) => title,
                 Ok(Err(error)) => {
-                    warn!(thread = %id, %error, "title generation failed; the placeholder stays");
+                    task_actor.title_policy.lock().await.failed();
+                    warn!(thread = %id, %error, "title generation failed; the previous title stays");
                     return;
                 }
                 Err(error) => {
-                    warn!(thread = %id, %error, "title generation failed; the placeholder stays");
+                    task_actor.title_policy.lock().await.failed();
+                    warn!(thread = %id, %error, "title generation failed; the previous title stays");
                     return;
                 }
             };
+            let publish = task_actor.title_policy.lock().await.publish(
+                &previous.title,
+                &title,
+                previous.title_source == TitleSource::Placeholder,
+            );
+            if !publish {
+                return;
+            }
             let threads = Arc::clone(&supervisor.inner.threads);
-            let (thread_id, generated) = (id.clone(), title.clone());
-            let stored = blocking(move || {
-                threads.replace_placeholder(&thread_id, &generated, TitleSource::Generated)
-            })
-            .await;
+            let thread_id = id.clone();
+            let stored =
+                blocking(move || threads.replace_automatic(&thread_id, &previous.title, &title))
+                    .await;
             match stored {
                 Ok(Ok(true)) => {
-                    // Named first, so a client seeing the title on the index finds the session named too.
-                    supervisor.name_session(&id, title).await;
+                    supervisor.name_session(id).await;
                     let _ = supervisor.inner.changes.send(id.clone());
                 }
                 Ok(Ok(false)) => {}
@@ -105,31 +144,43 @@ impl Supervisor {
         }
     }
 
-    /// Sets the thread's title and names its omp session after it (DMN-073). A [`TitleSource::Set`] title is never
-    /// replaced by a generated one.
+    /// Explicit titles disable automatic refresh, including generations already in flight.
     pub async fn set_title(&self, id: &str, title: String, source: TitleSource) -> Result<Thread> {
         let threads = Arc::clone(&self.inner.threads);
-        let (thread_id, stored) = (id.to_owned(), title.clone());
+        let (thread_id, stored) = (id.to_owned(), title);
         let thread = blocking(move || threads.rename(&thread_id, &stored, source)).await??;
-        self.name_session(id, title).await;
+        self.name_session(id).await;
         let _ = self.inner.changes.send(id.to_owned());
         Ok(thread)
     }
 
-    /// Sends `set_session_name` to the thread's omp when it runs (omp rejects an empty name); a stopped thread's
-    /// session keeps its name until the next title change.
-    pub(super) async fn name_session(&self, id: &str, name: String) {
-        let Some(process) = self.lookup(id).and_then(|actor| actor.process()) else {
+    /// Reads the latest title after serializing renames. An old generated-title task or queued host rename
+    /// must never leave the session with a stale name after an explicit rename has finished.
+    pub(super) async fn name_session(&self, id: &str) {
+        let Some(actor) = self.lookup(id) else {
             return;
         };
-        if name.trim().is_empty() {
+        let _sync = actor.title_sync.lock().await;
+        let Some(process) = actor.process() else {
             return;
-        }
-        let call = OmpCall::SetSessionName(SetSessionNameCommand { name });
-        match blocking(move || process.call(call)).await {
-            Ok(Ok(_)) => {}
-            Ok(Err(error)) => warn!(thread = %id, %error, "cannot name the omp session"),
-            Err(error) => warn!(thread = %id, %error, "cannot name the omp session"),
+        };
+        let threads = Arc::clone(&self.inner.threads);
+        let thread_id = id.to_owned();
+        let named = blocking(move || {
+            let thread = threads.get(&thread_id)?;
+            if !thread.title.trim().is_empty() {
+                process.call(OmpCall::SetSessionName(SetSessionNameCommand {
+                    name: thread.title,
+                }))?;
+            }
+            Ok::<_, SupervisorError>(())
+        })
+        .await;
+        match named {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) | Err(error) => {
+                warn!(thread = %id, %error, "cannot name the omp session");
+            }
         }
     }
 }

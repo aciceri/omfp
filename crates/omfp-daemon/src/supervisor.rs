@@ -127,8 +127,8 @@ pub struct SupervisorConfig {
     pub agent_dir: Option<PathBuf>,
     /// The home omp runs with, where it reads the MCP configs of other tools (`~/.claude.json`, …, DMN-190).
     pub home: Option<PathBuf>,
-    /// Generate thread titles with an omp print-mode run after the first message (DMN-073). Tests against the fake
-    /// LLM turn it off so the extra model call does not take a scripted step.
+    /// Generate and refresh automatic titles from meaningful new conversation (DMN-073). Tests against the
+    /// fake LLM turn it off unless they script the extra model calls.
     pub title_generation: bool,
     /// `<static-dir>/builtin-widgets/` when the daemon serves a bundle with built-in widgets: the `omfp://` host URIs
     /// serve their sources (DMN-062).
@@ -318,8 +318,10 @@ struct Actor {
     /// A root sync was asked while the agent was busy (omp refuses `/add-dir` while streaming); it runs once the
     /// session settles (DMN-029).
     roots_pending: AtomicBool,
-    /// The first message named the thread already (DMN-073).
-    titled: AtomicBool,
+    /// Conversation-driven title cadence and pending topic confirmation (DMN-073).
+    title_policy: tokio::sync::Mutex<crate::titles::RollingTitle>,
+    /// Serializes session renames; each sender reads the latest stored title after taking it.
+    title_sync: tokio::sync::Mutex<()>,
     /// The running title generation, aborted when the thread is forgotten.
     title_task: Mutex<Option<JoinHandle<()>>>,
     /// The live voice session (DMN-101).
@@ -360,7 +362,8 @@ impl Actor {
             watchers: Mutex::new(Vec::new()),
             last_activity: Mutex::new(Instant::now()),
             roots_pending: AtomicBool::new(false),
-            titled: AtomicBool::new(false),
+            title_policy: tokio::sync::Mutex::new(crate::titles::RollingTitle::default()),
+            title_sync: tokio::sync::Mutex::new(()),
             title_task: Mutex::new(None),
             voice: Mutex::new(None),
             levels: broadcast::channel(LEVELS_BUFFER).0,
@@ -777,8 +780,8 @@ impl Supervisor {
         .await
     }
 
-    /// Sends a prompt, starting omp first when needed (DMN-070); returns at admission (PRT-030). The thread's first
-    /// message names it (DMN-073): a placeholder at once, a generated title later.
+    /// Sends a prompt, starting omp first when needed (DMN-070); returns at admission (PRT-030).
+    /// Admitted agent work names or reconsiders the thread's automatic title (DMN-073).
     pub async fn prompt(&self, id: &str, command: PromptCommand) -> Result<PromptAdmission> {
         let actor = self.actor(id).await?;
         let message = command.message.clone();
@@ -787,14 +790,13 @@ impl Supervisor {
             .await?;
         if admission.agent_invoked {
             *lock(&actor.last_prompt) = Some(admission.prompt_id.clone());
-            self.name_from_first_message(&actor, message).await;
+            self.consider_title(&actor, message).await;
         }
         Ok(admission)
     }
 
-    /// Puts a message in omp's steering or follow-up queue (`thread.steer`, `thread.follow_up`) with a prompt's
-    /// bookkeeping (DMN-226): omp started when needed, a pending root sync first, and the thread's first message
-    /// names it.
+    /// Puts a message in omp's steering or follow-up queue with a prompt's bookkeeping (DMN-226):
+    /// omp started when needed, root sync first, automatic-title consideration from admitted text (DMN-073).
     pub async fn queue(&self, id: &str, message: QueuedMessage) -> Result<()> {
         let actor = self.actor(id).await?;
         let (text, call) = match message {
@@ -805,7 +807,7 @@ impl Supervisor {
         };
         self.deliver(&actor, move |process| process.call(call))
             .await?;
-        self.name_from_first_message(&actor, text).await;
+        self.consider_title(&actor, text).await;
         Ok(())
     }
 
@@ -1339,8 +1341,8 @@ impl Supervisor {
                 .map_err(|error| error.to_string())?;
             let _ = inner.changes.send(id.clone());
             let supervisor = Self { inner };
-            let (id, title) = (id.clone(), title.to_owned());
-            runtime.spawn(async move { supervisor.name_session(&id, title).await });
+            let id = id.clone();
+            runtime.spawn(async move { supervisor.name_session(&id).await });
             Ok(())
         })
     }

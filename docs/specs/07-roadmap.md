@@ -154,6 +154,11 @@ bundles with `bun build` into `ui/packages/app/dist`; E2E-01..05, 08, 09 and jou
 change pass in headless Chromium. Known gaps: the dialog focus trap's backward wrap is checked only in browsers
 (happy-dom does not wrap Shift+Tab); pull-request grouping and repositories wait for S-08.
 
+Issue #53 extends DMN-073 with conversation-driven rolling titles: four messages / 400 characters per reconsideration,
+five-minute attempt spacing, bounded earlier/recent context, two consecutive candidates before changing topics,
+cosmetic deduplication and explicit-title precedence. Fake-model regressions use paused time; no idle timer or paid
+model is involved. The initial and refreshed titles share the isolated print-mode launcher and session-name path.
+
 ## M4 — Widgets (agent-made UI, from 08) (done)
 
 Scope: D-17's UI part brought forward, as designed in [08](08-agent-control.md#agent-made-ui-views-and-widgets-m4): a

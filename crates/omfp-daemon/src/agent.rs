@@ -188,7 +188,7 @@ pub trait AgentLauncher: Send + Sync {
     ) -> Result<Launched, StartError>;
     /// Probes the ownership lease of `session_id` without taking it (`omp session lease`, DMN-033).
     fn session_lease(&self, spec: &LaunchSpec, session_id: &str) -> Result<Lease, StartError>;
-    /// Generates a thread title from its first message with one omp print-mode run (DMN-073).
+    /// Generates a thread title from first-message or rolling context with one omp print-mode run (DMN-073).
     fn generate_title(&self, request: &TitleRequest) -> Result<String, TitleError>;
     /// How many models omp started for `spec` can use (DMN-235): the length of its `get_available_models`, the models
     /// of the providers it holds a credential for and of keyless ones; the omp stops before this returns.

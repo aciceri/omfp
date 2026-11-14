@@ -90,7 +90,7 @@ pub struct Config {
     /// The user's init file to follow and serve (DMN-185); `None` follows none. [`Config::from_cli`]
     /// leaves it `None`; `omfp daemon` ([`crate::run`]) sets the default location.
     pub init_file: Option<PathBuf>,
-    /// Generate thread titles after the first message (DMN-073).
+    /// Generate and periodically refresh automatic titles after meaningful new conversation (DMN-073).
     pub title_generation: bool,
     /// The config file the daemon follows for `[ui]` / `[keymap]` and writes `settings.set` into (DMN-009); `None`
     /// keeps UI settings in memory only. [`Config::from_cli`] takes `--config`; `omfp daemon` adds the default.

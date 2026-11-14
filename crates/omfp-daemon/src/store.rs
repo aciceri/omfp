@@ -526,6 +526,22 @@ impl Store {
         Ok(changed > 0)
     }
 
+    /// Replaces an automatic title only if it still matches the generation's starting title.
+    /// The source check is atomic with the write: an explicit rename always wins (DMN-073).
+    pub(crate) fn replace_automatic_title(
+        &self,
+        id: &str,
+        expected: &str,
+        title: &str,
+    ) -> Result<bool> {
+        let changed = self.conn().execute(
+            "UPDATE threads SET title = ?3, title_source = 'generated'
+             WHERE id = ?1 AND title = ?2 AND title_source != 'set'",
+            params![id, expected, title],
+        )?;
+        Ok(changed > 0)
+    }
+
     /// The setting `key` as a string; `None` when unset or `null`.
     fn string_setting(&self, key: &str) -> Result<Option<String>> {
         Ok(self

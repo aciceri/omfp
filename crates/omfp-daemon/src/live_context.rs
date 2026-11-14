@@ -55,13 +55,13 @@ pub fn thread_context(title: &str, state: &ThreadState, cap: usize) -> Option<St
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Role {
+pub(crate) enum Role {
     User,
     Assistant,
 }
 
 impl Role {
-    fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             Self::User => "User: ",
             Self::Assistant => "Assistant: ",
@@ -91,7 +91,7 @@ fn turns<'a>(messages: impl IntoIterator<Item = &'a AgentMessage>) -> Vec<String
 }
 
 /// The text a message contributes: user prompts (not omp's synthetic ones) and assistant text, images as `[image]`.
-fn message_text(message: &AgentMessage) -> Option<(Role, String)> {
+pub(crate) fn message_text(message: &AgentMessage) -> Option<(Role, String)> {
     let parts: Vec<&str> = match message {
         AgentMessage::User(user) if user.synthetic != Some(true) => match &user.content {
             Some(MessageContent::String(text)) => vec![text.as_str()],

@@ -17,8 +17,10 @@ use crate::git::{FakeGit, Git};
 use crate::host_tools::{NOTIFY, OPEN_FILE, SET_THREAD_TITLE, run_set_thread_title};
 use crate::store::Store;
 use crate::threads::NewThread;
-use crate::titles::TitleRequest;
 use crate::workspaces::{NewWorkspace, Workspaces};
+
+#[path = "tests/rolling_titles.rs"]
+mod rolling_titles;
 
 struct Harness {
     dir: TempDir,
@@ -1054,12 +1056,10 @@ impl Harness {
 // spec: DMN-073
 #[tokio::test]
 async fn the_first_message_gives_a_placeholder_then_a_generated_title_and_session_name() {
-    let h = harness(|config| {
-        config.omp_env = vec![("OMFP_TEST".into(), Some("1".into()))];
-    });
+    let h = harness(|_| {});
     h.launcher.push_run(fixture("text_reply"));
     h.launcher.push_title(Ok("Greeting the room"));
-    let (id, folder) = h.untitled_thread();
+    let (id, _) = h.untitled_thread();
 
     h.supervisor
         .prompt(&id, prompt("say hi to everyone in the room please"))
@@ -1079,16 +1079,6 @@ async fn the_first_message_gives_a_placeholder_then_a_generated_title_and_sessio
         ("Greeting the room".into(), TitleSource::Generated)
     );
     assert_eq!(h.session_names(), ["Greeting the room"]);
-    let requests = h.launcher.title_requests();
-    assert_eq!(
-        requests,
-        [TitleRequest {
-            program: "omp".into(),
-            cwd: folder,
-            env: vec![("OMFP_TEST".into(), Some("1".into()))],
-            message: "say hi to everyone in the room please".into(),
-        }]
-    );
     // Later messages keep the title.
     h.supervisor.prompt(&id, prompt("again")).await.unwrap();
     assert_eq!(h.launcher.title_requests().len(), 1);

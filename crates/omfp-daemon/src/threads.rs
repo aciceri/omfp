@@ -138,6 +138,11 @@ impl Threads {
         Ok(self.store.replace_placeholder_title(id, title, source)?)
     }
 
+    /// Publishes a generated title unless the starting automatic title changed meanwhile (DMN-073).
+    pub(crate) fn replace_automatic(&self, id: &str, expected: &str, title: &str) -> Result<bool> {
+        Ok(self.store.replace_automatic_title(id, expected, title)?)
+    }
+
     /// Changes the omp `--approval-mode`; it applies from the next start of the thread's omp (DMN-074).
     pub fn set_approval_mode(&self, id: &str, mode: &str) -> Result<Thread> {
         self.store.set_thread_approval_mode(id, mode)?;

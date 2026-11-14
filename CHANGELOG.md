@@ -52,6 +52,9 @@ Initial release, planned as 0.1.0.
 
 ### Changed
 
+- Automatically generated thread titles now follow sustained conversation changes, using bounded recent context
+  with project continuity. Updates are conversation-driven and rate-limited; brief digressions, cosmetic variants
+  and generation failures keep the previous title. Explicit user/API/agent titles are never overwritten.
 - omfp now uses its own omp profile at `<data-dir>/omp-profile` (normally
   `~/.local/share/omfp/omp-profile` on Linux, `~/Library/Application Support/omfp/omp-profile` on macOS).
   Credentials, user settings, models, agents and MCP configuration no longer use standalone `~/.omp/agent`.

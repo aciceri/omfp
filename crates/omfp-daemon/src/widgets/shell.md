@@ -21,6 +21,12 @@ Selecting a thread makes its workspace the **current workspace**: the view, the 
 `.omfp/keymap.json` and `:widget add` all follow it. A splitter resizes the column (wide windows); under 1100 px it
 folds into a strip of state marks (`Space t` opens it), on a phone it is one of the bottom bar's areas.
 
+Automatic thread titles are reconsidered after four new messages totaling at least 400 characters, no more often
+than every five minutes of active conversation. They keep project context and recent user/assistant work; a changed
+topic needs confirmation in a later batch, so a brief digression does not immediately rename the thread. Idle time
+alone does nothing. An explicit rename by the user, an API client or the agent disables automatic updates permanently.
+`--no-title-generation` / `[daemon] title_generation = false` disables both initial generation and refresh.
+
 ## Mode line
 
 The bar at the bottom of the view area, like vim's:

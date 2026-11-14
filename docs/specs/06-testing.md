@@ -109,6 +109,11 @@ storage/logout with inert login/MCP credentials and project model selection thro
 file-content snapshots (including standalone XDG state and native addon extraction) in both directions. No test reads
 the real user's credentials, completes external OAuth or calls real models.
 
+DMN-073's rolling-title regressions use `FakeLauncher` and paused time: admission thresholds and cooldown boundaries,
+idle silence, bounded context with both conversation roles, digression/shift confirmation, cosmetic deduplication,
+single-flight calls, explicit-title races, generation failure and index/session-name publication. The existing
+pinned-omp print-mode contract exercises the shared launcher against the loopback fake LLM, never a paid model.
+
 Spike S-02 found that omp always runs a background model-catalog discovery at startup: the shared catalog
 (`catalog.stencil.so`) and the model lists of keyless providers. No setting turns it off entirely
 (`disabledProviders` removes the keyless providers but not the shared catalog). Contract tests therefore run omp behind

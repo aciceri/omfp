@@ -25,8 +25,8 @@ only be reachable from the human UI.
   `cargo xtask spec-trace`; never put the marker plus an ID inside a string literal). Deterministic and isolated tests
   only (TST-003): no sleeps (wait on conditions with timeouts), temporary directories only (never the user's), port 0,
   no network beyond loopback, no real models.
-- **Conventional Commits** (checked by commitizen in the commit-msg hook). Push to `master`; no branches/PRs during the
-  PoC. Commits are SSH-signed with the user's key: if signing fails, ask the user to load the key, never disable it.
+- **Conventional Commits** (checked by commitizen in the commit-msg hook). Commits are SSH-signed with the user's key:
+  if signing fails, ask the user to load the key, never disable it.
 - Keep docs in sync: when behavior or a decision changes, update the spec rows (and spike results) in the same change.
 - No new dependencies without a reason; workspace dependencies live in the root `Cargo.toml`.
 - No `Box::leak`, no placeholder stubs, no `unwrap()` in non-test code where an error can be returned.

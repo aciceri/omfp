@@ -27,6 +27,7 @@ Initial release, planned as 0.1.0.
   and a macOS system-accent theme.
 - Nix packages and standalone downloads bundling the pinned oh-my-pi: a headless Linux x86_64 tarball
   (glibc 2.34+), a Linux x86_64 desktop Flatpak, and macOS Apple silicon DMG and ZIP packages (macOS 14+).
+- A project website built from the same Crush component kit as the app, published independently through GitHub Pages.
 
 ### Release limitations
 

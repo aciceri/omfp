@@ -1,0 +1,26 @@
+export function indexHtml({ script, styles }: { script: string; styles: readonly string[] }): string {
+  return [
+    "<!doctype html>",
+    '<html lang="en" data-motion="full" data-color-scheme="dark">',
+    "<head>",
+    '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width, initial-scale=1">',
+    '<meta name="description" content="omfp is a local-first workspace for oh-my-pi: parallel agents, persistent workspaces, and an interface your agents can reshape.">',
+    '<meta property="og:title" content="omfp — a workspace your agents can reshape">',
+    '<meta property="og:description" content="Many agents. One workspace. Your interface.">',
+    '<meta property="og:image" content="https://aciceri.github.io/omfp/screenshot-dark.png">',
+    '<meta property="og:type" content="website">',
+    '<meta property="og:url" content="https://aciceri.github.io/omfp/">',
+    '<meta name="twitter:card" content="summary_large_image">',
+    "<title>omfp — a workspace your agents can reshape</title>",
+    '<link rel="icon" href="./icon.svg" type="image/svg+xml">',
+    ...styles.map((href) => `<link rel="stylesheet" href="./${href}">`),
+    "</head>",
+    "<body>",
+    '<div id="root"></div>',
+    `<script type="module" src="./${script}"></script>`,
+    "</body>",
+    "</html>",
+    "",
+  ].join("\n");
+}

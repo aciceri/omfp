@@ -194,6 +194,7 @@
   "@omfp/core" = copyPathToStore ./packages/core;
   "@omfp/kit" = copyPathToStore ./packages/kit;
   "@omfp/protocol" = copyPathToStore ./packages/protocol;
+  "@omfp/site" = copyPathToStore ./packages/site;
   "@react-types/shared@3.37.0" = fetchurl {
     url = "https://registry.npmjs.org/@react-types/shared/-/shared-3.37.0.tgz";
     hash = "sha512-VNlZuifu4tHdxWPfHvoMfKsHA9kVTCGkduv5vKVTdinm8wHFJNhyVB5RzIMiRFj0q3RKoCbP68u2zaoBSiFueg==";

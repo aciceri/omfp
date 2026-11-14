@@ -8,7 +8,7 @@
 
 <sub>The f stands for fabulous, right?</sub>
 
-**The agent multiplexer for hackers who are tired of prepackaged workflows.**
+**A workspace your agents can reshape.**
 
 A browser and desktop app for the [oh-my-pi](https://github.com/can1357/oh-my-pi) coding agent: many
 conversations with the agent at once, each with its own oh-my-pi running in the background.
@@ -25,12 +25,15 @@ conversations with the agent at once, each with its own oh-my-pi running in the 
   throw away.
 - **Emacs philosophy at heart.** You change the tool from inside it, while it runs. No rebuilds.
 
-Early and changing fast. [Changelog](CHANGELOG.md).
+Early and changing fast. [Website](https://aciceri.github.io/omfp/) ·
+[Watch the 60-second film](https://aciceri.github.io/omfp/#film) · [Changelog](CHANGELOG.md).
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/screenshot-dark.png">
-  <img alt="omfp with a running thread" src="docs/brand/screenshot-light.png">
-</picture>
+<a href="https://aciceri.github.io/omfp/#film">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/brand/screenshot-dark.png">
+    <img alt="Watch the omfp film" src="docs/brand/screenshot-light.png">
+  </picture>
+</a>
 
 <sub>This README is for humans. The slop lives in [docs/overview.md](docs/overview.md); anything else, ask your agent
 how omfp works.\*</sub>

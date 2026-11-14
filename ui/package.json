@@ -10,8 +10,9 @@
     "check": "tsc --noEmit -p .",
     "test": "bun run test:plain && bun run test:dom",
     "test:plain": "bun test packages/protocol packages/core packages/client",
-    "test:dom": "bun test --preload ./test/dom.ts packages/kit packages/app",
-    "build": "bun run --cwd packages/app build"
+    "test:dom": "bun test --preload ./test/dom.ts packages/kit packages/app packages/site",
+    "build": "bun run --cwd packages/app build",
+    "build:site": "bun run --cwd packages/site build"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "21.0.4",

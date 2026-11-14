@@ -97,6 +97,11 @@ gen-states:
 build-web out="": ui-install
     cd ui && OMFP_WEB_OUT={{ quote(out) }} bun run build
 
+# Release bundle of the single-page project website, sharing @omfp/kit with the app, into
+# ui/packages/site/dist or the absolute path `out`
+build-site out="": ui-install
+    cd ui && OMFP_SITE_OUT={{ quote(out) }} bun run build:site
+
 # Try the app: the release web bundle on a daemon with your own HOME, omp config (~/.omp) and default data dir;
 # arguments go to the daemon, e.g. `just serve --bind 127.0.0.1:7421`
 serve *args: build-web

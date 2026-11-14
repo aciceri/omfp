@@ -120,6 +120,10 @@ The no-usable-model login contract removes the fake provider and disables implic
 guarantee an empty usable-model list; discovery depends on the host and catalog. The contract still checks startup's
 `thread_failed` response and stderr, the zero model count, provider discovery and logout without stored credentials.
 
+UI-389's documented login/logout commands and isolated configuration are traced to their executable UI workflows and
+the pinned-omp profile contract. Documentation prose and path spelling are reviewed with the change, not pinned by
+source-text assertions.
+
 | ID | Requirement |
 | --- | --- |
 | TST-020 | `fake-llm` itself is developed test-first: its own tests check SSE framing, tool-call chunking and request recording. |

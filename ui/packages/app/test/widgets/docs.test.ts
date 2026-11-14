@@ -212,28 +212,6 @@ describe("prompt history", () => {
   });
 });
 
-describe("logging in", () => {
-  // spec: UI-389
-  test("the shell docs say how to log in, log out and use API keys instead", () => {
-    for (const fact of [
-      "## Logging in",
-      "`:login [<provider>]`, `:logout <provider>`",
-      "`:login` opens the provider picker",
-      "`:login <provider>`",
-      "a dialog takes the code or the redirect URL",
-      "omp once that thread is free, so it sees the new models",
-      "**Log in** buttons",
-      "`:logout <provider>` removes omp's stored credentials",
-      "`ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or\n`GEMINI_API_KEY`",
-      "restart the daemon after setting one",
-      "`~/.omp/agent/models.yml`",
-      "`~/.omp/agent/agent.db`",
-    ]) {
-      expect(SHELL.includes(fact) ? fact : `missing: ${fact}`).toBe(fact);
-    }
-  });
-});
-
 describe("built-ins for agents", () => {
   // spec: UI-679, AGT-025
   test("the widget docs and the views schema name every built-in, omfp:web with the mount that places it", () => {

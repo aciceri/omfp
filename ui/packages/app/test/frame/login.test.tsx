@@ -113,7 +113,7 @@ describe("logging in", () => {
     expect(test.host.window.get(ERRORS)).toEqual([]);
   });
 
-  // spec: UI-382, UI-386
+  // spec: UI-382, UI-386, UI-389
   test(":login <provider> starts at once; :login and :logout complete the provider ids", async () => {
     const test = setup();
     run(test, "login anthropic");
@@ -313,7 +313,7 @@ describe("logging in", () => {
     expect(test.host.window.get(AUTH_REVISION)).toBe(1);
   });
 
-  // spec: UI-386
+  // spec: UI-386, UI-389
   test(":logout removes the provider's credentials and says what still authenticates it", async () => {
     const test = setup();
     test.client.answers.set("auth.logout", () => ({

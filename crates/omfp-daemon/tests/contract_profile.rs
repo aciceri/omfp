@@ -86,7 +86,7 @@ fn write(path: &Path, contents: &str) {
     std::fs::write(path, contents).unwrap();
 }
 
-// spec: ARC-021, DMN-030, DMN-190, DMN-219, DMN-223, DMN-235, PRT-110
+// spec: ARC-021, DMN-030, DMN-190, DMN-219, DMN-223, DMN-235, PRT-110, UI-389
 #[tokio::test(flavor = "multi_thread")]
 #[allow(clippy::too_many_lines)] // One end-to-end isolation acceptance scenario.
 async fn fresh_profile_never_imports_standalone_state_and_mutations_are_bidirectionally_isolated() {

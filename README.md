@@ -36,10 +36,6 @@ conversation has its own oh-my-pi running in the background.
 
 Early and changing fast.
 
-omfp keeps its own oh-my-pi profile in `<data-dir>/omp-profile`, separate from standalone `~/.omp`.
-After upgrading from a shared-profile version, log in again with `:login`; credentials and user configuration are
-not imported. [Profile location and migration](docs/overview.md#isolated-omp-profile).
-
 ## Interfaces shaped by the work
 
 Agents build and reshape these views live. They are examples, not prescribed

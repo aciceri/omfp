@@ -108,7 +108,12 @@ mod tests {
         for method in CONNECTION_ONLY {
             assert!(!text.contains(&format!("`{method}`")), "{method}: {text}");
         }
-        assert!(!text.contains("terminal"), "{text}");
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.starts_with("- `terminals.start` — ")),
+            "{text}"
+        );
         // Table order: the first callable method comes first.
         assert!(lines[0].starts_with("- `repos.suggest` — "), "{text}");
     }

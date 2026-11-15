@@ -28,6 +28,13 @@ function decode(data: string): Uint8Array {
   return bytes;
 }
 
+function defaultTheme(element: HTMLElement): ITerminalOptions["theme"] | undefined {
+  const style = getComputedStyle(element);
+  const background = style.getPropertyValue("--omfp-terminal-bg").trim();
+  const foreground = style.getPropertyValue("--omfp-terminal-fg").trim();
+  return background === "" || foreground === "" ? undefined : { background, cursor: foreground, foreground };
+}
+
 /** Longest prefix of `next` that is a suffix of `previous`, in linear time. */
 function chunkOverlap(previous: readonly string[], next: readonly string[]): number {
   if (next.length === 0) {
@@ -88,7 +95,15 @@ export function TerminalEmulator({
     if (element === null) {
       return undefined;
     }
-    const terminal = new XTerm({ cursorBlink: true, scrollback: 2000, ...options, cols, rows });
+    const theme = defaultTheme(element);
+    const terminal = new XTerm({
+      cursorBlink: true,
+      scrollback: 2000,
+      ...(theme === undefined ? {} : { theme }),
+      ...options,
+      cols,
+      rows,
+    });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(element);

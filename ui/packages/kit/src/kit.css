@@ -1,4 +1,4 @@
-@import "@xterm/xterm/css/xterm.css";
+@import "./xterm.css";
 
 /*
  * @omfp/kit component styles: the Crush look (09-design, UI-120..UI-172). Only `var(--omfp-*)` tokens: no color

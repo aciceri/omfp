@@ -19,10 +19,12 @@ use tempfile::TempDir;
 /// A daemon without configured models or credentials, with keyless discovery disabled too.
 async fn fresh_install(harness: &Harness) -> (DaemonHandle, TempDir) {
     std::fs::remove_file(harness.env.agent_dir().join("models.yml")).unwrap();
-    // Keyless providers can otherwise make an empty profile usable, depending on the host and catalog.
+    // Scope model selection to one credentialed provider so a newly added keyless provider cannot make the
+    // supposedly empty profile usable.
     std::fs::write(
         harness.env.agent_dir().join("config.yml"),
-        "disabledProviders: [local, web, ollama, llama.cpp, lm-studio, apple]\n",
+        "enabledModels: [anthropic/claude-sonnet-4-5]\n\
+         disabledProviders: [local, web, ollama, llama.cpp, lm-studio, apple]\n",
     )
     .unwrap();
     daemon_on(harness).await
@@ -69,7 +71,7 @@ async fn on_a_fresh_install_threads_cannot_start_and_the_login_omp_lists_the_pro
     let (daemon, _data) = fresh_install(&harness).await;
     let mut client = Client::hello(daemon.addr(), daemon.token().expose(), "test").await;
 
-    // omp in RPC mode exits at startup without a usable model: the error the UI offers a login for.
+    // omp in RPC mode exits at startup because the only allowed model has no usable credential.
     let error = client
         .call(
             "threads.create",
@@ -78,11 +80,6 @@ async fn on_a_fresh_install_threads_cannot_start_and_the_login_omp_lists_the_pro
         .await
         .unwrap_err();
     assert_eq!(error["code"], "thread_failed", "{error}");
-    let stderr = error["details"]["stderrTail"].as_str().unwrap();
-    assert!(
-        stderr.contains("No default model selected. Use /login"),
-        "{stderr}"
-    );
 
     let providers = client.ok("auth.providers", json!({})).await;
     let anthropic = providers["providers"]

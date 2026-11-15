@@ -6,13 +6,14 @@ import {
   METHODS,
   type ParamsOf,
   parseTopic,
+  terminalTopic,
   threadTopic,
   viewsTopic,
   workspaceTopic,
 } from "../src/index.ts";
 
 describe("topics", () => {
-  // spec: PRT-040, PRT-041
+  // spec: PRT-040, PRT-041, PRT-135
   test("round trip through their names", () => {
     const cases = [
       [{ kind: "index" }, "index"],
@@ -20,6 +21,7 @@ describe("topics", () => {
       [{ kind: "workspace", id: "01J0WS" }, "workspace/01J0WS"],
       [{ kind: "views", id: "01J0WS" }, "views/01J0WS"],
       [{ kind: "job", id: "01J0JOB" }, "job/01J0JOB"],
+      [{ kind: "terminal", id: "01J0TERMINAL" }, "terminal/01J0TERMINAL"],
     ] as const;
     for (const [topic, name] of cases) {
       expect(formatTopic(topic)).toBe(name);
@@ -30,6 +32,7 @@ describe("topics", () => {
     expect(workspaceTopic("01J0WS")).toBe("workspace/01J0WS");
     expect(viewsTopic("01J0WS")).toBe("views/01J0WS");
     expect(jobTopic("01J0JOB")).toBe("job/01J0JOB");
+    expect(terminalTopic("01J0TERMINAL")).toBe("terminal/01J0TERMINAL");
   });
 
   // spec: PRT-135
@@ -45,7 +48,7 @@ describe("topics", () => {
       "Thread/01J",
       "threads/01J",
       "repo/01J",
-      "terminal/01J",
+      "terminal",
       "/01J",
       " index",
     ];

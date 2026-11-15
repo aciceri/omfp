@@ -225,6 +225,9 @@
       0 0 0 1px color-mix(in oklab, var(--omfp-primary) 8%, transparent),
       0 0.75rem 2rem color-mix(in oklab, var(--omfp-primary) 14%, transparent);
     --omfp-kbd-bg: var(--omfp-surface-container);
+    /* Terminal canvas: stable ANSI defaults; widgets may override both tokens. */
+    --omfp-terminal-bg: #000000;
+    --omfp-terminal-fg: #ffffff;
 
     /* Icons (UI-131) */
     --omfp-ic: 0.875rem;

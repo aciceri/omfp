@@ -11,7 +11,7 @@ use std::process::Command;
 use clap::Parser;
 use client::{Client, Follower};
 use common::{Harness, system_prompt};
-use fake_llm::{Reply, Step};
+use fake_llm::{Reply, Step, ToolCall};
 use omfp_daemon::config::{Cli, Config};
 use omfp_daemon::paths::DataDir;
 use omfp_daemon::{Ports, omp_profile, start_with};
@@ -90,13 +90,29 @@ fn write(path: &Path, contents: &str) {
 #[tokio::test(flavor = "multi_thread")]
 #[allow(clippy::too_many_lines)] // One end-to-end isolation acceptance scenario.
 async fn fresh_profile_never_imports_standalone_state_and_mutations_are_bidirectionally_isolated() {
-    let harness = Harness::new(vec![Step::reply(Reply::text("profile response"))]).await;
+    let harness = Harness::new(vec![
+        Step::reply(Reply::tool_calls(vec![ToolCall::new(
+            "host_config",
+            "bash",
+            json!({ "command": "cat \"$XDG_CONFIG_HOME/gh/hosts.yml\"" }),
+        )])),
+        Step::reply(Reply::text("profile response")),
+    ])
+    .await;
     // Existing standalone XDG roots must not redirect omfp's runtime or credentials either.
     let standalone_xdg = harness.env.root().join("xdg");
     for category in ["data", "state", "cache"] {
         std::fs::create_dir_all(standalone_xdg.join(category).join("omp")).unwrap();
     }
-    let standalone_env = harness.env.env_overrides();
+    write(
+        &standalone_xdg.join("config/gh/hosts.yml"),
+        "HOST_CLI_CONFIG_MARKER",
+    );
+    let mut standalone_env = harness.env.env_overrides();
+    standalone_env.push((
+        "XDG_CONFIG_HOME".into(),
+        Some(standalone_xdg.join("config").into_os_string()),
+    ));
     auth(&harness, &standalone_env, Some("standalone-key")).await;
     let standalone = harness.env.home().join(".omp");
     let standalone_auth = auth(&harness, &standalone_env, None).await;
@@ -226,6 +242,10 @@ async fn fresh_profile_never_imports_standalone_state_and_mutations_are_bidirect
     let system = system_prompt(&requests[0]);
     assert!(system.contains("ISOLATED_APPEND_MARKER"));
     assert!(!system.contains("STANDALONE_APPEND_MUST_NOT_LOAD"));
+    assert!(
+        requests[1].to_string().contains("HOST_CLI_CONFIG_MARKER"),
+        "agent shell tools must see host CLI configuration"
+    );
     assert!(system.contains("ISOLATED_AGENT_MARKER"));
     assert!(system.contains("PROJECT_AGENT_MARKER"));
     assert!(!system.contains("STANDALONE_AGENT_MUST_NOT_LOAD"));

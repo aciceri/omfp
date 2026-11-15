@@ -1,5 +1,5 @@
-//! The mandatory omp user-state boundary (ARC-021). HOME and project discovery stay unchanged; both native
-//! config lookup and runtime directories are pinned to the daemon's own data directory.
+//! The mandatory omp user-state boundary (ARC-021). HOME and project discovery stay unchanged; native
+//! config lookup and mutable runtime directories are pinned to the daemon's own data directory.
 
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
@@ -9,8 +9,8 @@ use crate::paths::DataDir;
 type Environment = Vec<(OsString, Option<OsString>)>;
 
 /// Environment for every daemon-owned omp, including the version probe, auth and print-mode runs. Call after
-/// caller-supplied overrides: neither an inherited named profile nor an agent/XDG override may select standalone
-/// state. Explicit provider API keys in the daemon's environment still work; they are not imported profile files.
+/// caller-supplied overrides: neither an inherited named profile nor an agent/mutable-XDG override may select
+/// standalone omp state. Explicit provider API keys still work; host XDG configuration remains available to tools.
 pub fn environment(data: &DataDir, mut env: Environment) -> std::io::Result<Environment> {
     let inherited_home = std::env::var_os("HOME");
     let home = crate::conventions::omp_home(&env, inherited_home.as_deref())
@@ -62,8 +62,9 @@ pub fn environment(data: &DataDir, mut env: Environment) -> std::io::Result<Envi
     for key in ["PI_NATIVES_DIR", "OMP_NATIVES_DIR"] {
         set(key, root.join("natives").into_os_string());
     }
+    // Shell tools inherit omp's environment. Keep the host configuration root so CLIs such as gh remain usable;
+    // PI_CONFIG_DIR and PI_CODING_AGENT_DIR already isolate omp's own user configuration.
     for (key, category) in [
-        ("XDG_CONFIG_HOME", "config"),
         ("XDG_DATA_HOME", "data"),
         ("XDG_STATE_HOME", "state"),
         ("XDG_CACHE_HOME", "cache"),
@@ -84,6 +85,7 @@ mod tests {
         let inherited = vec![
             ("HOME".into(), Some("/home/user".into())),
             ("PI_CODING_AGENT_DIR".into(), Some("/standalone".into())),
+            ("XDG_CONFIG_HOME".into(), Some("/home/user/.config".into())),
             ("OMP_PROFILE".into(), Some("work".into())),
             (
                 "PI_CONFIG_FILES".into(),
@@ -118,6 +120,7 @@ mod tests {
             value("XDG_DATA_HOME"),
             Some("/data/omfp/omp-profile/xdg/data".into())
         );
+        assert_eq!(value("XDG_CONFIG_HOME"), Some("/home/user/.config".into()));
         assert_eq!(
             value("OPENAI_API_KEY"),
             Some("explicit-environment-key".into())

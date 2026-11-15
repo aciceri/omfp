@@ -26,6 +26,7 @@ pub mod search;
 pub mod server;
 pub mod store;
 pub mod supervisor;
+pub mod terminals;
 pub mod theme;
 pub mod threads;
 pub mod titles;

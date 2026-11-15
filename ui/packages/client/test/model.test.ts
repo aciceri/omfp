@@ -8,14 +8,24 @@ import {
   type JobState,
   jobTopic,
   type SubscribeResult,
+  type TerminalState,
   type TopicEvent,
+  terminalTopic,
   threadTopic,
   type ViewsState,
   viewsTopic,
   type WorkspaceBinding,
 } from "@omfp/protocol";
 import { decodeServerFrame } from "../src/decode.ts";
-import { type Dirty, isDirtyEmpty, JOB_TEXT_LIMIT, Model, type ThreadView } from "../src/index.ts";
+import {
+  type Dirty,
+  isDirtyEmpty,
+  JOB_TEXT_LIMIT,
+  Model,
+  TERMINAL_BYTES_LIMIT,
+  TERMINAL_CHUNKS_LIMIT,
+  type ThreadView,
+} from "../src/index.ts";
 import { FIXTURES, fixture, indexFrame, indexState, summary, threadFrame, workspace } from "./support.ts";
 
 const THREAD = "01THREAD";
@@ -592,6 +602,82 @@ describe("model", () => {
     expect([...model.takeDirty().jobs]).toEqual(["01JOB"]);
   });
 
+  // spec: TRM-100, TRM-102
+  test("terminal topics append byte chunks and record exit", () => {
+    const model = new Model();
+    const topic = terminalTopic("01TERMINAL");
+    model.track(topic);
+    const state: TerminalState = {
+      terminal: {
+        id: "01TERMINAL",
+        workspaceId: "01W",
+        command: "sh",
+        cwd: "/workspace",
+        cols: 80,
+        rows: 24,
+        startedAt: 5,
+        status: { state: "running" },
+      },
+      scrollback: ["b25l"],
+      dropped: 0,
+    };
+    expect(model.applySubscribed(topic, snapshot("t1", 1, state)).ok).toBe(true);
+    model.takeDirty();
+
+    const events: TopicEvent[] = [
+      { kind: "output", data: "dHdv" },
+      { kind: "exited", code: 0, endedAt: 9 },
+    ];
+    for (const [at, event] of events.entries()) {
+      expect(model.applyEvent({ type: "event", topic, epoch: "t1", seq: at + 2, event })).toBe("applied");
+    }
+
+    expect(model.terminals.get("01TERMINAL")).toEqual({
+      ...state,
+      terminal: { ...state.terminal, status: { state: "exited", code: 0, endedAt: 9 } },
+      scrollback: ["b25l", "dHdv"],
+    });
+    expect([...model.takeDirty().terminals]).toEqual(["01TERMINAL"]);
+    expect(model.untrack(topic)).toBe(true);
+    expect(model.terminals.has("01TERMINAL")).toBe(false);
+  });
+
+  // spec: TRM-103
+  test("a terminal topic bounds live byte chunks like its daemon snapshot", () => {
+    const model = new Model();
+    const topic = terminalTopic("01TERMINAL");
+    model.track(topic);
+    const half = btoa("x".repeat(TERMINAL_BYTES_LIMIT / 2));
+    const state: TerminalState = {
+      terminal: {
+        id: "01TERMINAL",
+        workspaceId: "01W",
+        command: "sh",
+        cwd: "/workspace",
+        cols: 80,
+        rows: 24,
+        startedAt: 5,
+        status: { state: "running" },
+      },
+      scrollback: [half, half],
+      dropped: 1,
+    };
+    expect(model.applySubscribed(topic, snapshot("t1", 1, state)).ok).toBe(true);
+    const event: TopicEvent = { kind: "output", data: "dGFpbA==" };
+    expect(model.applyEvent({ type: "event", topic, epoch: "t1", seq: 2, event })).toBe("applied");
+
+    const kept = model.terminals.get("01TERMINAL");
+    expect(kept?.scrollback.map((chunk) => chunk.length)).toEqual([half.length, 8]);
+    expect(kept?.dropped).toBe(1 + TERMINAL_BYTES_LIMIT / 2);
+    for (let seq = 3; seq < TERMINAL_CHUNKS_LIMIT + 2; seq += 1) {
+      const oneByte: TopicEvent = { kind: "output", data: "eA==" };
+      expect(model.applyEvent({ type: "event", topic, epoch: "t1", seq, event: oneByte })).toBe("applied");
+    }
+    const chunkBounded = model.terminals.get("01TERMINAL");
+    expect(chunkBounded?.scrollback.length).toBe(TERMINAL_CHUNKS_LIMIT);
+    expect(chunkBounded?.dropped).toBe(1 + TERMINAL_BYTES_LIMIT);
+  });
+
   // spec: DMN-080, PRT-041
   test("a job topic keeps at most a mebibyte of text, counting the lines it drops", () => {
     const model = new Model();
@@ -636,6 +722,7 @@ describe("model", () => {
       workspaces: new Set(),
       views: new Set(),
       jobs: new Set(),
+      terminals: new Set(),
     };
     expect(model.takeDirty()).toEqual(expected);
     expect(isDirtyEmpty(model.takeDirty())).toBe(true);

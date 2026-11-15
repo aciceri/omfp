@@ -924,7 +924,7 @@ requirements = [
   "UI-455",
   # QA fixes: journeys measure overlays at rest
   "TST-110",
-  # QA fixes: the terminal is removed
+  # QA fixes: the omp terminal handoff is removed
   "PRT-135",
   # QA fixes: one name line per turn
   # QA fixes: one name line per turn, a tool result's images as thumbnails with a full view
@@ -1179,4 +1179,12 @@ requirements = [
   "UI-730",
   # Workspace-wide fuzzy file picker (#57)
   "UI-731",
+  # Reusable daemon-owned PTY sessions and the copyable terminal widget (#80)
+  "TRM-100",
+  "TRM-101",
+  "TRM-102",
+  "TRM-103",
+  "TRM-104",
+  "TRM-105",
+  "E2E-71",
 ]

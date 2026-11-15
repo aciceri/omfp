@@ -84,11 +84,13 @@ pub(super) async fn workspaces(services: &Services, principal: &Principal, call:
                     .map_err(workspace_error)
             })
             .await?;
-            // The removal goes ahead: its jobs die before its folder is deleted (DMN-081).
+            // Jobs and PTYs die before the workspace folder is deleted (DMN-081, TRM-104).
             services.jobs.kill_workspace(&id).await;
+            services.terminals.kill_workspace(&id);
             let removed = id.clone();
             blocking(move || workspaces.remove(&removed, force).map_err(workspace_error)).await?;
             services.jobs.forget_workspace(&id);
+            services.terminals.forget_workspace(&id);
             services.refresh_index_quietly().await;
             return empty();
         }

@@ -22,6 +22,9 @@ import {
   type ServerFrame,
   type Settings,
   type SubscribeResult,
+  type TerminalEvent,
+  type TerminalInfo,
+  type TerminalState,
   type Theme,
   type TopicEvent,
   type TransientEvent,
@@ -63,6 +66,10 @@ function isSeq(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
+function isPositiveU16(value: unknown): value is number {
+  return isSeq(value) && value > 0 && value <= 65_535;
+}
+
 function isOptionalString(value: unknown): value is string | null | undefined {
   return value === undefined || value === null || typeof value === "string";
 }
@@ -73,6 +80,12 @@ function isNullableObject(value: unknown): boolean {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+function isBase64(value: unknown): value is string {
+  return typeof value === "string" && BASE64.test(value);
 }
 
 function hasId(value: unknown): boolean {
@@ -250,12 +263,18 @@ const JOB_EVENTS: Record<JobEvent["kind"], (event: Record<string, unknown>) => b
     typeof event.endedAt === "number" && isOptionalNumber(event.code) && isOptionalNumber(event.signal),
 };
 
+const TERMINAL_EVENTS: Record<TerminalEvent["kind"], (event: Record<string, unknown>) => boolean> = {
+  output: (event) => isBase64(event.data),
+  exited: (event) => typeof event.endedAt === "number" && isOptionalNumber(event.code),
+};
+
 const EVENT_TABLES: Record<ParsedTopic["kind"], Record<string, (event: Record<string, unknown>) => boolean>> = {
   index: INDEX_EVENTS,
   thread: THREAD_EVENTS,
   workspace: WORKSPACE_EVENTS,
   views: VIEWS_EVENTS,
   job: JOB_EVENTS,
+  terminal: TERMINAL_EVENTS,
 };
 
 /** Decodes the `event` of a frame on `topic`: its kind must belong to the topic's kind. */
@@ -605,4 +624,40 @@ export function decodeJobState(value: unknown): Decoded<JobState> {
   }
   // Every field checked above.
   return { ok: true, value: value as JobState };
+}
+
+function isTerminalInfo(value: unknown): value is TerminalInfo {
+  if (
+    !isObject(value) ||
+    typeof value.id !== "string" ||
+    typeof value.workspaceId !== "string" ||
+    typeof value.command !== "string" ||
+    typeof value.cwd !== "string" ||
+    !isPositiveU16(value.cols) ||
+    !isPositiveU16(value.rows) ||
+    typeof value.startedAt !== "number" ||
+    !isObject(value.status)
+  ) {
+    return false;
+  }
+  return (
+    value.status.state === "running" ||
+    (value.status.state === "exited" && typeof value.status.endedAt === "number" && isOptionalNumber(value.status.code))
+  );
+}
+
+/** Decodes the state of a `terminal/<id>` snapshot (TRM-100, TRM-103). */
+export function decodeTerminalState(value: unknown): Decoded<TerminalState> {
+  if (
+    !isObject(value) ||
+    !isTerminalInfo(value.terminal) ||
+    !isSeq(value.dropped) ||
+    !Array.isArray(value.scrollback) ||
+    !value.scrollback.every(isBase64)
+  ) {
+    return invalid(
+      "expected `{ terminal: { id, workspaceId, command, cwd, cols, rows, startedAt, status }, scrollback, dropped }`",
+    );
+  }
+  return { ok: true, value: value as TerminalState };
 }

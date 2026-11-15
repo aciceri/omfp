@@ -650,3 +650,47 @@ pub struct JobState {
     /// How many older lines were left out.
     pub dropped: u64,
 }
+
+/// The process state of a daemon-owned PTY session (TRM-100).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum TerminalStatus {
+    Running,
+    /// The shell exited; PTY output is still available in the topic snapshot.
+    #[serde(rename_all = "camelCase")]
+    Exited {
+        code: Option<i32>,
+        ended_at: i64,
+    },
+}
+
+/// An interactive PTY session (TRM-100).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalInfo {
+    pub id: String,
+    pub workspace_id: String,
+    /// Run as `sh -c <command>` attached to a PTY.
+    pub command: String,
+    /// Absolute working directory selected under the workspace.
+    pub cwd: String,
+    pub cols: u16,
+    pub rows: u16,
+    pub started_at: i64,
+    pub status: TerminalStatus,
+}
+
+/// State of a `terminal/<id>` topic (TRM-100, TRM-103).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalState {
+    pub terminal: TerminalInfo,
+    /// Base64-encoded PTY bytes, oldest first; the client feeds these to its emulator.
+    pub scrollback: Vec<String>,
+    /// Raw bytes currently retained; internal bookkeeping, not serialized.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub retained_bytes: usize,
+    /// Raw bytes dropped from the bounded scrollback.
+    pub dropped: u64,
+}

@@ -4,7 +4,7 @@
 use std::sync::Arc;
 
 use omfp_protocol::{ActivityEntry, ActivityPage, Call, ErrorBody, ListActivityParams, Request};
-use serde_json::Value;
+use serde_json::{Value, json};
 use tracing::warn;
 
 use super::auth::{Permission, Principal, permission};
@@ -34,10 +34,16 @@ pub(crate) fn pending(principal: &Principal, call: &Call) -> Option<NewActivity>
     ) {
         return None;
     }
-    let params = serde_json::to_value(Request::new("", call.clone()))
-        .ok()
-        .and_then(|mut request| request.get_mut("params").map(Value::take))
-        .unwrap_or(Value::Null);
+    let params = match call {
+        Call::TerminalsInput(params) => json!({
+            "terminalId": params.terminal_id,
+            "data": "[redacted]",
+        }),
+        _ => serde_json::to_value(Request::new("", call.clone()))
+            .ok()
+            .and_then(|mut request| request.get_mut("params").map(Value::take))
+            .unwrap_or(Value::Null),
+    };
     Some(NewActivity {
         at: now_ms(),
         thread_id,
@@ -122,8 +128,8 @@ mod tests {
     use std::time::Duration;
 
     use omfp_protocol::{
-        JobRef, PromptParams, SetWidgetStateParams, StartJobParams, StopThreadParams, ThreadRef,
-        WriteFileParams,
+        JobRef, PromptParams, SetWidgetStateParams, StartJobParams, StopThreadParams,
+        TerminalInputParams, ThreadRef, WriteFileParams,
     };
     use serde_json::json;
     use tempfile::TempDir;
@@ -191,6 +197,23 @@ mod tests {
         .await
         .expect("the job did not finish");
         status()
+    }
+
+    // spec: TRM-104
+    #[test]
+    fn terminal_input_is_redacted_from_agent_activity() {
+        let activity = pending(
+            &agent_of("thread"),
+            &Call::TerminalsInput(TerminalInputParams {
+                terminal_id: "terminal".into(),
+                data: "c2VjcmV0".into(),
+            }),
+        )
+        .unwrap();
+        assert_eq!(
+            activity.params,
+            json!({ "terminalId": "terminal", "data": "[redacted]" })
+        );
     }
 
     // spec: AGT-072, DMN-161, PRT-086

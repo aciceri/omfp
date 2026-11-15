@@ -17,6 +17,7 @@ use super::convert::{bad_request, internal, supervisor_error, workspace_error};
 use super::prompts;
 use super::services::{Services, blocking};
 use crate::store::Provenance;
+use crate::terminals::StartTerminal;
 use crate::{fs_complete, search};
 
 mod fork;
@@ -189,6 +190,10 @@ async fn run(services: &Services, principal: &Principal, call: Call) -> Reply {
             empty()
         }
         call @ (Call::JobsStart(_) | Call::JobsKill(_)) => jobs(services, principal, call).await,
+        call @ (Call::TerminalsStart(_)
+        | Call::TerminalsInput(_)
+        | Call::TerminalsResize(_)
+        | Call::TerminalsKill(_)) => terminals(services, principal, call).await,
         Call::ActivityList(params) => ok(&activity::list(services, params).await?),
         Call::PromptsHistory(params) => ok(&prompts::history(services, params).await?),
         Call::AuthStatus(_) => ok(&services.auth_status().await?),
@@ -229,5 +234,47 @@ async fn jobs(services: &Services, principal: &Principal, call: Call) -> Reply {
             empty()
         }
         _ => Err(internal("not a jobs method")),
+    }
+}
+
+/// `terminals.*` (TRM-100..102); terminal input bytes are redacted from agent activity.
+async fn terminals(services: &Services, principal: &Principal, call: Call) -> Reply {
+    match call {
+        Call::TerminalsStart(params) => {
+            let workspaces = Arc::clone(&services.workspaces);
+            let workspace_id = params.workspace_id;
+            let workspace =
+                blocking(move || workspaces.get(&workspace_id).map_err(workspace_error)).await?;
+            let started_by = match principal.created_by() {
+                Provenance::Thread(thread_id) => Some(thread_id),
+                Provenance::User | Provenance::Mcp => None,
+            };
+            ok(&services.terminals.start(StartTerminal {
+                workspace_id: &workspace.id,
+                workspace: &workspace.path,
+                command: &params.command,
+                cwd: params.cwd.as_deref(),
+                cols: params.cols,
+                rows: params.rows,
+                started_by: started_by.as_deref(),
+            })?)
+        }
+        Call::TerminalsInput(params) => {
+            services
+                .terminals
+                .input(&params.terminal_id, &params.data)?;
+            empty()
+        }
+        Call::TerminalsResize(params) => {
+            services
+                .terminals
+                .resize(&params.terminal_id, params.cols, params.rows)?;
+            empty()
+        }
+        Call::TerminalsKill(params) => {
+            services.terminals.kill(&params.terminal_id)?;
+            empty()
+        }
+        _ => Err(internal("not a terminals method")),
     }
 }

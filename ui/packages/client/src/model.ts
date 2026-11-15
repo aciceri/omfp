@@ -25,6 +25,8 @@ import {
   type Settings,
   type SubscribeParams,
   type SubscribeResult,
+  type TerminalEvent,
+  type TerminalState,
   type Theme,
   type ThreadSummary,
   type Topic,
@@ -36,6 +38,7 @@ import {
   decodeIndexSnapshot,
   decodeJobState,
   decodeRepoStatusList,
+  decodeTerminalState,
   decodeThreadState,
   decodeViewsState,
   NO_SETTINGS,
@@ -129,6 +132,8 @@ export interface Dirty {
   views: Set<string>;
   /** Job ids whose state changed or went away. */
   jobs: Set<string>;
+  /** Terminal ids whose state changed or went away. */
+  terminals: Set<string>;
 }
 
 function emptyDirty(): Dirty {
@@ -140,6 +145,7 @@ function emptyDirty(): Dirty {
     workspaces: new Set(),
     views: new Set(),
     jobs: new Set(),
+    terminals: new Set(),
   };
 }
 
@@ -152,7 +158,8 @@ export function isDirtyEmpty(dirty: Dirty): boolean {
     dirty.threads.size === 0 &&
     dirty.workspaces.size === 0 &&
     dirty.views.size === 0 &&
-    dirty.jobs.size === 0
+    dirty.jobs.size === 0 &&
+    dirty.terminals.size === 0
   );
 }
 
@@ -185,6 +192,9 @@ export interface ModelView {
   readonly views: ReadonlyMap<string, ViewsState>;
   /** State of subscribed `job/<id>` topics (PRT-041), by job id. */
   readonly jobs: ReadonlyMap<string, JobState>;
+  /** State of subscribed `terminal/<id>` topics (TRM-100), by terminal id. */
+  readonly terminals: ReadonlyMap<string, TerminalState>;
+
   /** Subscribed topics in subscription order. */
   readonly topics: readonly TopicState[];
   topic(topic: Topic): TopicState | undefined;
@@ -302,6 +312,16 @@ function applyViewsEvent(views: ViewsState, event: ViewsEvent): ViewsState {
 /** Text a job topic keeps, like the daemon's state (DMN-080): older lines are dropped and counted in `dropped`. */
 export const JOB_TEXT_LIMIT = 1024 * 1024;
 
+/** Raw PTY bytes a terminal topic keeps, like the daemon's state (TRM-103). */
+export const TERMINAL_BYTES_LIMIT = 1024 * 1024;
+/** Maximum chunks retained, bounding allocation overhead from one-byte PTY writes. */
+export const TERMINAL_CHUNKS_LIMIT = 4096;
+
+function base64Bytes(data: string): number {
+  const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
+  return Math.floor((data.length * 3) / 4) - padding;
+}
+
 /** `lines` with `line` appended, the oldest dropped while the text exceeds {@link JOB_TEXT_LIMIT}. */
 function appendJobLine(job: JobState, line: JobState["lines"][number]): JobState {
   const lines = [...job.lines, line];
@@ -324,6 +344,35 @@ function applyJobEvent(job: JobState, event: JobEvent): JobState {
         job: {
           ...job.job,
           status: { state: "exited", code: event.code ?? null, signal: event.signal ?? null, endedAt: event.endedAt },
+        },
+      };
+  }
+}
+
+function applyTerminalEvent(terminal: TerminalState, event: TerminalEvent): TerminalState {
+  switch (event.kind) {
+    case "output": {
+      const scrollback = [...terminal.scrollback, event.data];
+      let size = scrollback.reduce((total, chunk) => total + base64Bytes(chunk), 0);
+      let cut = 0;
+      let dropped = terminal.dropped;
+      while (
+        (size > TERMINAL_BYTES_LIMIT || scrollback.length - cut > TERMINAL_CHUNKS_LIMIT) &&
+        cut < scrollback.length - 1
+      ) {
+        const bytes = base64Bytes(scrollback[cut] ?? "");
+        size -= bytes;
+        dropped += bytes;
+        cut += 1;
+      }
+      return { ...terminal, scrollback: cut === 0 ? scrollback : scrollback.slice(cut), dropped };
+    }
+    case "exited":
+      return {
+        ...terminal,
+        terminal: {
+          ...terminal.terminal,
+          status: { state: "exited", code: event.code ?? null, endedAt: event.endedAt },
         },
       };
   }
@@ -352,6 +401,7 @@ export class Model implements ModelView {
   #workspaces: ReadonlyMap<string, readonly RepoStatus[]> = new Map();
   #views: ReadonlyMap<string, ViewsState> = new Map();
   #jobs: ReadonlyMap<string, JobState> = new Map();
+  #terminals: ReadonlyMap<string, TerminalState> = new Map();
   #topics: readonly TopicState[] = [];
   #dirty: Dirty = emptyDirty();
   #revision = 0;
@@ -382,6 +432,10 @@ export class Model implements ModelView {
 
   get jobs(): ReadonlyMap<string, JobState> {
     return this.#jobs;
+  }
+
+  get terminals(): ReadonlyMap<string, TerminalState> {
+    return this.#terminals;
   }
 
   get topics(): readonly TopicState[] {
@@ -466,6 +520,10 @@ export class Model implements ModelView {
       case "job":
         this.#jobs = without(this.#jobs, parsed.id);
         this.#dirty.jobs.add(parsed.id);
+        break;
+      case "terminal":
+        this.#terminals = without(this.#terminals, parsed.id);
+        this.#dirty.terminals.add(parsed.id);
         break;
       case undefined:
         break;
@@ -593,6 +651,15 @@ export class Model implements ModelView {
         this.#dirty.jobs.add(parsed.id);
         return undefined;
       }
+      case "terminal": {
+        const terminal = decodeTerminalState(state);
+        if (!terminal.ok) {
+          return terminal.error;
+        }
+        this.#terminals = upsert(this.#terminals, parsed.id, terminal.value);
+        this.#dirty.terminals.add(parsed.id);
+        return undefined;
+      }
       case undefined:
         return `invalid topic ${topic}`;
     }
@@ -664,6 +731,15 @@ export class Model implements ModelView {
         if (parsed?.kind === "job" && job !== undefined) {
           this.#jobs = upsert(this.#jobs, parsed.id, applyJobEvent(job, event));
           this.#dirty.jobs.add(parsed.id);
+        }
+        break;
+      }
+      case "output":
+      case "exited": {
+        const terminal = parsed?.kind === "terminal" ? this.#terminals.get(parsed.id) : undefined;
+        if (parsed?.kind === "terminal" && terminal !== undefined) {
+          this.#terminals = upsert(this.#terminals, parsed.id, applyTerminalEvent(terminal, event));
+          this.#dirty.terminals.add(parsed.id);
         }
         break;
       }

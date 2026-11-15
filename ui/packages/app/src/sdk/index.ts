@@ -396,10 +396,13 @@ export {
   type JobOptions,
   type JobRunStatus,
   type StoredUpdate,
+  type Terminal,
+  type TerminalOptions,
   type ToolRunInfo,
   type ToolRunTarget,
   useJob,
   useStored,
+  useTerminal,
   useToolRun,
 } from "./sources.ts";
 export {

@@ -30,6 +30,7 @@ use crate::jobs::Jobs;
 use crate::paths::replace_file;
 use crate::store::{Store, StoreError, new_id, now_ms};
 use crate::supervisor::Supervisor;
+use crate::terminals::Terminals;
 use crate::theme;
 use crate::threads::Threads;
 use crate::watch::{self, WatchedFile};
@@ -117,6 +118,8 @@ pub(crate) struct Services {
     pub index: Arc<IndexLog>,
     /// The workspaces' jobs (DMN-080, DMN-081).
     pub jobs: Jobs,
+    /// Interactive PTY sessions (TRM-100..105).
+    pub terminals: Terminals,
     /// Serializes index refreshes so their events never interleave.
     refresh: Arc<tokio::sync::Mutex<()>>,
     workspace_logs: Arc<Mutex<HashMap<String, Arc<WorkspaceLog>>>>,
@@ -180,6 +183,7 @@ impl Services {
                 LIVE_BUFFER,
             )),
             jobs: Jobs::default(),
+            terminals: Terminals::default(),
             refresh: Arc::new(tokio::sync::Mutex::new(())),
             workspace_logs: Arc::new(Mutex::new(HashMap::new())),
             settings: Arc::new(Mutex::new(SettingsState::default())),

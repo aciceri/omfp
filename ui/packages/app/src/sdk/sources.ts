@@ -4,7 +4,7 @@
  */
 
 import type { ToolRun, ToolStatus } from "@omfp/core";
-import { type JobState, jobTopic } from "@omfp/protocol";
+import { type JobState, jobTopic, type TerminalState, terminalTopic } from "@omfp/protocol";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { strings } from "../strings/index.ts";
 import { resultText } from "../vm/tool.ts";
@@ -283,7 +283,150 @@ export function useJob(command: string, options: JobOptions = {}): Job {
   return { ...job, ...output, state, refreshing: live === undefined && state !== undefined, restart, kill };
 }
 
-/** Which tool run {@link useToolRun} follows. */
+/** Options of {@link useTerminal}. */
+export interface TerminalOptions {
+  /** Workspace-relative working directory. */
+  readonly cwd?: string;
+  /** Initial terminal columns and rows. */
+  readonly cols?: number;
+  readonly rows?: number;
+  /** Stored session slot; changing the command replaces the previous session. */
+  readonly key?: string;
+}
+
+/** A daemon-owned interactive PTY session (TRM-100..105). */
+export interface Terminal {
+  readonly id: string | undefined;
+  readonly state: TerminalState | undefined;
+  readonly status: "pending" | "running" | "exited";
+  readonly refreshing: boolean;
+  readonly runs: number;
+  input(data: string | Uint8Array): void;
+  resize(cols: number, rows: number): void;
+  kill(): void;
+}
+
+interface StoredTerminal {
+  readonly id: string;
+  readonly runs: number;
+  readonly command?: string;
+}
+
+function storedTerminal(value: unknown): StoredTerminal | null {
+  if (typeof value !== "object" || value === null) {
+    return null;
+  }
+  const { id, runs, command } = value as { id?: unknown; runs?: unknown; command?: unknown };
+  if (typeof id !== "string") {
+    return null;
+  }
+  return typeof command === "string"
+    ? { id, runs: typeof runs === "number" ? runs : 1, command }
+    : { id, runs: typeof runs === "number" ? runs : 1 };
+}
+
+function base64(data: string | Uint8Array): string {
+  const bytes = typeof data === "string" ? new TextEncoder().encode(data) : data;
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary);
+}
+
+/**
+ * Starts or follows a daemon-owned PTY session. The id is stored in the widget instance's workspace state, so remounts
+ * and other windows follow the same session instead of starting a new process. Input is base64-encoded at the SDK
+ * boundary and never appears in the agent activity log.
+ */
+export function useTerminal(command: string, options: TerminalOptions = {}): Terminal {
+  const { cwd, cols = 80, rows = 24, key } = options;
+  const host = useHost();
+  const { workspaceId } = useWidget();
+  const storeKey = key === undefined ? `terminal:${command}` : `terminalkey:${key}`;
+  const [value, setStored, loaded] = useStored<unknown>(storeKey, null);
+  const stored = storedTerminal(value);
+  const stale = key !== undefined && stored !== null && stored.command !== command;
+  const terminalId = stale ? null : (stored?.id ?? null);
+  const topic = useTopic(terminalId === null ? undefined : terminalTopic(terminalId));
+  const state = useSnapshot((snapshot) => (terminalId === null ? undefined : snapshot.terminals.get(terminalId)));
+  const gone = topic?.sync.kind === "failed" && topic.sync.error.code === "not_found";
+  const [starting, setStarting] = useState(false);
+  const startFor = `${terminalId ?? ""}\u0000${command}`;
+  const started = useRef<string | undefined>(undefined);
+
+  const start = useCallback(() => {
+    if (workspaceId === undefined || starting) {
+      return;
+    }
+    started.current = startFor;
+    setStarting(true);
+    const oldId = stale ? stored?.id : undefined;
+    const params = {
+      workspaceId,
+      command,
+      ...(cwd === undefined ? {} : { cwd }),
+      cols,
+      rows,
+    };
+    const request =
+      oldId === undefined
+        ? host.client.call("terminals.start", params)
+        : host.client
+            .call("terminals.kill", { terminalId: oldId })
+            .then(() => host.client.call("terminals.start", params));
+    request
+      .then((terminal) => {
+        setStored({ id: terminal.id, runs: (stored?.runs ?? 0) + 1, command });
+      })
+      .catch((error: unknown) => reportError(host, error))
+      .finally(() => setStarting(false));
+  }, [cols, command, cwd, host, rows, setStored, stale, startFor, starting, stored?.id, stored?.runs, workspaceId]);
+
+  useEffect(() => {
+    if (loaded && (terminalId === null || gone || stale) && started.current !== startFor) {
+      start();
+    }
+  }, [loaded, gone, stale, start, startFor, terminalId]);
+
+  const input = useCallback(
+    (data: string | Uint8Array) => {
+      if (terminalId !== null) {
+        host.client
+          .call("terminals.input", { terminalId, data: base64(data) })
+          .catch((error: unknown) => reportError(host, error));
+      }
+    },
+    [host, terminalId],
+  );
+  const resize = useCallback(
+    (nextCols: number, nextRows: number) => {
+      if (terminalId !== null) {
+        host.client
+          .call("terminals.resize", { terminalId, cols: nextCols, rows: nextRows })
+          .catch((error: unknown) => reportError(host, error));
+      }
+    },
+    [host, terminalId],
+  );
+  const kill = useCallback(() => {
+    if (terminalId !== null) {
+      host.client.call("terminals.kill", { terminalId }).catch((error: unknown) => reportError(host, error));
+    }
+  }, [host, terminalId]);
+
+  return {
+    id: terminalId ?? undefined,
+    state,
+    status: starting ? "pending" : (state?.terminal.status.state ?? "pending"),
+    refreshing: state === undefined && terminalId !== null && !gone,
+    runs: stored?.runs ?? 0,
+    input,
+    resize,
+    kill,
+  };
+}
+
 export type ToolRunTarget =
   | string
   | {

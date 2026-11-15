@@ -18,9 +18,10 @@ use omfp_protocol::{
     ReadFileParams, RemoveRepoParams, RemoveWorkspaceParams, RepoRef, RepoSource, RepoSuggestions,
     ReportWidgetsParams, Request, RespondParams, Response, SearchThreadsParams, SeenRepository,
     ServerFrame, SetModelParams, SetSettingsParams, SetThinkingParams, SetViewsParams,
-    SetWidgetStateParams, StartJobParams, SubagentMessagesParams, SubagentRef, SubagentSteerParams,
-    SubscribeParams, SubscribeResult, SuggestReposParams, Theme, ThreadGit, ThreadRef,
-    ThreadSearchResult, ThreadSearchResults, ThreadWorkspace, Topic, TopicParams,
+    SetWidgetStateParams, StartJobParams, StartTerminalParams, SubagentMessagesParams, SubagentRef,
+    SubagentSteerParams, SubscribeParams, SubscribeResult, SuggestReposParams, TerminalInfo,
+    TerminalInputParams, TerminalRef, TerminalResizeParams, TerminalStatus, Theme, ThreadGit,
+    ThreadRef, ThreadSearchResult, ThreadSearchResults, ThreadWorkspace, Topic, TopicParams,
     UpdateThreadParams, UpdateWorkspaceParams, WidgetCopied, WidgetJobReport, WidgetReport,
     WidgetReportState, WidgetSource, WorkspaceDiffParams, WorkspaceRef, WriteFileParams,
     decode_request, method,
@@ -866,6 +867,51 @@ fn widget_examples() -> Vec<(&'static str, Value)> {
     ]
 }
 
+fn terminal_examples() -> Vec<(&'static str, Value)> {
+    vec![
+        example::<method::TerminalsStart>(
+            StartTerminalParams {
+                workspace_id: WORKSPACE_ID.to_owned(),
+                command: "read -s password".to_owned(),
+                cwd: Some("app".to_owned()),
+                cols: 100,
+                rows: 30,
+            },
+            &TerminalInfo {
+                id: "01TERMINAL".to_owned(),
+                workspace_id: WORKSPACE_ID.to_owned(),
+                command: "read -s password".to_owned(),
+                cwd: "/work/app".to_owned(),
+                cols: 100,
+                rows: 30,
+                started_at: 1_700_000_000_000,
+                status: TerminalStatus::Running,
+            },
+        ),
+        example::<method::TerminalsInput>(
+            TerminalInputParams {
+                terminal_id: "01TERMINAL".to_owned(),
+                data: "c2VjcmV0DQ==".to_owned(),
+            },
+            &Empty {},
+        ),
+        example::<method::TerminalsResize>(
+            TerminalResizeParams {
+                terminal_id: "01TERMINAL".to_owned(),
+                cols: 120,
+                rows: 40,
+            },
+            &Empty {},
+        ),
+        example::<method::TerminalsKill>(
+            TerminalRef {
+                terminal_id: "01TERMINAL".to_owned(),
+            },
+            &Empty {},
+        ),
+    ]
+}
+
 fn view_error_examples() -> Vec<(&'static str, Value)> {
     vec![example::<method::ViewsErrors>(
         workspace_ref(),
@@ -1587,6 +1633,7 @@ fn every_method_has_a_golden_request_and_response() {
         theme_examples(),
         ui_settings_examples(),
         widget_examples(),
+        terminal_examples(),
         view_error_examples(),
         window_examples(),
         mount_examples(),

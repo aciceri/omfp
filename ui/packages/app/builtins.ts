@@ -15,4 +15,5 @@ export const BUILTINS: readonly { name: string; folder: string; part?: { file: s
   { name: "transcript", folder: "chat", part: { file: "transcript.tsx", exportName: "TranscriptWidget" } },
   { name: "interactions", folder: "chat", part: { file: "interactions.tsx", exportName: "InteractionsWidget" } },
   { name: "composer", folder: "chat", part: { file: "composer.tsx", exportName: "ComposerWidget" } },
+  { name: "terminal", folder: "terminal" },
 ];

@@ -2,7 +2,16 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import type { JsonValue, ThreadEvent } from "@omfp/core";
-import { type JobInfo, type JobLine, type JobState, jobTopic, viewsTopic } from "@omfp/protocol";
+import {
+  type JobInfo,
+  type JobLine,
+  type JobState,
+  jobTopic,
+  type TerminalInfo,
+  type TerminalState,
+  terminalTopic,
+  viewsTopic,
+} from "@omfp/protocol";
 import { act, cleanup, screen } from "@testing-library/react";
 import { type ReactNode, useState } from "react";
 import {
@@ -12,6 +21,7 @@ import {
   type ToolRunTarget,
   useJob,
   useStored,
+  useTerminal,
   useToolRun,
   useViews,
   useWidget,
@@ -441,6 +451,78 @@ describe("useJob with a key", () => {
 });
 
 const THREAD = "01T";
+
+function TerminalProbe() {
+  const terminal = useTerminal("read secret", { cwd: "repo", cols: 90, rows: 30 });
+  return (
+    <>
+      <span data-testid="terminal">
+        {[terminal.status, terminal.runs, terminal.state?.scrollback.length ?? 0].join(" ")}
+      </span>
+      <button type="button" data-testid="terminal-input" onClick={() => terminal.input("secret\n")} />
+      <button type="button" data-testid="terminal-resize" onClick={() => terminal.resize(100, 40)} />
+      <button type="button" data-testid="terminal-kill" onClick={terminal.kill} />
+    </>
+  );
+}
+
+function terminalInfo(id: string): TerminalInfo {
+  return {
+    id,
+    workspaceId: WS,
+    command: "read secret",
+    cwd: "/workspace/repo",
+    cols: 90,
+    rows: 30,
+    startedAt: 1,
+    status: { state: "running" },
+  };
+}
+
+describe("useTerminal", () => {
+  // spec: TRM-101, TRM-102, TRM-105
+  test("starts once, follows the stored PTY and forwards input, resize and kill", async () => {
+    const test = testHost();
+    renderWithHost(inScope(<TerminalProbe />), test);
+    test.client.views(WS);
+    test.flush();
+
+    const start = only(test.client.callsTo("terminals.start"));
+    expect(start.params).toEqual({ workspaceId: WS, command: "read secret", cwd: "repo", cols: 90, rows: 30 });
+    await act(async () => start.resolve(terminalInfo("01TERM")));
+    expect(only(test.client.callsTo("widgets.state_set")).params).toMatchObject({
+      key: "terminal:read secret",
+      value: { id: "01TERM", runs: 1, command: "read secret" },
+    });
+    test.client.viewsEvents(WS, {
+      kind: "widget_stored",
+      instance: "tests",
+      key: "terminal:read secret",
+      value: { id: "01TERM", runs: 1, command: "read secret" },
+    });
+    test.flush();
+    expect(test.client.subscribed).toContain(terminalTopic("01TERM"));
+
+    const state: TerminalState = { terminal: terminalInfo("01TERM"), scrollback: ["cmVhZHkK"], dropped: 0 };
+    test.client.terminal(state);
+    test.flush();
+    expect(text("terminal")).toBe("running 1 1");
+    act(() => screen.getByTestId("terminal-input").click());
+    act(() => screen.getByTestId("terminal-resize").click());
+    act(() => screen.getByTestId("terminal-kill").click());
+    expect(only(test.client.callsTo("terminals.input")).params).toEqual({
+      terminalId: "01TERM",
+      data: "c2VjcmV0Cg==",
+    });
+    expect(only(test.client.callsTo("terminals.resize")).params).toEqual({
+      terminalId: "01TERM",
+      cols: 100,
+      rows: 40,
+    });
+    expect(only(test.client.callsTo("terminals.kill")).params).toEqual({ terminalId: "01TERM" });
+    expect(test.client.callsTo("terminals.start").length).toBe(1);
+  });
+});
 
 function omp(frame: { [key: string]: JsonValue }): ThreadEvent {
   return { kind: "omp", frame };

@@ -27,6 +27,7 @@ oxc_semantic.workspace = true
 oxc_span.workspace = true
 oxc_syntax.workspace = true
 oxc_transformer.workspace = true
+portable-pty.workspace = true
 rusqlite.workspace = true
 rustix.workspace = true
 serde.workspace = true

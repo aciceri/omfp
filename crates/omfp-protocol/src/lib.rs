@@ -32,12 +32,14 @@ pub use dto::{
     FileContent, FileDiff, FileKind, FileMatch, FileStatus, FileWritten, FontSettings, ForkOrigin,
     GitStatus, IndexSnapshot, JobInfo, JobLine, JobState, JobStatus, JobStream, KeymapEntry,
     KeymapMode, Motion, NotificationMode, PathEntry, Provenance, RepoKind, RepoStatus,
-    RestartReason, SeenRepository, Settings, Theme, ThreadSummary, TitleSource, UiSettings,
-    ViewsState, WidgetInfo, WidgetSource, Workspace, WorkspaceBinding, WorkspaceRepo,
+    RestartReason, SeenRepository, Settings, TerminalInfo, TerminalState, TerminalStatus, Theme,
+    ThreadSummary, TitleSource, UiSettings, ViewsState, WidgetInfo, WidgetSource, Workspace,
+    WorkspaceBinding, WorkspaceRepo,
 };
 pub use envelope::{
     ErrorBody, ErrorCode, EventFrame, IndexEvent, JobEvent, ProtocolError, Request, Response,
-    ServerFrame, TopicEvent, TransientEvent, ViewsEvent, WorkspaceEvent, decode_request,
+    ServerFrame, TerminalEvent, TopicEvent, TransientEvent, ViewsEvent, WorkspaceEvent,
+    decode_request,
 };
 pub use lists::{ListThreadsParams, ThreadList, WorkspaceList};
 pub use mcp::{
@@ -53,12 +55,12 @@ pub use params::{
     QueueMessageParams, ReadFileParams, RemoveRepoParams, RemoveWorkspaceParams,
     ReorderThreadParams, ReorderWorkspaceParams, RepoRef, RepoSource, RepoSuggestions,
     ReportWidgetsParams, RespondParams, SearchThreadsParams, SetModelParams, SetSettingsParams,
-    SetThinkingParams, SetViewsParams, SetWidgetStateParams, StartJobParams,
+    SetThinkingParams, SetViewsParams, SetWidgetStateParams, StartJobParams, StartTerminalParams,
     SubagentMessagesParams, SubagentRef, SubagentSteerParams, SubscribeParams, SubscribeResult,
-    SuggestReposParams, ThreadGit, ThreadRef, ThreadSearchResult, ThreadSearchResults,
-    ThreadWorkspace, TopicParams, UpdateThreadParams, UpdateWorkspaceParams, WidgetCopied,
-    WidgetJobReport, WidgetReport, WidgetReportState, WorkspaceDiffParams, WorkspaceRef,
-    WriteFileParams,
+    SuggestReposParams, TerminalInputParams, TerminalRef, TerminalResizeParams, ThreadGit,
+    ThreadRef, ThreadSearchResult, ThreadSearchResults, ThreadWorkspace, TopicParams,
+    UpdateThreadParams, UpdateWorkspaceParams, WidgetCopied, WidgetJobReport, WidgetReport,
+    WidgetReportState, WorkspaceDiffParams, WorkspaceRef, WriteFileParams,
 };
 pub use params::{FileErrorKind, FileErrorReport, ViewErrors, WindowFileErrors};
 pub use params::{

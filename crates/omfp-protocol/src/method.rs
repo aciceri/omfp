@@ -10,8 +10,8 @@ use serde_json::{Map, Value, json};
 use std::fmt::Debug;
 
 use crate::dto::{
-    DiffPage, FileCandidates, FileContent, FileWritten, GitStatus, JobInfo, Settings, Theme,
-    ThreadSummary, Workspace,
+    DiffPage, FileCandidates, FileContent, FileWritten, GitStatus, JobInfo, Settings, TerminalInfo,
+    Theme, ThreadSummary, Workspace,
 };
 use crate::{activity, auth, lists, mcp, params, session, windows};
 use omfp_core::wire;
@@ -265,6 +265,14 @@ methods! {
     JobsStart = "jobs.start" (params::StartJobParams) -> JobInfo;
     /// Kills a job's process group (DMN-081).
     JobsKill = "jobs.kill" (params::JobRef) -> params::Empty;
+    /// Starts an interactive PTY session in a workspace (TRM-100).
+    TerminalsStart = "terminals.start" (params::StartTerminalParams) -> TerminalInfo;
+    /// Writes base64-encoded bytes to a PTY session (TRM-101).
+    TerminalsInput = "terminals.input" (params::TerminalInputParams) -> params::Empty;
+    /// Resizes a PTY session (TRM-101).
+    TerminalsResize = "terminals.resize" (params::TerminalResizeParams) -> params::Empty;
+    /// Kills a PTY session (TRM-101).
+    TerminalsKill = "terminals.kill" (params::TerminalRef) -> params::Empty;
     /// The init file and TSX view errors every window showing the workspace reports (PRT-116).
     ViewsErrors = "views.errors" (params::WorkspaceRef) -> params::ViewErrors;
     /// The windows that reported to the daemon, the most recently focused first: workspace, thread, view, errors

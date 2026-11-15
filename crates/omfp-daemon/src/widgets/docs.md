@@ -63,7 +63,9 @@ server's preview — in a sandboxed frame under a toolbar with the URL, Reload a
 `omfp_ui_mount { id: "preview", widget: "omfp:web", props: { url: "http://localhost:5173/" } }` and point it elsewhere
 with `omfp_ui_update { id: "preview", props: { url } }`. The page cannot navigate the window; its new windows open in the
 browser. Sites that refuse framing (`X-Frame-Options`, CSP `frame-ancestors`: GitHub, Linear, Google) stay blank, and
-the frame says so when nothing loaded in 10 s: reach them through their API in a widget of your own)
+the frame says so when nothing loaded in 10 s: reach them through their API in a widget of your own),
+`omfp:terminal` (`{ command?, cwd?, cols?, rows?, key? }`: an interactive CLI on a daemon-owned PTY; default command
+`${SHELL:-sh}`; its session survives widget remounts while the daemon runs).
 Files opened by the user open as tabs after the children of the `tabs` container with `"id": "main"`, never
 written to `views.json`. Keep the main slot, `["tabs", {"id": "main"}, …"omfp:chat"]`, in every view: the files the
 user opens become its tabs (without it they float in a panel). `:widget add` and `omfp_ui_mount` put side tabs in the
@@ -411,11 +413,12 @@ export default function Tests({ command = "make test" }: { command?: string }) {
 | `useWidget()` | `{ instance, reference, workspaceId }` of the calling widget. |
 | `useStored(key, initial)` | `[value, set, loaded]`: JSON state the daemon keeps per workspace, widget instance and key, shared live by every window and kept across reloads and restarts. `set(value)` or `set((previous) => next)`; `set(null)` deletes the key. `loaded` is `false` while the state has not arrived yet (`value` is then `initial`). |
 | `useJob(command, { key? })` | `{ status, lines, stdout, stderr, exitCode, signal, runs, startedAt, endedAt, state, refreshing, restart, kill }` for `sh -c <command>` run by the daemon in the workspace folder (environment, limits and retention: see Jobs below). `status` is `"pending"` (no job yet, or a start or restart on its way), `"running"`, `"succeeded"` (exit code 0) or `"failed"` (another code, or a signal). The first mount starts the job; reloads, other windows and moving the widget follow the same job (stored as `job:<command>`: `{ id, runs }`). `lines` are stdout and stderr interleaved, `stdout` and `stderr` each one's lines; `runs` counts the jobs started (a restart adds one), `startedAt`/`endedAt` (ms) date the current one; `restart()` kills a running job and starts a new one; `state` is the raw `job/<id>` state. A mount following the job again (the widget mounted again, its view shown again) shows the window's last copy of it at once, `refreshing: true`, until the daemon's state of the job arrives. Without `key` every distinct command is its own job and its own stored key, so a command built from input (a search per query) leaves one job behind per query: pass `key` (``useJob(`rg -n ${query}`, { key: "search" })``) to keep one job slot (stored as `jobkey:<key>`: `{ id, runs, command }`): a new command under the key replaces the previous job (stopped if it still runs, its output gone; `pending` with no lines until the new one is known), and `restart()` replaces it the same way. `omfp_widget_check` shows each job's status and last lines. |
+| `useTerminal(command, { cwd?, cols?, rows?, key? })` | `{ id, state, status, refreshing, runs, input(data), resize(cols, rows), kill() }` for an interactive `sh -c <command>` on a daemon-owned PTY. The hook stores the session id per widget instance, so remounts and other windows follow the same `terminal/<id>` instead of starting another process. `cwd` is workspace-relative. Input accepts text or bytes and is never stored; output is memory-only and bounded (see Terminal sessions below). |
 | `useToolRun(toolCallId)` | A tool run of the selected thread, or `useToolRun({ match: /nextest/, threadId? })` for the latest run whose command matches: `{ toolCallId, toolName, status, output, lines, isError }` or `undefined`. While a `bash` command runs, `output` is the latest tail omp streams. |
 | `useCall()` | `call(method, params)`: any daemon protocol method, e.g. `call("thread.prompt", { threadId, text })`; `call("thread.session", { threadId })` gives a thread's session id, session file, model, cwd, roots and cost without starting omp. |
 | `useCall(method, params)` | `{ data, error, refreshing, refresh }`: calls `method` on mount, whenever `params` change (compared as JSON) and on `refresh()`; `params` `null` calls nothing. A new mount (the widget mounted again, its view pushed out and shown again) shows the window's last result of the same widget instance, method and params at once with `refreshing: true` until the new one replaces it; `data` is `undefined` only before the first. A failure keeps `data` and sets `error` (a `CallError` for the daemon's errors), cleared by the next success. Show "updating…" from `refreshing` if you want; otherwise the old data simply gives way to the new. |
-| `useTopic(topic)` | Follows a topic (`index`, `thread/<id>`, `workspace/<id>`, `views/<id>`, `job/<id>`) while mounted; returns its subscription state. The 5 threads most recently unmounted stay followed, so showing one again is immediate. |
-| `useSnapshot(select)` | `select(snapshot)` over the window's per-frame model (`connection`, `index`, `threads`, `workspaces`, `views`, `jobs` by id, `topics`), rendering again only when its result changes (by identity): for what no other hook gives. Return a part of the snapshot, never a new object or array (it would change on every call); `useTopic` follows what is not followed yet. |
+| `useTopic(topic)` | Follows a topic (`index`, `thread/<id>`, `workspace/<id>`, `views/<id>`, `job/<id>`, `terminal/<id>`) while mounted; returns its subscription state. The 5 threads most recently unmounted stay followed, so showing one again is immediate. |
+| `useSnapshot(select)` | `select(snapshot)` over the window's per-frame model (`connection`, `index`, `threads`, `workspaces`, `views`, `jobs` and `terminals` by id, `topics`), rendering again only when its result changes (by identity): for what no other hook gives. Return a part of the snapshot, never a new object or array (it would change on every call); `useTopic` follows what is not followed yet. |
 | `useIndex()` | Workspaces, threads, theme and settings (the `index` topic), and `models`: how many models omp can use (`null` until the daemon checked; `0` before the first login). |
 | `useThreads()` | Thread summaries by id. |
 | `useThreadSummary(threadId)` | One thread's summary (title, process state, workspace). |
@@ -484,6 +487,20 @@ What a `useJob` command (a `jobs.start` job, followed on `job/<id>`) runs in:
   stores (`job:<command>`, `jobkey:<key>`) stays in the workspace's widget state until the widget sets it to `null` or
   the workspace is removed.
 
+### Terminal sessions
+
+`useTerminal` is for programs that need a real terminal: prompts, password input, full-screen TUIs, colour and cursor
+control. `useJob` remains preferable for commands whose output a widget parses.
+
+- The process runs as `sh -c <command>` in the workspace folder or an existing workspace-relative `cwd`, with the
+  daemon's environment, `TERM=xterm-256color`, `COLORTERM=truecolor` and a PTY. It has no timeout.
+- `input()` writes raw bytes; `resize()` updates the PTY; `kill()` terminates the child. Do not put passwords in
+  `command`: commands are visible in agent activity. Input bytes are redacted there and never enter topic state.
+- Output is base64 byte chunks, not text lines, so feed `state.scrollback` to `TerminalEmulator` from `omfp/kit`.
+  The daemon retains at most 1 MiB per session and reports older raw bytes in `state.dropped`.
+- Sessions live only in daemon memory. Reconnects and widget remounts follow the same id; daemon restart forgets it
+  and the hook starts a replacement. Workspace removal, daemon shutdown and cascade stop of the creating agent kill it.
+
 The SDK also exports the view models and strings the built-in widgets use; read a copied built-in to see them.
 
 ## omfp/kit
@@ -492,6 +509,10 @@ Use these components for every control a widget shows: they follow the theme (li
 window's own popovers. Native `<select>`, `<input type="checkbox">`, `radio`, `range`, `date`, `color` and `<datalist>`
 do not: their opened lists and pickers are drawn by the platform (a GTK menu in the Linux desktop window, white with a
 blue highlight), whatever the page's styles say. `omfp_widget_check` warns about each one it finds.
+
+`TerminalEmulator` is the reusable xterm.js surface: pass `sessionKey`, base64 `chunks`, `onData` and
+`onTerminalResize`; optional `cols`, `rows` and xterm `options` configure it. It owns only emulation and fitting.
+Pair it with `useTerminal` for a PTY-backed CLI, as the copyable `omfp:terminal` built-in does.
 
 | Export | What it is |
 | --- | --- |
@@ -519,6 +540,7 @@ blue highlight), whatever the page's styles say. `omfp_widget_check` warns about
 | `PdfView` | A PDF document with pdf.js: `url` (same-origin, e.g. `` `${useFileUrl(path)}?v=${hash}` ``), `labels` (`{ loading, failed(error), zoomIn, zoomOut, fitWidth, page(page, pages), pageLabel(page), toolbar, pages }`). Its pages scroll inside it, drawn when near the view, with selectable text; a toolbar zooms out, in and to the width, and names the page at the top (`3 / 12`). Loaded on first use; sized like `CodeEditor`. |
 | `ImageView` | An image fitted, zoomed (buttons, Ctrl with the wheel, a pinch) and panned by dragging: `src`, `alt`, `labels` (`{ zoomIn, zoomOut, fit, actualSize, toolbar, failed, before, after, slider }`); with `before` (`{ src, alt }`) and `compare` (`"split"` or `"slider"`) it compares the two versions side by side or under a slider. Sized like `CodeEditor`. |
 | `WebFrame` | A web page in a sandboxed frame under a toolbar (the URL, Reload, Open in browser), filling its container like `CodeEditor`: `url` (an absolute `http(s)` URL other than omfp's own origin; another shows why it is refused), `title` (the frame's accessible name), `loadTimeoutMs` (default 10000: then it says the site may refuse framing). `omfp:web` is one. |
+| `TerminalEmulator` | An xterm.js emulator filling its container: `sessionKey` resets replay, `chunks` are base64 bytes, `onData` forwards keyboard input, `onTerminalResize` receives fitted columns and rows, and optional `cols`, `rows`, `options` configure xterm. Pair it with `useTerminal`; `omfp:terminal` is one. |
 | `PathLink` | An inline button opening a file path: `reference` (`{ path, line }`), `onOpen` (e.g. from `useOpenFile()`). |
 | `Tabs` | Tabs with `TabList`, `Tab` and `TabPanel`. |
 | `ListBox` | A selectable list with `ListBoxItem`. |

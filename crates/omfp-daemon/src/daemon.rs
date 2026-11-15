@@ -196,6 +196,7 @@ pub struct DaemonHandle {
     data_dir: PathBuf,
     supervisor: Supervisor,
     jobs: Jobs,
+    terminals: crate::terminals::Terminals,
     stop: watch::Sender<bool>,
     stop_request: Arc<Notify>,
     threads: watch::Receiver<Vec<ThreadSummary>>,
@@ -272,10 +273,11 @@ impl DaemonHandle {
         StopRequest(Arc::clone(&self.stop_request))
     }
 
-    /// Stops the daemon (DMN-005): connections close, every omp process and every job stops (at most 10 s),
+    /// Stops the daemon (DMN-005): connections close, every omp process, job and PTY stops (at most 10 s),
     /// `daemon.json` is removed and the data directory unlocked.
     pub async fn shutdown(self) -> anyhow::Result<()> {
         let _ = self.stop.send(true);
+        self.terminals.shutdown();
         tokio::join!(self.supervisor.shutdown(), self.jobs.shutdown());
         for task in &self.background {
             task.abort();
@@ -431,6 +433,7 @@ pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHa
     for key in [&mut widget_key, &mut file_key] {
         getrandom::fill(key).map_err(|error| anyhow::anyhow!("no randomness: {error}"))?;
     }
+    let terminals = services.terminals.clone();
     let state = Arc::new(AppState {
         token: token.clone(),
         omp_version: ports.omp_version,
@@ -461,6 +464,7 @@ pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHa
         data_dir,
         supervisor,
         jobs,
+        terminals,
         stop,
         stop_request: Arc::new(Notify::new()),
         threads: threads_list,

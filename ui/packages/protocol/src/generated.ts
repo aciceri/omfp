@@ -1264,6 +1264,17 @@ export type StartJobParams = {
   workspaceId: string;
 };
 
+/** `terminals.start` params (TRM-100). */
+export type StartTerminalParams = {
+  cols: number;
+  /** Run as `sh -c <command>` attached to a PTY. */
+  command: string;
+  /** Workspace-relative directory; omitted means the workspace folder. */
+  cwd?: string | null;
+  rows: number;
+  workspaceId: string;
+};
+
 /** `thread.stop` params (PRT-085). */
 export type StopThreadParams = {
   /** Also stop every thread of its spawned tree: the threads it spawned, transitively (AGT-070, AGT-071). */
@@ -1323,6 +1334,73 @@ export type SuggestReposParams = {
   /** Keeps repositories whose path or name contains it (case-insensitive); absent or empty: all. */
   query?: string | null;
 };
+
+/** Change on a `terminal/<id>` topic (TRM-100). */
+export type TerminalEvent =
+  /** Raw PTY bytes, base64-encoded for JSON transport. */
+  | {
+    data: string;
+    kind: "output";
+  }
+  /** The PTY child exited. */
+  | {
+    code?: number | null;
+    endedAt: number;
+    kind: "exited";
+  };
+
+/** An interactive PTY session (TRM-100). */
+export type TerminalInfo = {
+  cols: number;
+  /** Run as `sh -c <command>` attached to a PTY. */
+  command: string;
+  /** Absolute working directory selected under the workspace. */
+  cwd: string;
+  id: string;
+  rows: number;
+  startedAt: number;
+  status: TerminalStatus;
+  workspaceId: string;
+};
+
+/** `terminals.input` params (TRM-101): raw bytes encoded as base64 for JSON transport. */
+export type TerminalInputParams = {
+  data: string;
+  terminalId: string;
+};
+
+/** Params naming one terminal session (TRM-100). */
+export type TerminalRef = {
+  terminalId: string;
+};
+
+/** `terminals.resize` params (TRM-101). */
+export type TerminalResizeParams = {
+  cols: number;
+  rows: number;
+  terminalId: string;
+};
+
+/** State of a `terminal/<id>` topic (TRM-100, TRM-103). */
+export type TerminalState = {
+  /** Raw bytes dropped from the bounded scrollback. */
+  dropped: number;
+  /** Base64-encoded PTY bytes, oldest first; the client feeds these to its emulator. */
+  scrollback: string[];
+  terminal: TerminalInfo;
+};
+
+/** The process state of a daemon-owned PTY session (TRM-100). */
+export type TerminalStatus =
+  | {
+    state: "running";
+  }
+  /** The shell exited; PTY output is still available in the topic snapshot. */
+  | {
+    code?: number | null;
+    endedAt: number;
+    state: "exited";
+  };
 
 /** The user's theme: CSS applied after the built-in tokens (DMN-075). */
 export type Theme = {
@@ -1469,7 +1547,7 @@ export type TitleSource =
   /** Set by the user or an agent (`threads.create`, `threads.update`, host tool `set_thread_title`); never replaced. */
   | "set";
 
-/** `index`, `thread/<id>`, `workspace/<id>`, `views/<id>` or `job/<id>`. */
+/** `index`, `thread/<id>`, `workspace/<id>`, `views/<id>`, `job/<id>` or `terminal/<id>`. */
 export type Topic = string;
 
 /** Params naming one topic (`unsubscribe`). */
@@ -2066,6 +2144,10 @@ export interface Methods {
   "widgets.report": { params: ReportWidgetsParams; result: Empty };
   "jobs.start": { params: StartJobParams; result: JobInfo };
   "jobs.kill": { params: JobRef; result: Empty };
+  "terminals.start": { params: StartTerminalParams; result: TerminalInfo };
+  "terminals.input": { params: TerminalInputParams; result: Empty };
+  "terminals.resize": { params: TerminalResizeParams; result: Empty };
+  "terminals.kill": { params: TerminalRef; result: Empty };
   "views.errors": { params: WorkspaceRef; result: ViewErrors };
   "windows.list": { params: ListWindowsParams; result: WindowList };
   "windows.state": { params: WindowRef; result: WindowState };
@@ -2166,6 +2248,10 @@ export const METHODS: readonly MethodName[] = [
   "widgets.report",
   "jobs.start",
   "jobs.kill",
+  "terminals.start",
+  "terminals.input",
+  "terminals.resize",
+  "terminals.kill",
   "views.errors",
   "windows.list",
   "windows.state",

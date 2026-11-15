@@ -519,6 +519,7 @@ export const shell = {
       "omfp:tree": "Tree",
       "omfp:activity": "Activity",
       "omfp:mcp": "MCP servers",
+      "omfp:terminal": "Terminal",
       "omfp:web": "Web",
     } as Readonly<Record<string, string>>,
   },

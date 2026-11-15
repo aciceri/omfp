@@ -353,6 +353,7 @@ impl<'de> Deserialize<'de> for EventFrame {
             Topic::Workspace(_) => serde_json::from_value(raw.event).map(TopicEvent::Workspace),
             Topic::Views(_) => serde_json::from_value(raw.event).map(TopicEvent::Views),
             Topic::Job(_) => serde_json::from_value(raw.event).map(TopicEvent::Job),
+            Topic::Terminal(_) => serde_json::from_value(raw.event).map(TopicEvent::Terminal),
         }
         .map_err(|error| {
             D::Error::custom(format!("invalid event for topic {}: {error}", raw.topic))
@@ -376,8 +377,8 @@ pub enum TopicEvent {
     Workspace(WorkspaceEvent),
     Views(ViewsEvent),
     Job(JobEvent),
+    Terminal(TerminalEvent),
 }
-
 /// Change on the `index` topic.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -470,6 +471,20 @@ pub enum JobEvent {
     JobExited {
         code: Option<i32>,
         signal: Option<i32>,
+        #[serde(rename = "endedAt")]
+        ended_at: i64,
+    },
+}
+
+/// Change on a `terminal/<id>` topic (TRM-100).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum TerminalEvent {
+    /// Raw PTY bytes, base64-encoded for JSON transport.
+    Output { data: String },
+    /// The PTY child exited.
+    Exited {
+        code: Option<i32>,
         #[serde(rename = "endedAt")]
         ended_at: i64,
     },

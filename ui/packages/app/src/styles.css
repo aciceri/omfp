@@ -2247,3 +2247,21 @@
     }
   }
 }
+
+/* The copyable PTY widget fills its slot and lets xterm.js own the scrollback (TRM-100). */
+.omfp-terminal {
+  box-sizing: border-box;
+  block-size: 100%;
+  inline-size: 100%;
+  min-block-size: 8rem;
+  min-inline-size: 0;
+  overflow: hidden;
+  padding: var(--omfp-s2);
+  background: var(--omfp-surface-container);
+  color: var(--omfp-on-surface);
+}
+
+.omfp-terminal .xterm {
+  block-size: 100%;
+  inline-size: 100%;
+}

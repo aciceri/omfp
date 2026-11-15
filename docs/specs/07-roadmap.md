@@ -802,11 +802,14 @@ workspace folder. `workspaces.read_file` and the raw file route now read any abs
 relative path still may not leave the folder. Design: reading reveals nothing an agent of the same token-protected
 daemon could not read (D-17); writes stay where the workspace's rescans, git status and conflict checks see them.
 
-## Terminal (removed)
+## Reusable terminal sessions
 
-Removed (D-06, PRT-135): the user does not rely on the TUI-only commands, so the terminal was never built; its
-refused `terminal.*` methods, `terminal/<id>` topic, permission and process state are gone too. TRM-001..022 and
-E2E-07 are kept in [05](05-terminal.md) and [06](06-testing.md) as removed rows.
+M17 adds daemon-owned PTY sessions and the copyable `omfp:terminal` widget (#80, TRM-100..105, E2E-71). This is a
+general command surface for interactive CLIs, reusable by agent-built widgets; it does not take over an omp session.
+
+The earlier omp terminal handoff remains removed (D-06, PRT-135): the user did not rely on TUI-only commands, so its
+singular `terminal.*` methods, permission and thread process state were never built. TRM-001..022 and E2E-07 remain
+in [05](05-terminal.md) and [06](06-testing.md) as removed rows; the independent PTY API reuses `terminal/<id>`.
 
 ## Later (noted, not scheduled)
 

@@ -54,7 +54,8 @@ sequenceDiagram
 
 Topics: `index` (workspaces with their discovered repositories, threads with their summaries, and the user's theme),
 `thread/<id>` (one thread), `workspace/<id>` (git status of each repository of one workspace), `views/<id>` (the views
-manifest, widget folders and widget state of one workspace, PRT-040), `job/<id>` (one job's output, PRT-041).
+manifest, widget folders and widget state of one workspace, PRT-040), `job/<id>` (one job's output, PRT-041), and
+`terminal/<id>` (one daemon-owned PTY session, TRM-100).
 
 The `index` state is `{ workspaces, threads, theme, settings, init, models }`; its events are
 `workspace_upserted` / `workspace_removed`, `thread_upserted` / `thread_removed`,
@@ -164,6 +165,10 @@ previous settings stay). A thread summary carries `title` (`""` until the first 
 | `widgets.report` | `workspaceId`, `views` (the `{ epoch, seq }` of `views/<workspaceId>` the window rendered, `null` before it arrived), `widgets` (per instance: `reference`, `instance`, `source`, `name`, `version`, `state`, `errors`, `console`, `text`, `jobs`), `fileErrors?` (`[{ kind, file, message }]`, PRT-115), `window?` (`{ threadId, focused, activeView, defaultView, views, commands }`, PRT-122) | `{}`; replaces this connection's report (PRT-043, AGT-026) |
 | `views.errors` | `workspaceId` | `ViewErrors { windows: [{ client, errors: [{ kind, file, message }] }] }`: the init file and TSX view errors of every window showing the workspace (PRT-116) |
 | `jobs.start` | `workspaceId`, `command`, `replaces?` | the job: `{ id, workspaceId, command, startedAt, status }` (DMN-080); `replaces` is a job it takes the place of (DMN-215) |
+| `terminals.start` | `workspaceId`, `command`, `cwd?`, `cols`, `rows` | the PTY session `{ id, workspaceId, command, cwd, cols, rows, startedAt, status }` (TRM-100) |
+| `terminals.input` | `terminalId`, `data` (base64 bytes) | `{}` (TRM-101); agent activity redacts `data` (TRM-104) |
+| `terminals.resize` | `terminalId`, `cols`, `rows` | `{}` (TRM-101) |
+| `terminals.kill` | `terminalId` | `{}` (TRM-101) |
 | `windows.list` | `workspaceId?` | `WindowList { windows: [{ windowId, client, workspaceId, threadId, focused, activeView, errors }] }`: the windows that reported, the most recently focused first (PRT-123) |
 | `windows.state` | `windowId` | `WindowState`: all a window reports (PRT-123) |
 | `windows.run` | `windowId?`, `workspaceId?`, `command`, `args?` | `{ windowId, command }`: the window ran the command (PRT-124) |
@@ -295,8 +300,8 @@ the tool definitions and the system prompt).
 | PRT-083 | `widgets.save { name, workspaceId?, widget?, code?, replace? }` → `WidgetSaved { name, reference }` (AGT-064): `workspaceId` is required with `widget`; `bad_request` for a bad name or both or neither of `widget` and `code`, `not_found` for a missing widget, `conflict` for an existing component without `replace`. |
 | PRT-084 | `widgets.library {}` → `WidgetLibrary { components: [{ name, reference, entry, files, version, description }] }` (AGT-065), by name; `entry` is `null` for a folder without one. |
 
-## No terminal
+## No omp terminal handoff
 
 | ID | Requirement |
 | --- | --- |
-| PRT-135 | **The terminal is removed** (D-06): the protocol MUST NOT have `terminal.*` methods (an unknown method, `bad_request`), a `terminal/<id>` topic (an invalid topic name), a terminal permission or a `terminal` process state; the daemon MUST answer a binary WebSocket frame with a `bad_request` response (text frames only). |
+| PRT-135 | **The omp terminal handoff is removed** (D-06): the protocol MUST NOT have the old singular `terminal.*` methods (an unknown method, `bad_request`), a terminal permission or a `terminal` thread process state. The independent daemon-owned PTY API uses plural `terminals.*` and the `terminal/<id>` topic (TRM-100..105). Binary WebSocket frames remain a `bad_request` response: PTY bytes are base64 in JSON in this first implementation (TRM-103). |

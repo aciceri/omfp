@@ -269,6 +269,7 @@ export {
   Tabs,
   type TabsProps,
 } from "./tabs.tsx";
+export { TerminalEmulator, type TerminalEmulatorProps } from "./terminal.tsx";
 export {
   ChatHeader,
   type ChatHeaderProps,

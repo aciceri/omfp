@@ -5,9 +5,10 @@
 use schemars::schema_for;
 use serde_json::{Map, Value};
 
-use crate::dto::{IndexSnapshot, JobState, RepoStatus, ViewsState};
+use crate::dto::{IndexSnapshot, JobState, RepoStatus, TerminalState, ViewsState};
 use crate::envelope::{
-    ErrorBody, ErrorCode, IndexEvent, JobEvent, TransientEvent, ViewsEvent, WorkspaceEvent,
+    ErrorBody, ErrorCode, IndexEvent, JobEvent, TerminalEvent, TransientEvent, ViewsEvent,
+    WorkspaceEvent,
 };
 use crate::topic::Topic;
 use crate::windows::WindowRequest;
@@ -25,6 +26,8 @@ pub fn type_schemas() -> Value {
         ("ViewsEvent", schema_for!(ViewsEvent)),
         ("JobState", schema_for!(JobState)),
         ("JobEvent", schema_for!(JobEvent)),
+        ("TerminalState", schema_for!(TerminalState)),
+        ("TerminalEvent", schema_for!(TerminalEvent)),
         ("TransientEvent", schema_for!(TransientEvent)),
         ("WindowRequest", schema_for!(WindowRequest)),
         ("ErrorCode", schema_for!(ErrorCode)),

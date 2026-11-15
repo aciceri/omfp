@@ -498,6 +498,23 @@ impl Connection {
                 }
                 Err(error) => Err((id, error.into())),
             },
+            Topic::Terminal(terminal_id) => match services.terminals.log(terminal_id, None) {
+                Ok(log) => {
+                    let subscription = log.subscribe(since.as_ref());
+                    let task = self
+                        .start(
+                            id,
+                            topic.clone(),
+                            since,
+                            subscription,
+                            TopicEvent::Terminal,
+                            generation,
+                        )
+                        .await;
+                    Ok((task, None))
+                }
+                Err(error) => Err((id, error.into())),
+            },
         };
         match started {
             Ok((task, watch)) => {

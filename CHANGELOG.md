@@ -20,6 +20,8 @@ Initial release, planned as 0.1.0.
 - Provider login from the app, a first-run welcome screen and live voice conversations through oh-my-pi.
 - Customizable React widgets, live-reloaded layouts and init files, a reusable widget library, background jobs and
   subagent controls. Agents can drive the interface through the daemon protocol or its MCP server.
+- Reusable daemon-owned PTY sessions for interactive CLI programs, with a `useTerminal` widget hook, a configurable
+  xterm.js `TerminalEmulator` kit component and the copyable `omfp:terminal` built-in.
 - File editing with vim keys and git diffs; PDF, image, audio, video, Markdown, CSV, JSON and YAML viewers.
   Images support zoom, pan and comparison with HEAD. Absolute paths outside the workspace open read-only.
 - A keyboard-driven command line, configurable bindings, phone layouts, notifications and message history.

@@ -902,6 +902,44 @@ pub struct JobRef {
     pub job_id: String,
 }
 
+/// `terminals.start` params (TRM-100).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct StartTerminalParams {
+    pub workspace_id: String,
+    /// Run as `sh -c <command>` attached to a PTY.
+    pub command: String,
+    /// Workspace-relative directory; omitted means the workspace folder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    pub cols: u16,
+    pub rows: u16,
+}
+
+/// Params naming one terminal session (TRM-100).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalRef {
+    pub terminal_id: String,
+}
+
+/// `terminals.input` params (TRM-101): raw bytes encoded as base64 for JSON transport.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalInputParams {
+    pub terminal_id: String,
+    pub data: String,
+}
+
+/// `terminals.resize` params (TRM-101).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalResizeParams {
+    pub terminal_id: String,
+    pub cols: u16,
+    pub rows: u16,
+}
+
 /// Where `views.mount` puts a widget in a view (PRT-080); `omfp_ui_mount` takes the same `place` (AGT-061).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]

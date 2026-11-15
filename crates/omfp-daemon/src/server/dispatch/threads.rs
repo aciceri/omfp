@@ -458,11 +458,12 @@ pub(super) async fn thread(services: &Services, principal: &Principal, call: Cal
             .await
             .map_err(supervisor_error)?),
         Call::ThreadStop(params) => {
-            // The cascade also kills the jobs the stopped threads' agents started (AGT-071, DMN-162).
+            // The cascade also kills jobs and PTYs started by those threads' agents (AGT-071, DMN-162, TRM-104).
             let thread_ids = if params.cascade {
                 let stopped = supervisor.stop_tree(&params.thread_id).await;
                 let stopped = stopped.map_err(supervisor_error)?;
                 services.jobs.kill_started_by(&stopped);
+                services.terminals.kill_started_by(&stopped);
                 stopped
             } else {
                 supervisor

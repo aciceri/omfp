@@ -16,8 +16,11 @@ import {
   jobTopic,
   type ParamsOf,
   type ResultOf,
+  type TerminalEvent,
+  type TerminalState,
   type Topic,
   type TransientFrame,
+  terminalTopic,
   threadTopic,
   type ViewsEvent,
   type ViewsState,
@@ -212,6 +215,19 @@ export class FakeClient implements SdkClient {
   jobEvents(jobId: string, ...events: JobEvent[]): void {
     for (const event of events) {
       this.#apply(jobTopic(jobId), event);
+    }
+    this.notify();
+  }
+
+  /** Answers `terminal/<id>` with `state`. */
+  terminal(state: TerminalState): void {
+    this.#snapshot(terminalTopic(state.terminal.id), state);
+  }
+
+  /** Applies live terminal events after {@link FakeClient.terminal}. */
+  terminalEvents(terminalId: string, ...events: TerminalEvent[]): void {
+    for (const event of events) {
+      this.#apply(terminalTopic(terminalId), event);
     }
     this.notify();
   }

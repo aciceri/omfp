@@ -4,7 +4,7 @@
  */
 
 import type { ConnectionStatus, Dirty, Index, ModelView, ThreadView, TopicState } from "@omfp/client";
-import type { JobState, RepoStatus, ViewsState } from "@omfp/protocol";
+import type { JobState, RepoStatus, TerminalState, ViewsState } from "@omfp/protocol";
 
 /** What the store reads from the client. */
 export interface ModelSource {
@@ -31,6 +31,8 @@ export interface Snapshot {
   readonly views: ReadonlyMap<string, ViewsState>;
   /** Followed jobs (PRT-041), by job id. */
   readonly jobs: ReadonlyMap<string, JobState>;
+  /** Followed PTY sessions (TRM-100), by terminal id. */
+  readonly terminals: ReadonlyMap<string, TerminalState>;
   readonly topics: readonly TopicState[];
 }
 
@@ -52,6 +54,7 @@ function capture(model: ModelView, dirty: Dirty, frame: number): Snapshot {
     workspaces: model.workspaces,
     views: model.views,
     jobs: model.jobs,
+    terminals: model.terminals,
     topics: model.topics,
   };
 }

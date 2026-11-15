@@ -122,6 +122,6 @@ fn hand_written_schemas_reach_the_method_schemas() {
     );
     assert_eq!(
         subscribe["$defs"]["Topic"]["pattern"],
-        json!("^(index|(thread|workspace|views|job)/[A-Za-z0-9_-]+)$")
+        json!("^(index|(thread|workspace|views|job|terminal)/[A-Za-z0-9_-]+)$")
     );
 }

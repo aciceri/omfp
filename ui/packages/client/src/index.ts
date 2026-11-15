@@ -42,6 +42,8 @@ export {
   type StartMode,
   type Subscribed,
   type SubscribeError,
+  TERMINAL_BYTES_LIMIT,
+  TERMINAL_CHUNKS_LIMIT,
   type ThreadView,
   type TopicState,
   type TopicSync,

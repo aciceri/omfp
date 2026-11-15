@@ -5,7 +5,9 @@
 import type { Topic } from "./generated.ts";
 
 /** A topic name taken apart. */
-export type ParsedTopic = { kind: "index" } | { kind: "thread" | "workspace" | "views" | "job"; id: string };
+export type ParsedTopic =
+  | { kind: "index" }
+  | { kind: "thread" | "workspace" | "views" | "job" | "terminal"; id: string };
 
 /** The `index` topic: workspaces and thread summaries. */
 export const INDEX_TOPIC: Topic = "index";
@@ -32,6 +34,7 @@ export function parseTopic(name: string): ParsedTopic | undefined {
     case "workspace":
     case "views":
     case "job":
+    case "terminal":
       return { kind, id };
     default:
       return undefined;
@@ -61,4 +64,9 @@ export function viewsTopic(workspaceId: string): Topic {
 /** The topic of one job's output (PRT-041). */
 export function jobTopic(jobId: string): Topic {
   return formatTopic({ kind: "job", id: jobId });
+}
+
+/** The topic of one daemon-owned PTY session. */
+export function terminalTopic(terminalId: string): Topic {
+  return formatTopic({ kind: "terminal", id: terminalId });
 }

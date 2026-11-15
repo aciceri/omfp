@@ -1,0 +1,35 @@
+---
+source: crates/omfp-protocol/tests/protocol/golden.rs
+expression: golden
+---
+{
+  "request": {
+    "id": "c42",
+    "method": "terminals.start",
+    "params": {
+      "cols": 100,
+      "command": "read -s password",
+      "cwd": "app",
+      "rows": 30,
+      "workspaceId": "01JD8X3Q4T9V2W6Y5Z7A1B3C5E"
+    },
+    "type": "request"
+  },
+  "response": {
+    "id": "c42",
+    "ok": true,
+    "result": {
+      "cols": 100,
+      "command": "read -s password",
+      "cwd": "/work/app",
+      "id": "01TERMINAL",
+      "rows": 30,
+      "startedAt": 1700000000000,
+      "status": {
+        "state": "running"
+      },
+      "workspaceId": "01JD8X3Q4T9V2W6Y5Z7A1B3C5E"
+    },
+    "type": "response"
+  }
+}

@@ -38,6 +38,8 @@ Initial release, planned as 0.1.0.
   change is still being applied.
 - Keep the detached sidebar's logo, workspace field and thread filter visible while its thread list scrolls on
   phones and narrow windows.
+- Model-discovery schemas now expose `models` and each entry's `provider`, `id` and `name`, with discoverable
+  create/set-model selector examples and matching generated TypeScript types.
 
 ### Changed
 

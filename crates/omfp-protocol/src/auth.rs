@@ -5,6 +5,24 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// Discovery result shared by `auth.models` and `thread.models`. The wire result remains omp's full model record;
+/// this schema describes its stable selection fields and permits upstream extension fields.
+#[derive(Debug, JsonSchema)]
+pub struct AvailableModels {
+    pub models: Vec<AvailableModel>,
+}
+
+/// Selection fields of an omp model descriptor; other upstream model capabilities may also be present.
+#[derive(Debug, JsonSchema)]
+pub struct AvailableModel {
+    /// Provider identifier. Create with `threads.create { model: "<provider>/<id>", ... }`.
+    pub provider: String,
+    /// Model identifier. Change with `thread.set_model { provider: "<provider>", modelId: "<id>", ... }`.
+    pub id: String,
+    /// Human-readable model name, not a selector.
+    pub name: String,
+}
+
 /// `auth.status` result (PRT-140): whether omp has a model it can use, as the daemon last checked it (DMN-235).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

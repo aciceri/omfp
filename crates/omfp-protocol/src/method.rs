@@ -1,6 +1,6 @@
 //! The method table: one marker type per protocol method tying its name to its params and result types.
 //!
-//! Results omp defines are its wire types (`omfp_core::wire`); their schema is left open.
+//! Results omp defines are its wire types; schemas are open except for model discovery's stable selection fields.
 
 use schemars::schema_for;
 use serde::Serialize;
@@ -192,8 +192,10 @@ methods! {
     ThreadSetModel = "thread.set_model" (params::SetModelParams) -> params::Empty;
     /// Changes the thinking level (omp `set_thinking_level`).
     ThreadSetThinking = "thread.set_thinking" (params::SetThinkingParams) -> params::Empty;
-    /// Available models (omp `get_available_models`).
-    ThreadModels = "thread.models" (params::ThreadRef) -> wire::GetAvailableModelsResult as Value;
+    /// Available models (omp `get_available_models`). Each entry supplies `provider` and `id`: use
+    /// `threads.create { model: "<provider>/<id>", workspace: ... }`, or
+    /// `thread.set_model { threadId: ..., provider: "<provider>", modelId: "<id>" }`.
+    ThreadModels = "thread.models" (params::ThreadRef) -> wire::GetAvailableModelsResult as auth::AvailableModels;
     /// Available thinking levels (omp `get_available_thinking_levels`).
     ThreadThinkingLevels = "thread.thinking_levels" (params::ThreadRef) -> wire::GetAvailableThinkingLevelsResult as Value;
     /// Available slash commands (omp `get_available_commands`).
@@ -306,8 +308,10 @@ methods! {
     ThreadMcpReconnect = "thread.mcp_reconnect" (mcp::McpReconnectParams) -> mcp::McpServers;
     /// How many models omp can use; checked by a short-lived omp the first time, then kept current (PRT-140).
     AuthStatus = "auth.status" (params::Empty) -> auth::AuthStatus;
-    /// Available usable models before creating a thread, from a short-lived omp (UI-023, UI-030).
-    AuthModels = "auth.models" (params::Empty) -> wire::GetAvailableModelsResult as Value;
+    /// Available usable models before creating a thread, from a short-lived omp (UI-023, UI-030). Each entry supplies
+    /// `provider` and `id`: use `threads.create { model: "<provider>/<id>", workspace: ... }`, or
+    /// `thread.set_model { threadId: ..., provider: "<provider>", modelId: "<id>" }`.
+    AuthModels = "auth.models" (params::Empty) -> wire::GetAvailableModelsResult as auth::AvailableModels;
     /// The providers omp can log in to with OAuth and whether it holds a credential for each, from a short-lived omp
     /// (PRT-129).
     AuthProviders = "auth.providers" (params::Empty) -> auth::AuthProviders;

@@ -76,17 +76,15 @@ async fn omp_forwarded_methods_return_their_declared_results() {
     let (daemon, _data) = start(&harness).await;
     let mut client = Client::hello(daemon.addr(), daemon.token().expose(), "test").await;
     let models = client.typed::<AuthModels>(Empty {}).await.models;
-    assert!(
-        models
-            .iter()
-            .any(|model| model.id == FAKE_MODEL && model.provider == FAKE_PROVIDER),
-        "{models:?}"
-    );
+    let chosen = models
+        .iter()
+        .find(|model| model.id == FAKE_MODEL && model.provider == FAKE_PROVIDER)
+        .expect("the discoverable loopback fake model");
     let thread = client
         .typed::<ThreadsCreate>(CreateThreadParams {
             title: Some("typed results".into()),
             workspace: ThreadWorkspace::New(CreateWorkspaceParams::default()),
-            model: Some(format!("{FAKE_PROVIDER}/{FAKE_MODEL}")),
+            model: Some(format!("{}/{}", chosen.provider, chosen.id)),
             thinking_level: None,
             approval_mode: None,
             prompt: None,
@@ -103,17 +101,17 @@ async fn omp_forwarded_methods_return_their_declared_results() {
         Some(FAKE_MODEL)
     );
     let models = client.typed::<ThreadModels>(this()).await.models;
-    assert!(
-        models.iter().any(|model| model.id == FAKE_MODEL),
-        "{models:?}"
-    );
+    let chosen = models
+        .iter()
+        .find(|model| model.id == chosen.id && model.provider == chosen.provider)
+        .expect("the created thread offers its discovered model");
     let levels = client.typed::<ThreadThinkingLevels>(this()).await.levels;
     client.typed::<ThreadCommands>(this()).await;
     client
         .typed::<ThreadSetModel>(SetModelParams {
             thread_id: thread.clone(),
-            provider: FAKE_PROVIDER.into(),
-            model_id: FAKE_MODEL.into(),
+            provider: chosen.provider.clone(),
+            model_id: chosen.id.clone(),
         })
         .await;
     client

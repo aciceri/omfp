@@ -252,6 +252,11 @@ The daemon runs them on a short-lived omp of its own (DMN-219..DMN-224) and show
 | PRT-133 | `auth.logout { providerId }` (permission `Drive`) MUST remove every credential omp stored for the provider (DMN-223) and answer `LoggedOut { providerId, removed, remainingSource }`: how many it removed, and what still authenticates the provider (omp's words, e.g. an environment variable), `null` when nothing does. |
 | PRT-140 | (QA) `auth.status {}` (permission `Read`) MUST answer `AuthStatus { models }`: how many models omp can use (DMN-235), `0` on a fresh install where every thread start fails until a login. The first call starts an omp, so it takes seconds; later calls answer the count the daemon keeps current (DMN-236, DMN-237), which the `index` topic also carries (PRT-141). `auth.models {}` (permission `Read`) MUST return `{ models }`, omp's `GetAvailableModelsResult`, from a fresh short-lived login omp on every call, stopping it on success or error; it creates no thread or workspace and sends no prompt. |
 
+Both `auth.models` and `thread.models` publish concrete result schemas for `{ models: [{ provider, id, name, … }] }`.
+The entries permit upstream extension fields; the Rust wire result still carries omp's complete model descriptor.
+Create a thread using `model: "<provider>/<id>"`; change an existing thread with
+`thread.set_model { threadId, provider: "<provider>", modelId: "<id>" }`. `name` is only a display label.
+
 ## Thread session
 
 An agent that wants a thread's session id or state should not have to read omp's whole `get_state` (about 35 KB with

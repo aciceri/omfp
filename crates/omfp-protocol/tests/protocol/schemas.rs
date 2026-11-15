@@ -54,6 +54,37 @@ fn thread_creation_schema_requires_an_explicit_workspace_without_a_default() {
     assert!(params["properties"]["workspace"].get("default").is_none());
 }
 
+// spec: AGT-007, AGT-042
+#[test]
+fn model_discovery_describes_the_selector_fields_for_both_consumers() {
+    let schemas = method_schemas();
+    for method in ["auth.models", "thread.models"] {
+        let result = &schemas[method]["result"];
+        assert_eq!(result["type"], "object");
+        assert_eq!(result["required"], json!(["models"]));
+        let models = &result["properties"]["models"];
+        assert_eq!(models["type"], "array");
+        let reference = models["items"]["$ref"].as_str().unwrap();
+        let entry = result
+            .pointer(reference.strip_prefix('#').unwrap())
+            .unwrap();
+        assert_eq!(entry["type"], "object");
+        for field in ["provider", "id", "name"] {
+            assert_eq!(entry["properties"][field]["type"], "string");
+            assert!(
+                entry["required"]
+                    .as_array()
+                    .unwrap()
+                    .contains(&json!(field))
+            );
+        }
+        assert_ne!(
+            entry["additionalProperties"], false,
+            "upstream may add fields"
+        );
+    }
+}
+
 // spec: AGT-007
 #[test]
 fn type_schemas_are_titled_by_their_key() {

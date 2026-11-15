@@ -92,6 +92,24 @@ export type AuthStatus = {
   models: number;
 };
 
+/** Selection fields of an omp model descriptor; other upstream model capabilities may also be present. */
+export type AvailableModel = {
+  /** Model identifier. Change with `thread.set_model { provider: "<provider>", modelId: "<id>", ... }`. */
+  id: string;
+  /** Human-readable model name, not a selector. */
+  name: string;
+  /** Provider identifier. Create with `threads.create { model: "<provider>/<id>", ... }`. */
+  provider: string;
+};
+
+/**
+ * Discovery result shared by `auth.models` and `thread.models`. The wire result remains omp's full model record;
+ * this schema describes its stable selection fields and permits upstream extension fields.
+ */
+export type AvailableModels = {
+  models: AvailableModel[];
+};
+
 /** `thread.bash` params. */
 export type BashParams = {
   command: string;
@@ -2013,7 +2031,7 @@ export interface Methods {
   "thread.queue.promote": { params: QueueMessageParams; result: unknown };
   "thread.set_model": { params: SetModelParams; result: Empty };
   "thread.set_thinking": { params: SetThinkingParams; result: Empty };
-  "thread.models": { params: ThreadRef; result: unknown };
+  "thread.models": { params: ThreadRef; result: AvailableModels };
   "thread.thinking_levels": { params: ThreadRef; result: unknown };
   "thread.commands": { params: ThreadRef; result: unknown };
   "thread.compact": { params: CompactParams; result: unknown };
@@ -2067,7 +2085,7 @@ export interface Methods {
   "thread.mcp_servers": { params: ThreadRef; result: McpServers };
   "thread.mcp_reconnect": { params: McpReconnectParams; result: McpServers };
   "auth.status": { params: Empty; result: AuthStatus };
-  "auth.models": { params: Empty; result: unknown };
+  "auth.models": { params: Empty; result: AvailableModels };
   "auth.providers": { params: Empty; result: AuthProviders };
   "auth.login": { params: ProviderRef; result: LoggedIn };
   "auth.login_cancel": { params: Empty; result: LoginCancelled };

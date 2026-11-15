@@ -20,6 +20,8 @@ use `workspaces.reorder` and `threads.reorder`.
 Selecting a thread makes its workspace the **current workspace**: the view, the init file `.omfp/init.ts`, the keymap
 `.omfp/keymap.json` and `:widget add` all follow it. A splitter resizes the column (wide windows); under 1100 px it
 folds into a strip of state marks (`Space t` opens it), on a phone it is one of the bottom bar's areas.
+In the detached column (narrow windows and phones), the logo, filter and "+ workspace" field stay visible while the
+workspace sections and their threads scroll independently below them.
 
 ## Mode line
 

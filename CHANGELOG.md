@@ -28,6 +28,11 @@ Initial release, planned as 0.1.0.
 - Nix packages and standalone downloads bundling the pinned oh-my-pi: a headless Linux x86_64 tarball
   (glibc 2.34+), a Linux x86_64 desktop Flatpak, and macOS Apple silicon DMG and ZIP packages (macOS 14+).
 
+### Fixed
+
+- Keep the detached sidebar's logo, workspace field and thread filter visible while its thread list scrolls on
+  phones and narrow windows.
+
 ### Release limitations
 
 - macOS downloads are signed ad-hoc and are not notarized unless the release explicitly says otherwise. On first

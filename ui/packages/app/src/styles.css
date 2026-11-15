@@ -138,6 +138,10 @@
     overflow: auto;
   }
 
+  .omfp-app:not([data-layout="wide"]) .omfp-frame__threads {
+    overflow: hidden;
+  }
+
   /* The view area right of the left column, with the mode line at its bottom (UI-098). */
   .omfp-frame__main {
     position: relative;
@@ -875,6 +879,31 @@
     padding: var(--omfp-s3) var(--omfp-s2);
   }
 
+  /* Wide keeps whole-column scrolling; detached drawers keep all header controls outside the list's scrollport. */
+  .omfp-threads__list {
+    display: contents;
+  }
+
+  .omfp-app:not([data-layout="wide"]) .omfp-threads {
+    flex: 1 1 auto;
+    min-block-size: 0;
+    overflow: hidden;
+  }
+
+  .omfp-app:not([data-layout="wide"]) .omfp-threads > :not(.omfp-threads__list) {
+    flex: none;
+  }
+
+  .omfp-app:not([data-layout="wide"]) .omfp-threads__list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--omfp-s1);
+    flex: 1 1 auto;
+    min-block-size: 0;
+    overflow: auto;
+    overscroll-behavior-y: contain;
+  }
+
   .omfp-threads__filter,
   .omfp-threads__new-workspace {
     display: flex;
@@ -887,7 +916,7 @@
     flex: none;
   }
 
-  .omfp-threads > .omfp-wsection:first-of-type {
+  .omfp-threads__list > .omfp-wsection:first-of-type {
     margin-block-start: var(--omfp-s2);
   }
 

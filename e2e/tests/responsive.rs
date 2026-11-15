@@ -8,6 +8,9 @@
 
 use e2e::Journey;
 use fake_llm::{Reply, Step};
+use omfp_daemon::agent::FakeLauncher;
+use omfp_protocol::method::{ThreadsCreate, WorkspacesCreate};
+use omfp_protocol::{CreateThreadParams, CreateWorkspaceParams, ThreadWorkspace};
 use serde_json::json;
 use thirtyfour::prelude::*;
 
@@ -380,4 +383,200 @@ async fn the_frame_adapts_to_its_width() -> anyhow::Result<()> {
     journey.driver.set_window_rect(0, 0, 390, 844).await?;
     phone(&journey).await?;
     journey.finish("responsive").await
+}
+
+/// Measures the actual scroll ancestor, not an implementation-specific wrapper.
+const SIDEBAR_SCROLL: &str = "
+const column = document.querySelector('[data-testid=left-column]');
+const row = column.querySelector('[data-testid=thread-row]');
+let scroller = row.parentElement;
+while (scroller && !(scroller.scrollHeight > scroller.clientHeight &&
+  ['auto', 'scroll'].includes(getComputedStyle(scroller).overflowY))) scroller = scroller.parentElement;
+if (!scroller) throw new Error('no overflowing thread list');
+const box = (e) => { const r = e.getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; };
+return {
+  header: ['.omfp-brand', '[data-testid=new-workspace-input]', '[data-testid=thread-filter]']
+    .map((css) => box(column.querySelector(css))),
+  row: box(row), scroll: scroller.scrollTop, list: box(scroller),
+  outer: column.scrollTop, page: document.scrollingElement.scrollTop,
+};";
+
+// spec: UI-201, UI-204, UI-209
+#[tokio::test(flavor = "multi_thread")]
+async fn detached_sidebar_keeps_its_controls_while_only_threads_scroll() -> anyhow::Result<()> {
+    let journey = Journey::start_fake(FakeLauncher::new()).await?;
+    journey.connected().await?;
+    let last = seed_sidebar_threads(&journey).await?;
+
+    for (width, expected) in [(1400, "wide"), (900, "narrow"), (390, "mobile")] {
+        journey.driver.set_window_rect(0, 0, width, 844).await?;
+        if expected == "mobile" {
+            touch_screen(&journey, width, 844).await?;
+        }
+        layout(&journey, expected).await?;
+        if expected == "narrow" {
+            journey.click("[data-testid=left-toggle]").await?;
+        } else if expected == "mobile" {
+            journey
+                .click("[data-testid=area-button][data-area=threads]")
+                .await?;
+        }
+        journey.settled("[data-testid=left-column]").await?;
+        // Focus can reveal a row when the drawer opens; start the wheel measurement at the top.
+        journey
+            .eval(
+                "document.querySelector('[data-testid=thread-row]').scrollIntoView({block: 'start'});",
+                Vec::new(),
+            )
+            .await?;
+        let before = journey.eval(SIDEBAR_SCROLL, Vec::new()).await?;
+        if expected != "wide" {
+            anyhow::ensure!(
+                before["header"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|rect| rect[1].as_f64().unwrap() >= 0.0),
+                "{expected}: header is outside the viewport: {before}"
+            );
+        }
+        let list = &before["list"];
+        journey
+            .driver
+            .cdp()
+            .send_raw(
+                "Input.dispatchMouseEvent",
+                json!({
+                    "type": "mouseWheel",
+                    "x": list[0].as_f64().unwrap() + list[2].as_f64().unwrap() / 2.0,
+                    "y": list[1].as_f64().unwrap() + list[3].as_f64().unwrap() - 50.0,
+                    "deltaX": 0, "deltaY": 400,
+                }),
+            )
+            .await?;
+        let after =
+            journey
+                .until("the thread list moving after a wheel", async |page| {
+                    let state = page.eval(SIDEBAR_SCROLL, Vec::new()).await?;
+                    Ok((state["scroll"].as_f64().unwrap()
+                        > before["scroll"].as_f64().unwrap() + 200.0)
+                        .then_some(state))
+                })
+                .await?;
+        anyhow::ensure!(
+            after["row"][1].as_f64().unwrap() < before["row"][1].as_f64().unwrap() - 200.0,
+            "{expected}: rows did not move: {before} -> {after}"
+        );
+        if expected == "wide" {
+            // Preserve the wide column's existing whole-column scrolling.
+            anyhow::ensure!(
+                after["header"][0][1].as_f64().unwrap()
+                    < before["header"][0][1].as_f64().unwrap() - 200.0,
+                "wide scrolling changed: {before} -> {after}"
+            );
+            continue;
+        }
+        assert_eq!(
+            after["header"], before["header"],
+            "{expected}: header moved"
+        );
+        assert_eq!(after["outer"], json!(0), "{expected}: drawer scrolled");
+        assert_eq!(after["page"], json!(0), "{expected}: page scrolled");
+        journey
+            .screenshot(&format!("sidebar-{width}-scrolled"))
+            .await?;
+        check_sidebar_controls(&journey, &last, expected, &before["header"]).await?;
+    }
+    journey.finish("sidebar-scroll").await
+}
+
+async fn seed_sidebar_threads(journey: &Journey) -> anyhow::Result<String> {
+    let mut connection = journey.connect().await?;
+    let workspace = connection
+        .call::<WorkspacesCreate>(CreateWorkspaceParams {
+            name: Some("Sidebar workspace".to_owned()),
+            link: None,
+        })
+        .await?;
+    for index in 0..40 {
+        connection
+            .call::<ThreadsCreate>(CreateThreadParams {
+                title: Some(format!("Sidebar {index:02}")),
+                workspace: ThreadWorkspace::Id(workspace.id.clone()),
+                model: None,
+                thinking_level: None,
+                approval_mode: None,
+                prompt: None,
+            })
+            .await?;
+    }
+    connection.close().await?;
+    journey
+        .until("40 sidebar threads", async |page| {
+            Ok((page.count("[data-testid=thread-row]").await? == 40).then_some(()))
+        })
+        .await?;
+    Ok(e2e::row(
+        journey
+            .thread_ids()
+            .await?
+            .last()
+            .ok_or_else(|| anyhow::anyhow!("no sidebar threads"))?,
+    ))
+}
+
+async fn check_sidebar_controls(
+    journey: &Journey,
+    last: &str,
+    expected: &str,
+    header: &serde_json::Value,
+) -> anyhow::Result<()> {
+    // Both fields remain reachable, focusable and editable after scrolling.
+    journey.click("[data-testid=new-workspace-input]").await?;
+    journey
+        .type_into("[data-testid=new-workspace-input]", "Unsubmitted workspace")
+        .await?;
+    let workspace_input = journey.element("[data-testid=new-workspace-input]").await?;
+    workspace_input.send_keys(Key::Control + "a").await?;
+    workspace_input.send_keys(Key::Backspace).await?;
+    journey.click("[data-testid=thread-filter]").await?;
+    journey
+        .type_into("[data-testid=thread-filter]", "Sidebar 39")
+        .await?;
+    journey
+        .until("the filtered last thread", async |page| {
+            let titles = page.texts("[data-testid=thread-row]").await?;
+            Ok((titles.len() == 1 && titles[0].contains("Sidebar 39")).then_some(()))
+        })
+        .await?;
+    journey.click("[data-testid=clear-thread-filter]").await?;
+    journey
+        .until("all sidebar threads restored", async |page| {
+            Ok((page.count("[data-testid=thread-row]").await? == 40).then_some(()))
+        })
+        .await?;
+    let focused_row = journey
+        .eval(
+            "const row = document.querySelector(arguments[0]); row.focus();
+             return document.activeElement === row;",
+            vec![json!(last)],
+        )
+        .await?;
+    assert_eq!(
+        focused_row,
+        json!(true),
+        "{expected}: row did not take focus"
+    );
+    let focused = journey.eval(SIDEBAR_SCROLL, Vec::new()).await?;
+    assert_eq!(
+        &focused["header"], header,
+        "{expected}: focusing a row moved the header"
+    );
+    // Select a different thread at each breakpoint; reselecting the current thread is not this regression.
+    if expected == "narrow" {
+        journey.click(last).await?;
+    } else {
+        journey.click("[data-testid=thread-row]").await?;
+    }
+    journey.gone("[data-testid=left-column][data-open]").await
 }

@@ -188,21 +188,23 @@ export function ThreadsWidget(_props: WidgetProps): ReactNode {
       {spawnedRoot !== undefined && (
         <SpawnedByBar thread={byId.get(spawnedRoot)} clear={() => setSpawnedBy(undefined)} />
       )}
-      {sections.map((section, index) => (
-        <WorkspaceGroup
-          key={section.workspace.id}
-          section={section}
-          filter={filter}
-          byId={byId}
-          seen={seen}
-          selected={selected}
-          counts={counts}
-          drag={drag}
-          start={start}
-          last={index === sections.length - 1}
-        />
-      ))}
-      {sections.length === 0 && <HintRow data-testid="no-threads">{text.noMatch}</HintRow>}
+      <div className="omfp-threads__list">
+        {sections.map((section, index) => (
+          <WorkspaceGroup
+            key={section.workspace.id}
+            section={section}
+            filter={filter}
+            byId={byId}
+            seen={seen}
+            selected={selected}
+            counts={counts}
+            drag={drag}
+            start={start}
+            last={index === sections.length - 1}
+          />
+        ))}
+        {sections.length === 0 && <HintRow data-testid="no-threads">{text.noMatch}</HintRow>}
+      </div>
     </nav>
   );
 }

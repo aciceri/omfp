@@ -8,6 +8,14 @@ use serde_json::json;
 
 const SUMMARIES: &str = "[data-testid=system-summary]";
 
+fn notice_frames() -> serde_json::Result<Vec<RpcNotification>> {
+    [
+        json!({ "type": "notice", "level": "info", "source": "xdev", "message": "xd://: mounted mcp__test" }),
+        json!({ "type": "notice", "level": "info", "source": "xdev", "message": "xd://: unmounted mcp__test\nNo devices." }),
+        json!({ "type": "notice", "level": "warning", "source": "xdev", "message": "mount warning" }),
+    ].into_iter().map(serde_json::from_value).collect()
+}
+
 // spec: UI-043, UI-097
 #[tokio::test(flavor = "multi_thread")]
 async fn settings_reveal_retained_xdev_notices_without_restarting_omp() -> anyhow::Result<()> {
@@ -25,15 +33,10 @@ async fn settings_reveal_retained_xdev_notices_without_restarting_omp() -> anyho
     let thread_id = journey.create_thread("xdev-notices").await?;
     let log = journey.daemon().supervisor().thread_log(&thread_id).await?;
     let position = log.position();
-    let notices: Vec<RpcNotification> = [
-        json!({ "type": "notice", "level": "info", "source": "xdev", "message": "xd://: mounted mcp__test" }),
-        json!({ "type": "notice", "level": "info", "source": "xdev", "message": "xd://: unmounted mcp__test\nNo devices." }),
-        json!({ "type": "notice", "level": "warning", "source": "xdev", "message": "mount warning" }),
-    ].into_iter().map(serde_json::from_value).collect::<Result<_, _>>()?;
     journey
         .fake_process(&launcher, &thread_id)
         .await?
-        .emit(notices);
+        .emit(notice_frames()?);
     journey
         .until("the warning after the hidden notices", async |page| {
             Ok(page

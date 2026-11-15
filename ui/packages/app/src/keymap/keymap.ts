@@ -44,6 +44,7 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { mode: "normal", keys: "Ctrl-d", command: "nav.halfDown" },
   { mode: "normal", keys: "Ctrl-u", command: "nav.halfUp" },
   { mode: "normal", keys: "/", command: "nav.search" },
+  { mode: "normal", keys: "Space /", command: "threads.pick" },
   // On the focused row or workspace section of the left column (UI-020, UI-022).
   { mode: "normal", keys: "d d", command: "nav.delete" },
   { mode: "normal", keys: "z a", command: "nav.toggleSection" },
@@ -76,7 +77,7 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { mode: "normal", keys: "Space s", command: "thread.stop" },
   { mode: "normal", keys: "Space S", command: "thread.stopSpawned" },
   { mode: "normal", keys: "Space R", command: "thread.restart" },
-  // The left column of the narrow layout, shown over the view or hidden again.
+  // Focus the column in a wide window; toggle its drawer in a narrow one.
   { mode: "normal", keys: "Space t", command: "threads.toggle" },
   { mode: "normal", keys: "Space :", command: "cmdline.open" },
   // The full command line from the leader menu (UI-325); `:` stays.

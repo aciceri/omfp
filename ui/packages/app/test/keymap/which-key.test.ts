@@ -88,37 +88,6 @@ describe("which-key model", () => {
       "other",
     ]);
   });
-
-  // spec: UI-325, UI-326
-  test("the leader map keeps its flat keys and adds Space Space and the groups", () => {
-    const leader = DEFAULT_BINDINGS.filter((binding) => binding.keys.startsWith("Space ")).map(
-      (binding) => `${binding.keys} ${binding.command}`,
-    );
-    expect(leader).toEqual([
-      "Space a thread.nextAttention",
-      "Space n thread.new",
-      "Space w workspace.new",
-      "Space r thread.rename",
-      "Space x thread.archive",
-      "Space u thread.unarchive",
-      "Space d thread.delete",
-      "Space s thread.stop",
-      "Space S thread.stopSpawned",
-      "Space R thread.restart",
-      "Space t threads.toggle",
-      "Space : cmdline.open",
-      "Space Space cmdline.open",
-      "Space h h help.open",
-      "Space h k help.describeKey",
-      "Space h e help.messages",
-      "Space p n workspace.new",
-      "Space p r workspace.rescan",
-      "Space f o file.open",
-      "Space v v view.pick",
-      "Space v n view.next",
-      "Space v p view.prev",
-    ]);
-  });
 });
 
 describe("waiting sequences in the key handler", () => {

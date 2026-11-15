@@ -78,6 +78,7 @@ import {
   useVisualViewport,
 } from "./responsive.tsx";
 import { ConnectionBanner, StatusLiveRegion, Toasts } from "./status.tsx";
+import { ThreadPicker } from "./thread-picker.tsx";
 import { useWelcome, Welcome } from "./welcome.tsx";
 import { WhichKey } from "./which-key.tsx";
 import { WindowRequests } from "./window-requests.tsx";
@@ -328,6 +329,7 @@ function FrameModeLine({
       <CommandLine bindings={bindings} />
       <WhichKey state={whichKey} bindings={bindings} />
       <FilePickerLine />
+      <ThreadPicker />
     </WindowModeLine>
   );
 }

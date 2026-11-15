@@ -4,6 +4,8 @@ export const chat = {
   noThread: "Select a thread, or create one.",
   loading: "Loading the thread…",
   transcript: "Transcript",
+  search: "Search conversation",
+  closeSearch: "Close search",
   roleUser: "You",
   roleAssistant: "Assistant",
   steeringMark: "steering",

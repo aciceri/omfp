@@ -79,6 +79,11 @@ Initial release, planned as 0.1.0.
 - Keep the detached sidebar's logo, workspace field and thread filter visible while its thread list scrolls on
   phones and narrow windows.
 
+### Changed
+
+- `/` searches the current conversation; `Space /` opens a fuzzy thread picker with live previews. Enter confirms,
+  Escape restores the original thread. `Space t` focuses threads in wide windows and toggles the narrow drawer.
+
 ### Release limitations
 
 - macOS downloads are signed ad-hoc and are not notarized unless the release explicitly says otherwise. On first

@@ -6,8 +6,8 @@ built-in command with its title and `:` names.
 
 ## Left column
 
-The frame's own column, outside every view: one filter field at the top (`/` focuses it; it matches thread titles,
-workspace and repository names and conversation text), "+ workspace" (a name, or a path starting with `/` or `~`, with
+The frame's own column, outside every view: one filter field at the top (thread titles, workspace and repository
+names and conversation text), "+ workspace" (a name, or a path starting with `/` or `~`, with
 completion), then one section per workspace — its name (the current one highlighted, a menu to rename or remove it),
 its threads with their state marks (running, awaiting input, failed, idle, unread) and "+ thread", which opens a draft
 thread there (the daemon creates the thread when its first message is sent). Archived threads hide behind
@@ -23,7 +23,8 @@ section, `Alt-Shift-ArrowUp` / `Alt-Shift-ArrowDown` the focused thread into the
 use `workspaces.reorder` and `threads.reorder`.
 Selecting a thread makes its workspace the **current workspace**: the view, the init file `.omfp/init.ts`, the keymap
 `.omfp/keymap.json` and `:widget add` all follow it. A splitter resizes the column (wide windows); under 1100 px it
-folds into a strip of state marks (`Space t` opens it), on a phone it is one of the bottom bar's areas.
+folds into a strip, on a phone it is one of the bottom bar's areas. `Space t` focuses the selected row in a wide
+window and toggles the column in a narrow one; then `za` folds its workspace and keeps focus on its head.
 In the detached column (narrow windows and phones), the logo, filter and "+ workspace" field stay visible while the
 workspace sections and their threads scroll independently below them.
 
@@ -32,6 +33,12 @@ than every five minutes of active conversation. They keep project context and re
 topic needs confirmation in a later batch, so a brief digression does not immediately rename the thread. Idle time
 alone does nothing. An explicit rename by the user, an API client or the agent disables automatic updates permanently.
 `--no-title-generation` / `[daemon] title_generation = false` disables both initial generation and refresh.
+
+`Space /` (`:threads`) opens a fuzzy thread picker by title and workspace. Typing and Up/Down preview the selected
+conversation live, Enter confirms, Escape (or leaving the picker) restores the original thread and its draft.
+`/` (`:search`) instead searches **the current conversation**: text and thinking, case-insensitive, a matching-message
+count, Enter/Shift-Enter for next/previous, Escape back to the selected message. It finds messages outside the
+currently rendered virtual window too.
 
 ## Mode line
 
@@ -108,7 +115,7 @@ help, `Space p` workspace, `Space f` files, `Space v` views); Escape cancels the
 | Keys | What they do |
 | --- | --- |
 | `j` / `k`, `g g` / `G`, `Ctrl-d` / `Ctrl-u` | Next / previous, first / last, half a page — threads in the left column, messages in the transcript. In the transcript `j` / `k` scroll a message taller than the window down to its end / up to its top before moving on, and `Ctrl-d` / `Ctrl-u` scroll half a window (`PageDown` / `PageUp` a whole one), the focus staying on its message while it shows. |
-| `/` | Filter threads. |
+| `/`, `Space /` | Search the current conversation; fuzzy thread picker with live preview (Enter confirms, Escape restores). |
 | `i` | Focus the composer. |
 | `:`, `Space :`, `Space Space` | The `:` line. |
 | `?`, `Space h h` | Help; `Space h k` is `:describe-key`, `Space h e` is `:messages`. |
@@ -120,7 +127,7 @@ help, `Space p` workspace, `Space f` files, `Space v` views); Escape cancels the
 | `Space n`, `Alt-n` | New thread; `Space w` or `Space p n` new workspace, `Space p r` rescan it. |
 | `Space r`, `Space x`, `Space u`, `Space d` | Rename, archive, unarchive, delete the selected thread. |
 | `Space s`, `Space S`, `Space R` | Stop process of the thread (and of the threads it spawned); restart it. |
-| `Space t` | Show or hide the threads column (narrow window). |
+| `Space t` | Focus threads (wide); show or hide threads (narrow). Then `za` acts on the focused workspace. |
 | `d d`, `z a` | Delete the focused row; fold the focused workspace. |
 | `Alt-ArrowUp`, `Alt-ArrowDown` | Move the focused thread (in its workspace) or workspace up or down. |
 | `Alt-Shift-ArrowUp`, `Alt-Shift-ArrowDown` | Move the focused thread to the end of the previous workspace, the start of the next one. |

@@ -42,6 +42,32 @@ function scrollTo(element: HTMLElement, scrollTop: number, scrollHeight: number,
 }
 
 describe("transcript", () => {
+  // spec: UI-095, UI-730
+  test("search stays in this conversation and visits matching messages", () => {
+    const test = renderThread(<TranscriptWidget />, longHistory(5));
+    act(() => {
+      test.host.commands.run("nav.search");
+    });
+    const input = screen.getByLabelText("Search conversation");
+    fireEvent.change(input, { target: { value: "message" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(screen.getByTestId("conversation-search").textContent).toContain("2 / 5");
+    fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
+    expect(screen.getByTestId("conversation-search").textContent).toContain("1 / 5");
+    fireEvent.change(input, { target: { value: "message 2" } });
+    expect(screen.getByTestId("conversation-search").textContent).toContain("1 / 1");
+    expect(transcript().dataset.pinned).toBe("false");
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(document.activeElement?.getAttribute("data-index")).toBe("2");
+    act(() => {
+      test.host.commands.run("nav.search");
+    });
+    fireEvent.change(screen.getByLabelText("Search conversation"), { target: { value: "not present" } });
+    expect(screen.getByTestId("conversation-search").textContent).toContain("0 / 0");
+    fireEvent.keyDown(screen.getByLabelText("Search conversation"), { key: "Escape" });
+    expect(screen.queryByTestId("conversation-search")).toBeNull();
+  });
+
   // spec: UI-040, UI-094
   test("a text reply renders the user's text and the assistant's Markdown", () => {
     renderThread(<TranscriptWidget />, fixtureEvents("text_reply"));

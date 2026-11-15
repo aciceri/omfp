@@ -608,9 +608,8 @@ async fn repositories_picked_by_completion_make_the_thread_findable_by_their_nam
     // The Workspace widget and its add control fit its column at a 1400 px window.
     journey.fits("[data-widget=\"omfp:workspace\"]").await?;
 
-    // `/` focuses the filter; either repository's name finds the thread, anything else hides its workspace.
-    normal_mode(&journey).await?;
-    journey.keys("/").await?;
+    // The column's persistent filter still finds repository names; `/` now searches the conversation.
+    journey.click("[data-testid=thread-filter]").await?;
     journey.until_focused("thread-filter").await?;
     filter(&journey, &dir_name(&back), &thread, 1).await?;
     filter(&journey, &dir_name(&front).to_uppercase(), &thread, 1).await?;

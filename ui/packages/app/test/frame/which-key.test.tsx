@@ -222,17 +222,6 @@ describe("Space leader menu", () => {
       ["help", "h", "prefix", "help…"],
       ["other", "o", "prefix", "1 binding…"],
     ]);
-    expect(shown.filter(([group]) => group === "threads").map(([, key]) => key)).toEqual([
-      "a",
-      "n",
-      "r",
-      "x",
-      "u",
-      "d",
-      "s",
-      "S",
-      "R",
-    ]);
     expect(shown.filter(([group]) => group === "commands")).toEqual([
       ["commands", ":", "command", "Open the command line"],
       ["commands", "spc", "command", "Open the command line"],

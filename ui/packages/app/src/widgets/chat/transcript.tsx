@@ -9,7 +9,7 @@
  */
 
 import type { ThreadState } from "@omfp/core";
-import { Button, Icon } from "omfp/kit";
+import { Button, Icon, SearchField } from "omfp/kit";
 import {
   arrivalScroll,
   halfPageScrollTop,
@@ -49,6 +49,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -117,6 +118,18 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
   const contentRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const [pin, setPin] = useWindowState(pinKey(threadId));
+  const [searching, setSearching] = useState(false);
+  const [query, setQuery] = useState("");
+  const searchInput = useRef<HTMLInputElement>(null);
+  useCommand({
+    id: "nav.search",
+    title: strings.shell.commands.search,
+    aliases: ["search"],
+    run: () => {
+      setSearching(true);
+      queueMicrotask(() => searchInput.current?.focus());
+    },
+  });
   const pinned = useRef(pin.pinned);
   pinned.current = pin.pinned;
   // Updated as soon as an event changes it, not at the next render: a follow in between must not pull an unpinned
@@ -134,6 +147,21 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
   const lastPosition = useRef<ScrollPosition | undefined>(undefined);
   // The same list (and so the same item keys) while only the streaming reply changes (UI-191).
   const rows = items(state, useSettings().ui.showXdevNotices === true);
+  const matches = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return needle === ""
+      ? []
+      : rows.flatMap((row, index) => {
+          const content = rowContent(state, row);
+          return content?.type === "message" &&
+            content.view.blocks.some(
+              (block) =>
+                (block.type === "text" || block.type === "thinking") && block.text.toLowerCase().includes(needle),
+            )
+            ? [index]
+            : [];
+        });
+  }, [query, rows, state]);
   // Mounting returns to where the user had scrolled up to, else to the bottom. Until the content is tall enough to
   // reach that position (items are measured after they render), the target is re-applied and the clamped scroll
   // events it causes are not stored; any user scrolling ends the restore.
@@ -370,81 +398,133 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
     }
   };
 
+  const visitMatch = (index: number | undefined) => {
+    if (index === undefined) return;
+    userScrolls();
+    dispatch({ type: "userScrollUp" });
+    virtualizer.scrollToIndex(index, { align: "start" });
+    setCurrent(index);
+  };
+  const firstMatch = matches[0];
+  const visitLatest = useRef(visitMatch);
+  visitLatest.current = visitMatch;
+  useEffect(() => {
+    if (searching) visitLatest.current(firstMatch);
+  }, [firstMatch, searching]);
+  const searchAt = matches.indexOf(current ?? -1);
+
   return (
-    <div
-      ref={containerRef}
-      className="omfp-transcript omfp-focus-inset"
-      data-testid="transcript"
-      data-thread-id={threadId}
-      data-pinned={pin.pinned}
-      role="log"
-      aria-label={strings.chat.transcript}
-      // biome-ignore lint/a11y/noNoninteractiveTabindex: the scroll container takes focus for keyboard scrolling (UI-092)
-      tabIndex={0}
-      {...{ [SCOPE_ATTRIBUTE]: "transcript" }}
-      onScroll={(event) => {
-        // Scroll events while restoring come from clamping, not from the user.
-        if (restoring.current !== undefined) {
-          return;
-        }
-        const now = scrollPosition(event.currentTarget);
-        const previous = lastPosition.current;
-        lastPosition.current = now;
-        dispatch({ type: "scroll", ...now, previous });
-      }}
-      onWheel={(event) => {
-        userScrolls();
-        if (event.deltaY < 0) {
-          dispatch({ type: "userScrollUp" });
-        }
-      }}
-      onKeyDown={onKeyDown}
-      onPointerDown={userScrolls}
-      onTouchStart={userScrolls}
-    >
-      {NAV.map(({ id, title }) => (
-        <NavRegistration key={id} id={id} title={title} run={runNav} />
-      ))}
-      <div ref={contentRef} className="omfp-transcript__content">
-        <div
-          ref={listRef}
-          className="omfp-transcript__list"
-          style={{ height: virtualizer.getTotalSize(), position: "relative" }}
-        >
-          {virtualizer.getVirtualItems().map((virtual) => {
-            const row = rows[virtual.index];
-            const content = row === undefined ? undefined : rowContent(state, row);
-            return row === undefined || content === undefined ? null : (
-              <div
-                key={virtual.key}
-                ref={virtualizer.measureElement}
-                data-index={virtual.index}
-                data-key={row.key}
-                data-testid="transcript-item"
-                aria-current={current === virtual.index ? true : undefined}
-                tabIndex={-1}
-                className="omfp-transcript__item omfp-focus-item"
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  transform: `translateY(${virtual.start}px)`,
-                }}
-              >
-                <Row
-                  cardKey={`${threadId}/${row.key}`}
-                  content={content}
-                  forkIndex={forkIndex(state, row)}
-                  onFork={forkAt}
-                />
-              </div>
-            );
-          })}
+    <>
+      {searching && (
+        <div className="omfp-transcript__search" data-testid="conversation-search">
+          <SearchField
+            label={strings.chat.search}
+            value={query}
+            onChange={setQuery}
+            inputRef={searchInput}
+            inputProps={{
+              "data-testid": "conversation-search-input",
+              onKeyDown: (event) => {
+                if (event.key === "Escape") {
+                  setSearching(false);
+                  if (current !== undefined) focusItem(current);
+                  else containerRef.current?.focus();
+                } else if (event.key === "Enter") {
+                  visitMatch(matches[(searchAt + (event.shiftKey ? -1 : 1) + matches.length) % matches.length]);
+                } else return;
+                event.preventDefault();
+                event.stopPropagation();
+              },
+            }}
+          />
+          <span role="status">
+            {searchAt < 0 ? 0 : searchAt + 1} / {matches.length}
+          </span>
+          <Button
+            onPress={() => {
+              setSearching(false);
+              containerRef.current?.focus();
+            }}
+          >
+            {strings.chat.closeSearch}
+          </Button>
         </div>
-        {footer}
+      )}
+      <div
+        ref={containerRef}
+        className="omfp-transcript omfp-focus-inset"
+        data-testid="transcript"
+        data-thread-id={threadId}
+        data-pinned={pin.pinned}
+        role="log"
+        aria-label={strings.chat.transcript}
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: the scroll container takes focus for keyboard scrolling (UI-092)
+        tabIndex={0}
+        {...{ [SCOPE_ATTRIBUTE]: "transcript" }}
+        onScroll={(event) => {
+          // Scroll events while restoring come from clamping, not from the user.
+          if (restoring.current !== undefined) {
+            return;
+          }
+          const now = scrollPosition(event.currentTarget);
+          const previous = lastPosition.current;
+          lastPosition.current = now;
+          dispatch({ type: "scroll", ...now, previous });
+        }}
+        onWheel={(event) => {
+          userScrolls();
+          if (event.deltaY < 0) {
+            dispatch({ type: "userScrollUp" });
+          }
+        }}
+        onKeyDown={onKeyDown}
+        onPointerDown={userScrolls}
+        onTouchStart={userScrolls}
+      >
+        {NAV.map(({ id, title }) => (
+          <NavRegistration key={id} id={id} title={title} run={runNav} />
+        ))}
+        <div ref={contentRef} className="omfp-transcript__content">
+          <div
+            ref={listRef}
+            className="omfp-transcript__list"
+            style={{ height: virtualizer.getTotalSize(), position: "relative" }}
+          >
+            {virtualizer.getVirtualItems().map((virtual) => {
+              const row = rows[virtual.index];
+              const content = row === undefined ? undefined : rowContent(state, row);
+              return row === undefined || content === undefined ? null : (
+                <div
+                  key={virtual.key}
+                  ref={virtualizer.measureElement}
+                  data-index={virtual.index}
+                  data-key={row.key}
+                  data-testid="transcript-item"
+                  aria-current={current === virtual.index ? true : undefined}
+                  tabIndex={-1}
+                  className="omfp-transcript__item omfp-focus-item"
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${virtual.start}px)`,
+                  }}
+                >
+                  <Row
+                    cardKey={`${threadId}/${row.key}`}
+                    content={content}
+                    forkIndex={forkIndex(state, row)}
+                    onFork={forkAt}
+                  />
+                </div>
+              );
+            })}
+          </div>
+          {footer}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 

@@ -23,7 +23,6 @@ import {
   RowList,
   SearchField,
   ThreadRow,
-  useMediaQuery,
   WorkspaceSection,
 } from "@omfp/kit";
 import { INDEX_TOPIC, type ThreadSummary, type Workspace } from "@omfp/protocol";
@@ -113,7 +112,6 @@ export function ThreadsWidget(_props: WidgetProps): ReactNode {
     [sections, collapsed, archivedOpen, filter],
   );
   const root = useRef<HTMLElement>(null);
-  const search = useRef<HTMLInputElement>(null);
   const newWorkspace = useRef<HTMLInputElement>(null);
   const filtering = isFiltering(filter);
   const nameOf = useCallback(
@@ -133,12 +131,6 @@ export function ThreadsWidget(_props: WidgetProps): ReactNode {
   useNavCommands(order, root);
   useSectionCommands();
   useFocusAfterRemoval(sections, root, newWorkspace);
-  useCommand({
-    id: "nav.search",
-    title: strings.shell.commands.search,
-    aliases: ["search", "filter"],
-    run: () => search.current?.focus(),
-  });
   useCommand({
     id: "workspace.new",
     title: strings.shell.commands.newWorkspace,
@@ -183,7 +175,7 @@ export function ThreadsWidget(_props: WidgetProps): ReactNode {
       data-reordering={drag?.source.kind}
     >
       <Brand host={location.hostname} />
-      <ThreadFilterField search={search} />
+      <ThreadFilterField />
       <NewWorkspace inputRef={newWorkspace} focus={false} />
       {spawnedRoot !== undefined && (
         <SpawnedByBar thread={byId.get(spawnedRoot)} clear={() => setSpawnedBy(undefined)} />
@@ -325,6 +317,10 @@ function useSectionCommands(): void {
       const workspaceId = sectionOf(document.activeElement);
       if (workspaceId !== undefined) {
         host.window.set(COLLAPSED_WORKSPACES, (previous) => toggled(previous, workspaceId));
+        document.activeElement
+          ?.closest('[data-testid="workspace-section"]')
+          ?.querySelector<HTMLElement>('[data-testid="workspace-collapse"]')
+          ?.focus();
       }
     },
   });
@@ -380,22 +376,17 @@ function useFocusAfterRemoval(
   }, [sections, root, newWorkspace]);
 }
 
-/** A screen without hover whose pointer is a finger: no key hints (UI-418). */
-const TOUCH_ONLY = "(hover: none) and (pointer: coarse)";
-
-/** The one filter of the column (UI-022); `/` focuses it (named in the placeholder, except on touch, UI-418). */
-function ThreadFilterField({ search }: { search: RefObject<HTMLInputElement | null> }): ReactNode {
+/** The column's persistent filter (UI-022); Space / opens the separate live thread picker. */
+function ThreadFilterField(): ReactNode {
   const [query, setQuery] = useWindowState(THREAD_QUERY);
-  const touch = useMediaQuery(TOUCH_ONLY);
   return (
     <div className="omfp-threads__filter">
       <SearchField
         label={text.filter}
         hideLabel
-        placeholder={touch ? text.filter : text.filterPlaceholder}
+        placeholder={text.filter}
         value={query}
         onChange={setQuery}
-        inputRef={search}
         inputProps={{ "data-testid": "thread-filter" }}
         clearTestId="clear-thread-filter"
       />

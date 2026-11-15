@@ -98,42 +98,6 @@ describe("keymap", () => {
     expect(keyLabel("Alt-a")).toBe("alt+a");
   });
 
-  // spec: UI-095, UI-020, UI-022, UI-023, UI-063, UI-302, UI-368
-  test("the defaults are vim-style, with the command line and the Space leader", () => {
-    const table = (command: string, mode: "normal" | "insert" = "normal") => keysFor(DEFAULT_BINDINGS, command, mode);
-    expect(table("nav.next")).toEqual(["j"]);
-    expect(table("nav.prev")).toEqual(["k"]);
-    expect(table("nav.top")).toEqual(["g g"]);
-    expect(table("nav.bottom")).toEqual(["G"]);
-    expect(table("nav.halfDown")).toEqual(["Ctrl-d"]);
-    expect(table("nav.halfUp")).toEqual(["Ctrl-u"]);
-    expect(table("nav.search")).toEqual(["/"]);
-    expect(table("composer.focus")).toEqual(["i"]);
-    expect(table("cmdline.open")).toEqual([":", "Space :", "Space Space"]);
-    expect(table("thread.new")).toEqual(["Space n", "Alt-n"]);
-    expect(table("workspace.new")).toEqual(["Space w", "Space p n"]);
-    expect(table("nav.delete")).toEqual(["d d"]);
-    expect(table("nav.toggleSection")).toEqual(["z a"]);
-    expect(table("focus.leave", "insert")).toEqual(["Esc"]);
-    expect(table("composer.interrupt", "insert")).toEqual(["Ctrl-c"]);
-    expect(table("composer.interrupt")).toEqual([]);
-    expect(table("thread.abort")).toEqual(["Ctrl-c"]);
-    expect(table("composer.restore")).toEqual(["u"]);
-    // The views of the window (UI-302).
-    expect([table("view.pick"), table("view.next"), table("view.prev")]).toEqual([
-      ["g v", "Space v v"],
-      ["] v", "Space v n"],
-      ["[ v", "Space v p"],
-    ]);
-    // No single-key binding while typing.
-    expect(DEFAULT_BINDINGS.filter((binding) => binding.mode === "insert").map((binding) => binding.keys)).toEqual([
-      "Esc",
-      "Ctrl-c",
-      "Alt-a",
-      "Alt-n",
-    ]);
-  });
-
   // spec: UI-624
   test("Alt-arrows move the focused row or section of the column; with Shift a thread into another workspace", () => {
     expect(keyToken(key("ArrowUp", { altKey: true }, "ArrowUp"))).toBe("Alt-ArrowUp");

@@ -148,27 +148,6 @@ describe("omfp:threads", () => {
     expect(screen.getByTestId("no-threads")).toBeDefined();
   });
 
-  // spec: UI-418
-  test("on a touch-only screen the filter's placeholder does not name its `/` key", () => {
-    const original = window.matchMedia;
-    window.matchMedia = (query: string) =>
-      ({
-        media: query,
-        matches: query === "(hover: none) and (pointer: coarse)",
-        addEventListener: () => undefined,
-        removeEventListener: () => undefined,
-      }) as unknown as MediaQueryList;
-    try {
-      setup();
-      expect(screen.getByTestId("thread-filter").getAttribute("placeholder")).toBe("Filter threads");
-    } finally {
-      window.matchMedia = original;
-    }
-    cleanup();
-    setup();
-    expect(screen.getByTestId("thread-filter").getAttribute("placeholder")).toBe("Filter threads (/)");
-  });
-
   // spec: UI-022
   test("conversation matches come from threads.search once typing pauses, with their snippet", async () => {
     const { client, user } = setup();
@@ -536,7 +515,7 @@ describe("omfp:threads", () => {
   });
 
   // spec: UI-095, UI-022, UI-023
-  test("nav commands move through the rows shown; `/` focuses the filter and `Space w` the + workspace field", () => {
+  test("nav commands move through visible rows and Space w focuses the + workspace field", () => {
     const { host } = setup();
     const run = (name: string, scopes: string[] = []) =>
       act(() => {
@@ -552,8 +531,6 @@ describe("omfp:threads", () => {
     expect(host.window.get(SELECTED_THREAD)).toBe("t2");
     run("nav.halfUp");
     expect(host.window.get(SELECTED_THREAD)).toBe("t1");
-    run("nav.search");
-    expect(document.activeElement === screen.getByTestId("thread-filter")).toBe(true);
     run("workspace.new");
     expect(document.activeElement === screen.getByTestId("new-workspace-input")).toBe(true);
   });

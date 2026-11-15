@@ -36,6 +36,21 @@ function remPx(): number {
   return Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
 }
 
+/** Prefer the selected visible row; a collapsed or empty column still has a keyboard focus target. */
+function focusColumn(column: HTMLElement | null): void {
+  for (const selector of [
+    '[data-testid="thread-row"][aria-current="true"]',
+    '[data-testid="thread-row"]',
+    '[data-testid="workspace-collapse"]',
+    '[data-testid="new-workspace-input"]',
+  ]) {
+    const target = column?.querySelector<HTMLElement>(selector);
+    if (target?.checkVisibility()) {
+      target.focus();
+      return;
+    }
+  }
+}
 /**
  * The left column as a drawer (UI-201, UI-204): it closes when a thread or a draft is selected, on Escape, on a press
  * in the frame outside it (overlays such as menus and dialogs are not in the frame), and when the breakpoint changes.
@@ -61,14 +76,14 @@ export function useLeftDrawer(breakpoint: Breakpoint, aside: RefObject<HTMLEleme
       return;
     }
     if (!column.contains(document.activeElement)) {
-      column.querySelector<HTMLElement>(".omfp-thread[data-selected] button, .omfp-thread button")?.focus();
+      focusColumn(column);
     }
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setOpen(false);
       }
     };
-    const onPointer = (event: PointerEvent) => {
+    const onOutside = (event: Event) => {
       const target = event.target;
       if (
         target instanceof Element &&
@@ -80,10 +95,12 @@ export function useLeftDrawer(breakpoint: Breakpoint, aside: RefObject<HTMLEleme
       }
     };
     document.addEventListener("keydown", onKey);
-    document.addEventListener("pointerdown", onPointer, true);
+    document.addEventListener("pointerdown", onOutside, true);
+    document.addEventListener("focusin", onOutside);
     return () => {
       document.removeEventListener("keydown", onKey);
-      document.removeEventListener("pointerdown", onPointer, true);
+      document.removeEventListener("pointerdown", onOutside, true);
+      document.removeEventListener("focusin", onOutside);
       if (column.contains(document.activeElement)) {
         document.querySelector<HTMLElement>('[data-testid="left-toggle"]')?.focus();
       }
@@ -91,14 +108,19 @@ export function useLeftDrawer(breakpoint: Breakpoint, aside: RefObject<HTMLEleme
   }, [drawer, aside, setOpen]);
 }
 
-/** `threads.toggle` (`Space t`): opens or closes the left column on a narrow frame or a phone (UI-201). */
+/** Space t focuses the wide column, or toggles its drawer and focuses its selected row. */
 export function ToggleThreadsCommand({ breakpoint }: { breakpoint: Breakpoint }): ReactNode {
   const [, setOpen] = useWindowState(LEFT_OPEN);
   useCommand({
     id: "threads.toggle",
     title: strings.shell.commands.toggleThreads,
-    enabled: () => breakpoint !== "wide",
-    run: () => setOpen((open) => !open),
+    run: () => {
+      if (breakpoint === "wide") {
+        focusColumn(document.getElementById(LEFT_COLUMN_ID));
+      } else {
+        setOpen((open) => !open);
+      }
+    },
   });
   return null;
 }

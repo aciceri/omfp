@@ -82,3 +82,115 @@ async fn space_opens_the_leader_menu_and_runs_the_binding_picked() -> anyhow::Re
     journey.gone("[data-testid=command-line]").await?;
     Ok(())
 }
+
+// spec: UI-022, UI-095, UI-201, UI-092, UI-730
+#[tokio::test(flavor = "multi_thread")]
+async fn thread_picker_previews_confirms_and_restores_with_keyboard_focus_at_both_widths()
+-> anyhow::Result<()> {
+    use omfp_daemon::agent::{FakeLauncher, FakeRun};
+    use serde_json::json;
+    let launcher = FakeLauncher::new();
+    for _ in 0..3 {
+        launcher.push_run(
+            FakeRun::fresh().with_history(
+                (0..100)
+                    .map(|index| {
+                        serde_json::from_value(json!({
+                            "role": "user", "content": format!("Conversation message {index}"),
+                            "timestamp": index
+                        }))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            ),
+        );
+    }
+    let journey = Journey::start_fake(launcher).await?;
+    journey.connected().await?;
+    let original = journey.create_thread("Original").await?;
+    let alpha = journey.create_thread("Alpha beta").await?;
+    let alpine = journey.create_thread("Alpine boat").await?;
+    for width in [1400, 900] {
+        journey.driver.set_window_rect(0, 0, width, 1000).await?;
+        journey.command("threads").await?;
+        journey.until_focused("thread-picker-input").await?;
+        journey.keys("Original").await?;
+        journey.keys(Key::Enter).await?;
+        journey.opened(&original).await?;
+        normal_mode(&journey).await?;
+        journey.keys(" /").await?;
+        journey.until_focused("thread-picker-input").await?;
+        journey.keys("apbt").await?;
+        journey.opened(&alpha).await?;
+        journey
+            .screenshot(&format!("thread-preview-{width}"))
+            .await?;
+        journey.keys(Key::Escape).await?;
+        journey.opened(&original).await?;
+        normal_mode(&journey).await?;
+        journey.keys(" /").await?;
+        journey.until_focused("thread-picker-input").await?;
+        journey.keys("alb").await?;
+        journey.opened(&alpha).await?;
+        journey.keys(Key::Down).await?;
+        journey.opened(&alpine).await?;
+        journey.keys(Key::Enter).await?;
+        journey.gone("[data-testid=thread-picker]").await?;
+        journey.opened(&alpine).await?;
+        normal_mode(&journey).await?;
+        journey.keys(" t").await?;
+        journey.until_focused("thread-row").await?;
+        let section = "[data-testid=thread-row][aria-current=true]";
+        assert_eq!(
+            journey.attr(section, "data-thread-id").await?.as_deref(),
+            Some(alpine.as_str())
+        );
+        journey.keys("za").await?;
+        journey.until("workspace collapsed by keyboard", async |page| {
+            let value = page.eval(
+                "return document.activeElement.closest('[data-testid=workspace-section]').querySelector('[data-testid=workspace-collapse]').getAttribute('aria-expanded');",
+                Vec::new(),
+            ).await?;
+            Ok((value == json!("false")).then_some(()))
+        }).await?;
+        journey.keys("za").await?;
+        journey
+            .screenshot(&format!("thread-column-focus-{width}"))
+            .await?;
+        search_current_conversation(&journey, width).await?;
+    }
+    journey
+        .finish("thread picker and conversation search")
+        .await
+}
+
+async fn search_current_conversation(journey: &Journey, width: u32) -> anyhow::Result<()> {
+    normal_mode(journey).await?;
+    journey.keys("/").await?;
+    journey.until_focused("conversation-search-input").await?;
+    journey
+        .element("[data-testid=conversation-search] input")
+        .await?
+        .send_keys("message 12")
+        .await?;
+    journey
+        .until("virtualized conversation match visible", async |page| {
+            Ok((page
+                .count("[data-testid=transcript-item][data-index='12'][aria-current=true]")
+                .await?
+                == 1)
+                .then_some(()))
+        })
+        .await?;
+    assert!(
+        journey
+            .text("[data-testid=conversation-search]")
+            .await?
+            .contains("1 / 1")
+    );
+    journey
+        .screenshot(&format!("conversation-search-{width}"))
+        .await?;
+    journey.keys(Key::Escape).await?;
+    journey.gone("[data-testid=conversation-search]").await?;
+    Ok(())
+}

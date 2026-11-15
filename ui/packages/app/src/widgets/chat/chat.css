@@ -83,6 +83,16 @@
     font-variant-numeric: tabular-nums;
     color: var(--omfp-on-surface-variant);
   }
+
+  .omfp-transcript__search {
+    display: flex;
+    align-items: end;
+    gap: var(--omfp-s2);
+    padding: var(--omfp-s2) var(--omfp-gutter);
+    flex-wrap: wrap;
+    flex: none;
+  }
+
   /* The scroll container of the virtualized transcript (UI-042); items within the reading measure (UI-128). Its
    * scrollbar's gutter is always kept, as under the composer, so the two columns line up (UI-485). */
   .omfp-transcript {

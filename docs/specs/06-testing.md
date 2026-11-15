@@ -215,6 +215,10 @@ Kept few and focused on journeys; everything else belongs to lower layers.
 | E2E-67 | A web frame (`e2e/tests/web_frame.rs`, headless Chromium, pinned omp): the test serves a page on another loopback port; the scripted agent mounts `omfp:web { url, title: "Preview" }` with `omfp_ui_mount` and the frame loads it under its URL with the sandbox of UI-672; inside the frame the page shows in its own origin, cannot read the window (`parent.document` throws) and gets no referrer, and its script's `top.location` change leaves the window where it was; Reload requests the page again and it loads, the window's URL unchanged (UI-670..UI-673, UI-679). Shot `omfp-web-frame.png`. |
 | E2E-70 | (M17) A file outside the workspace folder (`e2e/tests/outside_files.rs`, headless Chromium, omp for real on the fake LLM): a git repository outside the workspace (as an agent's worktree elsewhere) has a committed `README.md` changed since and an untracked `notes.txt`; the scripted agent `read`s the README by its absolute path; a click on the read card's path opens it in a tab (UI-702) previewed, its absolute path and its worktree's chip in the bar, the note `Outside the workspace: this file can be read here, not edited.` and no Edit (UI-700, DMN-310); Diff shows the changed line against that worktree's `HEAD` (DMN-311, UI-704); `:open <absolute path of notes.txt>` opens it read-only in the editor with the note (UI-701). Shots `omfp-outside-file.png`, `omfp-outside-file-diff.png`, `omfp-outside-file-open.png`. |
 
+Issue #57's thread-search journey (`e2e/tests/keys.rs`, fake launcher) runs at 1400 and 900 px: fuzzy filtering and
+arrows preview threads, Escape restores the original and Enter confirms; `Space t` focuses the selected row and
+`za` collapses its workspace; `/` finds a message outside the virtualized window in the current conversation.
+
 ## Traceability
 
 | ID | Requirement |

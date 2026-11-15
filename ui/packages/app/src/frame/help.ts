@@ -47,6 +47,7 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   "nav.halfDown": commandTitles.halfDown,
   "nav.halfUp": commandTitles.halfUp,
   "nav.search": commandTitles.search,
+  "threads.pick": commandTitles.pickThread,
   "nav.delete": commandTitles.deleteFocused,
   "nav.toggleSection": commandTitles.toggleSection,
   "threads.moveUp": commandTitles.moveUp,

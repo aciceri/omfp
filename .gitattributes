@@ -1,0 +1,15 @@
+# Generated files. GitHub leaves them out of the repository's language statistics and collapses their diffs.
+# Each file's own header says how it is regenerated; the comments below cover the files that have no header.
+
+ui/packages/protocol/src/generated.ts linguist-generated=true
+ui/bun.nix linguist-generated=true
+ui/packages/kit/src/logo-paths.ts linguist-generated=true
+crates/omfp/icons/icon.html linguist-generated=true
+ui/packages/app/src/gallery/matugen-forest.css linguist-generated=true
+
+# `just brand`
+docs/brand/*.svg linguist-generated=true
+# `just gen-states`
+fixtures/states/** linguist-generated=true
+# `OMFP_UPDATE_KEYMAP=1 just test-ts` (the app's keymap-export test writes it)
+crates/omfp-daemon/src/widgets/keymap-defaults.json linguist-generated=true

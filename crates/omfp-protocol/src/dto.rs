@@ -694,3 +694,27 @@ pub struct TerminalState {
     /// Raw bytes dropped from the bounded scrollback.
     pub dropped: u64,
 }
+
+/// Cursor position in an agent-readable terminal screen (TRM-106); row and column are zero-based.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalCursor {
+    pub row: u16,
+    pub column: u16,
+    pub visible: bool,
+}
+
+/// Current visible plain-text screen of a daemon-owned PTY session (TRM-106).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalScreen {
+    /// Increases after output, resize or exit; pass it as `afterRevision` to wait for a change.
+    pub revision: u64,
+    pub cols: u16,
+    pub rows: u16,
+    /// Visible cells as plain text. Trailing blank cells and rows are omitted.
+    pub contents: String,
+    pub cursor: TerminalCursor,
+    pub alternate_screen: bool,
+    pub status: TerminalStatus,
+}

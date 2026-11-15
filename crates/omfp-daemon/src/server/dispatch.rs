@@ -191,6 +191,7 @@ async fn run(services: &Services, principal: &Principal, call: Call) -> Reply {
         }
         call @ (Call::JobsStart(_) | Call::JobsKill(_)) => jobs(services, principal, call).await,
         call @ (Call::TerminalsStart(_)
+        | Call::TerminalsScreen(_)
         | Call::TerminalsInput(_)
         | Call::TerminalsResize(_)
         | Call::TerminalsKill(_)) => terminals(services, principal, call).await,
@@ -259,6 +260,10 @@ async fn terminals(services: &Services, principal: &Principal, call: Call) -> Re
                 started_by: started_by.as_deref(),
             })?)
         }
+        Call::TerminalsScreen(params) => ok(&services
+            .terminals
+            .screen(&params.terminal_id, params.after_revision, params.wait_ms)
+            .await?),
         Call::TerminalsInput(params) => {
             services
                 .terminals

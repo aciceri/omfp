@@ -940,6 +940,19 @@ pub struct TerminalResizeParams {
     pub rows: u16,
 }
 
+/// `terminals.screen` params (TRM-106).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TerminalScreenParams {
+    pub terminal_id: String,
+    /// Return immediately when the screen has a different revision; otherwise wait for output, resize or exit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub after_revision: Option<u64>,
+    /// Long-poll duration in milliseconds; at most 30 seconds.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wait_ms: Option<u32>,
+}
+
 /// Where `views.mount` puts a widget in a view (PRT-080); `omfp_ui_mount` takes the same `place` (AGT-061).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]

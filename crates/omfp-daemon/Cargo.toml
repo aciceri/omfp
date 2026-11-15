@@ -41,6 +41,7 @@ toml_edit.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 ulid.workspace = true
+vt100.workspace = true
 
 [dev-dependencies]
 fake-llm.workspace = true

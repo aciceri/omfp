@@ -809,8 +809,8 @@ daemon could not read (D-17); writes stay where the workspace's rescans, git sta
 
 ## Reusable terminal sessions
 
-M17 adds daemon-owned PTY sessions and the copyable `omfp:terminal` widget (#80, TRM-100..105, E2E-71). This is a
-general command surface for interactive CLIs, reusable by agent-built widgets; it does not take over an omp session.
+M17 adds daemon-owned PTY sessions and the copyable `omfp:terminal` widget (#80, TRM-100..106, E2E-71). This is a
+general command surface for interactive CLIs, reusable and inspectable by agents; it does not take over an omp session.
 
 The earlier omp terminal handoff remains removed (D-06, PRT-135): the user did not rely on TUI-only commands, so its
 singular `terminal.*` methods, permission and thread process state were never built. TRM-001..022 and E2E-07 remain

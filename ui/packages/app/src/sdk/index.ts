@@ -400,6 +400,7 @@ export {
   type StoredUpdate,
   type Terminal,
   type TerminalOptions,
+  type TerminalScreenOptions,
   type ToolRunInfo,
   type ToolRunTarget,
   useJob,

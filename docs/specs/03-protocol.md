@@ -166,6 +166,7 @@ previous settings stay). A thread summary carries `title` (`""` until the first 
 | `views.errors` | `workspaceId` | `ViewErrors { windows: [{ client, errors: [{ kind, file, message }] }] }`: the init file and TSX view errors of every window showing the workspace (PRT-116) |
 | `jobs.start` | `workspaceId`, `command`, `replaces?` | the job: `{ id, workspaceId, command, startedAt, status }` (DMN-080); `replaces` is a job it takes the place of (DMN-215) |
 | `terminals.start` | `workspaceId`, `command`, `cwd?`, `cols`, `rows` | the PTY session `{ id, workspaceId, command, cwd, cols, rows, startedAt, status }` (TRM-100) |
+| `terminals.screen` | `terminalId`, `afterRevision?`, `waitMs?` (maximum 30,000) | the current plain-text screen, cursor, dimensions, alternate-screen flag, process status and revision (TRM-106) |
 | `terminals.input` | `terminalId`, `data` (base64 bytes) | `{}` (TRM-101); agent activity redacts `data` (TRM-104) |
 | `terminals.resize` | `terminalId`, `cols`, `rows` | `{}` (TRM-101) |
 | `terminals.kill` | `terminalId` | `{}` (TRM-101) |
@@ -304,4 +305,4 @@ the tool definitions and the system prompt).
 
 | ID | Requirement |
 | --- | --- |
-| PRT-135 | **The omp terminal handoff is removed** (D-06): the protocol MUST NOT have the old singular `terminal.*` methods (an unknown method, `bad_request`), a terminal permission or a `terminal` thread process state. The independent daemon-owned PTY API uses plural `terminals.*` and the `terminal/<id>` topic (TRM-100..105). Binary WebSocket frames remain a `bad_request` response: PTY bytes are base64 in JSON in this first implementation (TRM-103). |
+| PRT-135 | **The omp terminal handoff is removed** (D-06): the protocol MUST NOT have the old singular `terminal.*` methods (an unknown method, `bad_request`), a terminal permission or a `terminal` thread process state. The independent daemon-owned PTY API uses plural `terminals.*` and the `terminal/<id>` topic (TRM-100..106). Binary WebSocket frames remain a `bad_request` response: PTY bytes are base64 in JSON in this first implementation (TRM-103). |

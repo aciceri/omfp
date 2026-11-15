@@ -11,7 +11,7 @@ use std::fmt::Debug;
 
 use crate::dto::{
     DiffPage, FileCandidates, FileContent, FileWritten, GitStatus, JobInfo, Settings, TerminalInfo,
-    Theme, ThreadSummary, Workspace,
+    TerminalScreen, Theme, ThreadSummary, Workspace,
 };
 use crate::{activity, auth, lists, mcp, params, session, windows};
 use omfp_core::wire;
@@ -267,6 +267,8 @@ methods! {
     JobsKill = "jobs.kill" (params::JobRef) -> params::Empty;
     /// Starts an interactive PTY session in a workspace (TRM-100).
     TerminalsStart = "terminals.start" (params::StartTerminalParams) -> TerminalInfo;
+    /// The current plain-text terminal screen, optionally waiting for a revision change (TRM-106).
+    TerminalsScreen = "terminals.screen" (params::TerminalScreenParams) -> TerminalScreen;
     /// Writes base64-encoded bytes to a PTY session (TRM-101).
     TerminalsInput = "terminals.input" (params::TerminalInputParams) -> params::Empty;
     /// Resizes a PTY session (TRM-101).

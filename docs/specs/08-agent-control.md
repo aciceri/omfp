@@ -103,8 +103,7 @@ SDK as hooks and its layout props as props:
 - **Protocol**: `useCall()`, `useTopic(topic)` — the full daemon protocol with the replay/snapshot semantics of 03, so
   state is the same in every window and survives reconnects; helpers such as `useThreads()`, `useThread(id)`,
   `useWorkspace(id)`, `useIndex()`.
-- **Sources**: `useToolRun(toolCallId)` follows an omp tool run; `useJob(command)` runs a non-interactive daemon job;
-  `useTerminal(command, options)` starts or follows an interactive PTY session (TRM-105).
+- **Sources**: `useToolRun(toolCallId)` follows an omp tool run; `useJob(command)` runs a non-interactive daemon job; `useTerminal(command, options)` starts or follows an interactive PTY session and can inspect its visible screen (TRM-105, TRM-106).
 - **Files**: `useFile(path)` reads a workspace file and follows its changes, saves with a conflict check;
   `useOpenFile()` gives `openFile(path, { line, diff })`, which opens a file tab (AGT-027).
 - **Storage**: `useStored(key, initial)` — state kept by the daemon per widget instance, shared across windows and
@@ -141,7 +140,7 @@ user, with no restrictions (full access, D-17):
 | --- | --- | --- |
 | Follow a command the agent runs with its `bash` tool | `useToolRun(toolCallId)` or `useToolRun({ match: /nextest/ })` (latest matching run in the thread) | omp's `tool_execution_update` frames in the thread topic; omp 18.18.6 streams the bash output's latest tail while the command runs (contract test, AGT-020) |
 | Run its own non-interactive command | `useJob(command, { key? })` (fields: `omfp://docs/widgets`) | **jobs** (DMN-080, DMN-081, DMN-215): `jobs.start { workspaceId, command, replaces? }`, topic `job/<id>`, `jobs.kill` |
-| Run an interactive CLI | `useTerminal(command, { cwd?, cols?, rows?, key? })` | daemon-owned PTY (TRM-100..105): `terminals.*`, topic `terminal/<id>`; input is not stored |
+| Run or inspect an interactive CLI | `useTerminal(command, { cwd?, cols?, rows?, key? })` | daemon-owned PTY (TRM-100..106): `terminals.*`, topic `terminal/<id>`; input is not stored, while explicit screen reads may enter the agent conversation |
 | Share state with the agent | `useStored(key, initial)` | per-instance state in the daemon (DMN-086) |
 
 **Loading** — the daemon serves workspace and user widgets over HTTP as ES modules, transpiling TypeScript/JSX with

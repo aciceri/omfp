@@ -1335,6 +1335,13 @@ export type SuggestReposParams = {
   query?: string | null;
 };
 
+/** Cursor position in an agent-readable terminal screen (TRM-106); row and column are zero-based. */
+export type TerminalCursor = {
+  column: number;
+  row: number;
+  visible: boolean;
+};
+
 /** Change on a `terminal/<id>` topic (TRM-100). */
 export type TerminalEvent =
   /** Raw PTY bytes, base64-encoded for JSON transport. */
@@ -1379,6 +1386,28 @@ export type TerminalResizeParams = {
   cols: number;
   rows: number;
   terminalId: string;
+};
+
+/** Current visible plain-text screen of a daemon-owned PTY session (TRM-106). */
+export type TerminalScreen = {
+  alternateScreen: boolean;
+  cols: number;
+  /** Visible cells as plain text. Trailing blank cells and rows are omitted. */
+  contents: string;
+  cursor: TerminalCursor;
+  /** Increases after output, resize or exit; pass it as `afterRevision` to wait for a change. */
+  revision: number;
+  rows: number;
+  status: TerminalStatus;
+};
+
+/** `terminals.screen` params (TRM-106). */
+export type TerminalScreenParams = {
+  /** Return immediately when the screen has a different revision; otherwise wait for output, resize or exit. */
+  afterRevision?: number | null;
+  terminalId: string;
+  /** Long-poll duration in milliseconds; at most 30 seconds. */
+  waitMs?: number | null;
 };
 
 /** State of a `terminal/<id>` topic (TRM-100, TRM-103). */
@@ -2145,6 +2174,7 @@ export interface Methods {
   "jobs.start": { params: StartJobParams; result: JobInfo };
   "jobs.kill": { params: JobRef; result: Empty };
   "terminals.start": { params: StartTerminalParams; result: TerminalInfo };
+  "terminals.screen": { params: TerminalScreenParams; result: TerminalScreen };
   "terminals.input": { params: TerminalInputParams; result: Empty };
   "terminals.resize": { params: TerminalResizeParams; result: Empty };
   "terminals.kill": { params: TerminalRef; result: Empty };
@@ -2249,6 +2279,7 @@ export const METHODS: readonly MethodName[] = [
   "jobs.start",
   "jobs.kill",
   "terminals.start",
+  "terminals.screen",
   "terminals.input",
   "terminals.resize",
   "terminals.kill",

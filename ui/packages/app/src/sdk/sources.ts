@@ -4,7 +4,7 @@
  */
 
 import type { ToolRun, ToolStatus } from "@omfp/core";
-import { type JobState, jobTopic, type TerminalState, terminalTopic } from "@omfp/protocol";
+import { type JobState, jobTopic, type TerminalScreen, type TerminalState, terminalTopic } from "@omfp/protocol";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { strings } from "../strings/index.ts";
 import { resultText } from "../vm/tool.ts";
@@ -294,7 +294,15 @@ export interface TerminalOptions {
   readonly key?: string;
 }
 
-/** A daemon-owned interactive PTY session (TRM-100..105). */
+/** Options for an explicit agent-readable terminal screen (TRM-106). */
+export interface TerminalScreenOptions {
+  /** Return immediately on a different revision; otherwise wait for a change. */
+  readonly afterRevision?: number;
+  /** Long-poll duration in milliseconds, at most 30 seconds. */
+  readonly waitMs?: number;
+}
+
+/** A daemon-owned interactive PTY session (TRM-100..106). */
 export interface Terminal {
   readonly id: string | undefined;
   readonly state: TerminalState | undefined;
@@ -303,6 +311,7 @@ export interface Terminal {
   readonly runs: number;
   input(data: string | Uint8Array): void;
   resize(cols: number, rows: number): void;
+  screen(options?: TerminalScreenOptions): Promise<TerminalScreen | undefined>;
   kill(): void;
 }
 
@@ -409,6 +418,20 @@ export function useTerminal(command: string, options: TerminalOptions = {}): Ter
     },
     [host, terminalId],
   );
+  const screen = useCallback(
+    (options: TerminalScreenOptions = {}) => {
+      if (terminalId === null) {
+        return Promise.resolve(undefined);
+      }
+      const { afterRevision, waitMs } = options;
+      return host.client.call("terminals.screen", {
+        terminalId,
+        ...(afterRevision === undefined ? {} : { afterRevision }),
+        ...(waitMs === undefined ? {} : { waitMs }),
+      });
+    },
+    [host, terminalId],
+  );
   const kill = useCallback(() => {
     if (terminalId !== null) {
       host.client.call("terminals.kill", { terminalId }).catch((error: unknown) => reportError(host, error));
@@ -423,6 +446,7 @@ export function useTerminal(command: string, options: TerminalOptions = {}): Ter
     runs: stored?.runs ?? 0,
     input,
     resize,
+    screen,
     kill,
   };
 }

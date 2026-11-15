@@ -87,6 +87,7 @@ pub fn permission(method: &str) -> Option<Permission> {
         | "theme.get"
         | "settings.get"
         | "widgets.library"
+        | "terminals.screen"
         | "views.errors"
         | "windows.list"
         | "windows.state"

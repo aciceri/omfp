@@ -32,9 +32,9 @@ pub use dto::{
     FileContent, FileDiff, FileKind, FileMatch, FileStatus, FileWritten, FontSettings, ForkOrigin,
     GitStatus, IndexSnapshot, JobInfo, JobLine, JobState, JobStatus, JobStream, KeymapEntry,
     KeymapMode, Motion, NotificationMode, PathEntry, Provenance, RepoKind, RepoStatus,
-    RestartReason, SeenRepository, Settings, TerminalInfo, TerminalState, TerminalStatus, Theme,
-    ThreadSummary, TitleSource, UiSettings, ViewsState, WidgetInfo, WidgetSource, Workspace,
-    WorkspaceBinding, WorkspaceRepo,
+    RestartReason, SeenRepository, Settings, TerminalCursor, TerminalInfo, TerminalScreen,
+    TerminalState, TerminalStatus, Theme, ThreadSummary, TitleSource, UiSettings, ViewsState,
+    WidgetInfo, WidgetSource, Workspace, WorkspaceBinding, WorkspaceRepo,
 };
 pub use envelope::{
     ErrorBody, ErrorCode, EventFrame, IndexEvent, JobEvent, ProtocolError, Request, Response,
@@ -57,10 +57,11 @@ pub use params::{
     ReportWidgetsParams, RespondParams, SearchThreadsParams, SetModelParams, SetSettingsParams,
     SetThinkingParams, SetViewsParams, SetWidgetStateParams, StartJobParams, StartTerminalParams,
     SubagentMessagesParams, SubagentRef, SubagentSteerParams, SubscribeParams, SubscribeResult,
-    SuggestReposParams, TerminalInputParams, TerminalRef, TerminalResizeParams, ThreadGit,
-    ThreadRef, ThreadSearchResult, ThreadSearchResults, ThreadWorkspace, TopicParams,
-    UpdateThreadParams, UpdateWorkspaceParams, WidgetCopied, WidgetJobReport, WidgetReport,
-    WidgetReportState, WorkspaceDiffParams, WorkspaceRef, WriteFileParams,
+    SuggestReposParams, TerminalInputParams, TerminalRef, TerminalResizeParams,
+    TerminalScreenParams, ThreadGit, ThreadRef, ThreadSearchResult, ThreadSearchResults,
+    ThreadWorkspace, TopicParams, UpdateThreadParams, UpdateWorkspaceParams, WidgetCopied,
+    WidgetJobReport, WidgetReport, WidgetReportState, WorkspaceDiffParams, WorkspaceRef,
+    WriteFileParams,
 };
 pub use params::{FileErrorKind, FileErrorReport, ViewErrors, WindowFileErrors};
 pub use params::{

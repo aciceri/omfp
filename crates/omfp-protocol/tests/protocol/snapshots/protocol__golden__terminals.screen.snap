@@ -1,0 +1,36 @@
+---
+source: crates/omfp-protocol/tests/protocol/golden.rs
+expression: golden
+---
+{
+  "request": {
+    "id": "c42",
+    "method": "terminals.screen",
+    "params": {
+      "afterRevision": 7,
+      "terminalId": "01TERMINAL",
+      "waitMs": 10000
+    },
+    "type": "request"
+  },
+  "response": {
+    "id": "c42",
+    "ok": true,
+    "result": {
+      "alternateScreen": false,
+      "cols": 100,
+      "contents": "Password:",
+      "cursor": {
+        "column": 9,
+        "row": 0,
+        "visible": true
+      },
+      "revision": 8,
+      "rows": 30,
+      "status": {
+        "state": "running"
+      }
+    },
+    "type": "response"
+  }
+}

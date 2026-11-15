@@ -2,14 +2,19 @@
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::num::NonZeroU16;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
+use std::time::Duration;
 
 use base64::Engine;
-use omfp_protocol::{TerminalEvent, TerminalInfo, TerminalState, TerminalStatus};
+use omfp_protocol::{
+    TerminalCursor, TerminalEvent, TerminalInfo, TerminalScreen, TerminalState, TerminalStatus,
+};
 use portable_pty::{Child, CommandBuilder, MasterPty, PtySize, native_pty_system};
 use thiserror::Error;
+use tokio::sync::watch;
 
 use crate::event_log::EventLog;
 use crate::store::{new_id, now_ms};
@@ -23,6 +28,11 @@ pub const SCROLLBACK_CHUNKS: usize = 4096;
 pub const REPLAY_EVENTS: usize = SCROLLBACK_BYTES / READ_CHUNK;
 /// Maximum PTY read passed to one output event.
 pub const READ_CHUNK: usize = 16 * 1024;
+/// Largest terminal dimensions accepted; bounds the emulator's cell grid per session.
+pub const MAX_COLS: u16 = 400;
+pub const MAX_ROWS: u16 = 200;
+/// Longest one-call wait for a screen revision.
+pub const MAX_SCREEN_WAIT_MS: u32 = 30_000;
 
 pub(crate) type TerminalLog = EventLog<TerminalEvent, TerminalState>;
 
@@ -30,8 +40,10 @@ pub(crate) type TerminalLog = EventLog<TerminalEvent, TerminalState>;
 pub enum TerminalError {
     #[error("terminal command is empty")]
     EmptyCommand,
-    #[error("terminal dimensions must be positive")]
+    #[error("terminal dimensions must be between 1x1 and {MAX_COLS}x{MAX_ROWS}")]
     InvalidSize,
+    #[error("terminal screen wait must not exceed {MAX_SCREEN_WAIT_MS} ms")]
+    InvalidWait,
     #[error("terminal cwd must be a directory inside the workspace: {0}")]
     InvalidCwd(String),
     #[error("terminal {0} was not found")]
@@ -54,6 +66,7 @@ impl From<TerminalError> for omfp_protocol::ErrorBody {
             TerminalError::OtherWorkspace(_)
             | TerminalError::EmptyCommand
             | TerminalError::InvalidSize
+            | TerminalError::InvalidWait
             | TerminalError::InvalidCwd(_)
             | TerminalError::InvalidData(_) => ErrorCode::BadRequest,
             TerminalError::ShuttingDown | TerminalError::Io(_) => ErrorCode::Internal,
@@ -68,11 +81,19 @@ struct Control {
     child: Mutex<Box<dyn Child + Send>>,
 }
 
+struct Emulator {
+    parser: vt100::Parser,
+    revision: u64,
+    status: TerminalStatus,
+}
+
 struct Entry {
     workspace_id: String,
     started_by: Option<String>,
     log: Arc<TerminalLog>,
     control: Arc<Control>,
+    emulator: Arc<Mutex<Emulator>>,
+    changes: watch::Sender<u64>,
 }
 
 #[derive(Debug, Default)]
@@ -170,9 +191,7 @@ impl Terminals {
         if command.trim().is_empty() {
             return Err(TerminalError::EmptyCommand);
         }
-        if cols == 0 || rows == 0 {
-            return Err(TerminalError::InvalidSize);
-        }
+        let (parser_rows, parser_cols) = terminal_size(cols, rows)?;
         let folder = resolve_cwd(workspace, cwd)?;
         let mut registry = self.lock();
         if registry.closed {
@@ -234,16 +253,13 @@ impl Terminals {
             master: Mutex::new(pty.master),
             child: Mutex::new(child),
         });
-        let run_id = id.clone();
-        let run_control = Arc::clone(&control);
-        let run_log = Arc::clone(&log);
-        if let Err(error) = thread::Builder::new()
-            .name(format!("omfp-terminal-{id}"))
-            .spawn(move || run(&run_id, reader, &run_control, &run_log))
-        {
-            let _ = lock(&control.child).kill();
-            return Err(TerminalError::Io(error.to_string()));
-        }
+        let emulator = Arc::new(Mutex::new(Emulator {
+            parser: vt100::Parser::new(parser_rows, parser_cols, 0),
+            revision: 0,
+            status: TerminalStatus::Running,
+        }));
+        let (changes, _) = watch::channel(0);
+        spawn_reader(&id, reader, &control, &log, &emulator, &changes)?;
         registry.terminals.insert(
             id,
             Entry {
@@ -251,6 +267,8 @@ impl Terminals {
                 started_by: started_by.map(str::to_owned),
                 log,
                 control,
+                emulator,
+                changes,
             },
         );
         drop(registry);
@@ -276,6 +294,45 @@ impl Terminals {
         Ok(Arc::clone(&entry.log))
     }
 
+    /// Returns the current plain-text screen, waiting for a revision change when requested.
+    pub async fn screen(
+        &self,
+        id: &str,
+        after_revision: Option<u64>,
+        wait_ms: Option<u32>,
+    ) -> Result<TerminalScreen, TerminalError> {
+        let wait_ms = wait_ms.unwrap_or_default();
+        if wait_ms > MAX_SCREEN_WAIT_MS {
+            return Err(TerminalError::InvalidWait);
+        }
+        let (emulator, mut changes) = {
+            let registry = self.lock();
+            let entry = registry
+                .terminals
+                .get(id)
+                .ok_or_else(|| TerminalError::NotFound(id.to_owned()))?;
+            (Arc::clone(&entry.emulator), entry.changes.subscribe())
+        };
+        let (revision, running) = {
+            let emulator = lock(&emulator);
+            (
+                emulator.revision,
+                emulator.status == TerminalStatus::Running,
+            )
+        };
+        if wait_ms > 0 && running && after_revision == Some(revision) {
+            let changed = async {
+                loop {
+                    if changes.changed().await.is_err() || lock(&emulator).revision != revision {
+                        break;
+                    }
+                }
+            };
+            let _ = tokio::time::timeout(Duration::from_millis(u64::from(wait_ms)), changed).await;
+        }
+        Ok(screen_snapshot(&emulator))
+    }
+
     /// Writes base64-encoded bytes to a terminal.
     pub fn input(&self, id: &str, data: &str) -> Result<(), TerminalError> {
         let control = self
@@ -296,14 +353,18 @@ impl Terminals {
 
     /// Resizes a terminal's PTY.
     pub fn resize(&self, id: &str, cols: u16, rows: u16) -> Result<(), TerminalError> {
-        if cols == 0 || rows == 0 {
-            return Err(TerminalError::InvalidSize);
-        }
-        let control = self
+        let (parser_rows, parser_cols) = terminal_size(cols, rows)?;
+        let (control, emulator, changes) = self
             .lock()
             .terminals
             .get(id)
-            .map(|entry| Arc::clone(&entry.control))
+            .map(|entry| {
+                (
+                    Arc::clone(&entry.control),
+                    Arc::clone(&entry.emulator),
+                    entry.changes.clone(),
+                )
+            })
             .ok_or_else(|| TerminalError::NotFound(id.to_owned()))?;
         lock(&control.master)
             .resize(PtySize {
@@ -312,7 +373,15 @@ impl Terminals {
                 pixel_width: 0,
                 pixel_height: 0,
             })
-            .map_err(|error| TerminalError::Io(error.to_string()))
+            .map_err(|error| TerminalError::Io(error.to_string()))?;
+        let revision = {
+            let mut emulator = lock(&emulator);
+            emulator.parser.set_size(parser_rows, parser_cols);
+            emulator.revision = emulator.revision.saturating_add(1);
+            emulator.revision
+        };
+        changes.send_replace(revision);
+        Ok(())
     }
 
     /// Sends the PTY child a termination request. A session that already exited is already killed.
@@ -396,6 +465,39 @@ impl Terminals {
     }
 }
 
+fn screen_snapshot(emulator: &Mutex<Emulator>) -> TerminalScreen {
+    let emulator = lock(emulator);
+    let screen = emulator.parser.screen();
+    let (rows, cols) = screen.size();
+    let (row, column) = screen.cursor_position();
+    TerminalScreen {
+        revision: emulator.revision,
+        cols: cols.get(),
+        rows: rows.get(),
+        contents: screen.contents(),
+        cursor: TerminalCursor {
+            row,
+            column,
+            visible: !screen.hide_cursor(),
+        },
+        alternate_screen: screen.alternate_screen(),
+        status: emulator.status.clone(),
+    }
+}
+
+fn terminal_size(cols: u16, rows: u16) -> Result<(NonZeroU16, NonZeroU16), TerminalError> {
+    if cols > MAX_COLS || rows > MAX_ROWS {
+        return Err(TerminalError::InvalidSize);
+    }
+    let Some(rows) = NonZeroU16::new(rows) else {
+        return Err(TerminalError::InvalidSize);
+    };
+    let Some(cols) = NonZeroU16::new(cols) else {
+        return Err(TerminalError::InvalidSize);
+    };
+    Ok((rows, cols))
+}
+
 fn resolve_cwd(workspace: &Path, cwd: Option<&str>) -> Result<PathBuf, TerminalError> {
     let Some(cwd) = cwd else {
         return Ok(workspace.to_owned());
@@ -415,14 +517,60 @@ fn resolve_cwd(workspace: &Path, cwd: Option<&str>) -> Result<PathBuf, TerminalE
     Ok(folder)
 }
 
-fn run(id: &str, mut reader: Box<dyn Read + Send>, control: &Control, log: &TerminalLog) {
+fn spawn_reader(
+    id: &str,
+    reader: Box<dyn Read + Send>,
+    control: &Arc<Control>,
+    log: &Arc<TerminalLog>,
+    emulator: &Arc<Mutex<Emulator>>,
+    changes: &watch::Sender<u64>,
+) -> Result<(), TerminalError> {
+    let run_id = id.to_owned();
+    let run_control = Arc::clone(control);
+    let run_log = Arc::clone(log);
+    let run_emulator = Arc::clone(emulator);
+    let run_changes = changes.clone();
+    if let Err(error) = thread::Builder::new()
+        .name(format!("omfp-terminal-{id}"))
+        .spawn(move || {
+            run(
+                &run_id,
+                reader,
+                &run_control,
+                &run_log,
+                &run_emulator,
+                &run_changes,
+            );
+        })
+    {
+        let _ = lock(&control.child).kill();
+        return Err(TerminalError::Io(error.to_string()));
+    }
+    Ok(())
+}
+
+fn run(
+    id: &str,
+    mut reader: Box<dyn Read + Send>,
+    control: &Control,
+    log: &TerminalLog,
+    emulator: &Mutex<Emulator>,
+    changes: &watch::Sender<u64>,
+) {
     let mut buffer = vec![0; READ_CHUNK];
     loop {
         match reader.read(&mut buffer) {
             Ok(0) => break,
             Ok(size) => {
+                let revision = {
+                    let mut emulator = lock(emulator);
+                    emulator.parser.process(&buffer[..size]);
+                    emulator.revision = emulator.revision.saturating_add(1);
+                    emulator.revision
+                };
                 let data = base64::engine::general_purpose::STANDARD.encode(&buffer[..size]);
                 log.push(TerminalEvent::Output { data });
+                changes.send_replace(revision);
             }
             Err(error) => {
                 tracing::debug!(terminal = %id, %error, "PTY reader closed");
@@ -432,10 +580,15 @@ fn run(id: &str, mut reader: Box<dyn Read + Send>, control: &Control, log: &Term
     }
     let status = lock(&control.child).wait();
     let code = status.ok().map(|status| status.exit_code().cast_signed());
-    log.push(TerminalEvent::Exited {
-        code,
-        ended_at: now_ms(),
-    });
+    let ended_at = now_ms();
+    let revision = {
+        let mut emulator = lock(emulator);
+        emulator.status = TerminalStatus::Exited { code, ended_at };
+        emulator.revision = emulator.revision.saturating_add(1);
+        emulator.revision
+    };
+    log.push(TerminalEvent::Exited { code, ended_at });
+    changes.send_replace(revision);
 }
 
 #[cfg(test)]
@@ -449,6 +602,19 @@ mod tests {
     fn rejects_parent_directory_cwd() {
         let error = resolve_cwd(Path::new("/tmp"), Some("../etc")).unwrap_err();
         assert!(matches!(error, TerminalError::InvalidCwd(_)));
+    }
+
+    // spec: TRM-100, TRM-106
+    #[test]
+    fn bounds_the_emulator_grid() {
+        assert!(matches!(
+            terminal_size(MAX_COLS + 1, 1),
+            Err(TerminalError::InvalidSize)
+        ));
+        assert!(matches!(
+            terminal_size(1, MAX_ROWS + 1),
+            Err(TerminalError::InvalidSize)
+        ));
     }
 
     // spec: TRM-103

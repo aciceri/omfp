@@ -54,8 +54,6 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { mode: "normal", keys: "Alt-ArrowDown", command: "threads.moveDown" },
   { mode: "normal", keys: "Alt-Shift-ArrowUp", command: "threads.moveToPrevWorkspace" },
   { mode: "normal", keys: "Alt-Shift-ArrowDown", command: "threads.moveToNextWorkspace" },
-  // The path of the focused element (a path link, a tool card, a changed file) in a file tab (UI-116).
-  { mode: "normal", keys: "g f", command: "file.open" },
   { mode: "normal", keys: "i", command: "composer.focus" },
   { mode: "normal", keys: ":", command: "cmdline.open" },
   // View cycling stays independent of the fuzzy picker (UI-302).
@@ -86,7 +84,7 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { mode: "normal", keys: "Space h e", command: "help.messages" },
   { mode: "normal", keys: "Space p n", command: "workspace.new" },
   { mode: "normal", keys: "Space p r", command: "workspace.rescan" },
-  { mode: "normal", keys: "Space f o", command: "file.open" },
+  { mode: "normal", keys: "Space f", command: "file.pick" },
   { mode: "normal", keys: "Space v", command: "view.pick" },
   { mode: "insert", keys: "Esc", command: "focus.leave" },
   // In the composer: clear the draft, then abort; `u` restores the last cleared draft (UI-063). In normal mode `Ctrl-c`

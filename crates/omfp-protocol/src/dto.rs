@@ -510,6 +510,8 @@ pub enum FileMatch {
     Suffix,
     /// The file's name is the query's last component.
     Basename,
+    /// The query's non-whitespace characters are a case-insensitive subsequence of the workspace-relative path.
+    Fuzzy,
 }
 
 /// A file found by `workspaces.find_file` (DMN-092).

@@ -682,7 +682,7 @@ fn find_file_lists_tracked_and_untracked_files_but_not_ignored_or_deleted_ones()
     std::fs::write(env.folder.join("lib.rs"), "notes\n").unwrap();
     let find = |query: &str| -> Vec<String> {
         env.workspaces
-            .find_file(&env.id, query, &std::collections::BTreeSet::new())
+            .find_file(&env.id, query, &std::collections::BTreeSet::new(), false)
             .unwrap()
             .candidates
             .into_iter()

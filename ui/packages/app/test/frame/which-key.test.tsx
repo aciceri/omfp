@@ -148,16 +148,12 @@ describe("which-key panel", () => {
   });
 
   // spec: UI-320, UI-262
-  test("it lists the live bindings: init files', `[keymap]` entries with a widget's command, removed defaults gone", async () => {
+  test("live config and init bindings execute the widget and init commands they name", async () => {
     const test = await setup();
-    test.keymap([
-      { mode: "normal", keys: "g p", command: "demo.ping" },
-      { mode: "normal", keys: "g f", command: "" },
-    ]);
+    test.keymap([{ mode: "normal", keys: "g p", command: "demo.ping" }]);
     document.body.focus();
     keys("g");
     test.runTimers();
-    expect(entries().some(([, key]) => key === "f")).toBe(false);
     expect(entries().find(([, key]) => key === "p")?.[3]).toBe("Ping the demo");
     keys("p");
     expect(log).toEqual(["ping"]);

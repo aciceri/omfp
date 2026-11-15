@@ -473,7 +473,7 @@ describe("opening files from cards", () => {
   const opened = () => shownHost?.window.get(OPEN_FILES).w1?.tabs.map(({ path, line, diff }) => ({ path, line, diff }));
 
   // spec: UI-116
-  test("a read's path opens the file at its first line, without toggling the card; the card carries it for g f", async () => {
+  test("a read's path opens the file at its first line, without toggling the card; the card carries it for :open", async () => {
     const element = show(card("read_tool_calls", "call_read_1"));
     expect([element.dataset.omfpPath, element.dataset.omfpLine]).toEqual(["src/lib.rs", "1"]);
     await userEvent.click(byTestId(element, "tool-path-open"));

@@ -26,7 +26,7 @@ const text = strings.chat.tool;
  * A file path: relative to the workspace repository holding it, the repository's name as a muted prefix (`repo/path`;
  * no chip, the card is a box already). With `open`, clicking the path opens the file (UI-116); in a card's header the
  * path sits inside the collapse toggle, so it opens on a pointer click without toggling, and the keyboard reaches it with
- * `g f` on the focused card (its `data-omfp-path`).
+ * `:open` on the focused card (its `data-omfp-path`).
  */
 function FilePath({ path, open }: { path: string; open?: OpenFileOptions | undefined }): ReactNode {
   const workspaceId = useCurrentWorkspaceId();
@@ -43,7 +43,7 @@ function FilePath({ path, open }: { path: string; open?: OpenFileOptions | undef
       {open === undefined ? (
         <span className="omfp-tool-card__subject">{shown.path}</span>
       ) : (
-        // biome-ignore lint/a11y/useKeyWithClickEvents: inside the card's toggle button; the keyboard opens it with `g f`
+        // biome-ignore lint/a11y/useKeyWithClickEvents: inside the toggle button; the keyboard opens it with `:open`
         // biome-ignore lint/a11y/noStaticElementInteractions: same
         <span
           className="omfp-tool-card__subject omfp-path-link"

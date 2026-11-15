@@ -251,11 +251,14 @@ pub struct ReadFileParams {
 #[serde(rename_all = "camelCase")]
 pub struct FindFileParams {
     pub workspace_id: String,
-    /// A bare file name (`theme.ts`) or the end of a path (`src/theme.ts`).
+    /// A bare/partial path, or with `fuzzy`, a case-insensitive subsequence of a workspace-relative path.
     pub query: String,
     /// A thread of the workspace: files its tool cards name rank first among candidates of the same match.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thread_id: Option<String>,
+    /// Search every eligible workspace file before applying the result limit; empty query lists candidates.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub fuzzy: bool,
 }
 
 /// `workspaces.write_file` params (DMN-090).

@@ -30,7 +30,7 @@ import { strings } from "../strings/index.ts";
 import { displayTitle, isArchived, nextNeedingAttention, spawnerOf } from "../vm/threads.ts";
 import { DENSITIES, parseSet, parseTheme, SET_KEYS, themeArgs } from "./set.ts";
 
-/** The path the focused element or its nearest ancestor carries for `g f` (`data-omfp-path`, UI-116). */
+/** The path the focused element or its nearest ancestor carries for `:open` (`data-omfp-path`, UI-116). */
 function focusedPath(element: Element | null): { path: string; options: OpenFileOptions } | undefined {
   const holder = element?.closest("[data-omfp-path]");
   const path = holder?.getAttribute("data-omfp-path");

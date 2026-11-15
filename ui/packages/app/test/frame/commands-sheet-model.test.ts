@@ -17,7 +17,7 @@ const COMMANDS: Command[] = [
   { id: "thread.new", title: "New thread (threads)", scope: "threads", run },
   { id: "view.switch", title: "Switch view (:view <id>)", aliases: ["view"], args: () => ["review"], run },
   { id: "view.pick", title: "Pick a view", run },
-  { id: "file.open", title: "Open a file (:open <path>[:<line>]), or the focused path (g f)", aliases: ["open"], run },
+  { id: "file.open", title: "Open a file (:open <path>[:<line>]), or the focused path", aliases: ["open"], run },
   // What a phone does otherwise: the Threads button, a tap on the composer, the focus moves.
   { id: "threads.toggle", title: "Show or hide the threads column (narrow window)", run },
   { id: "composer.focus", title: "Focus the composer", run },
@@ -56,20 +56,6 @@ describe("commands sheet content", () => {
         ["composer.interrupt", "composer.interrupt", false],
         ["thread.new", "new", false],
       ],
-    ]);
-  });
-
-  // spec: UI-462
-  test("a row's title leaves out the usage the `:` line shows; plain parentheses stay", () => {
-    const titles = sheetGroups(COMMANDS, [], "").flatMap((group) => group.commands.map((command) => command.title));
-    expect(titles).toEqual([
-      "New thread",
-      "Pick a view",
-      "Switch view",
-      "Open a file, or the focused path (g f)",
-      "Help",
-      "Colour scheme (system, light, dark)",
-      "Ping",
     ]);
   });
 

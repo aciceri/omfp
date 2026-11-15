@@ -29,6 +29,9 @@ export function Picker({
   initial,
   preview,
   numbered = false,
+  search,
+  notice,
+  busy = false,
   choose,
   cancel,
 }: {
@@ -39,13 +42,20 @@ export function Picker({
   initial?: string | undefined;
   preview?: ((id: string) => void) | undefined;
   numbered?: boolean;
+  /** An external search supplies already-filtered options, avoiding a second, differently ordered text match. */
+  search?: ((query: string) => void) | undefined;
+  notice?: string | undefined;
+  busy?: boolean;
   choose: (id: string) => void;
   cancel: () => void;
 }): ReactNode {
   const [value, setValue] = useState("");
   const [active, setActive] = useState(initial);
   const listId = useId();
-  const shown = options.filter((option) => matches(`${option.title} ${option.description}`, value));
+  const shown =
+    search === undefined
+      ? options.filter((option) => matches(`${option.title} ${option.description}`, value))
+      : options;
   const highlighted = shown.find((option) => option.id === active) ?? shown[0];
   const highlightedId = highlighted?.id;
   useEffect(() => {
@@ -59,7 +69,7 @@ export function Picker({
       <CommandMenu
         className="omfp-cmdline__menu"
         title={title}
-        listProps={{ id: listId, "aria-label": title }}
+        listProps={{ id: listId, "aria-label": title, "aria-busy": busy }}
         footer={
           <>
             <Kbd>up</Kbd>
@@ -75,6 +85,7 @@ export function Picker({
                 {strings.shell.frame.pickerKeys.choose}
               </>
             )}
+            {notice !== undefined && <span role="status">{notice}</span>}
           </>
         }
       >
@@ -123,6 +134,7 @@ export function Picker({
           onChange={(event) => {
             setValue(event.target.value);
             setActive(undefined);
+            search?.(event.target.value);
           }}
           onBlur={cancel}
           onKeyDown={(event) => {

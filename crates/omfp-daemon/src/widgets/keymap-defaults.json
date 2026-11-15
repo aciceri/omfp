@@ -72,11 +72,6 @@
     },
     {
       "mode": "normal",
-      "keys": "g f",
-      "command": "file.open"
-    },
-    {
-      "mode": "normal",
       "keys": "i",
       "command": "composer.focus"
     },
@@ -197,8 +192,8 @@
     },
     {
       "mode": "normal",
-      "keys": "Space f o",
-      "command": "file.open"
+      "keys": "Space f",
+      "command": "file.pick"
     },
     {
       "mode": "normal",
@@ -291,10 +286,15 @@
     },
     {
       "id": "file.open",
-      "title": "Open a file (:open <path>[:<line>]), or the focused path (g f)",
+      "title": "Open a file (:open <path>[:<line>]), or the focused path (:open)",
       "aliases": [
         "open"
       ]
+    },
+    {
+      "id": "file.pick",
+      "title": "Pick a workspace file",
+      "aliases": []
     },
     {
       "id": "focus.leave",

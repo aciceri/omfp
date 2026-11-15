@@ -87,6 +87,9 @@ Initial release, planned as 0.1.0.
   the old `g v` and `Space v v/n/p` paths are removed. Notices open by click or `:notice`, not `g n`.
 - Cleared composer drafts show an `Esc` then `u` recovery hint. Normal-mode `u` restores only the latest draft
   this thread's `Ctrl-C` cleared, including images and paste chips; it is not general undo.
+- `Space f` opens a fuzzy file picker across all workspace repositories and the workspace folder, showing each
+  file's repository and containing folder. Filtering happens before the result limit, so later repositories remain
+  searchable. `g f` and `Space f o` are removed; use `:open` for an explicit or focused path.
 
 ### Release limitations
 

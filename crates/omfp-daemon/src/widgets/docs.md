@@ -175,7 +175,7 @@ sequence. `Space` alone opens it at once: the leader menu. The leader map:
 | `Space w`, `Space p n`, `Space p r` | new workspace, again, rescan the workspace |
 | `Space t` | focus the threads column (wide), show or hide it (narrow); then `za` folds the focused workspace |
 | `Space v`, `] v` / `[ v` | fuzzy view picker (visible `1`–`9`, arrows and Enter); next / previous view |
-| `Space f o` | open the focused path (`g f`) |
+| `Space f` | fuzzy file picker across all workspace repositories and the folder; each row shows repository and containing folder; arrows/Enter open the exact file, Escape cancels |
 | `Space h h`, `Space h k` | the help panel (`?`, `:help`), `:describe-key` |
 | `u` | normal-mode restoration of this thread's last Ctrl-C-cleared draft (text, images and paste chips), not general undo; leave the composer with Esc first |
 

@@ -225,7 +225,7 @@ function FileChanges({ workspaceId, repo, filePath, file, runs }: FileChangesPro
       data-testid="changes-file"
       data-path={file.path}
       data-status={file.status}
-      // `g f` on the focused file opens it against `HEAD` (UI-116).
+      // `:open` on the focused file opens it against `HEAD` (UI-116).
       data-omfp-path={filePath}
       data-omfp-diff=""
       level={3}
@@ -237,7 +237,7 @@ function FileChanges({ workspaceId, repo, filePath, file, runs }: FileChangesPro
           <span className="omfp-changes__status" data-status={file.status} title={text.statusLabel[file.status]}>
             {text.status[file.status]}
           </span>
-          {/* Inside the toggle: a pointer click opens the file without toggling, the keyboard uses `g f` (UI-116). */}
+          {/* Inside the toggle: a pointer click opens without toggling; the keyboard uses `:open` (UI-116). */}
           {/* biome-ignore lint/a11y/useKeyWithClickEvents: see above */}
           {/* biome-ignore lint/a11y/noStaticElementInteractions: see above */}
           <span

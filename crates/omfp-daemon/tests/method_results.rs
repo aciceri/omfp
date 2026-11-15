@@ -286,6 +286,7 @@ async fn thread_management_methods_return_their_declared_results() {
             workspace_id: thread.workspace_id.clone(),
             query: "docs/plan.md".into(),
             thread_id: Some(thread.id.clone()),
+            fuzzy: false,
         })
         .await;
     assert_eq!(

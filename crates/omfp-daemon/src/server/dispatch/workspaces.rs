@@ -170,7 +170,12 @@ pub(super) async fn workspaces(services: &Services, principal: &Principal, call:
             };
             return ok(&blocking(move || {
                 workspaces
-                    .find_file(&params.workspace_id, &params.query, &mentioned)
+                    .find_file(
+                        &params.workspace_id,
+                        &params.query,
+                        &mentioned,
+                        params.fuzzy,
+                    )
                     .map_err(workspace_error)
             })
             .await?);

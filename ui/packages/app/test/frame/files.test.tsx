@@ -408,13 +408,66 @@ describe("the file picker", () => {
   });
 });
 
+describe("workspace-wide file picker", () => {
+  const candidates = [
+    { path: "app/src/config.ts", repo: "app", match: "fuzzy", mentioned: false },
+    { path: "lib/ui/config.ts", repo: "lib", match: "fuzzy", mentioned: false },
+  ] as const;
+
+  // spec: UI-731
+  test("Space f disambiguates matching basenames by repository and folder, and opens the arrow-selected file", async () => {
+    const test = setup();
+    press(" ");
+    press("f");
+    await act(async () => {
+      test.client.callsTo("workspaces.find_file").at(-1)?.resolve({ candidates, truncated: false });
+    });
+    const rows = screen.getAllByTestId("workspace-file-picker-option");
+    expect(rows.map((row) => row.dataset.id)).toEqual(["app/src/config.ts", "lib/ui/config.ts"]);
+    expect(rows[0]?.textContent).toContain("app/src");
+    expect(rows[1]?.textContent).toContain("lib/ui");
+    await test.user.keyboard("{ArrowDown}{Enter}");
+    expect(screen.queryByTestId("workspace-file-picker")).toBeNull();
+    expect(shownFile()).toMatchObject({ path: "lib/ui/config.ts" });
+  });
+
+  // spec: UI-731
+  test("late query results cannot replace the current matches; Escape preserves existing file tabs", async () => {
+    const test = setup();
+    act(() => openFile(test.host, "notes/keep.md"));
+    press(" ");
+    press("f");
+    const initial = test.client.callsTo("workspaces.find_file").at(-1);
+    const input = screen.getByTestId("workspace-file-picker-input");
+    await test.user.type(input, "lbut");
+    await act(async () => {
+      test.client
+        .callsTo("workspaces.find_file")
+        .at(-1)
+        ?.resolve({ candidates: [candidates[1]], truncated: false });
+    });
+    expect(screen.getAllByTestId("workspace-file-picker-option").map((row) => row.dataset.id)).toEqual([
+      "lib/ui/config.ts",
+    ]);
+    await act(async () => {
+      initial?.resolve({ candidates: [candidates[0]], truncated: false });
+    });
+    expect(screen.getAllByTestId("workspace-file-picker-option").map((row) => row.dataset.id)).toEqual([
+      "lib/ui/config.ts",
+    ]);
+    await test.user.keyboard("{Escape}");
+    expect(shownFile()).toMatchObject({ path: "notes/keep.md" });
+    expect(screen.queryByTestId("workspace-file-picker")).toBeNull();
+  });
+});
+
 describe("opening paths", () => {
   // spec: UI-116
-  test("`g f` opens the path the focused element carries; `:open path:line` opens a typed one", async () => {
+  test("`:open` opens the focused element's path, or a typed path and line", async () => {
     const test = setup();
     act(() => screen.getByTestId("card").focus());
-    press("g");
-    press("f");
+    press(":");
+    await test.user.keyboard("open{Enter}");
     expect(shownFile()).toEqual({
       path: "fe/src/lib.rs",
       line: 4,
@@ -422,8 +475,8 @@ describe("opening paths", () => {
     });
     await test.user.click(tabElements()[0] as HTMLElement);
     act(() => screen.getByTestId("changed").focus());
-    press("g");
-    press("f");
+    press(":");
+    await test.user.keyboard("open{Enter}");
     expect(shownFile()).toEqual({
       path: "fe/src/main.rs",
       diff: true,

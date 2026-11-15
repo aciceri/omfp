@@ -250,7 +250,7 @@ Scope (the user's third round of changes, items 3 and 6): a file viewer and edit
 `HEAD` text (`workspaces.read_file` / `.write_file`, DMN-089, DMN-090); the built-in `omfp:file` widget (UI-110..114)
 with vim editing, saves refused on conflict, and the whole-file diff against `HEAD` (unified or side by side); files
 open as closable tabs of the view's `main` slot or in a floating panel (UI-115); file paths in assistant Markdown, tool
-cards and `omfp:changes` open them, and so does `g f` (UI-116); `omfp:changes` shows the CodeMirror merge view
+cards and `omfp:changes` open them, and `:open` opens a focused or typed path (UI-116); `Space f` searches all workspace files (UI-731). `omfp:changes` shows the CodeMirror merge view
 (UI-080); the SDK gains `useFile` and `useOpenFile` (AGT-027) and the kit `CodeEditor` and `CodeDiff`. The theme and
 config polls apply a change only once the file settled, so a non-atomic writer such as matugen is never read halfway
 (DMN-091).

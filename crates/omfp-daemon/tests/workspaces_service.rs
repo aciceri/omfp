@@ -1157,7 +1157,7 @@ fn found(
 ) -> Vec<(String, Option<String>, FileMatch, bool)> {
     let mentioned = mentioned.iter().map(|&path| path.to_owned()).collect();
     env.workspaces
-        .find_file(id, query, &mentioned)
+        .find_file(id, query, &mentioned, false)
         .unwrap()
         .candidates
         .into_iter()
@@ -1200,6 +1200,104 @@ fn find_env() -> (Env, String, PathBuf) {
         .add_repo(&ws.id, Some("lib"), link(&lib))
         .unwrap();
     (env, ws.id, ws.path)
+}
+
+// spec: DMN-092, UI-731
+#[test]
+fn workspace_folder_search_reaches_nested_matches_beyond_twenty_thousand_entries() {
+    let (env, id, folder) = find_env();
+    let large = folder.join("large");
+    std::fs::create_dir_all(large.join("tail")).unwrap();
+    for index in 0..20_001 {
+        std::fs::File::create(large.join(format!("entry-{index:05}"))).unwrap();
+    }
+    put(&large.join("tail/needle.md"), "needle\n");
+    let result = env
+        .workspaces
+        .find_file(&id, "lrg/tl/ndl", &BTreeSet::new(), true)
+        .unwrap();
+    assert_eq!(
+        result
+            .candidates
+            .iter()
+            .map(|file| file.path.as_str())
+            .collect::<Vec<_>>(),
+        ["large/tail/needle.md"]
+    );
+}
+
+// spec: DMN-092
+#[test]
+fn fuzzy_queries_search_every_repository_and_the_folder_without_changing_strict_lookup() {
+    let (env, id, _) = find_env();
+    let named = BTreeSet::new();
+    let result = env
+        .workspaces
+        .find_file(&id, "THEM TS", &named, true)
+        .unwrap();
+    let paths: Vec<_> = result
+        .candidates
+        .iter()
+        .map(|file| (file.path.as_str(), file.repo.as_deref()))
+        .collect();
+    assert_eq!(
+        paths,
+        [
+            ("notes/theme.ts", None),
+            ("app/src/theme.ts", Some("app")),
+            ("lib/ui/theme.ts", Some("lib"))
+        ]
+    );
+    assert!(
+        result
+            .candidates
+            .iter()
+            .all(|file| file.matched == FileMatch::Fuzzy)
+    );
+    let app = env
+        .workspaces
+        .find_file(&id, "APP THMTS", &named, true)
+        .unwrap();
+    assert_eq!(app.candidates[0].path, "app/src/theme.ts");
+    assert_eq!(
+        env.workspaces
+            .find_file(&id, "THEM TS", &named, false)
+            .unwrap()
+            .candidates,
+        Vec::new()
+    );
+}
+
+// spec: DMN-092
+#[test]
+fn fuzzy_filtering_precedes_the_result_limit_so_later_repositories_remain_searchable() {
+    let (env, id, _) = find_env();
+    for index in 0..70 {
+        put(&env.repo.join(format!("filler-{index:02}.ts")), "filler\n");
+    }
+    let named = BTreeSet::new();
+    let initial = env.workspaces.find_file(&id, "", &named, true).unwrap();
+    assert_eq!(initial.candidates.len(), MAX_CANDIDATES);
+    assert!(initial.truncated);
+    assert!(
+        !initial
+            .candidates
+            .iter()
+            .any(|file| file.repo.as_deref() == Some("lib"))
+    );
+    let narrowed = env
+        .workspaces
+        .find_file(&id, "LB U THMTS", &named, true)
+        .unwrap();
+    assert_eq!(
+        narrowed
+            .candidates
+            .iter()
+            .map(|file| file.path.as_str())
+            .collect::<Vec<_>>(),
+        ["lib/ui/theme.ts"]
+    );
+    assert!(!narrowed.truncated);
 }
 
 // spec: DMN-092, DMN-312
@@ -1246,7 +1344,9 @@ fn bare_and_partial_names_find_files_of_the_repositories_and_the_folder() {
         )]
     );
     assert_eq!(found(&env, &id, "missing.ts", &[]), []);
-    let outside = env.workspaces.find_file(&id, "../x.ts", &BTreeSet::new());
+    let outside = env
+        .workspaces
+        .find_file(&id, "../x.ts", &BTreeSet::new(), false);
     assert!(
         matches!(outside, Err(WorkspaceError::OutsideFolder(_))),
         "{outside:?}"
@@ -1317,7 +1417,7 @@ fn files_the_thread_names_rank_first_among_equal_matches() {
     let named = named_files(&state);
     assert_eq!(
         env.workspaces
-            .find_file(&id, "theme.ts", &named)
+            .find_file(&id, "theme.ts", &named, false)
             .unwrap()
             .candidates[0]
             .path,
@@ -1334,7 +1434,7 @@ fn at_most_fifty_candidates_are_returned() {
     }
     let result = env
         .workspaces
-        .find_file(&id, "x.ts", &BTreeSet::new())
+        .find_file(&id, "x.ts", &BTreeSet::new(), false)
         .unwrap();
     assert_eq!(result.candidates.len(), MAX_CANDIDATES);
     assert_eq!(MAX_CANDIDATES, 50);

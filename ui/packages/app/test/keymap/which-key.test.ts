@@ -132,18 +132,21 @@ describe("waiting sequences in the key handler", () => {
 
   // spec: UI-321
   test("a prefix shows after the delay; the next key in time never shows it", () => {
-    const keys = setup();
-    keys.press("g");
+    const keys = setup([
+      { mode: "normal", keys: "q a", command: "nav.top" },
+      { mode: "normal", keys: "q b", command: "file.open" },
+    ]);
+    keys.press("q");
     expect(keys.timers.map((timer) => timer.ms)).toEqual([WHICH_KEY_DELAY_MS]);
-    keys.press("g");
+    keys.press("a");
     keys.fire();
     expect(keys.shown).toEqual([]);
     expect(keys.ran).toEqual(["nav.top"]);
-    keys.press("g");
+    keys.press("q");
     keys.fire();
-    expect(keys.shown).toEqual(["g"]);
-    keys.press("f");
-    expect(keys.shown).toEqual(["g", undefined]);
+    expect(keys.shown).toEqual(["q"]);
+    keys.press("b");
+    expect(keys.shown).toEqual(["q", undefined]);
     expect(keys.ran).toEqual(["nav.top", "file.open"]);
   });
 

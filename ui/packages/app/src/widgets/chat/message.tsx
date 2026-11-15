@@ -220,7 +220,7 @@ function markStatus(status: Card["status"]): ToolStatus {
  * under it, open or not (UI-473). */
 export function ToolCardView({ cardKey, card }: { cardKey: string; card: Card }) {
   const [expanded, setExpanded] = useExpanded(cardKey, expandedByDefault(card));
-  // `g f` on the focused card opens its file (UI-116).
+  // `:open` on the focused card opens its file (UI-116).
   const target = fileTarget(card.view);
   const exitCode = card.view.kind === "bash" ? card.view.exitCode : undefined;
   return (

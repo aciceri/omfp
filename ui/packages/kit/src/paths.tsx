@@ -113,7 +113,7 @@ export interface PathLinkProps {
   readonly "data-testid"?: string;
 }
 
-/** An inline button that opens a path; it carries the path for `g f` (`data-omfp-path`, `data-omfp-line`). */
+/** An inline path button; it carries the path for `:open` (`data-omfp-path`, `data-omfp-line`). */
 export function PathLink({ reference, onOpen, children, diff, "data-testid": testId = "path-link" }: PathLinkProps) {
   return (
     <button

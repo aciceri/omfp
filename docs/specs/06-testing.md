@@ -219,6 +219,11 @@ Issue #57's thread-search journey (`e2e/tests/keys.rs`, fake launcher) runs at 1
 arrows preview threads, Escape restores the original and Enter confirms; `Space t` focuses the selected row and
 `za` collapses its workspace; `/` finds a message outside the virtualized window in the current conversation.
 
+Issue #57's workspace-file journey (`e2e/tests/files.rs`) uses real git and the pinned omp with a fake LLM. Two
+repositories and the workspace folder contain files with the same basename. `Space f` lists all three with
+repository/folder context; a fuzzy query spanning repository, folder and basename selects the intended file and
+Enter opens its real contents.
+
 ## Traceability
 
 | ID | Requirement |

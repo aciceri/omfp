@@ -299,6 +299,7 @@ fn file_examples() -> Vec<(&'static str, Value)> {
                 workspace_id: WORKSPACE_ID.to_owned(),
                 query: "checkout.rs".to_owned(),
                 thread_id: Some(THREAD_ID.to_owned()),
+                fuzzy: true,
             },
             &FileCandidates {
                 candidates: vec![
@@ -312,6 +313,12 @@ fn file_examples() -> Vec<(&'static str, Value)> {
                         path: "shop-backend/src/checkout.rs".to_owned(),
                         repo: Some("shop-backend".to_owned()),
                         matched: FileMatch::Basename,
+                        mentioned: false,
+                    },
+                    FileCandidate {
+                        path: "shop-frontend/tests/check-out.rs".to_owned(),
+                        repo: Some("shop-frontend".to_owned()),
+                        matched: FileMatch::Fuzzy,
                         mentioned: false,
                     },
                 ],

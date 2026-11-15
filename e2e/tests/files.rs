@@ -490,3 +490,85 @@ async fn edit_survives_minimise(journey: &Journey) -> anyhow::Result<()> {
         .await?;
     still_edited(journey, edited).await
 }
+
+// spec: UI-731, DMN-092, UI-115
+#[tokio::test(flavor = "multi_thread")]
+async fn workspace_file_picker_disambiguates_fuzzy_paths_and_opens_files_across_repositories()
+-> anyhow::Result<()> {
+    let app = TempRepo::new()?;
+    app.commit_file("src/config.ts", "export const app = 1;\n", "app config")?;
+    let lib = TempRepo::new()?;
+    lib.commit_file(
+        "ui/config.ts",
+        "export const library = 2;\n",
+        "library config",
+    )?;
+    let journey = Journey::start(Vec::new()).await?;
+    journey.connected().await?;
+    let thread = journey.create_thread("workspace files").await?;
+    let folder = journey.workspace_folder(&thread).await?;
+    std::os::unix::fs::symlink(app.path(), folder.join("app"))?;
+    std::os::unix::fs::symlink(lib.path(), folder.join("lib"))?;
+    std::fs::create_dir(folder.join("notes"))?;
+    std::fs::write(folder.join("notes/config.ts"), "export const notes = 3;\n")?;
+    journey.command("rescan").await?;
+    journey
+        .eval("document.activeElement?.blur();", Vec::new())
+        .await?;
+    journey.keys(" f").await?;
+    journey.until_focused("workspace-file-picker-input").await?;
+    journey.keys("cfg").await?;
+    journey
+        .until(
+            "the three matching files across the workspace",
+            async |page| {
+                Ok((page
+                    .count("[data-testid=workspace-file-picker-option]")
+                    .await?
+                    == 3)
+                    .then_some(()))
+            },
+        )
+        .await?;
+    assert_eq!(
+        journey
+            .attrs("[data-testid=workspace-file-picker-option]", "data-id")
+            .await?,
+        [
+            Some("notes/config.ts".into()),
+            Some("app/src/config.ts".into()),
+            Some("lib/ui/config.ts".into())
+        ]
+    );
+    let row = journey
+        .text("[data-testid=workspace-file-picker-option][data-id=\"lib/ui/config.ts\"]")
+        .await?;
+    assert!(row.contains("lib/ui"), "{row}");
+    journey.screenshot("workspace-files-multi-repo").await?;
+    journey
+        .driver
+        .action_chain()
+        .key_down(Key::Control)
+        .send_keys("a")
+        .key_up(Key::Control)
+        .send_keys("lb ui cfg")
+        .perform()
+        .await?;
+    journey
+        .until("the fuzzy repository-folder-name match", async |page| {
+            let paths = page
+                .attrs("[data-testid=workspace-file-picker-option]", "data-id")
+                .await?;
+            Ok((paths == [Some("lib/ui/config.ts".to_owned())]).then_some(()))
+        })
+        .await?;
+    journey.screenshot("workspace-files-filtered").await?;
+    journey.keys(Key::Enter).await?;
+    journey.gone("[data-testid=workspace-file-picker]").await?;
+    journey
+        .element("[data-slot=main] [data-testid=file-tab][data-file=\"lib/ui/config.ts\"][aria-selected=true]")
+        .await?;
+    until_editor_text(&journey, "export const library = 2;\n").await?;
+    journey.screenshot("workspace-files-opened").await?;
+    journey.finish("workspace-wide fuzzy files").await
+}

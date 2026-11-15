@@ -361,7 +361,9 @@ export type FileMatch =
   /** The file's path ends with the query, which has a `/`. */
   | "suffix"
   /** The file's name is the query's last component. */
-  | "basename";
+  | "basename"
+  /** The query's non-whitespace characters are a case-insensitive subsequence of the workspace-relative path. */
+  | "fuzzy";
 
 /** Kind of change to a file. */
 export type FileStatus = "added" | "modified" | "deleted" | "renamed" | "untracked";
@@ -377,7 +379,9 @@ export type FileWritten = {
 
 /** `workspaces.find_file` params (DMN-092). */
 export type FindFileParams = {
-  /** A bare file name (`theme.ts`) or the end of a path (`src/theme.ts`). */
+  /** Search every eligible workspace file before applying the result limit; empty query lists candidates. */
+  fuzzy?: boolean;
+  /** A bare/partial path, or with `fuzzy`, a case-insensitive subsequence of a workspace-relative path. */
   query: string;
   /** A thread of the workspace: files its tool cards name rank first among candidates of the same match. */
   threadId?: string | null;

@@ -84,6 +84,7 @@ import { useWelcome, Welcome } from "./welcome.tsx";
 import { WhichKey } from "./which-key.tsx";
 import { WindowRequests } from "./window-requests.tsx";
 import { useWindowFocus, useWindowStateReport } from "./window-state.ts";
+import { WorkspaceFilePicker } from "./workspace-file-picker.tsx";
 
 export interface FrameProps {
   /** Built-in widgets by reference; {@link BUILTIN_WIDGETS} by default. */
@@ -332,6 +333,7 @@ function FrameModeLine({
       <FilePickerLine />
       <ThreadPicker />
       <ViewPicker views={views} />
+      <WorkspaceFilePicker />
     </WindowModeLine>
   );
 }

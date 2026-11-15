@@ -466,6 +466,11 @@ export const shell = {
     exact: "exact path",
     suffix: "path ends so",
     basename: "same name",
+    fuzzy: "fuzzy path match",
+    searching: "Searching workspace files…",
+    noMatch: "No file matches",
+    moreMatches: "First 50 matches — refine the query to find other files",
+    workspaceFolder: "workspace folder",
     mentioned: "in the conversation",
   },
   /** Floating widget panels (UI-230). */
@@ -681,7 +686,8 @@ export const shell = {
     pickView: "Pick a view (Space v; fuzzy search, 1–9 or arrows and Enter)",
     widget:
       "Add a widget to the view, copy one into the workspace or save one to the user library (:widget add <reference>, :widget copy|save[!] <widget> [<name>])",
-    open: "Open a file (:open <path>[:<line>]), or the focused path (g f)",
+    open: "Open a file (:open <path>[:<line>]), or the focused path (:open)",
+    pickFile: "Pick a workspace file",
     next: "Next thread",
     prev: "Previous thread",
     top: "First thread",

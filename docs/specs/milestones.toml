@@ -1177,4 +1177,6 @@ requirements = [
   "UI-425",
   # Conversation search and keyboard thread switching (#57)
   "UI-730",
+  # Workspace-wide fuzzy file picker (#57)
+  "UI-731",
 ]

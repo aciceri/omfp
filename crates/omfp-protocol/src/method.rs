@@ -152,7 +152,7 @@ methods! {
     WorkspacesDiff = "workspaces.diff" (params::WorkspaceDiffParams) -> DiffPage;
     /// A file of a workspace with its hash and `HEAD` text (DMN-089).
     WorkspacesReadFile = "workspaces.read_file" (params::ReadFileParams) -> FileContent;
-    /// Files of a workspace matching a bare or partial name, best first (DMN-092).
+    /// Files across every repository and the workspace folder: strict name/path lookup or fuzzy path search (DMN-092).
     WorkspacesFindFile = "workspaces.find_file" (params::FindFileParams) -> FileCandidates;
     /// Writes a file of a workspace unless it changed since it was read (DMN-090).
     WorkspacesWriteFile = "workspaces.write_file" (params::WriteFileParams) -> FileWritten;

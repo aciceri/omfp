@@ -1,9 +1,10 @@
 /** L4: the draft thread (UI-023) in `omfp:chat` and `omfp:header` over a fake client. */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { CallError } from "@omfp/client";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { DRAFT_MESSAGE, DRAFT_THREAD, ERRORS, SELECTED_THREAD, threadActions } from "../../src/sdk/index.ts";
+import { DRAFT_MESSAGE, DRAFT_THREAD, draftKey, ERRORS, SELECTED_THREAD, threadActions } from "../../src/sdk/index.ts";
 import { ChatWidget } from "../../src/widgets/chat/index.ts";
 import { HeaderWidget } from "../../src/widgets/header/index.ts";
 import { repo, thread, workspace } from "../support/fixtures.ts";
@@ -94,6 +95,50 @@ describe("draft thread", () => {
     expect(host.window.get(DRAFT_THREAD)).toEqual({ workspaceId: "w1" });
     expect(screen.getByTestId("composer-input")).toHaveProperty("value", "fix it");
     await waitFor(() => expect(screen.getByTestId("send").hasAttribute("disabled")).toBe(false));
+  });
+
+  // spec: UI-023, UI-030, UI-064
+  test("a failed first prompt selects the surviving thread and retries its full draft without creating another", async () => {
+    const { client, host, user, flush } = setup();
+    const message = {
+      text: "review [Paste #1, 12 chars]",
+      pastes: [{ id: 1, text: "first\nsecond" }],
+      images: [{ type: "image" as const, mimeType: "image/png", data: "aW1hZ2U=" }],
+    };
+    act(() => {
+      host.window.set(DRAFT_THREAD, { workspaceId: "w1", model: "fake/chosen" });
+      host.window.set(DRAFT_MESSAGE, message);
+    });
+    await user.click(screen.getByTestId("send"));
+    client.index({ workspaces: [workspace("w1")], threads: [thread("survivor", "", "w1")] });
+    client.thread("survivor", []);
+    flush();
+    await act(async () =>
+      client.callsTo("threads.create")[0]?.reject(
+        new CallError({
+          kind: "daemon",
+          error: { code: "omp_error", message: "prompt rejected", details: { threadId: "survivor" } },
+        }),
+      ),
+    );
+    expect(host.window.get(SELECTED_THREAD)).toBe("survivor");
+    expect(host.window.get(DRAFT_THREAD)).toBeUndefined();
+    expect(host.window.get(DRAFT_MESSAGE).text).toBe("");
+    expect(host.window.get(draftKey("survivor"))).toEqual(message);
+    expect(host.window.get(ERRORS).length).toBe(1);
+    expect(client.callsTo("threads.create")[0]?.params).toEqual({
+      workspace: { id: "w1" },
+      prompt: "review first\nsecond",
+      model: "fake/chosen",
+    });
+    await user.click(screen.getByTestId("send"));
+    expect(client.callsTo("thread.prompt").map((call) => call.params)).toEqual([
+      { threadId: "survivor", text: "review first\nsecond", images: message.images },
+    ]);
+    await act(async () => client.callsTo("thread.prompt")[0]?.resolve({ promptId: "retry", agentInvoked: true }));
+    expect(client.callsTo("threads.create").length).toBe(1);
+    expect(client.callsTo("threads.delete").length).toBe(0);
+    expect(host.window.get(draftKey("survivor")).text).toBe("");
   });
 
   // spec: UI-023

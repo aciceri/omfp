@@ -108,3 +108,84 @@ async fn selecting_the_model_before_the_first_prompt_works_for_drafts_and_create
     journey.screenshot("initial-model-created").await?;
     journey.finish("initial-model").await
 }
+
+// spec: UI-023, UI-064
+#[tokio::test(flavor = "multi_thread")]
+async fn a_partial_first_prompt_failure_retries_the_surviving_conversation() -> anyhow::Result<()> {
+    use omfp_daemon::agent::FakeLauncher;
+    use omfp_protocol::{ListThreadsParams, method::ThreadsList};
+
+    let launcher = FakeLauncher::new();
+    let gate = launcher.gate("prompt");
+    let journey = Journey::start_fake(launcher.clone()).await?;
+    journey.connected().await?;
+    journey
+        .type_into("[data-testid=new-workspace-input]", "partial-first-prompt")
+        .await?;
+    journey.keys(Key::Enter).await?;
+    journey.element("[data-testid=draft-thread-view]").await?;
+    journey.send("keep this unsent message").await?;
+    tokio::time::timeout(std::time::Duration::from_secs(10), gate.arrived(1)).await?;
+    let mut connection = journey.connect().await?;
+    let created = connection
+        .call::<ThreadsList>(ListThreadsParams::default())
+        .await?
+        .threads;
+    assert_eq!(created.len(), 1);
+    let id = &created[0].id;
+    // Crash after creation/start but before prompt admission: the real daemon returns details.threadId.
+    journey.fake_process(&launcher, id).await?.exit();
+    gate.open();
+    journey.opened(id).await?;
+    journey
+        .until("the surviving thread's unsent composer", async |page| {
+            Ok((page
+                .eval(
+                    "return document.querySelector('[data-testid=composer-input]').value;",
+                    Vec::new(),
+                )
+                .await?
+                == serde_json::json!("keep this unsent message"))
+            .then_some(()))
+        })
+        .await?;
+    assert_eq!(journey.thread_ids().await?, std::slice::from_ref(id));
+    assert_eq!(journey.count("[data-testid=error]").await?, 1);
+    journey
+        .click("[data-testid=error] [data-testid=toast-dismiss]")
+        .await?;
+    journey.gone("[data-testid=error]").await?;
+    journey.click("[data-testid=send]").await?;
+    journey
+        .until(
+            "the retry to clear the surviving composer's draft",
+            async |page| {
+                Ok((page
+                    .eval(
+                        "return document.querySelector('[data-testid=composer-input]').value;",
+                        Vec::new(),
+                    )
+                    .await?
+                    == serde_json::json!(""))
+                .then_some(()))
+            },
+        )
+        .await?;
+    journey.until("the retry to reach the surviving thread's running omp", async |_| {
+        Ok(e2e::fake_thread(&launcher, id).filter(|process| !process.is_closed())
+            .is_some_and(|process| process.calls().iter().any(|call| {
+                matches!(call, omfp_daemon::agent::FakeCall::Prompt(prompt) if prompt.message == "keep this unsent message")
+            })).then_some(()))
+    }).await?;
+    let after = connection
+        .call::<ThreadsList>(ListThreadsParams::default())
+        .await?
+        .threads;
+    assert_eq!(
+        after.iter().map(|thread| &thread.id).collect::<Vec<_>>(),
+        [id]
+    );
+    connection.close().await?;
+    journey.screenshot("partial-first-prompt-recovered").await?;
+    journey.finish("partial-first-prompt-recovery").await
+}

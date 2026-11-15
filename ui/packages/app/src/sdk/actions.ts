@@ -18,6 +18,7 @@ import {
   DRAFT_THREAD,
   draftKey,
   ERRORS,
+  FOCUS_COMPOSER,
   LOGIN,
   RENAMING_THREAD,
   SELECTED_THREAD,
@@ -32,8 +33,8 @@ export interface ThreadActions {
   openDraft(workspaceId: string): void;
   /** Drops the draft thread and its text. */
   discardDraft(): void;
-  /** Creates the daemon thread of the draft with its text as first message (`threads.create { workspace, prompt }`),
-   * then selects it and drops the draft; on failure the draft and its text stay. Resolves to whether it worked. */
+  /** Creates the daemon thread with the draft's first message, then selects it. A failed creation keeps the draft;
+   * a failed first prompt carrying a surviving thread ID transfers the unsent draft there for retry. */
   sendDraft(): Promise<boolean>;
   archive(threadId: string): Promise<void>;
   unarchive(threadId: string): Promise<void>;
@@ -234,6 +235,18 @@ export function threadActions(host: OmfpHost): ThreadActions {
         window.set(SELECTED_THREAD, thread.id);
         return true;
       } catch (error) {
+        if (error instanceof CallError && error.failure.kind === "daemon") {
+          const details = error.failure.error.details;
+          const threadId = isObject(details) ? details.threadId : undefined;
+          if (typeof threadId === "string" && threadId.trim() !== "") {
+            window.set(draftKey(threadId), message);
+            if (window.get(DRAFT_THREAD) === draft) {
+              discardDraft(host);
+            }
+            window.set(SELECTED_THREAD, threadId);
+            window.set(FOCUS_COMPOSER, threadId);
+          }
+        }
         reportError(host, error);
         return false;
       }

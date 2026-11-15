@@ -40,6 +40,8 @@ Initial release, planned as 0.1.0.
   phones and narrow windows.
 - Model-discovery schemas now expose `models` and each entry's `provider`, `id` and `name`, with discoverable
   create/set-model selector examples and matching generated TypeScript types.
+- A failed first prompt that leaves a daemon thread now selects that thread and restores its unsent composer draft,
+  including images and paste chips. Retry reuses the same conversation instead of creating a duplicate.
 
 ### Changed
 

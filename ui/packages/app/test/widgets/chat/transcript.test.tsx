@@ -131,8 +131,8 @@ describe("transcript", () => {
     expect([markdown.classList.contains("omfp-markdown"), markdown.querySelectorAll("p").length]).toEqual([true, 2]);
   });
 
-  // spec: UI-041, UI-171
-  test("thinking is collapsed until expanded", async () => {
+  // spec: UI-041, UI-171, UI-694
+  test("settled thinking is collapsed until expanded", async () => {
     const thinking: ThreadEvent = {
       kind: "history",
       session: { session_id: "s", resumed: true },
@@ -143,11 +143,50 @@ describe("transcript", () => {
     expect(block.dataset.expanded).toBe("false");
     expect(within(block).queryByText("secret plan")).toBeNull();
     const head = within(block).getByTestId("thinking-head");
-    expect(head.textContent).toBe("▸Thinking");
+    expect(head.textContent).toBe("▸Thought");
     await userEvent.click(head);
     expect(block.dataset.expanded).toBe("true");
-    expect(head.textContent).toBe("▾Thinking");
+    expect(head.textContent).toBe("▾Thought");
     expect(within(block).getByText("secret plan").closest("[hidden]")).toBeNull();
+  });
+
+  // spec: UI-694
+  test("live thinking has a distinct state and an explicit expansion survives settling", async () => {
+    const update = (assistantMessageEvent: JsonObject): ThreadEvent => ({
+      kind: "omp",
+      frame: { type: "message_update", messageId: "live", message: { role: "assistant" }, assistantMessageEvent },
+    });
+    const { client, flush } = renderThread(<TranscriptWidget />, [
+      { kind: "omp", frame: { type: "message_start", messageId: "live", message: { role: "assistant", content: [] } } },
+      update({ type: "thinking_start", contentIndex: 0, block: { type: "thinking", thinking: "" } }),
+      update({ type: "thinking_delta", contentIndex: 0, delta: "secret plan" }),
+    ]);
+    const live = screen.getByTestId("thinking");
+    expect([live.dataset.live, live.dataset.expanded]).toEqual(["true", "false"]);
+    const liveHead = within(live).getByTestId("thinking-head");
+    expect(liveHead.textContent).toBe("▸Thinking…");
+    await userEvent.click(liveHead);
+    client.threadEvents(
+      THREAD,
+      update({
+        type: "thinking_end",
+        contentIndex: 0,
+        content: "secret plan",
+        block: { type: "thinking", thinking: "secret plan" },
+      }),
+      {
+        kind: "omp",
+        frame: {
+          type: "message_end",
+          messageId: "live",
+          message: { role: "assistant", content: [{ type: "thinking", thinking: "secret plan" }] },
+        },
+      },
+    );
+    flush();
+    const settled = screen.getByTestId("thinking");
+    expect([settled.dataset.live, settled.dataset.expanded]).toEqual([undefined, "true"]);
+    expect(within(settled).getByTestId("thinking-head").textContent).toBe("▾Thought");
   });
 
   // spec: UI-050

@@ -142,12 +142,18 @@ export function items(state: ThreadState, showXdevNotices = false): readonly Ite
       continue;
     }
     const assistant = message.role === "assistant";
-    result.push({ key: `m${index}`, kind: { type: "message", index, continues: assistant && answered } });
+    result.push({
+      key: `m${index}`,
+      kind: { type: "message", index, continues: assistant && answered },
+    });
     answered = assistant || (answered && message.role !== "user");
   }
   noticesUpTo(Number.POSITIVE_INFINITY);
   if (streaming) {
-    result.push({ key: "streaming", kind: { type: "streaming", continues: answered } });
+    result.push({
+      key: "streaming",
+      kind: { type: "streaming", continues: answered },
+    });
   }
   ITEM_LISTS.set(state.transcript, { notices: state.notices, streaming, showXdevNotices, items: result });
   return result;
@@ -160,8 +166,8 @@ export type Role = "user" | "assistant" | "record";
 export type Block =
   /** Markdown for the assistant (UI-040), plain text for everyone else. */
   | { readonly type: "text"; readonly text: string }
-  /** Collapsed by default (UI-041). */
-  | { readonly type: "thinking"; readonly text: string }
+  /** Collapsed by default (UI-041); `key` preserves an explicit choice while a live message settles (UI-694). */
+  | { readonly type: "thinking"; readonly text: string; readonly key?: string }
   | { readonly type: "image"; readonly mime: string; readonly data: string }
   | { readonly type: "tool"; readonly card: ToolCard }
   /** A message kind without its own renderer: a one-line summary and its JSON. */
@@ -225,11 +231,12 @@ function toolInputs(state: ThreadState, message: AgentMessage): unknown[] {
 
 /** The view of `state.transcript[index]`; the same object while the message, its tool runs and results stay. */
 export function messageView(state: ThreadState, index: number): MessageView {
-  const message = state.transcript[index]?.message;
-  if (message === undefined) {
+  const entry = state.transcript[index];
+  if (entry === undefined) {
     return { role: "record", label: strings.chat.missingMessage, blocks: [], error: undefined, steering: false };
   }
-  return derive(VIEWS, message, toolInputs(state, message), () => {
+  const { message } = entry;
+  return derive(VIEWS, message, [entry.message_id, ...toolInputs(state, message)], () => {
     switch (message.role) {
       case "user":
         return {
@@ -240,7 +247,7 @@ export function messageView(state: ThreadState, index: number): MessageView {
           steering: message.steering === true,
         };
       case "assistant":
-        return assistantView(state, message);
+        return assistantView(state, message, entry.message_id);
       default:
         return recordView(message);
     }
@@ -252,26 +259,36 @@ export function streamingView(state: ThreadState): MessageView | undefined {
   if (state.streaming === null) {
     return undefined;
   }
-  const { message } = state.streaming;
-  return derive(VIEWS, message, toolInputs(state, message), () => assistantView(state, message));
+  const { message, message_id: messageId } = state.streaming;
+  return derive(VIEWS, message, [messageId, ...toolInputs(state, message)], () =>
+    assistantView(state, message, messageId),
+  );
 }
 
-function assistantView(state: ThreadState, message: AssistantMessage): MessageView {
+function assistantView(state: ThreadState, message: AssistantMessage, messageId: string | null): MessageView {
   const completedAt = typeof message.completedAt === "number" ? message.completedAt : undefined;
   const calledAt = completedAt ?? message.timestamp;
-  const blocks = (message.content ?? []).flatMap((block): Block[] => {
+  const blocks = (message.content ?? []).flatMap((block, index): Block[] => {
+    const thinkingKey = messageId === null ? {} : { key: `message/${messageId}/thinking/${index}` };
     switch (block.type) {
       case "text":
         return [derive(BLOCKS, block, [], () => ({ type: "text", text: block.text ?? "" }))];
       case "thinking":
         return [
-          derive(BLOCKS, block, [], () => ({
+          derive(BLOCKS, block, [messageId, index], () => ({
             type: block.narration === true ? "text" : "thinking",
             text: block.thinking ?? "",
+            ...(block.narration === true ? {} : thinkingKey),
           })),
         ];
       case "redactedThinking":
-        return [derive(BLOCKS, block, [], () => ({ type: "thinking", text: strings.chat.redactedThinking }))];
+        return [
+          derive(BLOCKS, block, [messageId, index], () => ({
+            type: "thinking",
+            text: strings.chat.redactedThinking,
+            ...thinkingKey,
+          })),
+        ];
       case "image":
         return [
           derive(BLOCKS, block, [], () => ({

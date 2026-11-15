@@ -1156,6 +1156,10 @@ requirements = [
   "UI-690",
   "UI-691",
   "UI-692",
+  # Lifecycle-aware thinking, tools, edits and composer activity
+  "UI-693",
+  "UI-694",
+  "UI-695",
   # Files outside the workspace folder: read-only by absolute path, writes confined
   "DMN-310",
   "DMN-311",

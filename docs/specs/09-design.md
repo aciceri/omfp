@@ -213,6 +213,7 @@ values are dark enough that `--omfp-ok` and `--omfp-warn` (UI-136) reach 4.5:1 a
 | Gradient flow (`--omfp-grad-loop` sliding) | Always on the logo's `π` (UI-221), chat title, current workspace name, gallery titles | 6 s `ease-in-out`, infinite alternate | ✓ | — | — |
 | Progress flow (gradient fill sliding) | Determinate or indeterminate progress | 2 s `ease-in-out`, infinite alternate | ✓ | — | — |
 | Tool shimmer (diagonal primary/tertiary band) | Tool card running, on its head (on its title when the head sits on the border, UI-187) | 1.5 s linear, infinite | ✓ | — | — |
+| Activity-intent shimmer (diagonal primary/tertiary band) | Current composer activity label and a live thinking label (UI-693, UI-694) | 1.7 s linear, infinite | ✓ | — | — |
 | Tool breathe (primary glow) | Tool card running (its body when the head sits on the border, the glow clipped at the body's top edge, UI-455) | 1.6 s `ease-in-out`, infinite | ✓ | — | — |
 | Slide-in (fade + 0.375rem from the left) | New message, tool card, approval/ask card, resolved line | 260 ms `--omfp-ease` | ✓ | — | — |
 | Completion stagger | Command menu items appear | 180 ms `--omfp-ease`, +20 ms per item up to 100 ms | ✓ | — | — |

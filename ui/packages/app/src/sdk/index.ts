@@ -25,6 +25,7 @@ export {
   changesView,
 } from "../vm/changes.ts";
 export {
+  activityOf,
   alternative,
   behavior,
   canAbort,
@@ -47,6 +48,7 @@ export {
   type Suggestion,
   sendMode,
   slashSuggestions,
+  type ThreadActivity,
 } from "../vm/composer.ts";
 export {
   closeTab,

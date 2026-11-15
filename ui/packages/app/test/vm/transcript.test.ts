@@ -49,7 +49,7 @@ describe("transcript items", () => {
   });
 
   // spec: UI-043
-  test("notices go after the messages that preceded them", () => {
+  test("notices keep their order", () => {
     const frame: NoticeFrame = { type: "unknown", data: { type: "mystery" } };
     const state: ThreadState = {
       ...fixture("text_reply"),

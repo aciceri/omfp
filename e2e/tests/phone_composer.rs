@@ -47,7 +47,7 @@ async fn measure(journey: &Journey) -> anyhow::Result<(f64, f64, Vec<f64>)> {
     Ok(serde_json::from_value(value)?)
 }
 
-// spec: E2E-37, UI-421, UI-422, UI-423, UI-424
+// spec: E2E-37, UI-421, UI-422, UI-423, UI-424, UI-693
 #[tokio::test(flavor = "multi_thread")]
 async fn the_composer_fits_a_phone_with_its_keyboard_open() -> anyhow::Result<()> {
     let journey = Journey::start(vec![Step::reply(Reply::text("Held reply.")).gated()]).await?;
@@ -98,7 +98,8 @@ async fn the_composer_fits_a_phone_with_its_keyboard_open() -> anyhow::Result<()
     journey.fits("[data-testid=app]").await?;
     journey.screenshot("phone-composer-busy").await?;
 
-    // The keyboard opens: the composer stays one row, the transcript keeps most of what is left.
+    // The keyboard opens: the composer's controls stay one row, its activity keeps a 44 px touch target, and the
+    // transcript keeps most of what is left.
     phone(&journey, KEYBOARD_OPEN).await?;
     let field = journey.element(input).await?;
     field.send_keys("first").await?;
@@ -121,7 +122,10 @@ async fn the_composer_fits_a_phone_with_its_keyboard_open() -> anyhow::Result<()
         tops.len() == 1,
         "the composer's buttons on rows at {tops:?}"
     );
-    anyhow::ensure!(composer <= 160.0, "the composer is {composer} px tall");
+    anyhow::ensure!(
+        composer <= 190.0,
+        "the composer with activity is {composer} px tall"
+    );
     anyhow::ensure!(
         transcript >= 150.0,
         "the transcript is {transcript} px tall"

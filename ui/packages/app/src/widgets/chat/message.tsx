@@ -26,7 +26,7 @@ import {
   useUrlActions,
 } from "omfp/sdk";
 import { memo, type ReactNode, useCallback } from "react";
-import { useExpanded } from "./state.ts";
+import { useExpanded, useObservedElapsed } from "./state.ts";
 import { fileTarget, ToolBody, ToolImages, ToolSubject } from "./tool-cards.tsx";
 
 const text = strings.chat;
@@ -140,7 +140,7 @@ const BlockView = memo(function BlockView({
         <Markdown text={block.text} data-testid="markdown" onOpenPath={openPath} />
       );
     case "thinking":
-      return <ThinkingBlock cardKey={cardKey} text={block.text} />;
+      return <ThinkingBlock cardKey={block.key ?? cardKey} text={block.text} live={streaming && last} />;
     case "image":
       return (
         <img
@@ -182,11 +182,17 @@ function StreamingMarkdown({
   );
 }
 
-/** Thinking, collapsed by default (UI-041, UI-171). */
-function ThinkingBlock({ cardKey, text: thinking }: { cardKey: string; text: string }) {
+/** Thinking: live and settled have distinct labels; the disclosure stays collapsed unless the user chose otherwise. */
+function ThinkingBlock({ cardKey, text: thinking, live }: { cardKey: string; text: string; live: boolean }) {
   const [expanded, setExpanded] = useExpanded(cardKey, false);
   return (
-    <Thinking data-testid="thinking" label={text.thinking} expanded={expanded} onExpandedChange={setExpanded}>
+    <Thinking
+      data-testid="thinking"
+      data-live={live ? "true" : undefined}
+      label={live ? text.thinkingLive : text.thought}
+      expanded={expanded}
+      onExpandedChange={setExpanded}
+    >
       {thinking}
     </Thinking>
   );
@@ -258,10 +264,12 @@ export function ToolCardView({ cardKey, card }: { cardKey: string; card: Card })
   );
 }
 
-/** Right-aligned metadata of a card's head: the status word for assistive tech, a background job's mark and, while it
- * runs, its last output line (UI-270), duration, exit code. */
+/** Right-aligned metadata of a card's head: status, background job, live or settled duration, and exit code. */
 function ToolMeta({ card, exitCode }: { card: Card; exitCode: number | undefined }): ReactNode {
   const job = card.view.kind === "bash" ? card.view.background : undefined;
+  const active = card.status === "composing" || card.status === "pending" || card.status === "running";
+  const observedDuration = useObservedElapsed(`tool/${card.toolCallId}`, active);
+  const duration = card.durationMs ?? observedDuration;
   const lastLine =
     job?.state === "running" && card.view.kind === "bash" ? lastOutputLine(card.view.output ?? "") : undefined;
   return (
@@ -284,7 +292,7 @@ function ToolMeta({ card, exitCode }: { card: Card; exitCode: number | undefined
           {text.tool.background[job.state]}
         </Badge>
       )}
-      {card.durationMs !== undefined && <span data-testid="tool-duration">{formatDuration(card.durationMs)}</span>}
+      {duration !== undefined && <span data-testid="tool-duration">{formatDuration(duration)}</span>}
       {exitCode !== undefined && <ExitCode code={exitCode} data-testid="tool-exit" />}
     </>
   );

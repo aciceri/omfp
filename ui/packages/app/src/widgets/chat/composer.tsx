@@ -20,11 +20,13 @@ import {
   Menu,
   MenuItem,
   Popover,
+  StateMark,
   TextArea,
   type TextAreaProps,
   useWidthClass,
 } from "omfp/kit";
 import {
+  activityOf,
   alternative,
   behavior,
   canAbort,
@@ -37,6 +39,7 @@ import {
   EMPTY_DRAFT,
   expandPastes,
   FOCUS_COMPOSER,
+  formatDuration,
   INTERRUPT_WINDOW_MS,
   imageAttachment,
   interruptAction,
@@ -84,7 +87,7 @@ import { LiveVoicePanel, MicButton } from "./live.tsx";
 import { PasteChips, usePastes } from "./pastes.tsx";
 import { testId, type WidgetProps } from "./props.ts";
 import { QueueChips } from "./queue.tsx";
-import { clearedDraftKey, useClock, useSelectedThread } from "./state.ts";
+import { clearedDraftKey, useClock, useObservedElapsed, useSelectedThread } from "./state.ts";
 import { useCoarsePointer } from "./touch.ts";
 
 const text = strings.chat.composer;
@@ -103,6 +106,15 @@ export function ComposerWidget(_props: WidgetProps) {
     return null;
   }
   const { state } = view;
+  const activity = activityOf(state);
+  const activityLabel =
+    activity?.kind === "thinking"
+      ? text.activity.thinking
+      : activity?.kind === "tool"
+        ? (activity.intent ?? text.activity.tool(activity.name))
+        : activity?.kind === "working"
+          ? text.activity.working
+          : undefined;
   return (
     <div className="omfp-composer-area">
       <LiveVoicePanel threadId={threadId} state={state} />
@@ -113,6 +125,9 @@ export function ComposerWidget(_props: WidgetProps) {
         busy={isBusy(state)}
         abortable={canAbort(state)}
         commands={state.commands}
+        {...(activity === undefined || activityLabel === undefined
+          ? {}
+          : { activityKey: activity.key, activityKind: activity.kind, activityLabel })}
       />
     </div>
   );
@@ -425,11 +440,17 @@ export const Composer = memo(function Composer({
   busy,
   abortable,
   commands: known,
+  activityKey,
+  activityKind,
+  activityLabel,
 }: {
   threadId: string;
   busy: boolean;
   abortable: boolean;
   commands: readonly AvailableSlashCommand[];
+  activityKey?: string;
+  activityKind?: "thinking" | "tool" | "working";
+  activityLabel?: string;
 }) {
   const host = useHost();
   const call = useCall();
@@ -637,6 +658,16 @@ export const Composer = memo(function Composer({
       onKeyDownCapture={onKeyDownCapture}
       onKeyUpCapture={(event) => setQueueHeld(queueModifier(modifiersOf(event)))}
     >
+      {activityKey !== undefined && activityKind !== undefined && activityLabel !== undefined && (
+        <ActivityRow
+          threadId={threadId}
+          activityKey={activityKey}
+          kind={activityKind}
+          label={activityLabel}
+          short={touch || tight}
+          onAbort={abort}
+        />
+      )}
       <KitComposer mode={insert ? "insert" : "normal"}>
         {draft.images.length > 0 && <Attachments draft={draft} setDraft={setDraft} />}
         {draft.pastes.length > 0 && <PasteChips draft={draft} setDraft={setDraft} inputRef={inputRef} />}
@@ -698,6 +729,7 @@ export const Composer = memo(function Composer({
         <ComposerActions
           threadId={threadId}
           abortable={abortable}
+          showAbort={activityKey === undefined}
           touch={touch}
           tight={tight}
           interruptHint={interruptHint}
@@ -712,6 +744,61 @@ export const Composer = memo(function Composer({
   );
 });
 
+/** The current turn's compact, non-announcing status immediately over the text box (UI-693). */
+function ActivityRow({
+  threadId,
+  activityKey,
+  kind,
+  label,
+  short,
+  onAbort,
+}: {
+  threadId: string;
+  activityKey: string;
+  kind: "thinking" | "tool" | "working";
+  label: string;
+  short: boolean;
+  onAbort: () => void;
+}) {
+  const elapsed = useObservedElapsed(`activity/${threadId}/${activityKey}`, true) ?? 0;
+  const abort = short ? (
+    <IconButton
+      className="omfp-composer__activity-abort"
+      variant="danger"
+      label={text.abort}
+      icon={<Icon name="square" />}
+      data-testid="abort"
+      onPress={onAbort}
+    />
+  ) : (
+    <Button
+      className="omfp-composer__activity-abort"
+      variant="danger"
+      size="sm"
+      icon={<Icon name="square" />}
+      data-testid="abort"
+      onPress={onAbort}
+    >
+      {text.abort}
+    </Button>
+  );
+  return (
+    <div className="omfp-composer__activity" data-testid="composer-activity" data-kind={kind}>
+      <StateMark state="running" label={text.activity.running} />
+      <span className="omfp-composer__activity-duration" data-testid="activity-duration">
+        {formatDuration(elapsed)}
+      </span>
+      <span className="omfp-composer__activity-separator" aria-hidden="true">
+        ·
+      </span>
+      <span className="omfp-composer__activity-label" data-testid="activity-label">
+        {label}
+      </span>
+      {abort}
+    </div>
+  );
+}
+
 /** Narrower than this (in `rem`) the composer is tight: the busy actions with their long labels would not fit on one
  * row (UI-481). */
 const TIGHT_BELOW_REM = 34;
@@ -725,6 +812,7 @@ const TIGHT_BELOW_REM = 34;
 const ComposerActions = memo(function ComposerActions({
   threadId,
   abortable,
+  showAbort,
   touch,
   tight,
   interruptHint,
@@ -736,6 +824,7 @@ const ComposerActions = memo(function ComposerActions({
 }: {
   threadId: string;
   abortable: boolean;
+  showAbort: boolean;
   touch: boolean;
   tight: boolean;
   interruptHint: boolean;
@@ -756,7 +845,8 @@ const ComposerActions = memo(function ComposerActions({
       }
     >
       <ThreadMicButton threadId={threadId} />
-      {abortable &&
+      {showAbort &&
+        abortable &&
         (short ? (
           <IconButton
             variant="danger"

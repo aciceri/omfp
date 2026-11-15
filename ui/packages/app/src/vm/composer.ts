@@ -22,6 +22,45 @@ export function isBlank(draft: Draft): boolean {
 export function isBusy(state: ThreadState): boolean {
   return !state.settled;
 }
+/** The compact activity shown over a busy thread's composer (UI-693). */
+export type ThreadActivity =
+  | { readonly key: string; readonly kind: "thinking" }
+  | { readonly key: string; readonly kind: "tool"; readonly name: string; readonly intent?: string }
+  | { readonly key: "working"; readonly kind: "working" };
+
+/**
+ * The most specific live activity known for a busy thread: an executing tool, then its streamed thinking block,
+ * otherwise generic work. Settled history has no live activity (UI-693).
+ */
+export function activityOf(state: ThreadState): ThreadActivity | undefined {
+  if (state.settled) {
+    return undefined;
+  }
+  for (let index = state.tools.length - 1; index >= 0; index -= 1) {
+    const tool = state.tools[index];
+    if (
+      tool !== undefined &&
+      (tool.status === "pending" || tool.status === "running" || tool.background?.state === "running")
+    ) {
+      return {
+        key: `tool/${tool.tool_call_id}`,
+        kind: "tool",
+        name: tool.tool_name,
+        ...(tool.intent === null || tool.intent === undefined || tool.intent === "" ? {} : { intent: tool.intent }),
+      };
+    }
+  }
+  const streaming = state.streaming;
+  const content = streaming?.message.content;
+  if (streaming !== null && content !== undefined) {
+    for (let index = content.length - 1; index >= 0; index -= 1) {
+      if (content[index]?.type === "thinking") {
+        return { key: `thinking/${streaming.message_id}/${index}`, kind: "thinking" };
+      }
+    }
+  }
+  return { key: "working", kind: "working" };
+}
 
 /**
  * There is something to interrupt: the agent works or messages wait in the queue. `Ctrl-C` then aborts (UI-063,

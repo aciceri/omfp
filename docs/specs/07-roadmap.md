@@ -793,6 +793,11 @@ on mount and whenever the thread settles while omp runs, so a window reloaded wh
 that part until it runs again (UI-691). The subagents' is the larger of their completed `task` results and their
 progress frames, which carry what each one spent so far, running ones included (UI-692).
 
+The busy turn now reads as one lifecycle instead of disconnected cards (UI-693..UI-695): a compact row immediately
+above the composer names and times the current intent and owns Abort; streamed thinking says `Thinking…` before it
+settles to `Thought`; live edit/write cards open their preview, then fold on success. Explicit disclosure choices win
+across settling, historical cards do not animate, and the new intent shimmer runs only at full motion.
+
 Files outside the workspace folder open read-only ([02 — Files outside the workspace
 folder](02-daemon.md#files-outside-the-workspace-folder-m17), DMN-310..DMN-315, PRT-195..PRT-197,
 [04](04-ui.md#files-outside-the-workspace-folder-m17), UI-700..UI-705, E2E-70): an agent working in a git worktree

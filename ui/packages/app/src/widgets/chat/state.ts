@@ -15,7 +15,7 @@ import {
   type WindowKey,
   windowKey,
 } from "omfp/sdk";
-import { createContext, useCallback, useContext } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 
 /** Queue actions sent and not yet answered (UI-062). */
 export const PENDING_QUEUE = windowKey<readonly PendingQueueOp[]>("chat/pendingQueue", []);
@@ -28,6 +28,8 @@ export const DISMISSED = windowKey<readonly string[]>("chat/dismissed", []);
 
 /** When each `<threadId>/<interactionId>` was first shown, for its countdown (UI-073). */
 export const SHOWN_AT = windowKey<Readonly<Record<string, number>>>("chat/shownAt", {});
+/** When live tools and composer activities were first observed in this window (UI-693, UI-695). */
+const OBSERVED_AT = windowKey<Readonly<Record<string, number>>>("chat/observedAt", {});
 
 /** `ask` forms being filled, by `<threadId>/<interactionId>` (UI-071). */
 export const ASK_FORMS = windowKey<Readonly<Record<string, AskForm>>>("chat/askForms", {});
@@ -111,4 +113,34 @@ export const ClockContext = createContext<Clock>(systemClock);
 
 export function useClock(): Clock {
   return useContext(ClockContext);
+}
+
+/**
+ * Milliseconds since `key` was first observed active in this window. A settled item never observed live has no
+ * elapsed time; an observed item keeps its last elapsed value when it settles (UI-693, UI-695).
+ */
+export function useObservedElapsed(key: string, active: boolean): number | undefined {
+  const clock = useClock();
+  const [observedAt, setObservedAt] = useWindowState(OBSERVED_AT);
+  const startedAt = observedAt[key];
+  const [now, setNow] = useState(() => clock.now());
+  useEffect(() => {
+    if (!active || startedAt !== undefined) {
+      return;
+    }
+    const observed = clock.now();
+    setNow(observed);
+    setObservedAt((previous) => (previous[key] === undefined ? { ...previous, [key]: observed } : previous));
+  }, [active, clock, key, setObservedAt, startedAt]);
+  useEffect(() => {
+    if (!active) {
+      return undefined;
+    }
+    setNow(clock.now());
+    return clock.every(100, () => setNow(clock.now()));
+  }, [active, clock]);
+  if (startedAt === undefined) {
+    return active ? 0 : undefined;
+  }
+  return Math.max(0, now - startedAt);
 }

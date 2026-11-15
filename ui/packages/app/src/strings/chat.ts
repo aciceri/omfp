@@ -9,7 +9,8 @@ export const chat = {
   roleUser: "You",
   roleAssistant: "Assistant",
   steeringMark: "steering",
-  thinking: "Thinking",
+  thinkingLive: "Thinking…",
+  thought: "Thought",
   redactedThinking: "(redacted by the provider)",
   attachedImage: "Attached image",
   details: "Details",
@@ -126,6 +127,12 @@ export const chat = {
     /** The send buttons' short labels on a touch screen (UI-423) and in a tight composer (UI-481), all on one row. */
     sendShort: { prompt: "Send", "follow-up": "Queue", steer: "Steer" },
     abort: "Abort",
+    activity: {
+      thinking: "Thinking…",
+      working: "Working…",
+      tool: (name: string) => `Running ${name}`,
+      running: "Agent working",
+    },
     /** Composer bar hints after their key chips (UI-148, UI-172). */
     hint: { newline: "newline", leave: "normal", interrupt: "interrupt", restore: "restore Ctrl-C draft" },
     attachments: "Attached images",

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { AvailableSlashCommand } from "@omfp/core";
 import {
+  activityOf,
   alternative,
   base64,
   behavior,
@@ -36,6 +37,46 @@ const BUSY = { busy: true, hasSuggestions: false };
 const names = (draft: string) => slashSuggestions(draft, COMMANDS).map((suggestion) => suggestion.name);
 
 describe("composer", () => {
+  // spec: UI-693
+  test("activity identifies a live tool, live thinking, generic work, and no settled work", () => {
+    const settled = fixture("text_reply");
+    const thinking = {
+      ...settled,
+      settled: false,
+      streaming: {
+        message_id: "live",
+        message: { role: "assistant" as const, content: [{ type: "thinking" as const, thinking: "Considering" }] },
+      },
+      tools: [],
+    };
+    expect(activityOf(thinking)).toEqual({ key: "thinking/live/0", kind: "thinking" });
+
+    const tool = {
+      ...thinking,
+      tools: [
+        {
+          tool_call_id: "call_edit_1",
+          tool_name: "edit",
+          args: { input: "[src/lib.rs#1234]" },
+          intent: "Saturating the addition",
+          status: "running" as const,
+          partial_result: null,
+          preview: null,
+          result: null,
+          background: null,
+        },
+      ],
+    };
+    expect(activityOf(tool)).toEqual({
+      key: "tool/call_edit_1",
+      kind: "tool",
+      name: "edit",
+      intent: "Saturating the addition",
+    });
+    expect(activityOf({ ...thinking, streaming: null })).toEqual({ key: "working", kind: "working" });
+    expect(activityOf(settled)).toBeUndefined();
+  });
+
   // spec: UI-061
   test("busy threads steer unless the modifier (or ctrl+q) queues a follow-up", () => {
     const busy = fixtureUntil("follow_up_then_abort", isFrame("queue_update"));

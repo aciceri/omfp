@@ -5,15 +5,18 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { replay } from "@omfp/core";
-import { cleanup, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { type OmfpHost, OPEN_FILES, SELECTED_THREAD } from "../../../src/sdk/index.ts";
 import { type ToolCard, toolCard } from "../../../src/vm/tool.ts";
 import { MessageRow, ToolCardView } from "../../../src/widgets/chat/message.tsx";
+import { type Clock, ClockContext } from "../../../src/widgets/chat/state.ts";
 import { card, cards, streaming } from "../../support/cards.ts";
 import { repo, thread, workspace } from "../../support/fixtures.ts";
 import { renderWithHost, testHost } from "../../support/host.tsx";
 import { fixtureEvents, isFrame } from "./fixtures.ts";
+import { ManualClock } from "./harness.tsx";
 
 afterEach(cleanup);
 
@@ -21,7 +24,7 @@ afterEach(cleanup);
 let shownHost: OmfpHost | undefined;
 
 /** Renders `toolCard` in workspace `w1` (folder `/work/w1`, whose repository `src` holds the fixtures' files). */
-function show(toolCard: ToolCard): HTMLElement {
+function show(toolCard: ToolCard, clock?: Clock): HTMLElement {
   const test = testHost();
   shownHost = test.host;
   test.client.connected();
@@ -30,7 +33,8 @@ function show(toolCard: ToolCard): HTMLElement {
     threads: [thread("t1", "cards", "w1")],
   });
   test.host.window.set(SELECTED_THREAD, "t1");
-  renderWithHost(<ToolCardView cardKey={toolCard.toolCallId} card={toolCard} />, test);
+  const card = <ToolCardView cardKey={toolCard.toolCallId} card={toolCard} />;
+  renderWithHost(clock === undefined ? card : <ClockContext value={clock}>{card}</ClockContext>, test);
   test.flush();
   return screen.getByTestId("tool-card");
 }
@@ -49,6 +53,23 @@ const texts = (element: HTMLElement, id: string) =>
   within(element)
     .queryAllByTestId(id)
     .map((node) => node.textContent);
+
+/** A live edit settling in place, so the disclosure's explicit state can be checked across the transition. */
+function EditLifecycleCard() {
+  const [current, setCurrent] = useState(() => streaming("edit_tool_calls", "call_edit_1"));
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="settle-card"
+        onClick={() => setCurrent(card("edit_tool_calls", "call_edit_1"))}
+      >
+        settle
+      </button>
+      <ToolCardView cardKey={current.toolCallId} card={current} />
+    </>
+  );
+}
 
 /** The card of the async `bash` fixture's call after its first `count` events. */
 function jobCard(count: number): ToolCard {
@@ -115,11 +136,16 @@ describe("background bash card", () => {
 });
 
 describe("bash card", () => {
-  // spec: UI-050, UI-051
-  test("streaming: the command in the header, the output so far, no exit code yet", async () => {
-    const element = await open(streaming("bash_tool_call", "call_bash_1"));
+  // spec: UI-050, UI-051, UI-695
+  test("streaming: the command, live elapsed time and output so far, no exit code yet", async () => {
+    const clock = new ManualClock(1_000);
+    const element = show(streaming("bash_tool_call", "call_bash_1"), clock);
     expect([element.dataset.view, element.dataset.status]).toEqual(["bash", "running"]);
     expect(byTestId(element, "tool-subject").textContent).toBe("echo tool-output-123");
+    expect(byTestId(element, "tool-duration").textContent).toBe("0 ms");
+    act(() => clock.advance(1_250));
+    expect(byTestId(element, "tool-duration").textContent).toBe("1.3 s");
+    await userEvent.click(byTestId(element, "toggle"));
     expect(byTestId(element, "tool-output").textContent).toBe("tool-output-123\n");
     expect(within(element).queryByTestId("tool-exit")).toBeNull();
   });
@@ -235,11 +261,30 @@ describe("fetch card", () => {
 });
 
 describe("edit card", () => {
-  // spec: UI-050, UI-051
-  test("streaming: the file and the edit as written", async () => {
-    const element = await open(streaming("edit_tool_calls", "call_edit_1"));
+  // spec: UI-050, UI-051, UI-695
+  test("streaming: the file and the edit as written are open without another click", () => {
+    const element = show(streaming("edit_tool_calls", "call_edit_1"));
+    expect(byTestId(element, "toggle").getAttribute("aria-expanded")).toBe("true");
     expect(byTestId(element, "tool-path").textContent).toBe("src/lib.rs");
     expect(byTestId(element, "tool-input").textContent).toContain("left.saturating_add(right)");
+  });
+
+  // spec: UI-695
+  test("an explicit collapse of a live edit wins when the card settles", async () => {
+    const test = testHost();
+    test.client.connected();
+    test.client.index({
+      workspaces: [workspace("w1", [{ ...repo("w1", "src", "main"), kind: "clone" }])],
+      threads: [thread("t1", "cards", "w1")],
+    });
+    test.host.window.set(SELECTED_THREAD, "t1");
+    renderWithHost(<EditLifecycleCard />, test);
+    expect(screen.getByTestId("tool-input").textContent).toContain("left.saturating_add(right)");
+    await userEvent.click(screen.getByTestId("toggle"));
+    expect(screen.queryByTestId("tool-input")).toBeNull();
+    await userEvent.click(screen.getByTestId("settle-card"));
+    expect(screen.getByTestId("toggle").getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByTestId("tool-diff")).toBeNull();
   });
 
   // spec: UI-050, UI-051, UI-090
@@ -262,11 +307,17 @@ describe("edit card", () => {
 });
 
 describe("write card", () => {
-  // spec: UI-050, UI-051, UI-090
-  test("streaming and success: the file and its highlighted content", async () => {
-    expect(byTestId(show(streaming("write_tool_calls", "call_write_1")), "tool-path").textContent).toBe("notes.md");
+  // spec: UI-050, UI-051, UI-090, UI-695
+  test("streaming content opens automatically; settled content stays collapsed until opened", async () => {
+    const live = show(streaming("write_tool_calls", "call_write_1"));
+    expect(byTestId(live, "toggle").getAttribute("aria-expanded")).toBe("true");
+    expect(byTestId(live, "tool-path").textContent).toBe("notes.md");
+    expect(byTestId(live, "tool-content").textContent).toContain("# Notes");
     cleanup();
-    const element = await open(card("write_tool_calls", "call_write_1"));
+    const done = card("write_tool_calls", "call_write_1");
+    expect(within(show(done)).queryByTestId("tool-content")).toBeNull();
+    cleanup();
+    const element = await open(done);
     const content = byTestId(element, "tool-content");
     expect(content.textContent).toBe("# Notes\n\n- add saturates\n- greet says hello\n");
     await waitFor(() => expect(content.querySelector(".hljs-section")?.textContent).toBe("# Notes"));

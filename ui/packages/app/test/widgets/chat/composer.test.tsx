@@ -45,6 +45,19 @@ function queuedEvents(): ThreadEvent[] {
 function busyEvents(): ThreadEvent[] {
   return eventsUntil("text_reply", isFrame("message_update", "text_end"));
 }
+/** The edit fixture while its first edit is running (the preceding read has settled). */
+function activeEditEvents(): ThreadEvent[] {
+  let starts = 0;
+  const events = fixtureEvents("edit_tool_calls");
+  const editStart = events.findIndex((event) => {
+    if (!isFrame("tool_execution_start")(event)) {
+      return false;
+    }
+    starts += 1;
+    return starts === 2;
+  });
+  return events.slice(0, editStart + 1);
+}
 
 describe("composer", () => {
   // spec: UI-060
@@ -114,6 +127,22 @@ describe("composer", () => {
         .getAllByTestId("slash-suggestion")
         .map((item) => item.textContent),
     ).toEqual(["/compact"]);
+  });
+  // spec: UI-693
+  test("active work is named and timed above the composer, with the one Abort action", async () => {
+    const clock = new ManualClock(1_000);
+    const { client } = renderThread(<ComposerWidget />, activeEditEvents(), clock);
+    const activity = screen.getByTestId("composer-activity");
+    expect([activity.dataset.kind, within(activity).getByTestId("activity-label").textContent]).toEqual([
+      "tool",
+      "Saturating the addition",
+    ]);
+    expect(within(activity).getByTestId("activity-duration").textContent).toBe("0 ms");
+    act(() => clock.advance(1_250));
+    expect(within(activity).getByTestId("activity-duration").textContent).toBe("1.3 s");
+    expect(screen.getAllByTestId("abort").length).toBe(1);
+    await userEvent.click(within(activity).getByTestId("abort"));
+    expect(client.callsTo("thread.abort").map((call) => call.params)).toEqual([{ threadId: THREAD }]);
   });
 
   // spec: UI-060
@@ -493,9 +522,9 @@ describe("the composer's bar by pointer and width", () => {
     cleanup();
     renderThread(<ComposerWidget />, queuedEvents());
     const busy = bar();
-    // The ctrl+c hint first: when the row is short, the hints at its end give way.
+    // The ctrl+c hint remains; the live activity row owns the one Abort action.
     expect(busy.hints).toEqual(["ctrl+c interrupt", "alt+enter newline", "esc normal"]);
-    expect(busy.actions.filter((id) => id !== "live-mic")).toEqual(["abort", "send-alternative", "send"]);
+    expect(busy.actions.filter((id) => id !== "live-mic")).toEqual(["send-alternative", "send"]);
     expect(busy.actions.indexOf("live-mic")).toBe(idle.actions.indexOf("live-mic"));
   });
 

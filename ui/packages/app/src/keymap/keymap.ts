@@ -56,12 +56,9 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { mode: "normal", keys: "Alt-Shift-ArrowDown", command: "threads.moveToNextWorkspace" },
   // The path of the focused element (a path link, a tool card, a changed file) in a file tab (UI-116).
   { mode: "normal", keys: "g f", command: "file.open" },
-  // The newest notice of the mode line: its thread (UI-192).
-  { mode: "normal", keys: "g n", command: "notice.open" },
   { mode: "normal", keys: "i", command: "composer.focus" },
   { mode: "normal", keys: ":", command: "cmdline.open" },
-  // The views of the window (UI-302): `g v` opens the `:` line on `view ` (its completions are the views).
-  { mode: "normal", keys: "g v", command: "view.pick" },
+  // View cycling stays independent of the fuzzy picker (UI-302).
   { mode: "normal", keys: "] v", command: "view.next" },
   { mode: "normal", keys: "[ v", command: "view.prev" },
   // Every effective binding and `:` command, filterable (UI-198).
@@ -90,9 +87,7 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { mode: "normal", keys: "Space p n", command: "workspace.new" },
   { mode: "normal", keys: "Space p r", command: "workspace.rescan" },
   { mode: "normal", keys: "Space f o", command: "file.open" },
-  { mode: "normal", keys: "Space v v", command: "view.pick" },
-  { mode: "normal", keys: "Space v n", command: "view.next" },
-  { mode: "normal", keys: "Space v p", command: "view.prev" },
+  { mode: "normal", keys: "Space v", command: "view.pick" },
   { mode: "insert", keys: "Esc", command: "focus.leave" },
   // In the composer: clear the draft, then abort; `u` restores the last cleared draft (UI-063). In normal mode `Ctrl-c`
   // interrupts the selected thread (UI-368), unless text is selected: then it copies as usual.

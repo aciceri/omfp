@@ -16,7 +16,7 @@ const COMMANDS: Command[] = [
   { id: "demo.ping", title: "Ping", description: "Pings the demo", args: () => [], run },
   { id: "thread.new", title: "New thread (threads)", scope: "threads", run },
   { id: "view.switch", title: "Switch view (:view <id>)", aliases: ["view"], args: () => ["review"], run },
-  { id: "view.pick", title: "Pick a view (opens :view with the views to complete)", run },
+  { id: "view.pick", title: "Pick a view", run },
   { id: "file.open", title: "Open a file (:open <path>[:<line>]), or the focused path (g f)", aliases: ["open"], run },
   // What a phone does otherwise: the Threads button, a tap on the composer, the focus moves.
   { id: "threads.toggle", title: "Show or hide the threads column (narrow window)", run },

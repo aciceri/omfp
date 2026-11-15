@@ -61,7 +61,7 @@ export function ModeLines() {
         }
         notice={
           <>
-            <ModeNotice tone="attention" title="Fix flaky checkout test" body="needs you" more={1} kbd="g n" />
+            <ModeNotice tone="attention" title="Fix flaky checkout test" body="needs you" more={1} />
             <ModeMessages label="Messages" />
           </>
         }
@@ -102,24 +102,21 @@ export function ModeLines() {
       {/* Notices (UI-193): each tone, with a count, hover and focus. */}
       <ModeLine
         mode="normal"
-        notice={<ModeNotice tone="attention" title="Fix flaky checkout test" body="needs you" more={2} kbd="g n" />}
+        notice={<ModeNotice tone="attention" title="Fix flaky checkout test" body="needs you" more={2} />}
       >
         <ModeSegment kind="title">omfp › Redesign kit tokens</ModeSegment>
         <ModeSegment>idle</ModeSegment>
       </ModeLine>
-      <ModeLine
-        mode="insert"
-        notice={<ModeNotice tone="error" title="flaky" body="failed" kbd="g n" className="is-hover" />}
-      >
+      <ModeLine mode="insert" notice={<ModeNotice tone="error" title="flaky" body="failed" className="is-hover" />}>
         <ModeSegment kind="title">omfp › Redesign kit tokens</ModeSegment>
       </ModeLine>
       <ModeLine
         mode="normal"
-        notice={<ModeNotice tone="ok" title="checkout" body="finished its turn" kbd="g n" className="is-focus" />}
+        notice={<ModeNotice tone="ok" title="checkout" body="finished its turn" className="is-focus" />}
       >
         <ModeSegment kind="title">omfp › Redesign kit tokens</ModeSegment>
       </ModeLine>
-      <ModeLine mode="normal" notice={<ModeNotice tone="info" title="CI" body="is green again" kbd="g n" />}>
+      <ModeLine mode="normal" notice={<ModeNotice tone="info" title="CI" body="is green again" />}>
         <ModeSegment kind="title">omfp › Redesign kit tokens</ModeSegment>
       </ModeLine>
       {/* The way back to the window's messages once the notices are gone (UI-523), hovered. */}
@@ -136,7 +133,7 @@ export function ModeLines() {
         </ModeLine>
         <ModeLine
           mode="normal"
-          notice={<ModeNotice tone="attention" title="A long thread title that waits" body="needs you" kbd="g n" />}
+          notice={<ModeNotice tone="attention" title="A long thread title that waits" body="needs you" />}
         >
           <ModeSegment kind="title">omfp › A long thread title that does not fit</ModeSegment>
           <ModeSegment>opus-4.5</ModeSegment>

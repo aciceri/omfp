@@ -2,8 +2,8 @@
  * The `:` command line (UI-095), also the command palette: an input with a listbox of completions (ARIA combobox
  * pattern). Tab completes, the arrows move through the options, Enter runs the line (or the highlighted option),
  * Escape closes. Commands run in the scopes around the element that had the focus before the line opened, and the
- * focus goes back there first. `cmdline.open` with arguments opens the line on them (`g v` opens it on `view `, so its
- * completions are the views, UI-302).
+ * focus goes back there first. `cmdline.open` with arguments opens the line on them, followed by a space, so a
+ * command with arguments can immediately offer its completions.
  */
 
 import { CommandItem, CommandMenu, Kbd, ModeSegment, CommandLine as Prompt } from "@omfp/kit";

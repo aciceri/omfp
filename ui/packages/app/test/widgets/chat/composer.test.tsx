@@ -286,14 +286,17 @@ describe("composer", () => {
     expect(input().value).toBe("");
     expect(host.window.get(draftKey(THREAD)).images).toEqual([]);
     expect(screen.queryByTestId("interrupt-hint")).toBeNull();
+    expect(screen.getByTestId("restore-draft-hint")).toBeDefined();
     // Empty draft on an idle thread: nothing to abort.
     act(() => clock.advance(2000));
+    expect(screen.getByTestId("restore-draft-hint")).toBeDefined();
     press("c", { ctrlKey: true });
     expect(client.callsTo("thread.abort")).toHaveLength(0);
-    act(() => input().blur());
+    await userEvent.keyboard("{Escape}");
     press("u");
     expect(input().value).toBe("draft one");
     expect(host.window.get(draftKey(THREAD)).images).toEqual([image]);
+    expect(screen.queryByTestId("restore-draft-hint")).toBeNull();
   });
 
   // spec: UI-063, UI-095, UI-148

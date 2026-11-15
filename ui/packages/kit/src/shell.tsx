@@ -129,7 +129,7 @@ export interface ModeNoticeProps extends Omit<AriaButtonProps, "children"> {
   body: ReactNode;
   /** Notices behind this one, shown as `+n`. */
   more?: number;
-  /** The key that opens it, as a key chip (`g n`). */
+  /** A user-configured key that opens it, shown as a key chip. */
   kbd?: string;
 }
 

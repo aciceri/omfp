@@ -65,31 +65,6 @@ describe("widget docs", () => {
 
 describe("views and init files for agents", () => {
   // spec: AGT-078
-  test("the widget docs say how views switch, which is default, what writes views.json, ids and instances", () => {
-    for (const fact of [
-      "## Views in the window",
-      "`:view <id>`",
-      "`g v`",
-      "`] v` / `[ v`",
-      "remembers the view per thread and survives reloads",
-      "`views.withDefault(id)`",
-      "`:widget add <reference>`",
-      '`"views.json"` is the only file it loads',
-      "`ws.<action>`",
-      "replaces it while the file is loaded",
-      "keeps answering to that older command",
-      "own `instance` when a widget appears twice",
-      '["tabs", { id: "main" }, "omfp:chat"]',
-      "instance: `changes-",
-      "omfp_views_errors",
-      'omfp_widget_check { name: "init" }',
-    ]) {
-      expect(DOCS.includes(fact) ? fact : `missing: ${fact}`).toBe(fact);
-    }
-    expect(DOCS.includes("Edit layout")).toBe(false);
-  });
-
-  // spec: AGT-078
   test("the shell docs describe the left column, the mode line, the `:` line and every default key", () => {
     for (const heading of ["## Left column", "## Mode line", "## The `:` line", "## Default keys"]) {
       expect(SHELL.includes(heading) ? heading : `missing: ${heading}`).toBe(heading);

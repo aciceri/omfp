@@ -653,17 +653,14 @@ describe("frame", () => {
   });
 
   // spec: UI-192, UI-193
-  test("with focus, a change of another thread is a mode-line notice: newest plus a count, `g n` opens it", () => {
+  test("with focus, another thread's changes queue notices; :notice opens the newest thread", () => {
     const { client, flush, host } = setup({ hasFocus: () => true });
     act(() => host.window.set(SELECTED_THREAD, "t1"));
     client.indexEvents({ kind: "thread_upserted", thread: thread("t2", "flaky", "w1", { needsAttention: true }) });
     flush();
     const notice = () => screen.getByTestId("mode-notice");
-    expect([notice().dataset.tone, notice().dataset.thread, notice().textContent]).toEqual([
-      "attention",
-      "t2",
-      "◆flakyneeds youg n",
-    ]);
+    expect([notice().dataset.tone, notice().dataset.thread]).toEqual(["attention", "t2"]);
+    expect(notice().textContent).toContain("flaky");
     // It sits in the mode line, not over the view.
     expect(screen.getByTestId("mode-bar").contains(notice())).toBe(true);
     client.indexEvents({
@@ -671,10 +668,12 @@ describe("frame", () => {
       thread: thread("t2", "flaky", "w1", { needsAttention: true, process: { state: "failed", message: "x" } }),
     });
     flush();
-    expect([notice().dataset.tone, notice().textContent]).toEqual(["error", "◆flakyfailed+1g n"]);
+    expect(notice().dataset.tone).toBe("error");
+    expect(notice().textContent).toContain("+1");
     expect(screen.getByTestId("live-region").textContent).toBe("flaky failed");
-    press("g");
-    press("n");
+    act(() => {
+      host.commands.run("notice.open");
+    });
     expect(host.window.get(SELECTED_THREAD)).toBe("t2");
     // Visiting the thread clears all its notices.
     expect(screen.queryByTestId("mode-notice")).toBeNull();
@@ -739,10 +738,8 @@ describe("frame", () => {
       },
     );
     await user.click(screen.getByRole("button", { name: "notify" }));
-    expect([screen.getByTestId("mode-notice").dataset.tone, screen.getByTestId("mode-notice").textContent]).toEqual([
-      "info",
-      "◆Buildis greeng n",
-    ]);
+    expect(screen.getByTestId("mode-notice").dataset.tone).toBe("info");
+    expect(screen.getByTestId("mode-notice").textContent).toContain("Build");
     expect(shown).toEqual([]);
     expect(screen.getByTestId("live-region").textContent).toBe("Build is green");
     focused = false;
@@ -966,7 +963,7 @@ describe("views of the current workspace", () => {
   });
 
   // spec: UI-302, UI-431
-  test("`] v` and `[ v` go to the next and previous view, round the list; `g v` opens `:view ` with the views", async () => {
+  test("`] v` and `[ v` cycle views; Space v fuzzy filtering, arrows and Enter commit a view", async () => {
     const { host, user } = inWorkspace({ manifest: MANIFEST });
     const shown = () => screen.getByTestId("view").dataset.view;
     expect(shown()).toBe("work");
@@ -979,16 +976,12 @@ describe("views of the current workspace", () => {
     press("[");
     press("v");
     expect(shown()).toBe("review");
-    press("g");
+    press(" ");
     press("v");
-    const input = screen.getByTestId("command-line-input") as HTMLInputElement;
-    expect(input.value).toBe("view ");
-    expect(screen.getAllByTestId("command-option").map((option) => option.getAttribute("data-value"))).toEqual([
-      "view lean",
-      "view review",
-      "view work",
-    ]);
-    await user.type(input, "le{Enter}");
+    const input = screen.getByTestId("view-picker-input") as HTMLInputElement;
+    await user.type(input, "ln");
+    expect(screen.getAllByTestId("view-picker-option").map((option) => option.dataset.id)).toEqual(["lean"]);
+    await user.keyboard("{Enter}");
     expect(shown()).toBe("lean");
     expect(host.window.get(VIEW_CHOICES)).toEqual({
       threads: [{ threadId: "t1", viewId: "lean" }],
@@ -996,20 +989,52 @@ describe("views of the current workspace", () => {
     });
   });
 
-  // spec: UI-431
-  test("`g v`, ArrowUp, Enter never resets views.json: it switches to the last view; with one view `g v` does nothing", async () => {
-    const { client, host, user } = inWorkspace({ manifest: MANIFEST });
-    press("g");
+  // spec: UI-302, UI-431
+  test("the view picker cancels without changing the view, wraps arrows and never resets views.json", async () => {
+    const { client, user } = inWorkspace({ manifest: MANIFEST });
+    press(" ");
     press("v");
-    await user.keyboard("{ArrowUp}{Enter}");
+    await user.keyboard("{ArrowUp}{Escape}");
     expect(screen.getByTestId("view").dataset.view).toBe("work");
+    press(" ");
+    press("v");
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(screen.getByTestId("view").dataset.view).toBe("lean");
     expect(client.callsTo("views.set")).toEqual([]);
-    expect(screen.queryAllByTestId("view-reset-dialog")).toEqual([]);
+    expect(screen.queryAllByTestId("view-reset-dialog").length).toBe(0);
+  });
+
+  // spec: UI-302
+  test("1–9 choose the matching numbered view, including after filtering; a single view remains pickable", async () => {
+    const views = Object.fromEntries(
+      Array.from({ length: 10 }, (_, at) => [
+        `view-${String(at + 1).padStart(2, "0")}`,
+        { ...MANIFEST.views.work, title: at === 9 ? "Release" : `View ${at + 1}` },
+      ]),
+    );
+    const { user } = inWorkspace({ manifest: { default: "view-01", views } });
+    press(" ");
+    press("v");
+    expect(
+      screen.getAllByTestId("view-picker-option").map((option) => option.querySelector("kbd")?.textContent),
+    ).toEqual(["1", "2", "3", "4", "5", "6", "7", "8", "9", undefined]);
+    await user.keyboard("9");
+    expect(screen.getByTestId("view").dataset.view).toBe("view-09");
+    press(" ");
+    press("v");
+    await user.type(screen.getByTestId("view-picker-input"), "rls");
+    await user.keyboard("9");
+    expect((screen.getByTestId("view-picker-input") as HTMLInputElement).value).toBe("rls");
+    await user.keyboard("1");
+    expect(screen.getByTestId("view").dataset.view).toBe("view-10");
     cleanup();
     const single = inWorkspace({ manifest: { default: "work", views: { work: MANIFEST.views.work } } });
-    expect(single.host.commands.run("view.pick")).toBe(false);
-    expect(screen.queryAllByTestId("command-line-input")).toEqual([]);
-    expect(host.window.get(ERRORS)).toEqual([]);
+    act(() => {
+      single.host.commands.run("view.pick");
+    });
+    await single.user.keyboard("1");
+    expect(screen.getByTestId("view").dataset.view).toBe("work");
+    expect(screen.queryAllByTestId("view-picker-input").length).toBe(0);
   });
 
   // spec: UI-302, UI-367
@@ -1551,7 +1576,7 @@ describe("focus after a jump", () => {
   });
 
   // spec: UI-092, UI-192, UI-286
-  test("`g n` opens the newest notice's thread with the focus in its composer", () => {
+  test(":notice opens the newest notice's thread with the focus in its composer", () => {
     const { client, flush, host } = setup({ hasFocus: () => true });
     client.indexEvents({ kind: "thread_upserted", thread: thread("t2", "flaky", "w1", { needsAttention: true }) });
     flush();

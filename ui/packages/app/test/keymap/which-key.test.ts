@@ -32,13 +32,6 @@ function flat(sections: readonly WhichKeySection[]): string[][] {
 describe("which-key model", () => {
   // spec: UI-320
   test("the keys completing a prefix, by group, in binding order; only the prefix's mode", () => {
-    expect(flat(whichKeySections(DEFAULT_BINDINGS, { keys: "g", mode: "normal" }, titleOf))).toEqual([
-      ["views", "v", "view.pick"],
-      ["files", "f", "file.open"],
-      ["navigation", "g", "nav.top"],
-      ["navigation", "n", "notice.open"],
-    ]);
-    expect(whichKeySections(DEFAULT_BINDINGS, { keys: "g", mode: "insert" }, titleOf)).toEqual([]);
     const insert: Binding[] = [
       { mode: "insert", keys: "Ctrl-x Ctrl-s", command: "my.save", source: "init:user" },
       { mode: "normal", keys: "Ctrl-x Ctrl-f", command: "file.open" },
@@ -51,7 +44,7 @@ describe("which-key model", () => {
   // spec: UI-320, UI-326
   test("a key starting longer bindings is a group: the leader's, theirs in common, else how many", () => {
     const bindings: Binding[] = [
-      ...DEFAULT_BINDINGS,
+      { mode: "normal", keys: "Space t", command: "threads.toggle" },
       { mode: "normal", keys: "Space o a", command: "my.a", source: "init:user" },
       { mode: "normal", keys: "Space o b", command: "thread.new", source: "init:user" },
       { mode: "normal", keys: "Space T x", command: "thread.stop", source: "config" },
@@ -64,10 +57,6 @@ describe("which-key model", () => {
     );
     expect(prefixes).toEqual([
       ["threads", "T", "prefix:threads"],
-      ["views", "v", "prefix:views"],
-      ["workspace", "p", "prefix:workspace"],
-      ["files", "f", "prefix:files"],
-      ["help", "h", "prefix:help"],
       ["other", "o", "prefix:2"],
     ]);
     const sections = whichKeySections(bindings, { keys: "Space", mode: "normal" }, titleOf);

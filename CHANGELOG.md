@@ -83,6 +83,10 @@ Initial release, planned as 0.1.0.
 
 - `/` searches the current conversation; `Space /` opens a fuzzy thread picker with live previews. Enter confirms,
   Escape restores the original thread. `Space t` focuses threads in wide windows and toggles the narrow drawer.
+- `Space v` is the fuzzy view picker, with visible `1`–`9` shortcuts and arrows/Enter. Use `[ v` / `] v` to cycle;
+  the old `g v` and `Space v v/n/p` paths are removed. Notices open by click or `:notice`, not `g n`.
+- Cleared composer drafts show an `Esc` then `u` recovery hint. Normal-mode `u` restores only the latest draft
+  this thread's `Ctrl-C` cleared, including images and paste chips; it is not general undo.
 
 ### Release limitations
 

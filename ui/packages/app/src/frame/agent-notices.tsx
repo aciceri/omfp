@@ -3,7 +3,7 @@
  * window the user last used on the thread by its connection number (PRT-051) in the thread's `notify`; that window
  * hands each request once to `host.notices.notify` as an `info` notice about the thread, so it is a system
  * notification while the window has no focus and a mode-line notice while it has, even on that very thread (the
- * agent asked); opening it (a click, `g n`) selects the thread.
+ * agent asked); opening it (a click, `:notice`) selects the thread.
  */
 
 import { type ReactNode, useEffect, useRef } from "react";

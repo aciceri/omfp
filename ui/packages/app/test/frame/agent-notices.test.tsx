@@ -1,7 +1,7 @@
 /** L4: the notifications an agent sends with `omfp_notify` (UI-215, DMN-125), over a fake client. */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { act, cleanup, fireEvent, screen } from "@testing-library/react";
+import { act, cleanup, screen } from "@testing-library/react";
 import { Frame, type FrameProps } from "../../src/frame/frame.tsx";
 import type { NotificationPort } from "../../src/frame/notifications.ts";
 import { NOTICES, type Notice, SELECTED_THREAD, type WidgetComponent } from "../../src/sdk/index.ts";
@@ -45,12 +45,6 @@ function setup(props: FrameProps) {
   return test;
 }
 
-function press(key: string): void {
-  act(() => {
-    fireEvent.keyDown(document.activeElement ?? document.body, { key });
-  });
-}
-
 /** The mode-line notice as `[tone, thread, text]`, or `undefined` without one. */
 function modeNotice(): [string | undefined, string | undefined, string | null] | undefined {
   const notice = screen.queryByTestId("mode-notice");
@@ -67,7 +61,7 @@ function grantedPort(shown: Array<{ notice: Notice; click: () => void }>): Notif
 
 describe("notifications the agent sends", () => {
   // spec: UI-215, PRT-065
-  test("with focus, the window a `notify` request names shows it once in the mode line; `g n` opens its thread", () => {
+  test("with focus, the addressed window shows an agent notification once; clicking opens its thread", () => {
     const shown: Array<{ notice: Notice; click: () => void }> = [];
     const test = setup({ notifications: grantedPort(shown), hasFocus: () => true });
 
@@ -78,7 +72,8 @@ describe("notifications the agent sends", () => {
     const request = { kind: "notify", id: "n2", connection: 1, title: "Tests", body: "All green" } as const;
     test.client.threadEvents("t2", request);
     test.flush();
-    expect(modeNotice()).toEqual(["info", "t2", "◆TestsAll greeng n"]);
+    expect(modeNotice()?.slice(0, 2)).toEqual(["info", "t2"]);
+    expect(screen.getByTestId("mode-notice").textContent).toContain("All green");
     expect(shown.length).toBe(0);
     expect(screen.getByTestId("live-region").textContent).toBe("Tests All green");
 
@@ -87,8 +82,9 @@ describe("notifications the agent sends", () => {
     test.flush();
     expect(test.host.window.get(NOTICES).length).toBe(1);
 
-    press("g");
-    press("n");
+    act(() => {
+      screen.getByTestId("mode-notice").click();
+    });
     expect(test.host.window.get(SELECTED_THREAD)).toBe("t2");
     expect(modeNotice()).toBeUndefined();
   });
@@ -109,7 +105,8 @@ describe("notifications the agent sends", () => {
     // …but the agent asked explicitly.
     test.client.threadEvents("t1", { kind: "notify", id: "n1", connection: 1, title: "Deploy", body: "Needs your OK" });
     test.flush();
-    expect(modeNotice()).toEqual(["info", "t1", "◆DeployNeeds your OKg n"]);
+    expect(modeNotice()?.slice(0, 2)).toEqual(["info", "t1"]);
+    expect(screen.getByTestId("mode-notice").textContent).toContain("Needs your OK");
     expect(shown.length).toBe(0);
   });
 

@@ -77,11 +77,6 @@
     },
     {
       "mode": "normal",
-      "keys": "g n",
-      "command": "notice.open"
-    },
-    {
-      "mode": "normal",
       "keys": "i",
       "command": "composer.focus"
     },
@@ -89,11 +84,6 @@
       "mode": "normal",
       "keys": ":",
       "command": "cmdline.open"
-    },
-    {
-      "mode": "normal",
-      "keys": "g v",
-      "command": "view.pick"
     },
     {
       "mode": "normal",
@@ -212,18 +202,8 @@
     },
     {
       "mode": "normal",
-      "keys": "Space v v",
+      "keys": "Space v",
       "command": "view.pick"
-    },
-    {
-      "mode": "normal",
-      "keys": "Space v n",
-      "command": "view.next"
-    },
-    {
-      "mode": "normal",
-      "keys": "Space v p",
-      "command": "view.prev"
     },
     {
       "mode": "insert",
@@ -299,7 +279,7 @@
     },
     {
       "id": "composer.restore",
-      "title": "Restore the last cleared draft",
+      "title": "Restore this thread's last Ctrl-C-cleared draft, including images and pastes (normal-mode u)",
       "aliases": []
     },
     {
@@ -614,7 +594,7 @@
     },
     {
       "id": "view.pick",
-      "title": "Pick a view (opens :view with the views to complete)",
+      "title": "Pick a view (Space v; fuzzy search, 1–9 or arrows and Enter)",
       "aliases": []
     },
     {

@@ -298,15 +298,6 @@ export function GlobalCommands({ viewIds, currentView, widgets, addWidget }: Glo
       }
     },
   });
-  // `g v` (UI-302, UI-431): the `:` line on `view `, whose completions are the views; offered with several views.
-  useCommand({
-    id: "view.pick",
-    title: titles.pickView,
-    enabled: () => viewIds.length > 1,
-    run: () => {
-      host.commands.run("cmdline.open", ["view"]);
-    },
-  });
   useCommand({
     id: "widget.manage",
     title: titles.widget,

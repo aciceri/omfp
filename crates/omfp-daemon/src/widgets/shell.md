@@ -1,6 +1,6 @@
 # The omfp window
 
-What the user sees around the widgets, so an agent can point at it ("press `g v`", "pick Review in the mode line").
+What the user sees around the widgets, so an agent can point at it ("press `Space v`", "pick Review in the mode line").
 `omfp://docs/widgets` covers views, widgets, init files and TSX views; `omfp://keymap` lists every default key and
 built-in command with its title and `:` names.
 
@@ -54,8 +54,8 @@ The bar at the bottom of the view area, like vim's:
   the last 3 views shown in the workspace shows it at once as it was left (its widgets' content, typed text and the
   focus), then updates it;
 - at the right end the newest **notice** (`◆ title body`, `+n` when more wait): a thread that needs the user, failed
-  or finished while the user looked elsewhere, or what a widget, an init file or a thread's agent notified. `g n` or a
-  click opens its thread; it goes after 8 s;
+  or finished while the user looked elsewhere, or what a widget, an init file or a thread's agent notified. `:notice`
+  or a click opens its thread; it goes after 8 s;
 - last, once something was said, the **messages** button: it opens `:messages`.
 
 In command mode the `:` line (or the file picker) replaces the title, the view tabs and the notice.
@@ -109,8 +109,8 @@ Widgets (`useCommand`) and init files (`omfp.command`) add commands to the same 
 ## Default keys
 
 In normal mode (no text field focused). A started sequence (`g`, `Space h`) shows the which-key panel above the mode
-line after 300 ms with the keys that complete it; `Space` alone shows it at once (the leader menu: groups `Space h`
-help, `Space p` workspace, `Space f` files, `Space v` views); Escape cancels the sequence.
+line after 300 ms with the keys that complete it; `Space` alone shows it at once. `Space h` groups help, `Space p`
+workspace and `Space f` files; `Space v` directly opens the view picker. Escape cancels a sequence.
 
 | Keys | What they do |
 | --- | --- |
@@ -119,10 +119,9 @@ help, `Space p` workspace, `Space f` files, `Space v` views); Escape cancels the
 | `i` | Focus the composer. |
 | `:`, `Space :`, `Space Space` | The `:` line. |
 | `?`, `Space h h` | Help; `Space h k` is `:describe-key`, `Space h e` is `:messages`. |
-| `g v`, `Space v v` | Pick a view: the `:` line opens on `view`, its completions are the views. |
-| `] v`, `[ v`, `Space v n`, `Space v p` | Next / previous view (round the list). |
+| `Space v` | Fuzzy view picker: type a title/id subsequence; visible `1`–`9` selects that matching row immediately, or use arrows and Enter. Escape cancels. |
+| `] v`, `[ v` | Next / previous view (round the list). |
 | `g f`, `Space f o` | Open the focused path (a path link, a tool card, a changed file) in a file tab. |
-| `g n` | Open the newest notice. |
 | `Space a`, `] a`, `Alt-a` | Next thread needing the user. |
 | `Space n`, `Alt-n` | New thread; `Space w` or `Space p n` new workspace, `Space p r` rescan it. |
 | `Space r`, `Space x`, `Space u`, `Space d` | Rename, archive, unarchive, delete the selected thread. |
@@ -132,7 +131,7 @@ help, `Space p` workspace, `Space f` files, `Space v` views); Escape cancels the
 | `Alt-ArrowUp`, `Alt-ArrowDown` | Move the focused thread (in its workspace) or workspace up or down. |
 | `Alt-Shift-ArrowUp`, `Alt-Shift-ArrowDown` | Move the focused thread to the end of the previous workspace, the start of the next one. |
 | `Ctrl-c` | Interrupt the selected thread's turn (its queued messages come back into the composer); with text selected it copies. |
-| `u` | Restore the last draft `Ctrl-c` cleared in the composer. |
+| `u` | In normal mode restore this thread's last Ctrl-c-cleared composer draft, including images and paste chips, merged with any new text. Not general undo. Leave the composer with Esc first; the recovery hint stays while the draft can be restored. |
 
 In insert mode `Esc` leaves the text field (in the composer too, while the agent works: it never aborts), `Ctrl-c` in
 the composer clears the draft, then aborts, `Alt-a` / `Alt-n` work too; in the composer

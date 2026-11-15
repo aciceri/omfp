@@ -146,7 +146,7 @@ const KIT_TONES: Readonly<Record<NoticeTone, KitTone>> = {
 };
 
 /**
- * Opens the newest notice (`notice.open`, `g n` by default, or a click on it): selects its thread, if any, with the
+ * Opens the newest notice (`notice.open`, `:notice`, or a click on it): selects its thread, if any, with the
  * focus in its composer (UI-286), and drops it; visiting the thread clears the thread's other notices.
  */
 function useOpenNotice(): () => void {

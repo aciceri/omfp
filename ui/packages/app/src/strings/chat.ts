@@ -127,7 +127,7 @@ export const chat = {
     sendShort: { prompt: "Send", "follow-up": "Queue", steer: "Steer" },
     abort: "Abort",
     /** Composer bar hints after their key chips (UI-148, UI-172). */
-    hint: { newline: "newline", leave: "normal", interrupt: "interrupt" },
+    hint: { newline: "newline", leave: "normal", interrupt: "interrupt", restore: "restore Ctrl-C draft" },
     attachments: "Attached images",
     attachment: (index: number) => `Attached image ${index}`,
     removeAttachment: (index: number) => `Remove image ${index}`,
@@ -146,7 +146,7 @@ export const chat = {
     leave: "Leave the composer",
     abortCommand: "Interrupt the agent",
     interruptCommand: "Clear the draft, or abort when it is empty (Ctrl-C)",
-    restoreCommand: "Restore the last cleared draft",
+    restoreCommand: "Restore this thread's last Ctrl-C-cleared draft, including images and pastes (normal-mode u)",
     /** After the `ctrl+c` key chip. */
     interruptHint: "again to abort",
   },

@@ -229,7 +229,15 @@ function proseInput(touch: boolean) {
 
 /** The key hints of the composer's bar (UI-148, UI-172); a touch screen has no such keys and shows none (UI-423). The
  * `ctrl+c` hint comes first: when the row is short, the hints at its end give way (UI-480). */
-function KeyHints({ abortable, interruptHint }: { abortable: boolean; interruptHint: boolean }) {
+function KeyHints({
+  abortable,
+  interruptHint,
+  canRestore = false,
+}: {
+  abortable: boolean;
+  interruptHint: boolean;
+  canRestore?: boolean;
+}) {
   return (
     <>
       {abortable &&
@@ -242,6 +250,11 @@ function KeyHints({ abortable, interruptHint }: { abortable: boolean; interruptH
             <Kbd>{keyLabel("Ctrl-c")}</Kbd> {text.hint.interrupt}
           </ComposerHint>
         ))}
+      {canRestore && (
+        <ComposerHint data-testid="restore-draft-hint">
+          <Kbd>{keyLabel("Esc")}</Kbd> <Kbd>u</Kbd> {text.hint.restore}
+        </ComposerHint>
+      )}
       <ComposerHint>
         <Kbd>{keyLabel("Alt-Enter")}</Kbd> {text.hint.newline}
       </ComposerHint>
@@ -439,7 +452,7 @@ export const Composer = memo(function Composer({
   const tight = useWidthClass(box, (width, rem) => width > 0 && width < TIGHT_BELOW_REM * rem);
   const touch = useCoarsePointer();
   const [focusRequest, setFocusRequest] = useWindowState(FOCUS_COMPOSER);
-  // Asked to take the focus once shown, e.g. after `g n` (UI-286).
+  // Asked to take the focus once shown, e.g. after `:notice` (UI-286).
   useEffect(() => {
     if (focusRequest === threadId) {
       inputRef.current?.focus();
@@ -688,6 +701,7 @@ export const Composer = memo(function Composer({
           touch={touch}
           tight={tight}
           interruptHint={interruptHint}
+          canRestore={cleared !== undefined}
           mode={mode}
           other={other}
           onAbort={abort}
@@ -714,6 +728,7 @@ const ComposerActions = memo(function ComposerActions({
   touch,
   tight,
   interruptHint,
+  canRestore,
   mode,
   other,
   onAbort,
@@ -724,6 +739,7 @@ const ComposerActions = memo(function ComposerActions({
   touch: boolean;
   tight: boolean;
   interruptHint: boolean;
+  canRestore: boolean;
   mode: SendMode;
   other: SendMode | undefined;
   onAbort: () => void;
@@ -734,7 +750,11 @@ const ComposerActions = memo(function ComposerActions({
   const short = touch || tight;
   const labels = short ? text.sendShort : text.send;
   return (
-    <ComposerBar hints={touch ? undefined : <KeyHints abortable={abortable} interruptHint={interruptHint} />}>
+    <ComposerBar
+      hints={
+        touch ? undefined : <KeyHints abortable={abortable} interruptHint={interruptHint} canRestore={canRestore} />
+      }
+    >
       <ThreadMicButton threadId={threadId} />
       {abortable &&
         (short ? (

@@ -402,7 +402,7 @@ Scope (user requests after M7): a thread you are not on that needs you, fails or
 focus gets a notice in the mode line instead of nothing (system notifications stay for an unfocused window); widgets
 send the same notices through the SDK; user themes whose roles miss AA as text are corrected by a contrast guard.
 
-Result: the mode-line notice `◆ <thread> needs you | failed | finished its turn` (UI-192, UI-193) with `g n` / `:notice`
+Result: the mode-line notice `◆ <thread> needs you | failed | finished its turn` (UI-192, UI-193) with `:notice`
 or a click to jump, cleared on visit or after 8 s, newest first with a `+n` count; `useNotify()` in `omfp/sdk`
 (UI-194) goes through the same `host.notices.notify` the frame uses, ready for an agent tool.
 The contrast guard (UI-196) measures, whenever the theme or scheme changes, every role omfp uses as text against the
@@ -574,7 +574,7 @@ next to the theme) and the workspace's (`.omfp/init.ts`), run in every window (D
 transforms, the workspace's repos, UI-267), follow thread events (UI-266), and their errors never break the window
 (UI-263); `:describe-key` and `:describe-command` say where a key or command comes from (UI-264, UI-265). A view may be
 a TSX file, `./views/<name>.tsx` (AGT-074, DMN-186, PRT-096, UI-268). Edit layout is removed (UI-303): `:widget add`
-adds a widget to the view (UI-300), the mode line shows the view tabs and `g v`, `] v` and `[ v` switch views (UI-301, UI-302).
+adds a widget to the view (UI-300), the mode line shows the view tabs and `Space v`, `] v` and `[ v` switch views (UI-301, UI-302).
 Agents learn the window from `omfp://docs` and `omfp://docs/shell` (DMN-198), `omfp://keymap` (DMN-199, UI-305), check
 init files and TSX views with `omfp_widget_check` (DMN-197) and read the windows' runtime errors with `views.errors` and
 `omfp_views_errors` (UI-304, PRT-115, PRT-116, DMN-195, DMN-196, AGT-073, AGT-075, AGT-076, AGT-078). A which-key panel

@@ -78,7 +78,7 @@ export const RESET_VIEWS = windowKey<string | undefined>("resetViews", undefined
 /** The thread whose title is being edited in place (UI-030). */
 export const RENAMING_THREAD = windowKey<string | undefined>("renamingThread", undefined);
 
-/** The thread whose composer takes the focus once it shows, e.g. after `g n` (UI-286); the composer clears it. */
+/** The thread whose composer takes the focus once shown, e.g. after `:notice` (UI-286); the composer clears it. */
 export const FOCUS_COMPOSER = windowKey<string | undefined>("focusComposer", undefined);
 
 /** Errors of failed actions, oldest first, shown by the frame until dismissed. */

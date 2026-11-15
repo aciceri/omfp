@@ -166,7 +166,72 @@ async fn root_share(journey: &Journey) -> anyhow::Result<String> {
     Ok(value.as_str().unwrap_or_default().to_owned())
 }
 
-// spec: E2E-23, UI-267, UI-268, UI-300, UI-301, UI-302, DMN-186, AGT-074
+/// The recovery hint appears only while Ctrl-C's last cleared draft can be restored.
+async fn recover_cleared_draft(journey: &Journey) -> anyhow::Result<()> {
+    let input = journey
+        .element("[data-testid=view][data-view=review] [data-testid=composer-input]")
+        .await?;
+    input.send_keys("Recover this draft").await?;
+    journey
+        .driver
+        .action_chain()
+        .key_down(Key::Control)
+        .send_keys("c")
+        .key_up(Key::Control)
+        .perform()
+        .await?;
+    journey.element("[data-testid=restore-draft-hint]").await?;
+    journey.screenshot("composer-draft-recovery").await?;
+    journey.keys(Key::Escape).await?;
+    journey.keys("u").await?;
+    let restored = journey
+        .eval(
+            "return document.querySelector('[data-testid=view][data-view=review] [data-testid=composer-input]').value;",
+            Vec::new(),
+        )
+        .await?;
+    assert_eq!(restored.as_str(), Some("Recover this draft"));
+    journey.gone("[data-testid=restore-draft-hint]").await?;
+    Ok(())
+}
+
+/// The sole picker: fuzzy filtering cancels, a numbered choice switches, and arrows wrap before Enter commits.
+async fn pick_ops(journey: &Journey) -> anyhow::Result<()> {
+    journey
+        .eval("document.activeElement?.blur();", Vec::new())
+        .await?;
+    journey.keys(" v").await?;
+    journey.until_focused("view-picker-input").await?;
+    journey.keys("os").await?;
+    journey
+        .element("[data-testid=view-picker-option][data-id=ops][aria-selected=true]")
+        .await?;
+    assert_eq!(
+        journey.text("[data-testid=view-picker-option] kbd").await?,
+        "1"
+    );
+    journey.screenshot("view-picker-fuzzy").await?;
+    journey.keys(Key::Escape).await?;
+    journey
+        .element("[data-testid=view][data-view=review]")
+        .await?;
+    journey.keys(" v").await?;
+    journey.until_focused("view-picker-input").await?;
+    journey.keys("1").await?;
+    journey
+        .element("[data-testid=view][data-view=default]")
+        .await?;
+    journey.keys(" v").await?;
+    journey.until_focused("view-picker-input").await?;
+    journey.keys(Key::Up).await?;
+    journey.keys(Key::Enter).await?;
+    journey
+        .element("[data-testid=view][data-view=ops] [data-slot=main]")
+        .await?;
+    Ok(())
+}
+
+// spec: E2E-23, UI-063, UI-267, UI-268, UI-300, UI-301, UI-302, DMN-186, AGT-074
 #[tokio::test(flavor = "multi_thread")]
 async fn an_init_file_adds_a_computed_view_and_a_tsx_view_that_resizes_and_survives_a_syntax_error()
 -> anyhow::Result<()> {
@@ -202,22 +267,9 @@ async fn an_init_file_adds_a_computed_view_and_a_tsx_view_that_resizes_and_survi
         .await?;
     journey.gone("[data-testid=error]").await?;
 
-    // The TSX view, picked with `g v`: laid out like a manifest view, files open in its `main` tabs, its splitters
-    // resize.
-    journey
-        .eval(
-            "if (document.activeElement) { document.activeElement.blur(); }",
-            Vec::new(),
-        )
-        .await?;
-    journey.keys("gv").await?;
-    journey.until_focused("command-line-input").await?;
-    journey
-        .click("[data-testid=command-option][data-value=\"view ops\"]")
-        .await?;
-    journey
-        .element("[data-testid=view][data-view=ops] [data-slot=main]")
-        .await?;
+    // The TSX view, picked with fuzzy filtering, a numeric hint and arrows/Enter.
+    recover_cleared_draft(&journey).await?;
+    pick_ops(&journey).await?;
     assert_eq!(root_share(&journey).await?, "60");
     journey
         .eval(

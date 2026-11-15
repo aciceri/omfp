@@ -28,6 +28,7 @@ export function Picker({
   options,
   initial,
   preview,
+  numbered = false,
   choose,
   cancel,
 }: {
@@ -37,6 +38,7 @@ export function Picker({
   options: readonly PickerOption[];
   initial?: string | undefined;
   preview?: ((id: string) => void) | undefined;
+  numbered?: boolean;
   choose: (id: string) => void;
   cancel: () => void;
 }): ReactNode {
@@ -62,23 +64,37 @@ export function Picker({
           <>
             <Kbd>up</Kbd>
             <Kbd>down</Kbd>
-            {strings.shell.frame.pickerKeys.move}
+            {preview === undefined ? strings.shell.frame.pickerKeys.move : strings.shell.frame.pickerKeys.preview}
             <Kbd>enter</Kbd>
             {strings.shell.frame.pickerKeys.choose}
             <Kbd>esc</Kbd>
             {strings.shell.frame.commandKeys.cancel}
+            {numbered && (
+              <>
+                <Kbd>1–9</Kbd>
+                {strings.shell.frame.pickerKeys.choose}
+              </>
+            )}
           </>
         }
       >
         {shown.length === 0 ? (
           <li className="omfp-muted">{empty}</li>
         ) : (
-          shown.map((option) => (
+          shown.map((option, at) => (
             <CommandItem
               key={option.id}
               id={`${listId}-${option.id}`}
               command={option.title}
-              description={option.description}
+              description={
+                numbered && at < 9 ? (
+                  <>
+                    <Kbd>{at + 1}</Kbd> {option.description}
+                  </>
+                ) : (
+                  option.description
+                )
+              }
               selected={option.id === highlighted?.id}
               data-testid={`${id}-option`}
               data-id={option.id}
@@ -111,7 +127,10 @@ export function Picker({
           onBlur={cancel}
           onKeyDown={(event) => {
             if (event.key === "Escape") cancel();
-            else if (event.key === "Enter") {
+            else if (numbered && /^[1-9]$/.test(event.key) && !event.ctrlKey && !event.altKey && !event.metaKey) {
+              const option = shown[Number(event.key) - 1];
+              if (option !== undefined) choose(option.id);
+            } else if (event.key === "Enter") {
               if (highlighted !== undefined) choose(highlighted.id);
             } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
               const at = shown.findIndex((option) => option.id === highlighted?.id);

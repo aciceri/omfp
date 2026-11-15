@@ -493,8 +493,9 @@ export const shell = {
     /** The completion menu's `╭─` title and its key row (UI-168). */
     commandMenu: "commands",
     commandKeys: { complete: "complete", run: "run", cancel: "cancel" },
-    pickerKeys: { move: "preview", choose: "confirm" },
+    pickerKeys: { move: "move", preview: "preview", choose: "confirm" },
     filesMenu: "files",
+    noViewMatch: "No view matches",
     unknownCommand: (name: string) => `Unknown command: ${name}`,
     scopedCommand,
     defaultView: "Default",
@@ -677,7 +678,7 @@ export const shell = {
     resetViews: "Replace the workspace's views.json with the default view, after a confirmation",
     nextView: "Next view",
     prevView: "Previous view",
-    pickView: "Pick a view (opens :view with the views to complete)",
+    pickView: "Pick a view (Space v; fuzzy search, 1–9 or arrows and Enter)",
     widget:
       "Add a widget to the view, copy one into the workspace or save one to the user library (:widget add <reference>, :widget copy|save[!] <widget> [<name>])",
     open: "Open a file (:open <path>[:<line>]), or the focused path (g f)",

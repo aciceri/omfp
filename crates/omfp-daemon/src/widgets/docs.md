@@ -80,7 +80,8 @@ workspace folder `.omfp/widgets/subagents/` still replaces it); write `omfp:back
 
 - The window shows one view at a time. With several views the mode line (the bar at the bottom) shows them as small
   tabs, `Default · Review · Ops`, the current one highlighted: a click switches. `:view <id>` switches too (`:view`
-  completes the ids), `g v` opens the `:` line on `view` to pick one, `] v` / `[ v` go to the next / previous view.
+  completes ids); `Space v` opens the fuzzy view picker, whose first nine matching rows show `1`–`9` for direct selection.
+  Arrows and Enter choose too; Escape cancels. `] v` / `[ v` go to the next / previous view.
   `omfp://docs/shell` describes the rest of the window (left column, mode line, `:` commands, keys).
 - **Switching keeps the last views mounted**: besides the view it shows, the window keeps the 2 views of the current
   workspace shown most recently before it, hidden. A hidden view's widgets keep their React state and DOM, but their
@@ -172,10 +173,11 @@ sequence. `Space` alone opens it at once: the leader menu. The leader map:
 | `Space a` / `n` / `r` / `x` / `u` / `d` | next waiting thread / new thread / rename / archive / unarchive / delete |
 | `Space s` / `S` / `R` | stop the thread / with the threads it spawned / restart it |
 | `Space w`, `Space p n`, `Space p r` | new workspace, again, rescan the workspace |
-| `Space t` | show or hide the threads column |
-| `Space v v`, `Space v n` / `p` | pick a view (`g v`), next / previous view (`] v` / `[ v`) |
+| `Space t` | focus the threads column (wide), show or hide it (narrow); then `za` folds the focused workspace |
+| `Space v`, `] v` / `[ v` | fuzzy view picker (visible `1`–`9`, arrows and Enter); next / previous view |
 | `Space f o` | open the focused path (`g f`) |
 | `Space h h`, `Space h k` | the help panel (`?`, `:help`), `:describe-key` |
+| `u` | normal-mode restoration of this thread's last Ctrl-C-cleared draft (text, images and paste chips), not general undo; leave the composer with Esc first |
 
 Bind your own under a free letter (`Space T` above, or groups like `Space o a`, `Space o b`); a binding of a group's own
 keys (`Space h`) replaces the group.
@@ -279,7 +281,7 @@ export default function init(omfp: InitApi) {
       ["tabs", {}, ...repos.map((r) => ["omfp:changes", { repo: r.name, instance: `changes-${r.name}`, title: r.name }])]],
   });
   views.add("ops", { title: "Ops", view: "./views/ops.tsx" });
-  omfp.views.use(views); // the user switches with the mode line's tabs, `:view review`, `g v`, `] v`
+  omfp.views.use(views); // the user switches with the mode line's tabs, `:view review`, `Space v`, `] v`
 }
 ```
 
@@ -438,7 +440,7 @@ export default function Tests({ command = "make test" }: { command?: string }) {
 | `useReportSuccess()` | `report(text)`: the result of a user action (`Copied …`, `Saved …`) as a success toast that goes by itself, also announced to screen readers. Every action the user starts shows its result this way; thread and agent events are notices (`useNotify`). Toasts and notices stay in `:messages`. |
 | `parseYaml(text)` | `Promise<YamlResult>`: the values of a YAML text's documents (`{ ok: true, documents }`), or its first error (`{ ok: false, message, line, column }`, from 1). The parser loads on first use. |
 | `useUrlActions()` | `{ open(url), copy(url) }`: opens a URL in a new browser tab (without access to this window), or copies it to the clipboard with a success toast (a refusal goes to the error list). |
-| `useNotify()` | `notify({ title, body, threadId? })`: tells the user something without covering anything. While the window has focus it is a notice at the right end of the mode line (`◆ title body`, `g n` or a click opens it, gone after 8 s); while it has not, a system notification (when the user allowed them; `[ui] notifications = "never"` shows neither). With `threadId`, opening it selects that thread, visiting the thread clears it, and nothing is shown about the thread the user is on. Use it for results worth a look (a build turned red, a long job finished), not for every update. |
+| `useNotify()` | `notify({ title, body, threadId? })`: tells the user something without covering anything. While the window has focus it is a notice at the right end of the mode line (`◆ title body`, a click or `:notice` opens it, gone after 8 s); while it has not, a system notification (when the user allowed them; `[ui] notifications = "never"` shows neither). With `threadId`, opening it selects that thread, visiting the thread clears it, and nothing is shown about the thread the user is on. Use it for results worth a look (a build turned red, a long job finished), not for every output line. |
 | `useSettings()` | `{ ui, keymap, error }`: the daemon's settings (`ui.density`, `ui.fontSize`, `ui.motion`, `ui.notifications`, `ui.fonts`, `ui.theme`: the built-in theme; `error` when the config file failed to load), live. |
 | `useSetSettings()` | `set(patch)`: `settings.set` with `{ ui?, keymap? }`, merged into the daemon's config file (`ui`: `density`, `fontSize`, `fonts`, `motion`, `notifications`, `theme`); a failure goes to the error list. |
 | `useFile(path, { follow? })` | `{ status, file, error, refreshing, reload, save }`: a file of the current workspace (`workspaces.read_file`: `file.content`, `file.hash`, `file.head`, …). `path` is relative to the workspace folder (then looked up in its repositories) or absolute; an absolute path outside the folder (an agent's worktree elsewhere, `/etc/hosts`) is read too, read-only: `file.outside` is `true`, `file.path` the absolute path, `file.repo` / `file.head` come from the git working tree holding it, if any, and `save` is refused. A relative path never leaves the folder (`..` past it is an error). `status` is `"loading"`, `"ready"`, `"missing"` or `"error"` (an error keeps the `file` read before). With `follow` (default `true`) it is checked every 2 s and on every git status change. A new mount shows the window's last copy of the file at once (`ready`, `refreshing: true`) until its first read answers. `save(content, expectedHash?)` writes it only if the file still has that hash (default: the one read) and resolves to `{ ok: true, file }` or `{ ok: false, conflict, error }`. |

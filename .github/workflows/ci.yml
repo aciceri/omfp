@@ -1,6 +1,6 @@
-# What `just ci` runs locally, split into parallel jobs (docs/specs/06-testing.md, TST-070..TST-074). Every check runs
-# inside the flake's dev shell, `nix develop -c just <recipe>`; `just check-workflow` keeps this file and `just ci` in
-# step.
+# What `just ci` runs locally, split into parallel jobs (docs/specs/06-testing.md, TST-070..TST-074). Every recipe job
+# runs inside the flake's dev shell as `nix develop -c just <recipe>`; `just check-workflow` keeps this file and
+# `just ci` in step. The final `required CI` job is the only status branch protection requires (TST-118).
 name: CI
 
 on:
@@ -188,3 +188,16 @@ jobs:
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - run: nix develop -c just cov
+
+  # TST-118: branch protection requires this one stable status. Full mutation testing still runs above and reports
+  # failures, but does not hold auto-merge on the PR critical path.
+  required:
+    name: required CI
+    if: always()
+    needs: [check, test-ts, test-contract, test-e2e, test-desktop, package, cov]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify blocking jobs
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: jq -e 'all(.[]; .result == "success")' <<<"$RESULTS"

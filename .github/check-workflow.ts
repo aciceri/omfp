@@ -3,19 +3,21 @@
  * `check-workflow.test.ts`). Run from the repository root inside the dev shell: `bun .github/check-workflow.ts <just
  * executable>`.
  *
- * - TST-070: CI runs on pushes to master and on pull requests; each job sets up the dev shell and runs only `nix develop
- *   -c just <recipe>`; every recipe `just ci` runs has a job that runs it on pull requests too (no `if:`), and no job
- *   runs a recipe `just ci` does not (but the web bundle).
+ * - TST-070: CI runs on pushes to master and on pull requests; each recipe job sets up the dev shell and runs only `nix
+ *   develop -c just <recipe>`; every recipe `just ci` runs has a job that runs it on pull requests too (no `if:`), and
+ *   no job runs a recipe `just ci` does not (but the web bundle).
  * - TST-071: actionlint passes; every action of every workflow (ENV-051 too) is pinned by a major tag or a commit SHA.
  *   The other rules are about `ci.yml` only.
  * - TST-072: the Nix store comes from the `omfp` Cachix cache, which only pushes to master fill; the cargo cache is
- *   saved on master only; every job hands the dev-shell action the Cachix token.
+ *   saved on master only; every recipe job hands the dev-shell action the Cachix token.
  * - TST-073: the web bundle is built once: every job running the e2e or desktop tests needs the `build-web` job and
  *   serves its artifact through `OMFP_WEB_BUNDLE`.
  * - TST-075: before installing Nix, the dev-shell action pools the runner's disk into a Btrfs /nix with
  *   `wimpysworld/nothing-but-nix` (Linux runners), Nix builds in /nix/build, and the cachix daemon pushes every path as
  *   it is built.
- * - TST-076: the `dev-shell` job runs no recipe and every other Linux job needs it; CARGO_HOME lives on the Nix volume.
+ * - TST-076: the `dev-shell` job runs no recipe and every other Linux recipe job needs it; CARGO_HOME lives on the Nix volume.
+ * - TST-118: one aggregate `required CI` job waits for every blocking job even after failures or skips, while the
+ *   full mutation gate remains visible but non-blocking.
  * - TST-092: one job on a macOS runner runs `just test-desktop` and `just package` on pushes to master only.
  * - ENV-060: `release.yml` runs on `v*` tags and by hand; its jobs build the packages in the dev shell (`just
  *   package-linux` and `just package-flatpak` on Linux, `just package-macos` on macOS); only its job that runs on tags
@@ -27,9 +29,11 @@ export interface Step {
   uses?: string;
   run?: string;
   if?: string;
+  env?: Record<string, string>;
   with?: Record<string, string>;
 }
 export interface Job {
+  name?: string;
   "runs-on"?: string;
   if?: string;
   needs?: string | string[];
@@ -70,6 +74,9 @@ const RUN = /^nix develop -c just ([\w-]+)$/;
 /** The GitHub expression `${{ inner }}`. */
 const expression = (inner: string) => `\${{ ${inner} }}`;
 const ON_MASTER = "github.ref == 'refs/heads/master'";
+const REQUIRED_GATE = "required";
+const REQUIRED_JOBS = ["check", "test-ts", "test-contract", "test-e2e", "test-desktop", "package", "cov"];
+const REQUIRED_RUN = `jq -e 'all(.[]; .result == "success")' <<<"$RESULTS"`;
 
 /** The recipe a step runs (`nix develop -c just <recipe>`), if it is one. */
 const recipeOf = (step: Step) => RUN.exec(step.run?.trim() ?? "")?.[1];
@@ -92,6 +99,7 @@ function checkRecipes({ workflow, recipes, ci }: Inputs, ranBy: Map<string, stri
     problems.push(`${WORKFLOW} must run on pushes to master and on pull requests`);
   }
   for (const [id, job] of Object.entries(workflow.jobs)) {
+    if (id === REQUIRED_GATE) continue;
     const steps = job.steps ?? [];
     if (!steps.some((step) => step.uses === SETUP_USES)) {
       problems.push(`job ${id} does not use ${SETUP_USES}`);
@@ -115,6 +123,34 @@ function checkRecipes({ workflow, recipes, ci }: Inputs, ranBy: Map<string, stri
   for (const [recipe, ids] of ranBy) {
     if (recipe === "build-web" || ci.includes(recipe) || !(recipe in recipes)) continue;
     for (const id of ids) problems.push(`job ${id} runs \`just ${recipe}\`, which \`just ci\` does not`);
+  }
+}
+
+/** TST-118: the one status branch protection requires; mutation testing deliberately stays outside it. */
+function checkRequiredGate({ workflow }: Inputs, problems: string[]) {
+  const gate = workflow.jobs[REQUIRED_GATE];
+  if (gate === undefined) {
+    problems.push("job required must aggregate the blocking CI jobs");
+    return;
+  }
+  if (gate.name !== "required CI") {
+    problems.push("job required must be named `required CI`");
+  }
+  const needs = [gate.needs ?? []].flat();
+  if (needs.length !== REQUIRED_JOBS.length || needs.some((id, index) => id !== REQUIRED_JOBS[index])) {
+    problems.push(`job required must need exactly ${REQUIRED_JOBS.join(", ")}`);
+  }
+  if (gate.if !== "always()") {
+    problems.push("job required must run with `always()`");
+  }
+  const steps = gate.steps ?? [];
+  if (
+    gate["runs-on"] !== "ubuntu-latest" ||
+    steps.length !== 1 ||
+    steps[0]?.env?.RESULTS !== expression("toJSON(needs)") ||
+    steps[0]?.run?.trim() !== REQUIRED_RUN
+  ) {
+    problems.push("job required must fail unless every blocking job succeeded");
   }
 }
 
@@ -146,6 +182,7 @@ function checkCaches({ workflow, setup }: Inputs, problems: string[]) {
     problems.push(`${SETUP} must save the cargo cache on master only`);
   }
   for (const [id, job] of Object.entries(workflow.jobs)) {
+    if (id === REQUIRED_GATE) continue;
     const token = job.steps?.find((step) => step.uses === SETUP_USES)?.with?.["cachix-auth-token"];
     if (token !== expression("secrets.CACHIX_AUTH_TOKEN")) {
       problems.push(`job ${id} must hand ${SETUP_USES} the CACHIX_AUTH_TOKEN secret`);
@@ -205,7 +242,12 @@ function checkShellJob({ workflow, setup }: Inputs, problems: string[]) {
     problems.push(`job ${SHELL_JOB} must only set up the dev shell on a Linux runner`);
   }
   for (const [id, job] of Object.entries(workflow.jobs)) {
-    if (id !== SHELL_JOB && isLinux(job) && ![job.needs ?? []].flat().includes(SHELL_JOB)) {
+    if (
+      id !== SHELL_JOB &&
+      id !== REQUIRED_GATE &&
+      isLinux(job) &&
+      ![job.needs ?? []].flat().includes(SHELL_JOB)
+    ) {
       problems.push(`job ${id} must need ${SHELL_JOB}, which builds the Linux dev shell once`);
     }
   }
@@ -260,6 +302,7 @@ export function check(inputs: Inputs): string[] {
   const problems: string[] = [];
   const ranBy = jobsByRecipe(inputs.workflow);
   checkRecipes(inputs, ranBy, problems);
+  checkRequiredGate(inputs, problems);
   checkPins(inputs, problems);
   checkCaches(inputs, problems);
   checkBundle(inputs, ranBy, problems);

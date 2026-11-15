@@ -61,4 +61,61 @@ describe("check-workflow", () => {
     );
     expect(problems).toContain("job test-desktop must serve the bundle of job web through OMFP_WEB_BUNDLE");
   });
+
+  // spec: TST-118
+  test("removing the required aggregate gate fails", () => {
+    const problems = check(
+      withWorkflow((workflow) => {
+        delete workflow.jobs.required;
+      }),
+    );
+    expect(problems).toContain("job required must aggregate the blocking CI jobs");
+  });
+
+  // spec: TST-118
+  test("the required gate waits for every blocking job except mutation testing", () => {
+    const problems = check(
+      withWorkflow((workflow) => {
+        const required = workflow.jobs.required;
+        if (required !== undefined) required.needs = ["check", "mutants"];
+      }),
+    );
+    expect(problems).toContain(
+      "job required must need exactly check, test-ts, test-contract, test-e2e, test-desktop, package, cov",
+    );
+  });
+
+  // spec: TST-118
+  test("the required gate runs after failed or skipped dependencies", () => {
+    const problems = check(
+      withWorkflow((workflow) => {
+        const required = workflow.jobs.required;
+        if (required !== undefined) delete required.if;
+      }),
+    );
+    expect(problems).toContain("job required must run with `always()`");
+  });
+
+  // spec: TST-118
+  test("the required gate fails unless every dependency succeeded", () => {
+    const problems = check(
+      withWorkflow((workflow) => {
+        const required = workflow.jobs.required;
+        const step = required?.steps?.[0];
+        if (step !== undefined) step.run = "true";
+      }),
+    );
+    expect(problems).toContain("job required must fail unless every blocking job succeeded");
+  });
+
+  // spec: TST-118
+  test("the required gate keeps the status name configured in the ruleset", () => {
+    const problems = check(
+      withWorkflow((workflow) => {
+        const required = workflow.jobs.required as (typeof workflow.jobs)[string] & { name?: string };
+        required.name = "renamed";
+      }),
+    );
+    expect(problems).toContain("job required must be named `required CI`");
+  });
 });

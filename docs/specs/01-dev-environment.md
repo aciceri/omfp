@@ -173,7 +173,7 @@ Its jobs run in parallel on `ubuntu-latest`, each `nix develop -c just <recipe>`
 
 | Job | Runs |
 | --- | --- |
-| `dev-shell` | no recipe: builds (or fetches) the Linux dev shell once; every other Linux job `needs:` it (TST-076) |
+| `dev-shell` | no recipe: builds (or fetches) the Linux dev shell once; every Linux recipe job `needs:` it (TST-076) |
 | `web` | `just build-web`; uploads `ui/packages/app/dist` as the `web-bundle` artifact |
 | `check` | `just check`: lints, version pins, spec-trace, `cargo deny`, the workflow itself (`actionlint`) |
 | `test`, `test-ts`, `test-contract` | `just test`, `just test-ts`, `just test-contract` (the pinned omp of the dev shell, the fake LLM) |
@@ -181,14 +181,15 @@ Its jobs run in parallel on `ubuntu-latest`, each `nix develop -c just <recipe>`
 | `macos` | pushes to `master` only, `macos-15`, after `web`: `just test-desktop` (WKWebView, the menu bar item) and `just package` (the darwin packages and `omfp.app`) (TST-092, ENV-042) |
 | `package` | `just package`: `nix build .#omfp .#omfp-headless` (ENV-030..ENV-033) |
 | `mutants`, `cov` | `just mutants-gate`, `just cov`: the mutation and coverage gates of TST-050 |
+| `required` | no recipe or dev shell: after every blocking Linux job, fails unless all succeeded; branch protection requires its stable `required CI` status while `mutants` remains non-blocking (TST-118) |
 
-Every job starts with the local action `.github/actions/dev-shell`: `wimpysworld/nothing-but-nix` (TST-075: the
+Every recipe job starts with the local action `.github/actions/dev-shell`: `wimpysworld/nothing-but-nix` (TST-075: the
 runner's free disk, then what deleting its preinstalled SDKs, browsers and Docker frees, pooled into a compressed Btrfs
 `/nix`, where Nix also builds; the Rust jobs bind-mount `target/` from it and keep `CARGO_HOME` there, as the purge
 deletes `~/.cargo`), `cachix/install-nix-action` (with
 `accept-flake-config`), `cachix/cachix-action` on the `omfp` cache of ENV-034, `nix develop` once to build or fetch the
 shell; the jobs that compile Rust also restore `Swatinem/rust-cache` (the shell's toolchain is put on `PATH` for it).
-Caching (TST-072):
+The aggregate `required` job has no build step and therefore needs none of that setup. Caching (TST-072):
 
 - **Nix store**: Cachix `omfp`. Every run reads it; only pushes to `master` push what they built (the dev shell, Bun's
   install cache `OMFP_BUN_CACHE`, which is a store path, and the packages); pull requests only read. The Cachix daemon

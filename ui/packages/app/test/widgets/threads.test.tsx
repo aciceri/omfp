@@ -1,12 +1,12 @@
-/** L4: `omfp:threads`, the left column, over a fake client (with the frame's delete dialogs). */
+/** L4: `omfp:threads`, the left column, over a fake client (with the frame's workspace delete dialog). */
 
 import { afterEach, describe, expect, test } from "bun:test";
 import type { IndexSnapshot } from "@omfp/protocol";
-import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
-import { DeleteThreadDialog, DeleteWorkspaceDialog } from "../../src/frame/dialogs.tsx";
-import { DELETE_THREAD, DELETE_WORKSPACE, DRAFT_MESSAGE, DRAFT_THREAD, SELECTED_THREAD } from "../../src/sdk/index.ts";
+import { DeleteWorkspaceDialog } from "../../src/frame/dialogs.tsx";
+import { DELETE_WORKSPACE, DRAFT_MESSAGE, DRAFT_THREAD, draftKey, SELECTED_THREAD } from "../../src/sdk/index.ts";
 import { COLLAPSED_WORKSPACES, SPAWNED_BY, ThreadsWidget } from "../../src/widgets/threads/index.ts";
 import { repo, thread, workspace } from "../support/fixtures.ts";
 import { renderWithHost } from "../support/host.tsx";
@@ -31,7 +31,6 @@ function setup(index: Partial<IndexSnapshot> | null = INDEX, before: ReactNode =
     <>
       {before}
       <ThreadsWidget />
-      <DeleteThreadDialog />
       <DeleteWorkspaceDialog />
     </>,
   );
@@ -220,7 +219,7 @@ describe("omfp:threads", () => {
     await user.click(archived.getByTestId("unarchive-thread"));
     expect(client.callsTo("threads.unarchive").map((call) => call.params)).toEqual([{ threadId: "t3" }]);
     await user.click(archived.getByTestId("row-delete-thread"));
-    expect(host.window.get(DELETE_THREAD)).toBe("t3");
+    expect(client.callsTo("threads.delete").map((call) => call.params)).toEqual([{ threadId: "t3" }]);
   });
 
   // spec: UI-023
@@ -326,16 +325,66 @@ describe("omfp:threads", () => {
   });
 
   // spec: UI-020, UI-026
-  test("a row's delete button asks first, then deletes the thread", async () => {
+  test("a row's delete button immediately deletes the thread", async () => {
     const { client, host, user } = setup();
     act(() => host.window.set(SELECTED_THREAD, "t1"));
     const row = within(section("w1")).getByTestId("row-delete-thread");
-    expect(row.getAttribute("aria-label")).toBe("Delete \u201ccheckout-v2\u201d…");
     await user.click(row);
-    const dialog = await screen.findByTestId("delete-thread-dialog");
-    await user.click(within(dialog).getByTestId("confirm-delete-thread"));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(client.callsTo("threads.delete").map((call) => call.params)).toEqual([{ threadId: "t1" }]);
     expect(host.window.get(SELECTED_THREAD)).toBeUndefined();
+  });
+
+  // spec: UI-026
+  test.each(["t1", "t2"])("middle-click deletes %s without selecting it and clears only its draft", async (id) => {
+    const { client, host, user } = setup();
+    act(() => {
+      host.window.set(SELECTED_THREAD, "t1");
+      host.window.set(draftKey("t1"), { text: "first draft", images: [], pastes: [] });
+      host.window.set(draftKey("t2"), { text: "second draft", images: [], pastes: [] });
+    });
+    const selection: (string | undefined)[] = [];
+    const unsubscribe = host.window.subscribe(SELECTED_THREAD, () => selection.push(host.window.get(SELECTED_THREAD)));
+    const target = screen.getAllByTestId("thread-row").find((row) => row.dataset.threadId === id);
+    if (target === undefined) {
+      throw new Error(`missing thread ${id}`);
+    }
+    await user.pointer({ target, keys: "[MouseMiddle]" });
+    unsubscribe();
+    expect(client.callsTo("threads.delete").map((call) => call.params)).toEqual([{ threadId: id }]);
+    expect(host.window.get(SELECTED_THREAD)).toBe(id === "t1" ? undefined : "t1");
+    expect(selection).toEqual(id === "t1" ? [undefined] : []);
+    expect(host.window.get(draftKey(id)).text).toBe("");
+    expect(host.window.get(draftKey(id === "t1" ? "t2" : "t1")).text).toBe(
+      id === "t1" ? "second draft" : "first draft",
+    );
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(client.callsTo("thread.abort")).toHaveLength(0);
+    expect(client.callsTo("thread.stop")).toHaveLength(0);
+    expect(client.callsTo("threads.archive")).toHaveLength(0);
+  });
+
+  // spec: UI-026
+  test("only middle-click is handled: its press prevents autoscroll, its release deletes once", async () => {
+    const { client, host, user } = setup();
+    const [first, second] = screen.getAllByTestId("thread-row");
+    if (first === undefined || second === undefined) {
+      throw new Error("missing threads");
+    }
+    await user.click(first);
+    await user.pointer({ target: second, keys: "[MouseRight]" });
+    expect(host.window.get(SELECTED_THREAD)).toBe("t1");
+    expect(client.callsTo("threads.delete")).toHaveLength(0);
+    for (const button of [0, 2]) {
+      expect(fireEvent.mouseDown(second, { button, cancelable: true })).toBe(true);
+      expect(fireEvent(second, new MouseEvent("auxclick", { button, bubbles: true, cancelable: true }))).toBe(true);
+    }
+    const title = second.querySelector(".omfp-row__title") ?? second;
+    expect(fireEvent.mouseDown(title, { button: 1, cancelable: true })).toBe(false);
+    expect(client.callsTo("threads.delete")).toHaveLength(0);
+    expect(fireEvent(title, new MouseEvent("auxclick", { button: 1, bubbles: true, cancelable: true }))).toBe(false);
+    expect(client.callsTo("threads.delete").map((call) => call.params)).toEqual([{ threadId: "t2" }]);
+    expect(host.window.get(SELECTED_THREAD)).toBe("t1");
   });
 
   // spec: UI-020, DMN-028
@@ -383,13 +432,15 @@ describe("omfp:threads", () => {
   });
 
   // spec: UI-020
-  test("`dd` on a focused row asks to delete that thread", () => {
-    const { host } = setup();
+  test("`dd` on a focused row immediately deletes that thread without selecting it", () => {
+    const { client, host } = setup();
+    act(() => host.window.set(SELECTED_THREAD, "t1"));
     act(() => screen.getAllByTestId("thread-row")[1]?.focus());
     act(() => {
       host.commands.run("nav.delete", [], ["threads"]);
     });
-    expect(host.window.get(DELETE_THREAD)).toBe("t2");
+    expect(client.callsTo("threads.delete").map((call) => call.params)).toEqual([{ threadId: "t2" }]);
+    expect(host.window.get(SELECTED_THREAD)).toBe("t1");
   });
 
   // spec: UI-287

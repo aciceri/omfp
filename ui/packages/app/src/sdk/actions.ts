@@ -14,7 +14,6 @@ import { useThreadSummary, useWindowState } from "./hooks.ts";
 import { type OmfpHost, useHost } from "./host.tsx";
 import { isObject } from "./json.ts";
 import {
-  DELETE_THREAD,
   DRAFT_MESSAGE,
   DRAFT_THREAD,
   draftKey,
@@ -38,9 +37,7 @@ export interface ThreadActions {
   sendDraft(): Promise<boolean>;
   archive(threadId: string): Promise<void>;
   unarchive(threadId: string): Promise<void>;
-  /** Opens the delete confirmation; {@link ThreadActions.remove} is what it confirms. */
-  requestDelete(threadId: string): void;
-  /** Deletes without asking. */
+  /** Immediately deletes the thread and its history, keeping its workspace (UI-026). */
   remove(threadId: string): Promise<void>;
   rename(threadId: string, title: string): Promise<void>;
   stop(threadId: string): Promise<void>;
@@ -158,7 +155,7 @@ export function currentWorkspaceId(host: OmfpHost): string | undefined {
 /** Drops what the window keeps for a thread that is archived or deleted: selection, draft, open editors (UI-026). */
 function forget(host: OmfpHost, threadId: string): void {
   const { window } = host;
-  for (const key of [SELECTED_THREAD, RENAMING_THREAD, DELETE_THREAD]) {
+  for (const key of [SELECTED_THREAD, RENAMING_THREAD]) {
     if (window.get(key) === threadId) {
       window.set(key, undefined);
     }
@@ -246,7 +243,6 @@ export function threadActions(host: OmfpHost): ThreadActions {
       return attempt(() => client.call("threads.archive", { threadId }));
     },
     unarchive: (threadId) => attempt(() => client.call("threads.unarchive", { threadId })),
-    requestDelete: (threadId) => window.set(DELETE_THREAD, threadId),
     remove: (threadId) => {
       forget(host, threadId);
       return attempt(() => client.call("threads.delete", { threadId }));

@@ -72,9 +72,6 @@ export const DRAFT_MESSAGE = windowKey<Draft>("draft/draftThread", EMPTY_DRAFT);
 /** The workspace whose delete confirmation is open (UI-020, DMN-028). */
 export const DELETE_WORKSPACE = windowKey<string | undefined>("deleteWorkspace", undefined);
 
-/** The thread whose delete confirmation is open (UI-026). */
-export const DELETE_THREAD = windowKey<string | undefined>("deleteThread", undefined);
-
 /** The workspace whose `views.json` reset confirmation is open (UI-430). */
 export const RESET_VIEWS = windowKey<string | undefined>("resetViews", undefined);
 

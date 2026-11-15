@@ -53,7 +53,7 @@ import { AgentNotices } from "./agent-notices.tsx";
 import { CommandLine } from "./command-line.tsx";
 import { GlobalCommands } from "./commands.tsx";
 import { Describe } from "./describe.tsx";
-import { DeleteThreadDialog, DeleteWorkspaceDialog, ResetViewsDialog } from "./dialogs.tsx";
+import { DeleteWorkspaceDialog, ResetViewsDialog } from "./dialogs.tsx";
 import { FilePickerLine } from "./file-picker.tsx";
 import { FloatingFile } from "./floating-file.tsx";
 import { FloatingWidgets, RevealedWidget } from "./floating-widgets.tsx";
@@ -283,7 +283,6 @@ export function Frame({
       <Toasts />
       <Login />
       <StatusLiveRegion />
-      <DeleteThreadDialog />
       <DeleteWorkspaceDialog />
       <ResetViewsDialog />
       <Help bindings={bindings} now={now} />

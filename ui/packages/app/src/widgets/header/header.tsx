@@ -1,8 +1,8 @@
 /**
  * `omfp:header`, the selected thread's header (UI-030): title with rename in place, the workspace chip (UI-340),
  * model and thinking selectors, context usage, session cost, the process state with stop/restart, the restart the
- * daemon holds back named by its reasons (UI-349), and archive/unarchive/delete (UI-026; delete asks first, in the
- * frame's confirmation dialog). For the draft thread (UI-023): its placeholder title and its workspace's chip. The
+ * daemon holds back named by its reasons (UI-349), and archive/unarchive/immediate delete (UI-026).
+ * For the draft thread (UI-023): its placeholder title and its workspace's chip. The
  * title row gives the title the room (UI-482): the state, one state-dependent action and a `⋯` popover holding rename,
  * archive and delete. Narrower than {@link COMPACT_BELOW_REM} it is one row (UI-202): title, state and model, the rest
  * in the `⋯` popover. When omp has no model it can use — its start failed saying so, or it lists no model — it offers
@@ -699,7 +699,7 @@ function PendingRestart({ threadId, view }: { threadId: string; view: HeaderView
   );
 }
 
-/** Archive (unarchive when archived) and delete, which asks for confirmation first (UI-026). */
+/** Archive (unarchive when archived) and immediate delete (UI-026). */
 function Lifecycle({ threadId, archived, onDone }: { threadId: string; archived: boolean; onDone?: () => void }) {
   const actions = useThreadActions();
   return (
@@ -722,7 +722,7 @@ function Lifecycle({ threadId, archived, onDone }: { threadId: string; archived:
         data-testid="delete-thread"
         onPress={() => {
           onDone?.();
-          actions.requestDelete(threadId);
+          void actions.remove(threadId);
         }}
       >
         {text.delete}

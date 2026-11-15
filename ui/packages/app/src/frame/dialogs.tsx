@@ -1,6 +1,6 @@
 /**
- * The frame's dialogs: the thread and workspace delete confirmations (UI-026, UI-020), the `views.json` reset
- * confirmation (UI-430) and the token screen (UI-002).
+ * The frame's dialogs: the workspace delete confirmation (UI-020), the `views.json` reset confirmation (UI-430)
+ * and the token screen (UI-002).
  */
 
 import { Button, Checkbox, ConfirmDialog, Dialog, TextField } from "@omfp/kit";
@@ -8,15 +8,12 @@ import type { ThreadSummary, Workspace } from "@omfp/protocol";
 import { type FormEvent, type ReactNode, useMemo, useState } from "react";
 import { keyLabel } from "../keymap/keymap.ts";
 import {
-  DELETE_THREAD,
   DELETE_WORKSPACE,
   RESET_VIEWS,
   removeWorkspace,
   reportError,
   reportSuccess,
   useHost,
-  useThreadActions,
-  useThreadSummary,
   useThreads,
   useWindowState,
   useWorkspaces,
@@ -24,38 +21,6 @@ import {
 import { strings } from "../strings/index.ts";
 import { DEFAULT_MANIFEST } from "../view/views.ts";
 import { displayTitle } from "../vm/threads.ts";
-
-/** Deleting removes the thread's history, never its workspace; Cancel has the focus when it opens. */
-export function DeleteThreadDialog(): ReactNode {
-  const [threadId, setThreadId] = useWindowState(DELETE_THREAD);
-  const summary = useThreadSummary(threadId);
-  const actions = useThreadActions();
-  const text = strings.shell.deleteThread;
-  return (
-    <ConfirmDialog
-      isOpen={threadId !== undefined}
-      onOpenChange={(open) => {
-        if (!open) {
-          setThreadId(undefined);
-        }
-      }}
-      title={text.title(summary === undefined ? (threadId ?? "") : displayTitle(summary))}
-      message={<span data-testid="delete-thread-message">{text.message}</span>}
-      confirmLabel={text.confirm}
-      cancelLabel={text.cancel}
-      tone="danger"
-      onConfirm={() => {
-        if (threadId !== undefined) {
-          void actions.remove(threadId);
-        }
-      }}
-      testId="delete-thread-dialog"
-      confirmTestId="confirm-delete-thread"
-      cancelTestId="cancel-delete-thread"
-      cancelKbd={keyLabel("Escape")}
-    />
-  );
-}
 
 /**
  * `:view-reset` (UI-107, UI-430): the current default manifest replaces the workspace's views.json, valid or not, only

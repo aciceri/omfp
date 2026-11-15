@@ -9,6 +9,13 @@ The version's section is also the source of the GitHub release notes.
 
 Initial release, planned as 0.1.0.
 
+### Changed
+
+- Thread Delete controls now remove the conversation immediately, without confirmation. The workspace is kept;
+  Archive remains the non-destructive alternative.
+- Middle-click a thread in the left list to delete it without selecting it first or starting browser autoscroll.
+  Deleting the selected thread clears the selection and its draft, as before.
+
 ### Added
 
 - Browser and desktop clients for oh-my-pi, with independent agent threads that keep working when windows close.

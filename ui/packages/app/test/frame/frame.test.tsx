@@ -539,17 +539,13 @@ describe("frame", () => {
     expect(client.callsTo("workspaces.rescan").map((call) => call.params)).toEqual([{ workspaceId: "w1" }]);
   });
 
-  // spec: UI-026, UI-092
-  test("`:delete` asks in a dialog; confirming deletes the thread and clears the selection", async () => {
+  // spec: UI-026
+  test("`:delete` immediately deletes the thread and clears the selection", async () => {
     const { client, host, user } = setup();
     act(() => host.window.set(SELECTED_THREAD, "t2"));
     press(":");
     await user.type(screen.getByTestId("command-line-input"), "delete{Enter}");
-    const dialog = screen.getByTestId("delete-thread-dialog");
-    expect(dialog.getAttribute("role")).toBe("alertdialog");
-    expect(within(dialog).getByRole("heading").textContent).toBe("Delete \u201cflaky\u201d?");
-    await waitFor(() => expect(document.activeElement === screen.getByTestId("cancel-delete-thread")).toBe(true));
-    await user.click(screen.getByTestId("confirm-delete-thread"));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(client.callsTo("threads.delete").map((call) => call.params)).toEqual([{ threadId: "t2" }]);
     expect(host.window.get(SELECTED_THREAD)).toBeUndefined();
   });

@@ -1148,7 +1148,7 @@ async fn until_rows(journey: &Journey, thread_id: &str, count: usize) -> anyhow:
         .await
 }
 
-// spec: UI-020, UI-026, UI-092, UI-482, DMN-028
+// spec: UI-020, UI-026, UI-482, DMN-028
 #[tokio::test(flavor = "multi_thread")]
 async fn an_archived_thread_is_found_under_archived_unarchived_then_deleted_with_workspaces()
 -> anyhow::Result<()> {
@@ -1173,7 +1173,7 @@ async fn an_archived_thread_is_found_under_archived_unarchived_then_deleted_with
     journey.gone("[data-testid=archived-toggle]").await?;
     until_rows(&journey, &doomed, 1).await?;
 
-    // The row's delete button (shown on hover) asks first, in a dialog that takes the focus; the workspace stays.
+    // The row's delete button (shown on hover) deletes immediately; the workspace stays.
     let doomed_row = row(&doomed);
     journey.hover(&doomed_row).await?;
     journey
@@ -1181,13 +1181,7 @@ async fn an_archived_thread_is_found_under_archived_unarchived_then_deleted_with
             "[data-testid=row-delete-thread][data-thread-id=\"{doomed}\"]"
         ))
         .await?;
-    journey
-        .element("[data-testid=delete-thread-dialog]")
-        .await?;
-    journey.until_focused("cancel-delete-thread").await?;
-    journey.click("[data-testid=confirm-delete-thread]").await?;
     until_rows(&journey, &doomed, 0).await?;
-    journey.gone("[data-testid=delete-thread-dialog]").await?;
     journey
         .until("the thread directory to go", async |page| {
             Ok((!page.data_dir().join("threads").join(&doomed).exists()).then_some(()))

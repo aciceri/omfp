@@ -5,15 +5,7 @@ import type { CallMethod } from "@omfp/client";
 import type { ThreadSummary } from "@omfp/protocol";
 import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent, { type UserEvent } from "@testing-library/user-event";
-import {
-  AUTH_REVISION,
-  DELETE_THREAD,
-  draftKey,
-  ERRORS,
-  LOGIN,
-  REVEAL_WIDGET,
-  SELECTED_THREAD,
-} from "../../src/sdk/index.ts";
+import { AUTH_REVISION, draftKey, ERRORS, LOGIN, REVEAL_WIDGET, SELECTED_THREAD } from "../../src/sdk/index.ts";
 import { Composer } from "../../src/widgets/chat/composer.tsx";
 import { HeaderWidget } from "../../src/widgets/header/index.ts";
 import { repo, thread, workspace } from "../support/fixtures.ts";
@@ -38,6 +30,7 @@ function answer(client: FakeClient): void {
     "threads.update": {},
     "threads.archive": {},
     "threads.unarchive": {},
+    "threads.delete": {},
     "thread.stop": {},
     "thread.restart": {},
     "thread.set_model": {},
@@ -268,17 +261,16 @@ describe("omfp:header", () => {
   });
 
   // spec: UI-026, UI-482
-  test("archiving the selected thread clears the selection and its draft; delete asks first", async () => {
+  test.each(["delete-thread", "archive-thread"])("%s clears the selection and draft immediately", async (control) => {
     const { client, host, user } = setup();
     host.window.set(draftKey("t1"), { text: "half", images: [], pastes: [] });
-    await fromMore(user, "delete-thread");
-    expect(host.window.get(DELETE_THREAD)).toBe("t1");
-    expect(client.callsTo("threads.delete")).toHaveLength(0);
-    await fromMore(user, "archive-thread");
-    expect(client.callsTo("threads.archive").map((call) => call.params)).toEqual([{ threadId: "t1" }]);
+    await fromMore(user, control);
+    const method = control === "delete-thread" ? "threads.delete" : "threads.archive";
+    expect(client.callsTo(method).map((call) => call.params)).toEqual([{ threadId: "t1" }]);
+    expect(client.callsTo(control === "delete-thread" ? "threads.archive" : "threads.delete")).toHaveLength(0);
     expect(host.window.get(SELECTED_THREAD)).toBeUndefined();
     expect(host.window.get(draftKey("t1")).text).toBe("");
-    expect(host.window.get(DELETE_THREAD)).toBeUndefined();
+    expect(screen.queryByRole("alertdialog")).toBeNull();
   });
 
   // spec: UI-026, UI-482

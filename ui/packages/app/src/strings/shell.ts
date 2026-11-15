@@ -29,7 +29,7 @@ export const shell = {
     archived: (count: number) => `Archived (${count})`,
     unarchive: "Unarchive",
     unarchiveThread: (title: string) => `Unarchive \u201c${title}\u201d`,
-    deleteThread: (title: string) => `Delete \u201c${title}\u201d…`,
+    deleteThread: (title: string) => `Delete \u201c${title}\u201d`,
     collapse: (name: string) => `Collapse ${name}`,
     expand: (name: string) => `Expand ${name}`,
     menu: (name: string) => `Workspace ${name}`,
@@ -109,7 +109,7 @@ export const shell = {
     restart: "Restart",
     archive: "Archive",
     unarchive: "Unarchive",
-    delete: "Delete…",
+    delete: "Delete",
     noThread: "No thread selected",
     /** The compact header's `⋯` button and the popover it opens (UI-202). */
     more: "More thread actions",
@@ -118,12 +118,6 @@ export const shell = {
     logIn: "Log in",
     logInHint: "omp has no model it can use: log in to a provider",
     noModels: "No models",
-  },
-  deleteThread: {
-    title: (title: string) => `Delete \u201c${title}\u201d?`,
-    message: "The thread's history (transcript, session and log) is removed for good. Its workspace is kept.",
-    confirm: "Delete",
-    cancel: "Cancel",
   },
   deleteWorkspace: {
     title: (name: string) => `Delete workspace \u201c${name}\u201d?`,
@@ -651,7 +645,9 @@ export const shell = {
     rescan: "Rescan the current workspace",
     archive: "Archive the thread",
     unarchive: "Unarchive the thread",
-    delete: "Delete the thread…",
+    delete: "Delete thread now",
+    deleteDescription:
+      "Immediately removes the thread's history without confirmation; its workspace is kept. Use Archive to keep the conversation.",
     rename: "Rename the thread (:rename <title>, or in place without one)",
     stop: "Stop process",
     /** `:describe-command stop` (UI-524): what Stop process ends, unlike Abort. */
@@ -670,7 +666,7 @@ export const shell = {
     set: "Change a setting (:set key=value)",
     cmdline: "Open the command line",
     search: "Filter threads",
-    deleteFocused: "Delete the focused thread or workspace…",
+    deleteFocused: "Delete focused thread or workspace",
     toggleSection: "Collapse or expand the focused workspace",
     moveUp: "Move the focused thread or workspace up",
     moveDown: "Move the focused thread or workspace down",

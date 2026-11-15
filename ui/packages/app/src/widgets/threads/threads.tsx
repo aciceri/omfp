@@ -307,7 +307,7 @@ function useSectionCommands(): void {
       const threadId = element?.closest<HTMLElement>("[data-thread-id]")?.dataset.threadId;
       const workspaceId = sectionOf(element);
       if (threadId !== undefined) {
-        actions.requestDelete(threadId);
+        void actions.remove(threadId);
       } else if (element?.closest('[data-testid="draft-thread"]')) {
         actions.discardDraft();
       } else if (workspaceId !== undefined) {

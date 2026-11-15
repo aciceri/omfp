@@ -142,9 +142,10 @@ export function GlobalCommands({ viewIds, currentView, widgets, addWidget }: Glo
   useCommand({
     id: "thread.delete",
     title: titles.delete,
+    description: titles.deleteDescription,
     aliases: ["delete"],
     enabled: () => summary() !== undefined,
-    run: onSelected(actions.requestDelete),
+    run: onSelected(actions.remove),
   });
   useCommand({
     id: "thread.rename",

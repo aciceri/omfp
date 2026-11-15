@@ -5,7 +5,7 @@
  */
 import { Button, Icon, ThreadRow } from "@omfp/kit";
 import type { ThreadSummary } from "@omfp/protocol";
-import type { PointerEventHandler, ReactNode } from "react";
+import type { MouseEvent, PointerEventHandler, ReactNode } from "react";
 import { useThreadActions, useThreads, useWindowState } from "../../sdk/index.ts";
 import { strings } from "../../strings/index.ts";
 import { displayTitle, forkLineage, statusLabel, threadMark, threadStatus } from "../../vm/threads.ts";
@@ -50,6 +50,15 @@ export function SummaryRow({
   const fresh = useFresh(status);
   const filtering = spawnedBy === thread.id;
   const lineage = forkLineage(thread, useThreads());
+  const middleClick = (event: MouseEvent) => {
+    if (event.button === 1) {
+      // Prevent autoscroll on press; delete only on release, without selecting the thread.
+      event.preventDefault();
+      if (event.type === "auxclick") {
+        void actions.remove(thread.id);
+      }
+    }
+  };
   return (
     <ThreadRow
       {...(reorder !== undefined && {
@@ -90,6 +99,8 @@ export function SummaryRow({
         "data-title-source": thread.titleSource,
         "data-archived": archived ? "true" : undefined,
         "data-reorder-handle": reorder === undefined ? undefined : "true",
+        onMouseDown: middleClick,
+        onAuxClick: middleClick,
       }}
       actions={
         <>
@@ -122,7 +133,7 @@ export function SummaryRow({
           )}
         </>
       }
-      onDelete={() => actions.requestDelete(thread.id)}
+      onDelete={() => void actions.remove(thread.id)}
       deleteLabel={text.deleteThread(title)}
       deleteProps={{ "data-testid": "row-delete-thread", "data-thread-id": thread.id }}
     />

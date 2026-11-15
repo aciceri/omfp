@@ -364,7 +364,7 @@
     },
     {
       "id": "nav.delete",
-      "title": "Delete the focused thread or workspace…",
+      "title": "Delete focused thread or workspace",
       "aliases": [],
       "scope": "threads"
     },
@@ -495,10 +495,11 @@
     },
     {
       "id": "thread.delete",
-      "title": "Delete the thread…",
+      "title": "Delete thread now",
       "aliases": [
         "delete"
-      ]
+      ],
+      "description": "Immediately removes the thread's history without confirmation; its workspace is kept. Use Archive to keep the conversation."
     },
     {
       "id": "thread.fork",

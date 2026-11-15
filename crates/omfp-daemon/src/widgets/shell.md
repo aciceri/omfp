@@ -11,7 +11,11 @@ workspace and repository names and conversation text), "+ workspace" (a name, or
 completion), then one section per workspace — its name (the current one highlighted, a menu to rename or remove it),
 its threads with their state marks (running, awaiting input, failed, idle, unread) and "+ thread", which opens a draft
 thread there (the daemon creates the thread when its first message is sent). Archived threads hide behind
-"Archived (N)". A section folds with its chevron or `z a`; `d d` deletes the focused row (after a confirmation).
+"Archived (N)". A section folds with its chevron or `z a`; `d d` deletes the focused thread immediately, or asks
+before deleting a workspace. A thread's `×`, the header's Delete, `:delete` and middle-click on a thread row all
+delete its history immediately, without confirmation, keeping its workspace. Middle-click never selects the thread
+first and never starts autoscroll. Deleting the selected thread clears the selection and its draft; deleting another
+leaves the selected thread alone. Use Archive instead to keep a conversation for reopening or unarchiving.
 Workspaces and threads keep the order the user gives them, the same in every window (new ones go last): drag a
 section by its head or a thread row (a long press first on a touch screen) to another place, a thread onto another
 workspace to move it there (its omp restarts in that folder); `Alt-ArrowUp` / `Alt-ArrowDown` move the focused row or
@@ -72,7 +76,7 @@ bind. The built-in ones (`omfp://keymap` has them all):
 | Command | What it does |
 | --- | --- |
 | `:new`, `:workspace` | A draft thread in the current workspace; a new workspace. |
-| `:archive`, `:unarchive`, `:delete`, `:rename [<title>]` | The selected thread. |
+| `:archive`, `:unarchive`, `:delete`, `:rename [<title>]` | The selected thread; `:delete` removes its history immediately without confirmation (workspace kept). Archive keeps the conversation. |
 | `:stop`, `:stop!`, `:restart`, `:next` | Stop process: end the thread's omp, with its jobs and live voice (`!`: also of every thread it spawned; Abort, `Ctrl-c`, stops only the running turn); restart it; the next thread needing the user. |
 | `:spawned` | Show only the threads the selected one spawned (again: all). |
 | `:fork` | A new thread in the same workspace with the conversation up to the focused message (transcript; `j`/`k` focus messages) or tree entry (`omfp:tree`), the message included (`threads.fork`); the thread forked from is untouched. A user message's *Fork from here* does the same; the fork's header and row say where it comes from. |

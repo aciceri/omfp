@@ -6,7 +6,6 @@
  * (UI-300), copying a widget into the workspace (UI-106) and saving a workspace widget to the user library (UI-233).
  */
 
-import { pathReference } from "@omfp/kit";
 import type { ReactNode } from "react";
 import {
   COLOR_SCHEME,
@@ -102,9 +101,13 @@ export function GlobalCommands({ viewIds, currentView, widgets, addWidget }: Glo
     enabled: () => currentWorkspaceId(host) !== undefined,
     // `:open <path>[:<line>]`, else the path the focused element (or an ancestor) carries (UI-116).
     run: (args) => {
-      const typed = args.length === 0 ? undefined : pathReference(args.join(" "));
-      if (typed !== undefined) {
-        openFile(host, typed.path, { line: typed.line });
+      if (args.length > 0) {
+        // Explicit filenames are not inline prose: unknown extensions and spaces still name files.
+        const argument = args.join(" ");
+        const suffix = /^(.*?):(\d+)(?::\d+)?$/.exec(argument);
+        openFile(host, suffix?.[1] ?? argument, {
+          line: suffix?.[2] === undefined ? undefined : Number(suffix[2]),
+        });
         return;
       }
       const target = focusedPath(document.activeElement);

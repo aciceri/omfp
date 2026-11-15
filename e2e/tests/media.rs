@@ -146,3 +146,59 @@ async fn video_and_audio_files_play_from_their_raw_bytes() -> anyhow::Result<()>
     journey.screenshot("media-video").await?;
     journey.finish("E2E-51").await
 }
+
+// spec: UI-116, UI-117, UI-541, DMN-092
+#[tokio::test(flavor = "multi_thread")]
+async fn explicit_media_names_resolve_unique_ambiguous_and_missing_files() -> anyhow::Result<()> {
+    let journey = Journey::start_fake(FakeLauncher::new()).await?;
+    journey.connected().await?;
+    let thread = journey.create_thread("explicit media names").await?;
+    let folder = journey.workspace_folder(&thread).await?;
+    std::fs::create_dir_all(folder.join("media"))?;
+    std::fs::write(folder.join("media/tone.wav"), wav(1))?;
+
+    // Both explicit forms reach the real player, regardless of prose path detection.
+    for path in ["media/tone.wav", "tone.wav"] {
+        journey.command(&format!("open {path}")).await?;
+        let loaded = until_loaded(&journey, AUDIO).await?;
+        assert_eq!(loaded[1].as_f64(), Some(1.0));
+        journey
+            .element("[data-testid=file][data-path=\"media/tone.wav\"]")
+            .await?;
+        journey
+            .click(
+                "[data-testid=file-tab][data-file=\"media/tone.wav\"] [data-testid=file-tab-close]",
+            )
+            .await?;
+        journey.gone(AUDIO).await?;
+    }
+
+    std::fs::create_dir_all(folder.join("other"))?;
+    std::fs::write(folder.join("other/tone.wav"), wav(2))?;
+    journey.command("open tone.wav").await?;
+    journey.until_focused("file-picker-input").await?;
+    assert_eq!(
+        journey
+            .attrs("[data-testid=file-picker-option]", "data-path")
+            .await?,
+        [
+            Some("media/tone.wav".to_owned()),
+            Some("other/tone.wav".to_owned())
+        ]
+    );
+    journey.keys(thirtyfour::prelude::Key::Down).await?;
+    journey.keys(thirtyfour::prelude::Key::Enter).await?;
+    journey
+        .element("[data-testid=file][data-path=\"other/tone.wav\"]")
+        .await?;
+    assert_eq!(until_loaded(&journey, AUDIO).await?[1].as_f64(), Some(2.0));
+
+    journey.command("open missing.wav").await?;
+    journey
+        .element("[data-testid=file][data-path=\"missing.wav\"] [data-testid=file-missing]")
+        .await?;
+    journey
+        .screenshot("explicit-media-basename-missing")
+        .await?;
+    journey.finish("explicit-media-names").await
+}

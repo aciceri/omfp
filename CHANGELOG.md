@@ -42,6 +42,8 @@ Initial release, planned as 0.1.0.
   create/set-model selector examples and matching generated TypeScript types.
 - A failed first prompt that leaves a daemon thread now selects that thread and restores its unsent composer draft,
   including images and paste chips. Retry reuses the same conversation instead of creating a duplicate.
+- Explicit `:open` arguments now accept bare media filenames, unknown extensions and spaces. They reach normal
+  workspace lookup, disambiguation and missing-file feedback without loosening inline prose path recognition.
 
 ### Changed
 

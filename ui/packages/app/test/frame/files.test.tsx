@@ -492,6 +492,19 @@ describe("opening paths", () => {
     });
   });
 
+  // spec: UI-116, UI-117
+  test.each(["tone.wav", "media/tone.wav", "missing.unknown", "a file without extension"])(
+    "an explicit filename opens a tab independently of inline prose recognition: %s",
+    async (path) => {
+      const test = setup();
+      // A focused reference must not replace an explicit argument that prose would reject.
+      act(() => screen.getByTestId("card").focus());
+      press(":");
+      await test.user.keyboard(`open ${path}:7:2{Enter}`);
+      expect(shownFile()).toEqual({ path, line: 7, jump: 1 });
+    },
+  );
+
   // spec: UI-701
   test("`:open` with an absolute path outside the workspace folder opens it as typed", async () => {
     const test = setup();

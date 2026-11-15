@@ -90,8 +90,10 @@ async fn thread_picker_previews_confirms_and_restores_with_keyboard_focus_at_bot
     use omfp_daemon::agent::{FakeLauncher, FakeRun};
     use serde_json::json;
     let launcher = FakeLauncher::new();
-    for _ in 0..3 {
-        launcher.push_run(
+    let journey = Journey::start_fake(launcher.clone()).await?;
+    for workspace in ["original", "alpha-beta", "alpine-boat"] {
+        launcher.push_run_for(
+            journey.data_dir().join("workspaces").join(workspace),
             FakeRun::fresh().with_history(
                 (0..100)
                     .map(|index| {
@@ -104,7 +106,6 @@ async fn thread_picker_previews_confirms_and_restores_with_keyboard_focus_at_bot
             ),
         );
     }
-    let journey = Journey::start_fake(launcher).await?;
     journey.connected().await?;
     let original = journey.create_thread("Original").await?;
     let alpha = journey.create_thread("Alpha beta").await?;

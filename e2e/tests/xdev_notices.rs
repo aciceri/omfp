@@ -12,13 +12,15 @@ const SUMMARIES: &str = "[data-testid=system-summary]";
 #[tokio::test(flavor = "multi_thread")]
 async fn settings_reveal_retained_xdev_notices_without_restarting_omp() -> anyhow::Result<()> {
     let launcher = FakeLauncher::new();
-    launcher.push_run(
+    let journey = Journey::start_fake(launcher.clone()).await?;
+    let cwd = journey.data_dir().join("workspaces/xdev-notices");
+    launcher.push_run_for(
+        cwd.clone(),
         FakeRun::fresh().with_history(vec![serde_json::from_value(json!({
             "role": "custom", "customType": "xdev-mount-notice", "display": false,
             "content": "<system-notice>\nDevice inventory\n</system-notice>"
         }))?]),
     );
-    let journey = Journey::start_fake(launcher.clone()).await?;
     journey.connected().await?;
     let thread_id = journey.create_thread("xdev-notices").await?;
     let log = journey.daemon().supervisor().thread_log(&thread_id).await?;
@@ -28,7 +30,10 @@ async fn settings_reveal_retained_xdev_notices_without_restarting_omp() -> anyho
         json!({ "type": "notice", "level": "info", "source": "xdev", "message": "xd://: unmounted mcp__test\nNo devices." }),
         json!({ "type": "notice", "level": "warning", "source": "xdev", "message": "mount warning" }),
     ].into_iter().map(serde_json::from_value).collect::<Result<_, _>>()?;
-    launcher.process(0).emit(notices);
+    journey
+        .fake_process(&launcher, &thread_id)
+        .await?
+        .emit(notices);
     journey
         .until("the warning after the hidden notices", async |page| {
             Ok(page
@@ -90,7 +95,15 @@ async fn settings_reveal_retained_xdev_notices_without_restarting_omp() -> anyho
             .map(|file| file.ui.show_xdev_notices),
         Some(Some(false))
     );
-    assert_eq!(launcher.launches().len(), 1, "settings never restart omp");
+    assert_eq!(
+        launcher
+            .launches()
+            .iter()
+            .filter(|launch| launch.spec.cwd == cwd)
+            .count(),
+        1,
+        "settings never restart the thread's omp"
+    );
     assert_eq!(
         log.with_state(Clone::clone),
         retained_state,

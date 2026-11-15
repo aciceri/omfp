@@ -66,6 +66,8 @@ flowchart BT
 Fake-launcher journeys with thread history queue it with `push_run_for` for that workspace cwd and obtain the process
 with `Journey::fake_process` (or `fake_thread` for another browser driver). Neither fixture playback nor emitted
 frames/call inspection may depend on launch order: `auth.models` can start a short-lived omp before the thread's omp.
+The retained-notice settings journey uses the same cwd-targeted history and thread-specific process lookup, and
+counts only that thread's launches when checking that presentation changes never restart its omp.
 
 ## Fake LLM (`fake-llm`)
 
@@ -218,6 +220,8 @@ Kept few and focused on journeys; everything else belongs to lower layers.
 Issue #57's thread-search journey (`e2e/tests/keys.rs`, fake launcher) runs at 1400 and 900 px: fuzzy filtering and
 arrows preview threads, Escape restores the original and Enter confirms; `Space t` focuses the selected row and
 `za` collapses its workspace; `/` finds a message outside the virtualized window in the current conversation.
+Its histories are bound to each workspace cwd with `push_run_for`, so draft/header model-discovery launches cannot
+consume a conversation fixture; the same search/preview assertions run with the combined pre-first-prompt picker.
 
 Issue #57's workspace-file journey (`e2e/tests/files.rs`) uses real git and the pinned omp with a fake LLM. Two
 repositories and the workspace folder contain files with the same basename. `Space f` lists all three with

@@ -603,8 +603,9 @@ whose opened lists the platform draws: the widget docs and notes say so with the
 `omfp_widget_check` warns about each native control left (AGT-089), and the root's `color-scheme` and `accent-color`
 keep those at least in the light or dark scheme (UI-374). Big files: the box CodeMirror scrolls in is a layout root,
 so in `omfp desktop` (WebKitGTK) a scroll step or a key lays out that box instead of the whole window (UI-118, TST-107).
-Logging in: omp's `/login` is TUI-only and `omp --mode rpc-ui` exits without a usable model, so on a fresh install no
-thread starts; the daemon runs omp's OAuth logins on a short-lived omp of its own started with a catalog model
+Logging in: omp's `/login` is TUI-only and `omp --mode rpc-ui` exits without a usable model. The no-usable-model
+contract disables implicit keyless providers in its temporary profile; an empty credential store alone does not
+guarantee startup fails. The daemon runs omp's OAuth logins on a short-lived omp of its own started with a catalog model
 (`auth.providers`, `auth.login`, `auth.login_cancel`, `auth.logout`, PRT-129..PRT-133, DMN-219..DMN-223), shows the flow
 in the calling window (the URL to open, progress, a paste-code dialog; `:login`, `:logout`, Log in on start errors, a
 failed thread's header and an empty model selector, UI-380..UI-389) and restarts the running threads once free so they

@@ -16,11 +16,15 @@ use omfp_testkit::omp_bin;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-/// A daemon on the real omp of `harness`'s environment, emptied to a fresh install: no `models.yml`, no settings.
+/// A daemon without configured models or credentials, with keyless discovery disabled too.
 async fn fresh_install(harness: &Harness) -> (DaemonHandle, TempDir) {
-    for file in ["models.yml", "config.yml"] {
-        std::fs::remove_file(harness.env.agent_dir().join(file)).unwrap();
-    }
+    std::fs::remove_file(harness.env.agent_dir().join("models.yml")).unwrap();
+    // Keyless providers can otherwise make an empty profile usable, depending on the host and catalog.
+    std::fs::write(
+        harness.env.agent_dir().join("config.yml"),
+        "disabledProviders: [local, web, ollama, llama.cpp, lm-studio, apple]\n",
+    )
+    .unwrap();
     daemon_on(harness).await
 }
 

@@ -9,13 +9,6 @@ The version's section is also the source of the GitHub release notes.
 
 Initial release, planned as 0.1.0.
 
-### Changed
-
-- Thread Delete controls now remove the conversation immediately, without confirmation. The workspace is kept;
-  Archive remains the non-destructive alternative.
-- Middle-click a thread in the left list to delete it without selecting it first or starting browser autoscroll.
-  Deleting the selected thread clears the selection and its draft, as before.
-
 ### Added
 
 - Browser and desktop clients for oh-my-pi, with independent agent threads that keep working when windows close.
@@ -40,25 +33,20 @@ Initial release, planned as 0.1.0.
 
 - Linux Tauri development builds and the Nix desktop package now include the GStreamer demuxers and codecs needed
   for common video, including H.264, instead of leaving unsupported media capable of stalling its WebKit window.
-
-### Changed
-
-- `threads.create` requires an explicit `workspace`: use `{ "id": "…" }` for an existing workspace or
-  `{ "new": {} }` to create one. Clients that omitted it must add one of these choices.
-
-### Fixed
-
-- Linux Tauri development builds and the Nix desktop package now include the GStreamer demuxers and codecs needed
-  for common video, including H.264, instead of leaving unsupported media capable of stalling its WebKit window.
-
-### Fixed
-
 - Select a model before the first message, including in a draft that has not created a daemon thread yet. The first
   prompt uses that model, and failed creation keeps the choice for retry. Existing threads cannot send while a model
   change is still being applied.
+- Keep the detached sidebar's logo, workspace field and thread filter visible while its thread list scrolls on
+  phones and narrow windows.
 
 ### Changed
 
+- Thread Delete controls now remove the conversation immediately, without confirmation. The workspace is kept;
+  Archive remains the non-destructive alternative.
+- Middle-click a thread in the left list to delete it without selecting it first or starting browser autoscroll.
+  Deleting the selected thread clears the selection and its draft, as before.
+- `threads.create` requires an explicit `workspace`: use `{ "id": "…" }` for an existing workspace or
+  `{ "new": {} }` to create one. Clients that omitted it must add one of these choices.
 - Automatically generated thread titles now follow sustained conversation changes, using bounded recent context
   with project continuity. Updates are conversation-driven and rate-limited; brief digressions, cosmetic variants
   and generation failures keep the previous title. Explicit user/API/agent titles are never overwritten.
@@ -67,20 +55,9 @@ Initial release, planned as 0.1.0.
   Credentials, user settings, models, agents and MCP configuration no longer use standalone `~/.omp/agent`.
   Existing users must log in again with `:login` and configure the new `agent/` directory explicitly: nothing is
   imported or copied automatically and there is no sharing mode. Existing threads, history and project config stay.
-
-### Changed
-
 - Informational MCP mount/unmount notices are hidden in transcripts by default. Use `:set show_xdev_notices=true`
   to reveal retained notices live, or `false` to hide them again; events, warnings/errors, startup inventory records
   and MCP tools remain unchanged.
-
-### Fixed
-
-- Keep the detached sidebar's logo, workspace field and thread filter visible while its thread list scrolls on
-  phones and narrow windows.
-
-### Changed
-
 - `/` searches the current conversation; `Space /` opens a fuzzy thread picker with live previews. Enter confirms,
   Escape restores the original thread. `Space t` focuses threads in wide windows and toggles the narrow drawer.
 - `Space v` is the fuzzy view picker, with visible `1`–`9` shortcuts and arrows/Enter. Use `[ v` / `] v` to cycle;

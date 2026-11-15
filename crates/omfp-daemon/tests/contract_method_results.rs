@@ -17,8 +17,8 @@ use omfp_protocol::method::{
     ThreadThinkingLevels, ThreadsCreate,
 };
 use omfp_protocol::{
-    CreateThreadParams, CreateWorkspaceParams, Empty, MessageParams, PromptParams, QueueMessageParams,
-    SetModelParams, SetThinkingParams, ThreadRef, ThreadWorkspace,
+    CreateThreadParams, CreateWorkspaceParams, Empty, MessageParams, PromptParams,
+    QueueMessageParams, SetModelParams, SetThinkingParams, ThreadRef, ThreadWorkspace,
 };
 use omfp_testkit::{FAKE_MODEL, FAKE_PROVIDER, omp_bin};
 use tempfile::TempDir;

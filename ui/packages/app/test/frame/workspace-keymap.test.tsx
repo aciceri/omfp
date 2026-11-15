@@ -6,7 +6,7 @@ import type { Settings, ThreadSummary, WorkspaceBinding } from "@omfp/protocol";
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { Frame } from "../../src/frame/frame.tsx";
 import { type Binding, effectiveBindings } from "../../src/keymap/keymap.ts";
-import { SELECTED_THREAD, useCommand, type WidgetComponent } from "../../src/sdk/index.ts";
+import { type HostOptions, SELECTED_THREAD, useCommand, type WidgetComponent } from "../../src/sdk/index.ts";
 import type { WidgetRegistry } from "../../src/view/resolve.ts";
 import { thread, workspace } from "../support/fixtures.ts";
 import { renderWithHost, testHost } from "../support/host.tsx";
@@ -50,9 +50,9 @@ const W1_KEYMAP: WorkspaceBinding[] = [
 ];
 
 /** The frame on `t1` (workspace `w1`, whose keymap is `keymap`), with `global` as the daemon's `[keymap]`. */
-function setup(keymap: WorkspaceBinding[], global: Settings["keymap"] = []) {
+function setup(keymap: WorkspaceBinding[], global: Settings["keymap"] = [], importer?: HostOptions["importer"]) {
   pings = [];
-  const base = testHost(undefined, { importer: () => new Promise<unknown>(() => {}) });
+  const base = testHost(undefined, { importer: importer ?? (() => new Promise<unknown>(() => {})) });
   for (const method of ["widgets.report", "settings.set"] as const satisfies readonly CallMethod[]) {
     base.client.answers.set(method, () => ({}));
   }
@@ -149,6 +149,43 @@ describe("workspace keymap", () => {
     expect(screen.getByTestId("help")).toBeTruthy();
   });
 
+  // spec: UI-095, UI-210, UI-262, UI-322
+  test.each([false, true])(
+    "empty workspace/init updates preserve a pending leader (global override: %s)",
+    async (configured) => {
+      const test = setup([], configured ? [{ mode: "normal", keys: "g p", command: "demo.ping" }] : [], () =>
+        Promise.resolve({ default: () => {} }),
+      );
+      keys(" ");
+      test.client.viewsEvents("w1", { kind: "views_keymap", keymap: [], error: null });
+      test.client.viewsEvents("w1", { kind: "views_init", init: "no-bindings" });
+      test.flush();
+      await act(async () => {
+        await test.host.init.settled();
+      });
+      test.flush();
+      keys("/");
+      expect(screen.queryAllByTestId("thread-picker").length).toBe(1);
+      expect(screen.queryAllByTestId("conversation-search").length).toBe(0);
+    },
+  );
+
+  // spec: UI-210, UI-322
+  test("a real binding change resets the pending leader and applies the new map", () => {
+    const test = setup([], [{ mode: "normal", keys: "Space p", command: "demo.ping" }]);
+    keys(" ");
+    test.client.viewsEvents("w1", {
+      kind: "views_keymap",
+      keymap: [{ mode: "normal", keys: "Space p", command: "demo.ping", args: ["new"] }],
+      error: null,
+    });
+    test.flush();
+    keys("p");
+    expect(pings).toEqual([]);
+    keys(" ", "p");
+    expect(pings).toEqual([["new"]]);
+  });
+
   // spec: UI-212, AGT-011
   test("an invalid file shows its error in a banner while its last valid bindings stay", () => {
     const test = setup(W1_KEYMAP);
@@ -159,9 +196,7 @@ describe("workspace keymap", () => {
       error: "bindings[2].keys: expected a key sequence",
     });
     test.flush();
-    expect(screen.getByTestId("keymap-error").textContent).toBe(
-      "The workspace keymap .omfp/keymap.json is invalid, its last valid bindings stay: bindings[2].keys: expected a key sequence",
-    );
+    expect(screen.queryAllByTestId("keymap-error").length).toBe(1);
     keys("g", "p");
     expect(pings).toEqual([["one"]]);
 

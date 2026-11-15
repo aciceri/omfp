@@ -7,7 +7,7 @@
 import type { ViewsState } from "@omfp/protocol";
 import { type ReactNode, useMemo } from "react";
 import { strings } from "../strings/index.ts";
-import { type Binding, effectiveBindings, type InitBindings, type KeymapOverride } from "./keymap.ts";
+import { type Binding, type InitBindings, type KeymapOverride, mergeBindings } from "./keymap.ts";
 
 /** The window's bindings, live: `defaults` < `global` (`[keymap]`) < the bindings of `views`, the current
  * workspace's views topic (none while there is no current workspace or before its topic answers) < the init files'
@@ -18,8 +18,12 @@ export function useBindings(
   views: ViewsState | undefined,
   init: InitBindings,
 ): readonly Binding[] {
-  const workspace = views?.keymap;
-  return useMemo(() => effectiveBindings(defaults, global, workspace ?? [], init), [defaults, global, workspace, init]);
+  // Empty, asynchronously loaded layers must not rebuild the key handler and cancel an in-flight chord.
+  const configured = useMemo(() => mergeBindings(defaults, global, "config"), [defaults, global]);
+  const entries = views?.keymap;
+  const workspace = useMemo(() => mergeBindings(configured, entries ?? [], "workspace"), [configured, entries]);
+  const user = useMemo(() => mergeBindings(workspace, init.user, "init:user"), [workspace, init.user]);
+  return useMemo(() => mergeBindings(user, init.workspace, "init:workspace"), [user, init.workspace]);
 }
 
 /** The error banner of the current workspace's `.omfp/keymap.json` (UI-212); nothing while it is valid or absent. */

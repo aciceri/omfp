@@ -44,6 +44,8 @@ Initial release, planned as 0.1.0.
   including images and paste chips. Retry reuses the same conversation instead of creating a duplicate.
 - Explicit `:open` arguments now accept bare media filenames, unknown extensions and spaces. They reach normal
   workspace lookup, disambiguation and missing-file feedback without loosening inline prose path recognition.
+- Empty workspace/init keymap updates no longer cancel a pending leader chord during thread previews. Actual
+  changed mappings still apply with normal sequence-reset behavior.
 
 ### Changed
 

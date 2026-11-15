@@ -295,7 +295,8 @@ export function mergeBindings(
   defaults: readonly Binding[],
   overrides: readonly KeymapOverride[],
   source?: Binding["source"],
-): Binding[] {
+): readonly Binding[] {
+  if (overrides.length === 0) return defaults;
   let bindings: Binding[] = [...defaults];
   for (const override of overrides) {
     const keys = normalizeKeys(override.keys);
@@ -340,7 +341,7 @@ export function effectiveBindings(
   global: readonly KeymapOverride[],
   workspace: readonly KeymapOverride[],
   init: InitBindings = NO_INIT_BINDINGS,
-): Binding[] {
+): readonly Binding[] {
   const configured = mergeBindings(mergeBindings(defaults, global, "config"), workspace, "workspace");
   return mergeBindings(mergeBindings(configured, init.user, "init:user"), init.workspace, "init:workspace");
 }

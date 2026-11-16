@@ -28,6 +28,7 @@ export const shell = {
     archived: (count: number) => `Archived (${count})`,
     unarchive: "Unarchive",
     unarchiveThread: (title: string) => `Unarchive \u201c${title}\u201d`,
+    archiveThread: (title: string) => `Archive \u201c${title}\u201d`,
     deleteThread: (title: string) => `Delete \u201c${title}\u201d`,
     collapse: (name: string) => `Collapse ${name}`,
     expand: (name: string) => `Expand ${name}`,

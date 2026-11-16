@@ -133,9 +133,12 @@ export function SummaryRow({
           )}
         </>
       }
-      onDelete={() => void actions.remove(thread.id)}
-      deleteLabel={text.deleteThread(title)}
-      deleteProps={{ "data-testid": "row-delete-thread", "data-thread-id": thread.id }}
+      onDelete={() => void (archived ? actions.remove(thread.id) : actions.archive(thread.id))}
+      deleteLabel={archived ? text.deleteThread(title) : text.archiveThread(title)}
+      deleteProps={{
+        "data-testid": archived ? "row-delete-thread" : "row-archive-thread",
+        "data-thread-id": thread.id,
+      }}
     />
   );
 }

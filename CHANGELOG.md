@@ -51,10 +51,10 @@ Initial release, planned as 0.1.0.
 
 ### Changed
 
-- Thread Delete controls now remove the conversation immediately, without confirmation. The workspace is kept;
-  Archive remains the non-destructive alternative.
+- A non-archived thread row's `×` now archives it immediately, without confirmation. An archived row's `×` and
+  explicit Delete controls still remove the conversation immediately; the workspace is kept.
 - Middle-click a thread in the left list to delete it without selecting it first or starting browser autoscroll.
-  Deleting the selected thread clears the selection and its draft, as before.
+  Archiving or deleting the selected thread clears the selection and its draft.
 - `threads.create` requires an explicit `workspace`: use `{ "id": "…" }` for an existing workspace or
   `{ "new": {} }` to create one. Clients that omitted it must add one of these choices.
 - Automatically generated thread titles now follow sustained conversation changes, using bounded recent context

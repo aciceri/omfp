@@ -34,7 +34,13 @@ function setup(index: Partial<IndexSnapshot> | null = INDEX, before: ReactNode =
       <DeleteWorkspaceDialog />
     </>,
   );
-  for (const method of ["threads.delete", "threads.unarchive", "workspaces.remove", "workspaces.update"] as const) {
+  for (const method of [
+    "threads.archive",
+    "threads.delete",
+    "threads.unarchive",
+    "workspaces.remove",
+    "workspaces.update",
+  ] as const) {
     test.client.answers.set(method, () => ({}));
   }
   test.client.answers.set("fs.complete", () => ({ entries: [] }));
@@ -304,13 +310,14 @@ describe("omfp:threads", () => {
   });
 
   // spec: UI-020, UI-026
-  test("a row's delete button immediately deletes the thread", async () => {
+  test("a live row's close button immediately archives the thread", async () => {
     const { client, host, user } = setup();
     act(() => host.window.set(SELECTED_THREAD, "t1"));
-    const row = within(section("w1")).getByTestId("row-delete-thread");
+    const row = within(section("w1")).getByTestId("row-archive-thread");
     await user.click(row);
     expect(screen.queryByRole("alertdialog")).toBeNull();
-    expect(client.callsTo("threads.delete").map((call) => call.params)).toEqual([{ threadId: "t1" }]);
+    expect(client.callsTo("threads.archive").map((call) => call.params)).toEqual([{ threadId: "t1" }]);
+    expect(client.callsTo("threads.delete")).toHaveLength(0);
     expect(host.window.get(SELECTED_THREAD)).toBeUndefined();
   });
 
@@ -553,7 +560,7 @@ describe("omfp:threads", () => {
       "workspace-menu",
       "delete-workspace",
       "thread-row",
-      "row-delete-thread",
+      "row-archive-thread",
       "archived-toggle",
       "add-thread",
     ]) {

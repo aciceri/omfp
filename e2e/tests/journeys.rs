@@ -1156,9 +1156,14 @@ async fn an_archived_thread_is_found_under_archived_unarchived_then_deleted_with
     let survivor = journey.create_thread("survivor").await?;
     let doomed = journey.create_thread("doomed").await?;
 
-    // Archiving (from the header's ⋯, UI-482) hides it and leaves no thread selected.
-    journey.click("[data-testid=header-more]").await?;
-    journey.click("[data-testid=archive-thread]").await?;
+    // The row's × archives immediately, hides it and leaves no thread selected.
+    let doomed_row = row(&doomed);
+    journey.hover(&doomed_row).await?;
+    journey
+        .click(&format!(
+            "[data-testid=row-archive-thread][data-thread-id=\"{doomed}\"]"
+        ))
+        .await?;
     until_rows(&journey, &doomed, 0).await?;
     journey.element("[data-testid=no-thread]").await?;
 
@@ -1172,14 +1177,9 @@ async fn an_archived_thread_is_found_under_archived_unarchived_then_deleted_with
     journey.gone("[data-testid=archived-toggle]").await?;
     until_rows(&journey, &doomed, 1).await?;
 
-    // The row's delete button (shown on hover) deletes immediately; the workspace stays.
-    let doomed_row = row(&doomed);
-    journey.hover(&doomed_row).await?;
-    journey
-        .click(&format!(
-            "[data-testid=row-delete-thread][data-thread-id=\"{doomed}\"]"
-        ))
-        .await?;
+    // Header Delete remains the explicit permanent operation; it deletes immediately and keeps the workspace.
+    journey.click("[data-testid=header-more]").await?;
+    journey.click("[data-testid=delete-thread]").await?;
     until_rows(&journey, &doomed, 0).await?;
     journey
         .until("the thread directory to go", async |page| {

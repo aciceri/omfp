@@ -142,6 +142,47 @@
     border-block-start: var(--omfp-bw) solid var(--omfp-rule);
   }
 
+  /* Conversation search (UI-736): the occurrences in the rendered matching messages, the current one distinct, painted
+     as custom highlights over the text. */
+  ::highlight(omfp-search) {
+    background-color: var(--omfp-search-bg);
+    color: var(--omfp-search-fg);
+  }
+
+  ::highlight(omfp-search-current) {
+    background-color: var(--omfp-search-current-bg);
+    color: var(--omfp-search-current-fg);
+  }
+
+  /* Without custom highlights: veils over the occurrences, in an overlay on the list that takes no pointer. */
+  .omfp-transcript__marks {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+  }
+
+  .omfp-transcript__mark {
+    position: absolute;
+    background: var(--omfp-search-veil);
+  }
+
+  .omfp-transcript__mark[data-current="true"] {
+    background: var(--omfp-search-current-veil);
+  }
+
+  @media (forced-colors: active) {
+    ::highlight(omfp-search) {
+      background-color: Mark;
+      color: MarkText;
+    }
+
+    ::highlight(omfp-search-current) {
+      background-color: Highlight;
+      color: HighlightText;
+    }
+  }
+
   /* Messages (UI-171): the kit draws the name line and the bars; prose at 70ch (UI-144). */
   .omfp-message {
     font-size: var(--omfp-fs-md);

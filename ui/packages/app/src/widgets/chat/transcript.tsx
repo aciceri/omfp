@@ -6,7 +6,9 @@
  * viewport before moving on (UI-370), `Ctrl-d`/`Ctrl-u` and PageDown/PageUp scroll and keep the focus while the
  * focused item shows (UI-371). Every scroll is instant, so no motion setting changes them. A user message offers
  * "Fork from here" (UI-660), and `:fork` forks from the current message (UI-663). A message sent on another day than
- * the one before it shows a day separator inside its item, so `j`/`k` never stop on one (UI-750).
+ * the one before it shows a day separator inside its item, so `j`/`k` never stop on one (UI-750). `/` searches the
+ * conversation, visiting the query's occurrences and highlighting them in the rendered rows (UI-730, UI-736,
+ * search.ts).
  */
 
 import type { ThreadState } from "@omfp/core";
@@ -16,6 +18,7 @@ import {
   type DayMark,
   daySeparator,
   halfPageScrollTop,
+  highlightRegistry,
   type ItemEdges,
   isScrollUpKey,
   transcriptItems as items,
@@ -34,8 +37,15 @@ import {
   transcriptRowContent as rowContent,
   SCOPE_ATTRIBUTE,
   type ScrollPosition,
+  type SearchCursor,
+  type SearchMarks,
   scrollPosition,
+  searchMatchingBlocks,
+  searchOccurrenceIndex,
+  searchPattern,
+  searchRevealScroll,
   startOfDay,
+  stepSearch,
   strings,
   type TranscriptItem,
   useAnnounce,
@@ -57,9 +67,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { MessageRow, NoticeRowView, SystemRowView } from "./message.tsx";
+import { blockCardKey, MessageRow, NoticeRowView, SystemRowView } from "./message.tsx";
 import type { WidgetProps } from "./props.ts";
-import { measurementsKey, pinKey, useSelectedThread } from "./state.ts";
+import { collapsedThinkingHints, NO_MARKS, revealInline, textRanges, useSearchHighlights } from "./search.ts";
+import { measurementsKey, pinKey, useExpandCards, useSelectedThread } from "./state.ts";
 
 /** Height assumed for an item before it is measured. */
 const ESTIMATED_ITEM_PX = 120;
@@ -167,21 +178,17 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
   const lastPosition = useRef<ScrollPosition | undefined>(undefined);
   // The same list (and so the same item keys) while only the streaming reply changes (UI-191).
   const rows = items(state, useSettings().ui.showXdevNotices === true);
-  const matches = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return needle === ""
-      ? []
-      : rows.flatMap((row, index) => {
-          const content = rowContent(state, row);
-          return content?.type === "message" &&
-            content.view.blocks.some(
-              (block) =>
-                (block.type === "text" || block.type === "thinking") && block.text.toLowerCase().includes(needle),
-            )
-            ? [index]
-            : [];
-        });
-  }, [query, rows, state]);
+  const pattern = useMemo(() => searchPattern(query), [query]);
+  const matches = useMemo(
+    () =>
+      pattern === undefined
+        ? []
+        : rows.flatMap((row, index) => {
+            const content = rowContent(state, row);
+            return content?.type === "message" && searchMatchingBlocks(content.view, pattern).length > 0 ? [index] : [];
+          }),
+    [pattern, rows, state],
+  );
   // Mounting returns to where the user had scrolled up to, else to the bottom. Until the content is tall enough to
   // reach that position (items are measured after they render), the target is re-applied and the clamped scroll
   // events it causes are not stored; any user scrolling ends the restore.
@@ -419,20 +426,104 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
     }
   };
 
-  const visitMatch = (index: number | undefined) => {
-    if (index === undefined) return;
+  // Conversation search (UI-730, UI-736): where it is, how many occurrences each rendered matching row showed, and
+  // whether the next paint brings the current occurrence into view.
+  const [cursor, setCursor] = useState<SearchCursor | undefined>(undefined);
+  const renderedOccurrences = useRef(new Map<number, number>());
+  const revealPending = useRef(false);
+  const expandCards = useExpandCards();
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const visitMatch = (target: SearchCursor | undefined) => {
+    if (target === undefined) return;
     userScrolls();
     dispatch({ type: "userScrollUp" });
-    virtualizer.scrollToIndex(index, { align: "start" });
-    setCurrent(index);
+    // A match in a collapsed thinking block shows: the message's matching thinking blocks expand.
+    const row = rows[target.row];
+    const content = row === undefined ? undefined : rowContent(state, row);
+    if (row !== undefined && content?.type === "message" && pattern !== undefined) {
+      const { view } = content;
+      expandCards(
+        searchMatchingBlocks(view, pattern).flatMap((index) => {
+          const block = view.blocks[index];
+          return block?.type === "thinking" ? [blockCardKey(`${threadId}/${row.key}`, block, index)] : [];
+        }),
+      );
+    }
+    revealPending.current = true;
+    // A row not rendered yet is scrolled to first; the paint once it renders shows the occurrence.
+    if (containerRef.current?.querySelector(`[data-index="${target.row}"]`) == null) {
+      virtualizer.scrollToIndex(target.row, { align: "start" });
+    }
+    setCursor(target);
+    setCurrent(target.row);
   };
   const firstMatch = matches[0];
   const visitLatest = useRef(visitMatch);
   visitLatest.current = visitMatch;
+  // A new query, or a first match elsewhere, starts again at the first occurrence (expanding its thinking blocks).
   useEffect(() => {
-    if (searching) visitLatest.current(firstMatch);
-  }, [firstMatch, searching]);
-  const searchAt = matches.indexOf(current ?? -1);
+    if (searching) {
+      visitLatest.current(
+        firstMatch === undefined || pattern === undefined ? undefined : { row: firstMatch, occurrence: 0 },
+      );
+    }
+  }, [firstMatch, pattern, searching]);
+  const searchAt = cursor === undefined ? -1 : matches.indexOf(cursor.row);
+  /** The occurrences in the rendered matching rows, the current one apart; scrolls it into view after a visit. */
+  const searchMarks = (): SearchMarks => {
+    const list = listRef.current;
+    const container = containerRef.current;
+    if (pattern === undefined || list === null || container === null) {
+      return NO_MARKS;
+    }
+    const matching = new Set(matches);
+    const found: Range[] = [];
+    let mark: Range | undefined;
+    let markItem: Element | undefined;
+    for (const item of Array.from(list.children)) {
+      const index = Number(item.getAttribute("data-index") ?? Number.NaN);
+      const row = matching.has(index) ? rows[index] : undefined;
+      const content = row === undefined ? undefined : rowContent(state, row);
+      if (content?.type !== "message") {
+        continue;
+      }
+      const ranges = textRanges(item, pattern);
+      renderedOccurrences.current.set(index, ranges.length);
+      found.push(...collapsedThinkingHints(item, content.view, pattern));
+      if (cursor?.row === index) {
+        markItem = item;
+        mark = ranges[searchOccurrenceIndex(cursor.occurrence, ranges.length)];
+      }
+      found.push(...ranges.filter((range) => range !== mark));
+    }
+    if (revealPending.current && markItem !== undefined) {
+      revealPending.current = false;
+      if (mark !== undefined) {
+        revealInline(mark, markItem);
+      }
+      const top = container.getBoundingClientRect().top;
+      const edges = (rect: DOMRect): ItemEdges => ({ top: rect.top - top, bottom: rect.bottom - top });
+      const scroll = searchRevealScroll(
+        edges(markItem.getBoundingClientRect()),
+        mark === undefined ? undefined : edges(mark.getBoundingClientRect()),
+        container.clientHeight,
+      );
+      if (scroll !== undefined) {
+        container.scrollTop += scroll;
+      }
+    }
+    return { matches: found, current: mark };
+  };
+  const highlighting = searching && pattern !== undefined;
+  const repaint = useSearchHighlights(listRef, overlayRef, highlighting, searchMarks);
+  // A render may change the cursor or the matches without changing the rows' DOM.
+  useLayoutEffect(() => {
+    repaint();
+  });
+  const closeSearch = () => {
+    setSearching(false);
+    revealPending.current = false;
+  };
 
   return (
     <>
@@ -447,11 +538,18 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
               "data-testid": "conversation-search-input",
               onKeyDown: (event) => {
                 if (event.key === "Escape") {
-                  setSearching(false);
+                  closeSearch();
                   if (current !== undefined) focusItem(current);
                   else containerRef.current?.focus();
                 } else if (event.key === "Enter") {
-                  visitMatch(matches[(searchAt + (event.shiftKey ? -1 : 1) + matches.length) % matches.length]);
+                  visitMatch(
+                    stepSearch(
+                      cursor,
+                      event.shiftKey ? -1 : 1,
+                      matches,
+                      cursor === undefined ? undefined : renderedOccurrences.current.get(cursor.row),
+                    ),
+                  );
                 } else return;
                 event.preventDefault();
                 event.stopPropagation();
@@ -463,7 +561,7 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
           </span>
           <Button
             onPress={() => {
-              setSearching(false);
+              closeSearch();
               containerRef.current?.focus();
             }}
           >
@@ -542,6 +640,9 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
                 </div>
               );
             })}
+            {highlighting && highlightRegistry() === undefined && (
+              <div ref={overlayRef} className="omfp-transcript__marks" data-testid="search-marks" aria-hidden="true" />
+            )}
           </div>
           {footer}
         </div>

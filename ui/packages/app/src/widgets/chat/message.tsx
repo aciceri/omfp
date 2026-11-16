@@ -62,7 +62,7 @@ export function MessageRow({
       // Blocks only grow at the end while streaming, so the index is a stable key.
       // biome-ignore lint/suspicious/noArrayIndexKey: see above
       key={index}
-      cardKey={`${cardKey}/${index}`}
+      cardKey={blockCardKey(cardKey, block, index)}
       role={view.role}
       block={block}
       streaming={streaming}
@@ -103,6 +103,12 @@ export function MessageRow({
   );
 }
 
+/** The key of the collapsible block at `index` of the message `cardKey`: a thinking block's own key when it has one
+ * (UI-694), else its position. */
+export function blockCardKey(cardKey: string, block: Block, index: number): string {
+  return block.type === "thinking" && block.key !== undefined ? block.key : `${cardKey}/${index}`;
+}
+
 /** One block; renders again only when the block changes (the view model keeps unchanged blocks, UI-191), so a
  * streaming delta renders the growing block only. */
 const BlockView = memo(function BlockView({
@@ -140,7 +146,7 @@ const BlockView = memo(function BlockView({
         <Markdown text={block.text} data-testid="markdown" onOpenPath={openPath} />
       );
     case "thinking":
-      return <ThinkingBlock cardKey={block.key ?? cardKey} text={block.text} live={streaming && last} />;
+      return <ThinkingBlock cardKey={cardKey} text={block.text} live={streaming && last} />;
     case "image":
       return (
         <img

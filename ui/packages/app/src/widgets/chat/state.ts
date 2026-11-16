@@ -10,6 +10,7 @@ import {
   INITIAL_PIN,
   type PinState,
   SELECTED_THREAD,
+  useHost,
   useThread,
   useWindowState,
   type WindowKey,
@@ -92,6 +93,21 @@ export function useExpanded(cardKey: string, byDefault: boolean): [boolean, (exp
     [cardKey, setExpanded],
   );
   return [expanded[cardKey] ?? byDefault, set];
+}
+
+/** Expands the cards and disclosures `keys` name, as if the user had (conversation search, UI-736); the caller does
+ * not render again when a card changes. */
+export function useExpandCards(): (keys: readonly string[]) => void {
+  const { window } = useHost();
+  return useCallback(
+    (keys: readonly string[]) =>
+      window.set(EXPANDED, (previous) =>
+        keys.every((key) => previous[key] === true)
+          ? previous
+          : { ...previous, ...Object.fromEntries(keys.map((key) => [key, true])) },
+      ),
+    [window],
+  );
 }
 
 /** Wall-clock time and a ticker; tests inject a manual one. */

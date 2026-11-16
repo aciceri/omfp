@@ -244,6 +244,14 @@
     --omfp-press: color-mix(in oklab, var(--omfp-primary) 15%, transparent);
     --omfp-sel-bg: var(--omfp-grad-soft);
     --omfp-sel-fg: var(--omfp-on-surface);
+    /* Conversation search (UI-736): occurrences on the tertiary container, the current one on primary; the veils mark
+       them where the browser has no custom highlights (boxes over the text). */
+    --omfp-search-bg: var(--omfp-tertiary-container);
+    --omfp-search-fg: var(--omfp-on-tertiary-container);
+    --omfp-search-current-bg: var(--omfp-primary);
+    --omfp-search-current-fg: var(--omfp-on-primary);
+    --omfp-search-veil: color-mix(in oklab, var(--omfp-tertiary) 30%, transparent);
+    --omfp-search-current-veil: color-mix(in oklab, var(--omfp-primary) 45%, transparent);
     --omfp-disabled: 0.42;
     --omfp-dur-1: 110ms;
     --omfp-dur-2: 220ms;

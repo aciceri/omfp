@@ -178,6 +178,16 @@ export {
   settleQueueOp,
 } from "../vm/queue.ts";
 export {
+  matchingBlocks as searchMatchingBlocks,
+  occurrenceIndex as searchOccurrenceIndex,
+  occurrences as searchOccurrences,
+  revealScroll as searchRevealScroll,
+  revealScrollLeft as searchRevealScrollLeft,
+  type SearchCursor,
+  searchPattern,
+  stepSearch,
+} from "../vm/search.ts";
+export {
   appendTranscriptPage,
   EMPTY_TRANSCRIPT,
   type SubagentRow,
@@ -414,6 +424,13 @@ export {
   SlotReportScope,
   WidgetReporter,
 } from "./reports.ts";
+export {
+  highlightRegistry,
+  paintSearchHighlights,
+  SEARCH_CURRENT_HIGHLIGHT,
+  SEARCH_MATCH_HIGHLIGHT,
+  type SearchMarks,
+} from "./search-highlights.ts";
 export {
   DEFAULT_DENSITY,
   DEFAULT_FONT_SIZE,

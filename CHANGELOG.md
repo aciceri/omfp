@@ -74,6 +74,8 @@ Initial release, planned as 0.1.0.
   and MCP tools remain unchanged.
 - `/` searches the current conversation; `Space /` opens a fuzzy thread picker with live previews. Enter confirms,
   Escape restores the original thread. `Space t` focuses threads in wide windows and toggles the narrow drawer.
+- Conversation search highlights every occurrence of the query in the visible messages, the current one distinct.
+  Enter and Shift-Enter visit each occurrence, expanding thinking blocks that contain one; Escape clears them.
 - `Space v` is the fuzzy view picker, with visible `1`–`9` shortcuts and arrows/Enter. Use `[ v` / `] v` to cycle;
   the old `g v` and `Space v v/n/p` paths are removed. Notices open by click or `:notice`, not `g n`.
 - Cleared composer drafts show an `Esc` then `u` recovery hint. Normal-mode `u` restores only the latest draft

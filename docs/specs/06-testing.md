@@ -224,7 +224,8 @@ Kept few and focused on journeys; everything else belongs to lower layers.
 
 Issue #57's thread-search journey (`e2e/tests/keys.rs`, fake launcher) runs at 1400 and 900 px: fuzzy filtering and
 arrows preview threads, Escape restores the original and Enter confirms; `Space t` focuses the selected row and
-`za` collapses its workspace; `/` finds a message outside the virtualized window in the current conversation.
+`za` collapses its workspace; `/` finds a message outside the virtualized window in the current conversation, paints
+the occurrence as the current custom highlight and clears every highlight on Escape (UI-736).
 Its histories are bound to each workspace cwd with `push_run_for`, so draft/header model-discovery launches cannot
 consume a conversation fixture; the same search/preview assertions run with the combined pre-first-prompt picker.
 

@@ -230,6 +230,17 @@ export const TEXT_PAIRS: readonly (readonly [text: string, background: string])[
   ["warning", "surface"],
 ];
 
+/** The conversation search's highlights (UI-736): role pairs Material keeps readable (both in {@link TEXT_PAIRS}), so
+ * every theme follows; the veils mark occurrences where the browser has no custom highlights. */
+export const SEARCH_TOKENS: Readonly<Record<string, string>> = {
+  "search-bg": "var(--omfp-tertiary-container)",
+  "search-fg": "var(--omfp-on-tertiary-container)",
+  "search-current-bg": "var(--omfp-primary)",
+  "search-current-fg": "var(--omfp-on-primary)",
+  "search-veil": "color-mix(in oklab, var(--omfp-tertiary) 30%, transparent)",
+  "search-current-veil": "color-mix(in oklab, var(--omfp-primary) 45%, transparent)",
+};
+
 /** The kit's earlier ad-hoc tokens, replaced by the ones above with no aliases (09-design, Tokens). */
 export const RETIRED_TOKEN = /--omfp-(?:radius-|font-size-|row-height|line-height|space-)/;
 

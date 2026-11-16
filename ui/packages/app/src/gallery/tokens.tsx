@@ -123,11 +123,14 @@ const DERIVED = [
   "code-bg",
   "side-bg",
   "kbd-bg",
+  "search-bg",
+  "search-current-bg",
 ] as const;
 
 /**
- * Text roles, the derived status colors (`ok`, `warn`, UI-136) and gradient stops on the backgrounds they sit on
- * (UI-174, UI-135): each must reach AA. Names are tokens without `--omfp-`.
+ * Text roles, the derived status colors (`ok`, `warn`, UI-136), gradient stops and the conversation search's
+ * highlights (UI-736) on the backgrounds they sit on (UI-174, UI-135): each must reach AA. Names are tokens without
+ * `--omfp-`.
  */
 const TEXT_PAIRS: readonly (readonly [text: string, background: string])[] = [
   ["on-surface", "surface"],
@@ -163,6 +166,9 @@ const TEXT_PAIRS: readonly (readonly [text: string, background: string])[] = [
   ["grad-end", "surface"],
   ["grad-end", "surface-container-lowest"],
   ["tertiary", "surface-container-lowest"],
+  // The conversation search's occurrences and its current one (UI-736).
+  ["search-fg", "search-bg"],
+  ["search-current-fg", "search-current-bg"],
 ];
 
 function measure(): ContrastPair[] {

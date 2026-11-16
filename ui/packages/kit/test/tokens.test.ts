@@ -10,6 +10,7 @@ import {
   FONT_TOKENS,
   FRAME_SIZES,
   prop,
+  SEARCH_TOKENS,
   SHAPE_TOKENS,
   SPACE_STEPS,
   SURFACE_TOKENS,
@@ -298,5 +299,16 @@ describe("tokens.css", () => {
     expect(differing(light, DERIVED_TOKENS)).toEqual({});
     const derived = Object.keys(DERIVED_TOKENS).map(prop);
     expect([...darkForced.declarations.keys()].filter((name) => derived.includes(name))).toEqual([]);
+  });
+
+  // spec: UI-736
+  test("the search highlights derive from role pairs that reach AA, the same in light and dark", () => {
+    expect(differing(light, SEARCH_TOKENS)).toEqual({});
+    const search = Object.keys(SEARCH_TOKENS).map(prop);
+    expect([...darkForced.declarations.keys()].filter((name) => search.includes(name))).toEqual([]);
+    const pairs = TEXT_PAIRS.map(([text, background]) => `${text} on ${background}`);
+    expect(
+      ["on-tertiary-container on tertiary-container", "on-primary on primary"].filter((pair) => !pairs.includes(pair)),
+    ).toEqual([]);
   });
 });

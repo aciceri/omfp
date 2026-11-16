@@ -83,7 +83,7 @@ async fn space_opens_the_leader_menu_and_runs_the_binding_picked() -> anyhow::Re
     Ok(())
 }
 
-// spec: UI-022, UI-095, UI-201, UI-092, UI-730
+// spec: UI-022, UI-095, UI-201, UI-092, UI-730, UI-736
 #[tokio::test(flavor = "multi_thread")]
 async fn thread_picker_previews_confirms_and_restores_with_keyboard_focus_at_both_widths()
 -> anyhow::Result<()> {
@@ -165,6 +165,7 @@ async fn thread_picker_previews_confirms_and_restores_with_keyboard_focus_at_bot
 }
 
 async fn search_current_conversation(journey: &Journey, width: u32) -> anyhow::Result<()> {
+    use serde_json::json;
     normal_mode(journey).await?;
     journey.keys("/").await?;
     journey.until_focused("conversation-search-input").await?;
@@ -188,10 +189,29 @@ async fn search_current_conversation(journey: &Journey, width: u32) -> anyhow::R
             .await?
             .contains("1 / 1")
     );
+    // The occurrence is painted as the current custom highlight (UI-736).
+    journey
+        .until("current occurrence highlighted", async |page| {
+            let marked = page
+                .eval(
+                    "const current = CSS.highlights.get('omfp-search-current');
+                     return current === undefined ? [] : [...current].map(String);",
+                    Vec::new(),
+                )
+                .await?;
+            Ok((marked == json!(["message 12"])).then_some(()))
+        })
+        .await?;
     journey
         .screenshot(&format!("conversation-search-{width}"))
         .await?;
     journey.keys(Key::Escape).await?;
     journey.gone("[data-testid=conversation-search]").await?;
+    journey
+        .until("search highlights cleared", async |page| {
+            let left = page.eval("return CSS.highlights.size;", Vec::new()).await?;
+            Ok((left == json!(0)).then_some(()))
+        })
+        .await?;
     Ok(())
 }

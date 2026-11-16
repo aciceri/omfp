@@ -41,6 +41,79 @@ function scrollTo(element: HTMLElement, scrollTop: number, scrollHeight: number,
   fireEvent.scroll(element);
 }
 
+/** A stand-in for the CSS Custom Highlight API, which happy-dom lacks: a highlight is a set of ranges. */
+class FakeHighlight extends Set<Range> {
+  priority = 0;
+  constructor(...ranges: Range[]) {
+    super(ranges);
+  }
+}
+
+/** Installs {@link FakeHighlight} and a `CSS.highlights` registry; call `restore` to remove them. */
+function installHighlights(): { registry: Map<string, FakeHighlight>; restore: () => void } {
+  const registry = new Map<string, FakeHighlight>();
+  const saved = ["CSS", "Highlight"].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
+  Object.defineProperty(globalThis, "CSS", { configurable: true, value: { highlights: registry } });
+  Object.defineProperty(globalThis, "Highlight", { configurable: true, value: FakeHighlight });
+  return {
+    registry,
+    restore: () => {
+      for (const [name, descriptor] of saved) {
+        if (descriptor === undefined) {
+          Reflect.deleteProperty(globalThis, name);
+        } else {
+          Object.defineProperty(globalThis, name, descriptor);
+        }
+      }
+    },
+  };
+}
+
+/** A conversation with the query "plan" in user text, Markdown prose, inline code, a code block and thinking. */
+const PLANS: ThreadEvent = {
+  kind: "history",
+  session: { session_id: "s", resumed: true },
+  messages: [
+    { role: "user", content: "Find the plan" },
+    {
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "plan inside thinking" },
+        { type: "text", text: "The **plan** calls `plan()`:\n\n```js\nconst plan = 1;\n```\n\nPLAN done." },
+      ],
+    },
+    { role: "user", content: "nothing here" },
+    {
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "another plan" },
+        { type: "text", text: "ok" },
+      ],
+    },
+  ],
+};
+
+/** Opens the conversation search and types `query`. */
+async function search(run: (id: string) => void, query: string): Promise<HTMLElement> {
+  act(() => {
+    run("nav.search");
+  });
+  const input = screen.getByLabelText("Search conversation");
+  await act(async () => {
+    fireEvent.change(input, { target: { value: query } });
+  });
+  return input;
+}
+
+/** Presses `key` in the search field and lets the highlights repaint. */
+async function press(input: HTMLElement, key: string, shiftKey = false): Promise<void> {
+  await act(async () => {
+    fireEvent.keyDown(input, { key, shiftKey });
+  });
+}
+
+const searchStatus = () => screen.getByTestId("conversation-search").querySelector("[role=status]")?.textContent;
+
 describe("transcript", () => {
   // spec: UI-095, UI-730
   test("search stays in this conversation and visits matching messages", () => {
@@ -66,6 +139,262 @@ describe("transcript", () => {
     expect(screen.getByTestId("conversation-search").textContent).toContain("0 / 0");
     fireEvent.keyDown(screen.getByLabelText("Search conversation"), { key: "Escape" });
     expect(screen.queryByTestId("conversation-search")).toBeNull();
+  });
+
+  // spec: UI-736
+  test("search highlights every occurrence in prose, code and thinking, visits each, expands thinking, Escape clears", async () => {
+    const highlights = installHighlights();
+    try {
+      const test = renderThread(<TranscriptWidget />, [PLANS]);
+      const input = await search((id) => test.host.commands.run(id), "plan");
+      const marked = (name: string) => [...(highlights.registry.get(name) ?? [])].map((range) => range.toString());
+      const current = () => [...(highlights.registry.get("omfp-search-current") ?? [])][0];
+      const inside = (selector: string) => current()?.startContainer.parentElement?.closest(selector) != null;
+      // The first match is current; the others and the collapsed thinking blocks that match ("Thought") are marked.
+      expect(searchStatus()).toBe("1 / 3");
+      expect(marked("omfp-search-current")).toEqual(["plan"]);
+      expect(inside('[data-testid="plain-text"]')).toBe(true);
+      expect(marked("omfp-search")).toEqual(["Thought", "plan", "plan", "plan", "PLAN", "Thought"]);
+      // Visiting the assistant's reply expands its thinking, whose occurrence comes first; Enter then visits each
+      // occurrence of that message: bold prose, inline code, the code block and the last line.
+      await press(input, "Enter");
+      const thinking = () => screen.getAllByTestId("thinking").map((block) => block.dataset.expanded);
+      expect(thinking()).toEqual(["true", "false"]);
+      expect([searchStatus(), current()?.toString(), inside(".omfp-reasoning__text")]).toEqual(["2 / 3", "plan", true]);
+      expect(marked("omfp-search")).toEqual(["plan", "plan", "plan", "plan", "PLAN", "Thought"]);
+      const visited: (string | boolean | undefined)[][] = [];
+      for (let step = 0; step < 4; step += 1) {
+        await press(input, "Enter");
+        visited.push([searchStatus(), current()?.toString(), inside("strong"), inside("pre"), inside("code")]);
+      }
+      expect(visited).toEqual([
+        ["2 / 3", "plan", true, false, false],
+        ["2 / 3", "plan", false, false, true],
+        ["2 / 3", "plan", false, true, true],
+        ["2 / 3", "PLAN", false, false, false],
+      ]);
+      // The next message's only occurrence is in its collapsed thinking block, which expands; then it wraps.
+      await press(input, "Enter");
+      expect([searchStatus(), current()?.toString(), thinking()]).toEqual(["3 / 3", "plan", ["true", "true"]]);
+      await press(input, "Enter");
+      expect([searchStatus(), current()?.toString()]).toEqual(["1 / 3", "plan"]);
+      // Shift-Enter goes back to the last occurrence of the previous message.
+      await press(input, "Enter", true);
+      await press(input, "Enter", true);
+      expect([searchStatus(), current()?.toString()]).toEqual(["2 / 3", "PLAN"]);
+      await press(input, "Enter", true);
+      expect([searchStatus(), current()?.toString(), inside("pre")]).toEqual(["2 / 3", "plan", true]);
+      // Escape removes every highlight.
+      await press(input, "Escape");
+      expect([...highlights.registry.keys()]).toEqual([]);
+    } finally {
+      highlights.restore();
+    }
+  });
+
+  // spec: UI-736
+  test("an inline path link in Markdown is the message's text: its occurrence is highlighted and visited", async () => {
+    const highlights = installHighlights();
+    try {
+      const test = renderThread(<TranscriptWidget />, [
+        {
+          kind: "history",
+          session: { session_id: "s", resumed: true },
+          messages: [
+            { role: "user", content: "where?" },
+            { role: "assistant", content: [{ type: "text", text: "Edit `src/main.rs` now." }] },
+          ],
+        },
+      ]);
+      await search((id) => test.host.commands.run(id), "MAIN.rs");
+      const current = [...(highlights.registry.get("omfp-search-current") ?? [])][0];
+      expect([
+        searchStatus(),
+        current?.toString(),
+        current?.startContainer.parentElement?.closest(".omfp-path-link") != null,
+      ]).toEqual(["1 / 1", "main.rs", true]);
+    } finally {
+      highlights.restore();
+    }
+  });
+
+  // spec: UI-736
+  test("a new query starts at its first occurrence, expanding the thinking it matches, even in the same message", async () => {
+    const highlights = installHighlights();
+    try {
+      const test = renderThread(<TranscriptWidget />, [
+        {
+          kind: "history",
+          session: { session_id: "s", resumed: true },
+          messages: [
+            {
+              role: "assistant",
+              content: [
+                { type: "thinking", thinking: "hidden gamma" },
+                { type: "text", text: "alpha alpha alpha beta beta" },
+              ],
+            },
+          ],
+        },
+      ]);
+      const input = await search((id) => test.host.commands.run(id), "alpha");
+      await press(input, "Enter");
+      await press(input, "Enter");
+      const current = () => [...(highlights.registry.get("omfp-search-current") ?? [])][0];
+      expect([current()?.toString(), current()?.startOffset]).toEqual(["alpha", 12]);
+      const retype = async (query: string) =>
+        act(async () => {
+          fireEvent.change(input, { target: { value: query } });
+        });
+      await retype("beta");
+      expect([current()?.toString(), current()?.startOffset]).toEqual(["beta", 18]);
+      expect(screen.getByTestId("thinking").dataset.expanded).toBe("false");
+      await retype("gamma");
+      expect([screen.getByTestId("thinking").dataset.expanded, current()?.toString(), searchStatus()]).toEqual([
+        "true",
+        "gamma",
+        "1 / 1",
+      ]);
+    } finally {
+      highlights.restore();
+    }
+  });
+
+  // spec: UI-736
+  test("visiting an occurrence in an off-screen column of a wide table scrolls the table sideways to it", async () => {
+    const highlights = installHighlights();
+    const saved = Object.getOwnPropertyDescriptor(Range.prototype, "getBoundingClientRect");
+    let table: HTMLElement | null = null;
+    // The occurrence sits 500 px into the table's content, which shows 300 px.
+    Object.defineProperty(Range.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: () => new DOMRect(500 - (table?.scrollLeft ?? 0), 10, 40, 16),
+    });
+    try {
+      const test = renderThread(<TranscriptWidget />, [
+        {
+          kind: "history",
+          session: { session_id: "s", resumed: true },
+          messages: [
+            {
+              role: "assistant",
+              content: [{ type: "text", text: "| a | b |\n| --- | --- |\n| x | far target |" }],
+            },
+          ],
+        },
+      ]);
+      table = document.querySelector<HTMLElement>(".omfp-markdown__table");
+      if (table !== null) {
+        Object.defineProperty(table, "scrollWidth", { configurable: true, value: 1000 });
+        Object.defineProperty(table, "clientWidth", { configurable: true, value: 300 });
+        Object.defineProperty(table, "getBoundingClientRect", {
+          configurable: true,
+          value: () => new DOMRect(0, 0, 300, 100),
+        });
+      }
+      await search((id) => test.host.commands.run(id), "target");
+      // Centred: 500 - (300 - 40) / 2.
+      expect([searchStatus(), table?.scrollLeft]).toEqual(["1 / 1", 370]);
+    } finally {
+      if (saved === undefined) {
+        Reflect.deleteProperty(Range.prototype, "getBoundingClientRect");
+      } else {
+        Object.defineProperty(Range.prototype, "getBoundingClientRect", saved);
+      }
+      highlights.restore();
+    }
+  });
+
+  // spec: UI-736
+  test("without custom highlights, boxes are cut to what a wide table's scroller shows", async () => {
+    const saved = Object.getOwnPropertyDescriptor(Range.prototype, "getClientRects");
+    let lineLeft = 500;
+    Object.defineProperty(Range.prototype, "getClientRects", {
+      configurable: true,
+      value: () => [new DOMRect(lineLeft, 10, 40, 16)],
+    });
+    try {
+      const test = renderThread(<TranscriptWidget />, [
+        {
+          kind: "history",
+          session: { session_id: "s", resumed: true },
+          messages: [
+            {
+              role: "assistant",
+              content: [{ type: "text", text: "| a | b |\n| --- | --- |\n| x | far target |" }],
+            },
+          ],
+        },
+      ]);
+      const table = document.querySelector<HTMLElement>(".omfp-markdown__table");
+      if (table !== null) {
+        table.style.overflowX = "auto";
+        Object.defineProperty(table, "getBoundingClientRect", {
+          configurable: true,
+          value: () => new DOMRect(0, 0, 300, 100),
+        });
+      }
+      await search((id) => test.host.commands.run(id), "target");
+      const widths = () =>
+        Array.from(screen.getByTestId("search-marks").children, (box) => (box as HTMLElement).style.width);
+      // Scrolled out of the table: no box over the gutter.
+      expect(widths()).toEqual([]);
+      // Half in view: the box stops at the table's edge.
+      lineLeft = 280;
+      await act(async () => {
+        if (table !== null) fireEvent.scroll(table);
+      });
+      expect(widths()).toEqual(["20px"]);
+    } finally {
+      if (saved === undefined) {
+        Reflect.deleteProperty(Range.prototype, "getClientRects");
+      } else {
+        Object.defineProperty(Range.prototype, "getClientRects", saved);
+      }
+    }
+  });
+
+  // spec: UI-736
+  test("without custom highlights, an overlay marks each occurrence and the current one, gone on Escape", async () => {
+    const saved = Object.getOwnPropertyDescriptor(Range.prototype, "getClientRects");
+    // happy-dom lays nothing out: each range covers one line.
+    let lineTop = 20;
+    Object.defineProperty(Range.prototype, "getClientRects", {
+      configurable: true,
+      value: () => [new DOMRect(10, lineTop, 30, 16)],
+    });
+    try {
+      const test = renderThread(<TranscriptWidget />, [PLANS]);
+      const input = await search((id) => test.host.commands.run(id), "PLAN");
+      const boxes = () =>
+        Array.from(screen.getByTestId("search-marks").children, (box) => box.getAttribute("data-current"));
+      expect(boxes().filter((current) => current === "true").length).toBe(1);
+      expect(boxes().length).toBe(7);
+      const box = screen.getByTestId("search-marks").firstElementChild;
+      expect([box?.getAttribute("style")?.includes("top: 20px"), box?.className]).toEqual([
+        true,
+        "omfp-transcript__mark",
+      ]);
+      await press(input, "Enter");
+      expect(boxes().length).toBe(7);
+      // Content scrolling inside the list (a wide table) moves the text: the boxes follow.
+      lineTop = 5;
+      const [markdown] = screen.getAllByTestId("markdown");
+      await act(async () => {
+        if (markdown !== undefined) fireEvent.scroll(markdown);
+      });
+      expect(screen.getByTestId("search-marks").firstElementChild?.getAttribute("style")?.includes("top: 5px")).toBe(
+        true,
+      );
+      await press(input, "Escape");
+      expect(screen.queryByTestId("search-marks")).toBeNull();
+    } finally {
+      if (saved === undefined) {
+        Reflect.deleteProperty(Range.prototype, "getClientRects");
+      } else {
+        Object.defineProperty(Range.prototype, "getClientRects", saved);
+      }
+    }
   });
 
   // spec: UI-040, UI-094

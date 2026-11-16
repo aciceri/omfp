@@ -106,7 +106,7 @@ async fn focus_measures(journey: &Journey) -> anyhow::Result<Vec<(bool, String)>
     Ok(serde_json::from_value(value)?)
 }
 
-// spec: UI-173, UI-174, UI-132, UI-135, UI-140, UI-196, UI-337, UI-338, UI-510, UI-512, UI-514
+// spec: UI-173, UI-174, UI-132, UI-135, UI-140, UI-196, UI-337, UI-338, UI-510, UI-512, UI-514, UI-736
 #[tokio::test(flavor = "multi_thread")]
 async fn the_kit_gallery_text_reaches_aa_in_every_theme() -> anyhow::Result<()> {
     let journey = Journey::start(Vec::new()).await?;

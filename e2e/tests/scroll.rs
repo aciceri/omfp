@@ -191,6 +191,7 @@ async fn create_thread(journey: &Journey) -> anyhow::Result<String> {
             thinking_level: None,
             approval_mode: None,
             prompt: None,
+            images: Vec::new(),
         })
         .await?
         .id;

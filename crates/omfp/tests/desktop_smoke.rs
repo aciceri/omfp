@@ -636,6 +636,7 @@ export default function init(omfp) {
             thinking_level: None,
             approval_mode: None,
             prompt: None,
+            images: Vec::new(),
         })
         .await
         .unwrap();
@@ -824,6 +825,7 @@ async fn desktop_file_viewers_open_restore_and_close() {
             thinking_level: None,
             approval_mode: None,
             prompt: None,
+            images: Vec::new(),
         })
         .await
         .unwrap();

@@ -317,7 +317,7 @@ impl ApprovalMode {
 }
 
 /// `threads.create` params.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateThreadParams {
     /// For scripts and agents; without it the title is generated from the conversation (DMN-073).
@@ -338,6 +338,10 @@ pub struct CreateThreadParams {
     /// (DMN-211).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompt: Option<String>,
+    /// Images of the first message, sent with `prompt`; a first message may be images only (DMN-211).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(with = "Vec<Value>")]
+    pub images: Vec<ImageContent>,
 }
 
 /// `threads.update` params; absent fields are unchanged.

@@ -241,6 +241,7 @@ async fn create_thread(journey: &Journey, workspace: &str) -> anyhow::Result<Str
             thinking_level: None,
             approval_mode: None,
             prompt: None,
+            images: Vec::new(),
         })
         .await?;
     connection.close().await?;

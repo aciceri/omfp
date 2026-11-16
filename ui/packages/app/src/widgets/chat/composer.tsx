@@ -32,6 +32,7 @@ import {
   completeFile,
   DRAFT_MESSAGE,
   DRAFT_THREAD,
+  type Draft,
   type DraftThread,
   draftKey,
   EMPTY_DRAFT,
@@ -48,6 +49,7 @@ import {
   keyLabel,
   MODEL_CHANGING,
   type Modifiers,
+  type OmfpHost,
   queueKeys,
   queueModifier,
   rawPasteKeys,
@@ -144,9 +146,10 @@ export function ComposerWidget(_props: WidgetProps) {
 }
 
 /**
- * The draft thread's composer (UI-023): Enter (or the button) creates the thread with the text as first message; the
- * text stays when that fails. It takes the focus whenever the draft is opened; Esc leaves it, discarding an empty
- * draft. `@` completes the draft workspace's files (UI-732); with no thread yet there are no `/` commands.
+ * The draft thread's composer (UI-023): Enter (or the button) creates the thread with the text and the pasted or
+ * dropped images (UI-060) as first message; they stay when that fails. It takes the focus whenever the draft is
+ * opened; Esc leaves it, discarding an empty draft. `@` completes the draft workspace's files (UI-732); with no
+ * thread yet there are no `/` commands.
  */
 function DraftComposer({ draft }: { draft: DraftThread }) {
   const actions = useThreadActions();
@@ -155,6 +158,8 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
   /** The input has the focus: the keymap is in insert mode (UI-098), drawn as the gradient border (UI-172). */
   const [insert, setInsert] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const host = useHost();
+  const reads = draftReads(host);
   const touch = useCoarsePointer();
   const labels = strings.shell.draft;
   // biome-ignore lint/correctness/useExhaustiveDependencies: `draft` is a new object each time the draft is opened
@@ -162,15 +167,21 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
     inputRef.current?.focus();
   }, [draft]);
   const send = () => {
-    if (sending || isBlank(message)) {
+    if (sending || (isBlank(message) && reads.size === 0)) {
       return;
     }
     setSending(true);
-    void actions.sendDraft().then((sent) => {
-      if (!sent) {
-        setSending(false);
-      }
-    });
+    // Images still being read join the message before it is sent; a draft discarded meanwhile is not sent, nor is
+    // the one opened after it (the user did not submit that).
+    const watch = watchDraft(host);
+    void Promise.all(reads)
+      .then(() => (watch.gone() ? false : actions.sendDraft()))
+      .then((sent) => {
+        watch.stop();
+        if (!sent) {
+          setSending(false);
+        }
+      });
   };
   const leave = () => {
     if (isBlank(message)) {
@@ -200,6 +211,25 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
     }
     setDismissed(false);
   };
+  const images = imageInput((files) => {
+    // While the thread is created the message is read-only: images pasted or dropped then are ignored.
+    if (sending) {
+      return;
+    }
+    // A read belongs to the draft it started in: once that draft is gone (sent, discarded, its workspace removed),
+    // its images join no other draft, even one opened before the read ends (a sent draft waited for them).
+    const watch = watchDraft(host);
+    const read = attachImages(files, (update) => {
+      if (!watch.gone()) {
+        setMessage(update);
+      }
+    });
+    reads.add(read);
+    void read.then(() => {
+      watch.stop();
+      reads.delete(read);
+    });
+  }, pastes.onPaste);
   const onKeyDownCapture = (event: KeyboardEvent<HTMLElement>) => {
     if (event.target !== inputRef.current || event.nativeEvent.isComposing) {
       return;
@@ -227,9 +257,12 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
         event.preventDefault();
         send();
       }}
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={images.onDrop}
       onKeyDownCapture={onKeyDownCapture}
     >
       <KitComposer mode={insert ? "insert" : "normal"}>
+        {message.images.length > 0 && <Attachments draft={message} setDraft={setMessage} />}
         {message.pastes.length > 0 && <PasteChips draft={message} setDraft={setMessage} inputRef={inputRef} />}
         <Autocomplete
           inputValue={message.text}
@@ -249,7 +282,7 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
             onBlur={() => setInsert(false)}
             isReadOnly={sending}
             inputRef={inputRef}
-            onPaste={pastes.onPaste}
+            onPaste={images.onPaste}
           />
           <CompletionMenu
             inputRef={inputRef}
@@ -472,6 +505,76 @@ async function attachments(files: readonly File[]): Promise<ImageContent[]> {
   return images.filter((image) => image !== undefined);
 }
 
+/** Per window, the draft thread's pasted or dropped images still being read. */
+const DRAFT_READS = new WeakMap<OmfpHost["window"], Set<Promise<void>>>();
+
+/**
+ * The draft thread's images still being read in `host`'s window: a send waits for them. They belong to the draft,
+ * not to its composer, which a thread switch unmounts while the draft stays (UI-064), so a send from the composer
+ * mounted again still waits for them.
+ */
+function draftReads(host: OmfpHost): Set<Promise<void>> {
+  let reads = DRAFT_READS.get(host.window);
+  if (reads === undefined) {
+    reads = new Set();
+    DRAFT_READS.set(host.window, reads);
+  }
+  return reads;
+}
+
+/**
+ * Watches the draft thread open now (UI-023): `gone()` turns true once it is discarded (sent, Esc, its workspace
+ * removed), whatever draft opens after it; `stop()` ends the watch.
+ */
+function watchDraft(host: OmfpHost): { gone: () => boolean; stop: () => void } {
+  let gone = host.window.get(DRAFT_THREAD) === undefined;
+  const stop = host.window.subscribe(DRAFT_THREAD, () => {
+    if (host.window.get(DRAFT_THREAD) === undefined) {
+      gone = true;
+    }
+  });
+  return { gone: () => gone, stop };
+}
+
+/**
+ * Reads the image files among `files` and appends them to the draft (UI-060); resolves once they are in (never
+ * rejects: an unreadable file attaches nothing).
+ */
+async function attachImages(
+  files: readonly File[],
+  setDraft: (update: (previous: Draft) => Draft) => void,
+): Promise<void> {
+  const images = await attachments(files).catch((): ImageContent[] => []);
+  if (images.length > 0) {
+    setDraft((previous) => ({ ...previous, images: [...previous.images, ...images] }));
+  }
+}
+
+/**
+ * Image paste and drop of a composer (UI-060): pasted or dropped files go to `attach`; any other paste goes to
+ * `onTextPaste`. The thread's composer and the draft thread's (UI-023) share it.
+ */
+function imageInput(
+  attach: (files: readonly File[]) => void,
+  onTextPaste: (event: ClipboardEvent<HTMLTextAreaElement>) => void,
+) {
+  return {
+    onPaste: (event: ClipboardEvent<HTMLTextAreaElement>) => {
+      const files = [...event.clipboardData.files].filter((file) => file.type.startsWith("image/"));
+      if (files.length > 0) {
+        event.preventDefault();
+        attach(files);
+        return;
+      }
+      onTextPaste(event);
+    },
+    onDrop: (event: DragEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      attach([...event.dataTransfer.files]);
+    },
+  };
+}
+
 /**
  * The thread's `/` commands: those of the last `available_commands_update` (UI-060), or `thread.commands` asked once
  * while the state has none yet.
@@ -616,13 +719,6 @@ export const Composer = memo(function Composer({
     }
     setDismissed(false);
   };
-  const attach = (files: readonly File[]) => {
-    void attachments(files).then((images) => {
-      if (images.length > 0) {
-        setDraft((previous) => ({ ...previous, images: [...previous.images, ...images] }));
-      }
-    });
-  };
 
   /** `Ctrl-C` (UI-063): clears a non-empty draft, kept for `u`; aborts an empty one (or on a second press within
    * {@link INTERRUPT_WINDOW_MS}) without putting the queued texts back. */
@@ -709,19 +805,7 @@ export const Composer = memo(function Composer({
     }
     composerKey(event, inputRef.current, { busy, touch, onChange: pastes.onChange, send, leave });
   };
-  const onPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
-    const files = [...event.clipboardData.files].filter((file) => file.type.startsWith("image/"));
-    if (files.length > 0) {
-      event.preventDefault();
-      attach(files);
-      return;
-    }
-    pastes.onPaste(event);
-  };
-  const onDrop = (event: DragEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    attach([...event.dataTransfer.files]);
-  };
+  const { onPaste, onDrop } = imageInput((files) => void attachImages(files, setDraft), pastes.onPaste);
 
   return (
     <form

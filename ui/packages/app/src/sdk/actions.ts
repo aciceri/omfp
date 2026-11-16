@@ -38,8 +38,9 @@ export interface ThreadActions {
   openDraft(workspaceId: string): void;
   /** Drops the draft thread and its text. */
   discardDraft(): void;
-  /** Creates the daemon thread with the draft's first message, then selects it. A failed creation keeps the draft;
-   * a failed first prompt carrying a surviving thread ID transfers the unsent draft there for retry. */
+  /** Creates the daemon thread with the draft's first message (text, images or both), then selects it. A failed
+   * creation keeps the draft; a failed first prompt carrying a surviving thread ID transfers the unsent draft there
+   * for retry. */
   sendDraft(): Promise<boolean>;
   archive(threadId: string): Promise<void>;
   unarchive(threadId: string): Promise<void>;
@@ -267,13 +268,16 @@ export function threadActions(host: OmfpHost): ThreadActions {
       const draft = window.get(DRAFT_THREAD);
       const message = window.get(DRAFT_MESSAGE);
       const prompt = expandPastes(message.text, message.pastes).trim();
-      if (draft === undefined || prompt === "") {
+      const images = message.images;
+      // A first message may be images only, as in a thread (UI-060).
+      if (draft === undefined || (prompt === "" && images.length === 0)) {
         return false;
       }
       try {
         const thread = await client.call("threads.create", {
           workspace: { id: draft.workspaceId },
-          prompt,
+          ...(prompt === "" ? {} : { prompt }),
+          ...(images.length === 0 ? {} : { images: [...images] }),
           ...(draft.model === undefined ? {} : { model: draft.model }),
         });
         // The thread keeps the tabs its draft selected (UI-372).

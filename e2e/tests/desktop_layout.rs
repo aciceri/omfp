@@ -35,6 +35,7 @@ fn new_thread(name: &str, link: Option<String>) -> CreateThreadParams {
         thinking_level: None,
         approval_mode: None,
         prompt: None,
+        images: Vec::new(),
     }
 }
 

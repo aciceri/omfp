@@ -1557,6 +1557,71 @@ async fn a_thread_whose_first_omp_start_fails_is_not_created() {
     );
 }
 
+/// The text and images of the first `prompt` launch `index`'s omp received.
+fn first_prompt(daemon: &TestDaemon, index: usize) -> (String, Value) {
+    daemon
+        .launcher
+        .process(index)
+        .calls()
+        .into_iter()
+        .find_map(|call| match call {
+            omfp_daemon::agent::FakeCall::Prompt(prompt) => {
+                Some((prompt.message, serde_json::to_value(prompt.images).unwrap()))
+            }
+            _ => None,
+        })
+        .expect("a prompt")
+}
+
+// spec: DMN-211
+#[tokio::test(flavor = "multi_thread")]
+async fn the_first_messages_images_reach_the_agent_with_or_without_text() {
+    let daemon = daemon(&[]).await;
+    let mut client = daemon.client("test").await;
+    let png = json!({ "type": "image", "data": "iVBORw0KGgo=", "mimeType": "image/png" });
+
+    client
+        .ok(
+            "threads.create",
+            json!({ "workspace": { "new": {} }, "prompt": "what is this?", "images": [png] }),
+        )
+        .await;
+    assert_eq!(
+        first_prompt(&daemon, 0),
+        ("what is this?".to_owned(), json!([png]))
+    );
+
+    // Images alone are a first message too.
+    client
+        .ok(
+            "threads.create",
+            json!({ "workspace": { "new": {} }, "images": [png] }),
+        )
+        .await;
+    assert_eq!(first_prompt(&daemon, 1), (String::new(), json!([png])));
+
+    // A first message of images only that cannot start omp leaves nothing behind either.
+    daemon.launcher.fail_next_launch("fatal: out of memory\n");
+    let error = client
+        .call(
+            "threads.create",
+            json!({ "workspace": { "new": {} }, "images": [png] }),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error["code"], "thread_failed", "{error}");
+    assert_eq!(
+        listed(&mut client, "threads.list", "threads").await.len(),
+        2
+    );
+    assert_eq!(
+        listed(&mut client, "workspaces.list", "workspaces")
+            .await
+            .len(),
+        2
+    );
+}
+
 // spec: DMN-212
 #[tokio::test(flavor = "multi_thread")]
 async fn a_later_start_failure_keeps_the_thread_failed_with_omps_stderr_until_a_retry() {

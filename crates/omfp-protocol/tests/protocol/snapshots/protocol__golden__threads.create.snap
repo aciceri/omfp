@@ -8,6 +8,13 @@ expression: golden
     "method": "threads.create",
     "params": {
       "approvalMode": "always-ask",
+      "images": [
+        {
+          "data": "iVBORw0KGgo=",
+          "mimeType": "image/png",
+          "type": "image"
+        }
+      ],
       "model": "anthropic/claude-sonnet-4-5",
       "prompt": "Implement checkout v2 as described in docs/checkout.md",
       "thinkingLevel": "high",

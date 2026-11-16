@@ -88,6 +88,7 @@ async fn omp_forwarded_methods_return_their_declared_results() {
             thinking_level: None,
             approval_mode: None,
             prompt: None,
+            images: Vec::new(),
         })
         .await
         .id;

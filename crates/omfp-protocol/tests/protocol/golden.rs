@@ -367,6 +367,7 @@ fn threads_examples() -> Vec<(&'static str, Value)> {
                 thinking_level: Some(ThinkingLevel::High),
                 approval_mode: Some(ApprovalMode::AlwaysAsk),
                 prompt: Some("Implement checkout v2 as described in docs/checkout.md".to_owned()),
+                images: vec![png()],
             },
             &thread(),
         ),
@@ -2107,6 +2108,24 @@ fn a_new_thread_takes_its_title_only_from_scripts_and_agents() {
     );
     let summary = serde_json::to_value(thread()).unwrap();
     assert_eq!(summary["titleSource"], json!("generated"));
+}
+
+// spec: DMN-211
+#[test]
+fn a_first_message_may_be_images_only_and_no_images_are_left_out() {
+    let decode = |params: Value| serde_json::from_value::<CreateThreadParams>(params).unwrap();
+    let png_json = json!({ "type": "image", "data": "iVBORw0KGgo=", "mimeType": "image/png" });
+    let images_only = decode(json!({ "workspace": { "new": {} }, "images": [png_json] }));
+    assert_eq!(
+        (images_only.prompt, images_only.images),
+        (None, vec![png()])
+    );
+    let text_only = decode(json!({ "workspace": { "new": {} }, "prompt": "Fix the login" }));
+    assert_eq!(text_only.images, Vec::new());
+    assert_eq!(
+        serde_json::to_value(&text_only).unwrap().get("images"),
+        None
+    );
 }
 
 // spec: PRT-121, PRT-134

@@ -100,10 +100,12 @@ async fn create_thread(
             return Err(error);
         }
     };
-    if let Some(text) = params.prompt {
+    let first_images = images(params.images);
+    if params.prompt.is_some() || first_images.is_some() {
+        let text = params.prompt.unwrap_or_default();
         let command = PromptCommand {
             message: text.clone(),
-            images: None,
+            images: first_images,
             streaming_behavior: None,
         };
         if let Err(error) = services.supervisor.prompt(&thread.id, command).await {

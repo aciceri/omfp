@@ -15,6 +15,22 @@ import { PointerMedia } from "../support/pointer.ts";
 
 afterEach(cleanup);
 
+/** A tiny PNG file, as pasted or dropped, and the attachment it becomes (UI-060). */
+function pngFile(): File {
+  return new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "a.png", { type: "image/png" });
+}
+const PNG = { type: "image" as const, data: "iVBORw==", mimeType: "image/png" };
+
+/** A PNG file whose bytes are read only once `release` is called; `read` is that read. */
+function slowPngFile(): { file: File; release: () => void; read: Promise<ArrayBuffer> } {
+  const file = pngFile();
+  const bytes = file.arrayBuffer();
+  const gate = Promise.withResolvers<void>();
+  const read = gate.promise.then(() => bytes);
+  Object.defineProperty(file, "arrayBuffer", { value: () => read });
+  return { file, release: () => gate.resolve(), read };
+}
+
 function setup() {
   const test = renderWithHost(
     <>
@@ -128,6 +144,140 @@ describe("draft thread", () => {
     ]);
   });
 
+  // spec: UI-023, UI-060
+  test("pasted and dropped images become removable attachments sent with the first message", async () => {
+    const { client, user } = setup();
+    const input = screen.getByTestId("composer-input");
+    fireEvent.paste(input, { clipboardData: { files: [pngFile()], getData: () => "" } });
+    await waitFor(() => expect(screen.getAllByTestId("attachment").length).toBe(1));
+    expect(input).toHaveProperty("value", "");
+    const text = new File(["hi"], "a.txt", { type: "text/plain" });
+    fireEvent.drop(screen.getByTestId("composer"), { dataTransfer: { files: [pngFile(), text] } });
+    await waitFor(() => expect(screen.getAllByTestId("attachment").length).toBe(2));
+    await user.click(screen.getAllByTestId("attachment-remove")[1] as HTMLElement);
+    expect(screen.getAllByTestId("attachment").length).toBe(1);
+    await user.type(input, "what is this?{Enter}");
+    expect(client.callsTo("threads.create").map((call) => call.params)).toEqual([
+      { workspace: { id: "w1" }, prompt: "what is this?", images: [PNG] },
+    ]);
+  });
+
+  // spec: UI-023, UI-060
+  test("a first message of images only creates the thread", async () => {
+    const { client, host, user } = setup();
+    fireEvent.paste(screen.getByTestId("composer-input"), { clipboardData: { files: [pngFile()], getData: () => "" } });
+    await waitFor(() => expect(screen.getAllByTestId("attachment").length).toBe(1));
+    await user.click(screen.getByTestId("send"));
+    expect(client.callsTo("threads.create").map((call) => call.params)).toEqual([
+      { workspace: { id: "w1" }, images: [PNG] },
+    ]);
+    act(() => client.callsTo("threads.create")[0]?.resolve(thread("t9", "", "w1")));
+    await waitFor(() => expect(host.window.get(SELECTED_THREAD)).toBe("t9"));
+    expect(host.window.get(DRAFT_MESSAGE).images.length).toBe(0);
+  });
+
+  // spec: UI-023, UI-060
+  test("when the creation fails, the draft keeps its text and its images", async () => {
+    const { client, host, user } = setup();
+    const input = screen.getByTestId("composer-input");
+    fireEvent.paste(input, { clipboardData: { files: [pngFile()], getData: () => "" } });
+    await waitFor(() => expect(screen.getAllByTestId("attachment").length).toBe(1));
+    await user.type(input, "fix it{Enter}");
+    act(() => client.callsTo("threads.create")[0]?.reject(new Error("daemon down")));
+    await waitFor(() => expect(host.window.get(ERRORS)).toEqual(["daemon down"]));
+    expect(host.window.get(DRAFT_MESSAGE).images).toEqual([PNG]);
+    expect(screen.getAllByTestId("attachment").length).toBe(1);
+    expect(input).toHaveProperty("value", "fix it");
+    await waitFor(() => expect(screen.getByTestId("send").hasAttribute("disabled")).toBe(false));
+    await user.click(screen.getByTestId("send"));
+    expect(client.callsTo("threads.create")[1]?.params).toEqual({
+      workspace: { id: "w1" },
+      prompt: "fix it",
+      images: [PNG],
+    });
+  });
+
+  // spec: UI-023, UI-060
+  test("a send right after a paste waits for the image being read and sends it", async () => {
+    const { client, user } = setup();
+    const input = screen.getByTestId("composer-input");
+    const slow = slowPngFile();
+    await user.type(input, "what is this?");
+    fireEvent.paste(input, { clipboardData: { files: [slow.file], getData: () => "" } });
+    await user.keyboard("{Enter}");
+    expect(client.callsTo("threads.create")).toHaveLength(0);
+    await act(async () => {
+      slow.release();
+      await slow.read;
+    });
+    await waitFor(() => expect(client.callsTo("threads.create")).toHaveLength(1));
+    expect(client.callsTo("threads.create")[0]?.params).toEqual({
+      workspace: { id: "w1" },
+      prompt: "what is this?",
+      images: [PNG],
+    });
+  });
+
+  // spec: UI-023, UI-060
+  test("an image still being read when its draft is discarded joins no other draft, even one opened meanwhile", async () => {
+    const { host, user } = setup();
+    const slow = slowPngFile();
+    fireEvent.paste(screen.getByTestId("composer-input"), { clipboardData: { files: [slow.file], getData: () => "" } });
+    await user.keyboard("{Escape}");
+    expect(host.window.get(DRAFT_THREAD)).toBeUndefined();
+    // Another draft opens before the discarded draft's read ends.
+    act(() => threadActions(host).openDraft("w1"));
+    await act(async () => {
+      slow.release();
+      await slow.read;
+    });
+    fireEvent.paste(screen.getByTestId("composer-input"), { clipboardData: { files: [pngFile()], getData: () => "" } });
+    await waitFor(() => expect(screen.getAllByTestId("attachment").length).toBe(1));
+    expect(host.window.get(DRAFT_MESSAGE).images.length).toBe(1);
+  });
+
+  // spec: UI-023, UI-060
+  test("a send waiting for an image is dropped with its draft and never sends the draft opened after it", async () => {
+    const { client, host, user } = setup();
+    const slow = slowPngFile();
+    fireEvent.paste(screen.getByTestId("composer-input"), { clipboardData: { files: [slow.file], getData: () => "" } });
+    await user.keyboard("{Enter}");
+    await user.keyboard("{Escape}");
+    expect(host.window.get(DRAFT_THREAD)).toBeUndefined();
+    act(() => threadActions(host).openDraft("w1"));
+    await user.type(screen.getByTestId("composer-input"), "not submitted");
+    await act(async () => {
+      slow.release();
+      await slow.read;
+    });
+    fireEvent.paste(screen.getByTestId("composer-input"), { clipboardData: { files: [pngFile()], getData: () => "" } });
+    await waitFor(() => expect(screen.getAllByTestId("attachment").length).toBe(1));
+    expect(client.callsTo("threads.create")).toHaveLength(0);
+    expect(host.window.get(DRAFT_MESSAGE).text).toBe("not submitted");
+  });
+
+  // spec: UI-023, UI-060, UI-064
+  test("a draft reopened after a thread switch still waits for the image it was reading before sending", async () => {
+    const { client, host, user } = setup();
+    const slow = slowPngFile();
+    await user.type(screen.getByTestId("composer-input"), "what is this?");
+    fireEvent.paste(screen.getByTestId("composer-input"), { clipboardData: { files: [slow.file], getData: () => "" } });
+    act(() => threadActions(host).select("t1"));
+    expect(screen.queryByTestId("draft-thread-view")).toBeNull();
+    act(() => threadActions(host).openDraft("w1"));
+    await user.click(screen.getByTestId("send"));
+    expect(client.callsTo("threads.create")).toHaveLength(0);
+    await act(async () => {
+      slow.release();
+      await slow.read;
+    });
+    await waitFor(() => expect(client.callsTo("threads.create")).toHaveLength(1));
+    expect(client.callsTo("threads.create")[0]?.params).toEqual({
+      workspace: { id: "w1" },
+      prompt: "what is this?",
+      images: [PNG],
+    });
+  });
   // spec: UI-023, UI-030, UI-064
   test("a failed first prompt selects the surviving thread and retries its full draft without creating another", async () => {
     const { client, host, user, flush } = setup();
@@ -160,6 +310,7 @@ describe("draft thread", () => {
     expect(client.callsTo("threads.create")[0]?.params).toEqual({
       workspace: { id: "w1" },
       prompt: "review first\nsecond",
+      images: message.images,
       model: "fake/chosen",
     });
     await user.click(screen.getByTestId("send"));

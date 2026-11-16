@@ -1056,7 +1056,7 @@ fn long_text() -> String {
     })
 }
 
-// spec: UI-042, UI-060, UI-064
+// spec: UI-042, UI-060, UI-064, UI-023
 #[tokio::test(flavor = "multi_thread")]
 async fn the_transcript_keeps_its_scroll_position_per_thread_and_pasted_images_attach()
 -> anyhow::Result<()> {
@@ -1115,6 +1115,21 @@ async fn the_transcript_keeps_its_scroll_position_per_thread_and_pasted_images_a
     journey
         .until("the pasted image", async |page| {
             Ok((page.count("[data-testid=attachment]").await? == 1).then_some(()))
+        })
+        .await?;
+
+    // So does one pasted into a draft thread's composer (UI-023); the draft keeps it apart from the threads' drafts.
+    journey.click("[data-testid=add-thread]").await?;
+    journey
+        .element("[data-testid=composer][data-draft=true]")
+        .await?;
+    paste_image(&journey).await?;
+    journey
+        .until("the image pasted into the draft", async |page| {
+            let attached = page
+                .count("[data-testid=composer][data-draft=true] [data-testid=attachment]")
+                .await?;
+            Ok((attached == 1).then_some(()))
         })
         .await?;
 

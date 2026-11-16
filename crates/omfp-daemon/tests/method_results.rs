@@ -105,6 +105,7 @@ fn new_thread(title: &str) -> CreateThreadParams {
         thinking_level: None,
         approval_mode: None,
         prompt: None,
+        images: Vec::new(),
     }
 }
 

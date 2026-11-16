@@ -109,6 +109,7 @@ async fn seed(journey: &Journey) -> anyhow::Result<[String; 5]> {
                 thinking_level: None,
                 approval_mode: None,
                 prompt: None,
+                images: Vec::new(),
             })
             .await?;
         ids.push(thread.id);

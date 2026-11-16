@@ -53,6 +53,7 @@ async fn thread(client: &mut Client) -> (String, Follower) {
             thinking_level: None,
             approval_mode: None,
             prompt: None,
+            images: Vec::new(),
         })
         .await
         .id;

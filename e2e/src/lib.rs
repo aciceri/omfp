@@ -686,6 +686,7 @@ impl Journey {
                 thinking_level: None,
                 approval_mode,
                 prompt: None,
+                images: Vec::new(),
             })
             .await?;
         connection.close().await?;

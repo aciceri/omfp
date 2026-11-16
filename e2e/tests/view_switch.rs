@@ -116,6 +116,7 @@ async fn start() -> anyhow::Result<Journey> {
             thinking_level: None,
             approval_mode: None,
             prompt: None,
+            images: Vec::new(),
         })
         .await?;
     connection.close().await?;

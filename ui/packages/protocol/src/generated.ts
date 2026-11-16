@@ -206,6 +206,8 @@ export type CopyWidgetParams = {
 export type CreateThreadParams = {
   /** omp's `--approval-mode`; default `yolo` (DMN-074, DMN-210). */
   approvalMode?: ApprovalMode | null;
+  /** Images of the first message, sent with `prompt`; a first message may be images only (DMN-211). */
+  images?: unknown[];
   /** `provider/id`. */
   model?: string | null;
   /**

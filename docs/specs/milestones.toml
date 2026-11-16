@@ -1196,7 +1196,7 @@ requirements = [
 ]
 
 [M18]
-status = "in-progress"
+status = "done"
 requirements = [
   # Daemon: the jobs file, schedules, services, command and prompt runs, the store, the jobs topic
   "DMN-320",
@@ -1242,4 +1242,6 @@ requirements = [
   # Agents: useJobs and the Declared jobs docs
   "AGT-090",
   "AGT-091",
+  # Acceptance: the jobs journey in headless Chromium
+  "E2E-72",
 ]

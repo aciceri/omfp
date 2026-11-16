@@ -255,6 +255,9 @@ tag, the `omp-rpc` git tag in `Cargo.toml`, `omfp_core::OMP_VERSION` and the rel
   lists only the models omp can use (a credential, or a keyless provider): the daemon's `auth.status` count (DMN-235).
   A `prompt` failing omp's preflight (`No API key found for <provider>. … Use /login, …`) is answered twice with the
   same id (success, then the error) and ends with a `prompt_result` of status `error`.
+- On an EC2 host (DMI vendor) omp takes the instance role for an AWS credential and lists Amazon Bedrock's models (224)
+  with an empty credential store; GitHub's AWS-hosted runners (Region `us-east-1`, `us-west-2`) are such hosts, so
+  `OmpEnv` drops `AWS_*` and sets `AWS_EC2_METADATA_DISABLED=true` (TST-022).
 - Our harness docs (`omp://…`) may describe a different omp version than the pinned one: verify against the source at
   `~/.cargo/git/checkouts/oh-my-pi-*/<rev>/` (docs in `docs/`, Rust client in `sdk/rust/omp-rpc/`).
 

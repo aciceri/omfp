@@ -85,7 +85,8 @@ An OpenAI-compatible server (axum) that answers from a script, making omp runs d
 
 omp runs in an isolated environment (`omfp_testkit::OmpEnv`): its own `HOME`, agent directory (`PI_CODING_AGENT_DIR`,
 see upstream `environment-variables.md`), XDG directories and working directory, with provider credentials removed
-from the environment. The agent directory holds a `models.yml` with a custom provider (shape from upstream `models.md`):
+from the environment, the host's ambient AWS credentials included (TST-022). The agent directory holds a `models.yml`
+with a custom provider (shape from upstream `models.md`):
 
 ```yaml
 providers:
@@ -135,6 +136,7 @@ source-text assertions.
 | --- | --- |
 | TST-020 | `fake-llm` itself is developed test-first: its own tests check SSE framing, tool-call chunking and request recording. |
 | TST-021 | Contract tests MUST run omp behind the deny proxy and fail when omp tries to reach a host outside `omfp_testkit::KNOWN_DISCOVERY_HOSTS`. That list is reviewed on every omp upgrade. |
+| TST-022 | The isolated omp environment MUST hide every credential the host offers omp: it removes the `*_API_KEY`, `*_TOKEN`, `AWS_*`, `OMP_*` and `PI_*` variables and sets `AWS_EC2_METADATA_DISABLED=true`. omp takes an EC2 host (its DMI vendor) for an instance-role credential and then counts Amazon Bedrock's models as usable (219 of `amazon-bedrock`, 5 of `bedrock-mantle`), so on GitHub's AWS-hosted runners a fresh profile otherwise reports 224 usable models instead of 0 (#106). |
 
 ## UI testing
 

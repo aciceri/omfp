@@ -157,14 +157,25 @@ impl OmpEnv {
     }
 
     /// Environment changes that isolate omp: own `HOME`, agent and XDG directories, no provider credentials
-    /// (`*_API_KEY`, `*_TOKEN`, `OMP_*`, `PI_*` removed: `None`), and the deny proxy when requested.
+    /// (`*_API_KEY`, `*_TOKEN`, `AWS_*`, `OMP_*`, `PI_*` removed: `None`; EC2 instance-metadata credentials off,
+    /// TST-022), and the deny proxy when requested.
     #[must_use]
     pub fn env_overrides(&self) -> Vec<(OsString, Option<OsString>)> {
-        let mut overrides: Vec<(OsString, Option<OsString>)> = std::env::vars_os()
+        self.overrides_of(std::env::vars_os())
+    }
+
+    /// [`OmpEnv::env_overrides`] of a process whose environment is `inherited`.
+    fn overrides_of(
+        &self,
+        inherited: impl IntoIterator<Item = (OsString, OsString)>,
+    ) -> Vec<(OsString, Option<OsString>)> {
+        let mut overrides: Vec<(OsString, Option<OsString>)> = inherited
+            .into_iter()
             .filter(|(name, _)| {
                 let name = name.to_string_lossy();
                 name.ends_with("_API_KEY")
                     || name.ends_with("_TOKEN")
+                    || name.starts_with("AWS_")
                     || name.starts_with("OMP_")
                     || name.starts_with("PI_")
             })
@@ -180,6 +191,9 @@ impl OmpEnv {
         set("XDG_CACHE_HOME", xdg.join("cache").into());
         set("NO_PROXY", "127.0.0.1,localhost".into());
         set("no_proxy", "127.0.0.1,localhost".into());
+        // omp takes an EC2 host (its DMI vendor) for an instance-role AWS credential and then counts Amazon Bedrock's
+        // models as usable: GitHub's AWS-hosted runners are such hosts (TST-022).
+        set("AWS_EC2_METADATA_DISABLED", "true".into());
         if let Some(proxy) = &self.proxy_url {
             for name in [
                 "HTTP_PROXY",
@@ -563,6 +577,44 @@ mod tests {
         );
         assert_eq!(get("HTTPS_PROXY"), None, "no proxy unless requested");
         assert_eq!(command.get_current_dir(), Some(env.work_dir().as_path()));
+    }
+
+    // spec: TST-022
+    #[test]
+    fn isolated_env_hides_every_aws_credential_of_the_host() {
+        let env = OmpEnv::new("http://127.0.0.1:9/v1", None).unwrap();
+        let inherited = [
+            ("AWS_ACCESS_KEY_ID", "AKIAHOST"),
+            ("AWS_SECRET_ACCESS_KEY", "host-secret"),
+            ("AWS_PROFILE", "host"),
+            (
+                "AWS_EC2_METADATA_SERVICE_ENDPOINT",
+                "http://169.254.169.254",
+            ),
+            ("AWS_EC2_METADATA_DISABLED", "false"),
+            ("PATH", "/bin"),
+        ]
+        .map(|(name, value)| (OsString::from(name), OsString::from(value)));
+
+        // Applied in order, as `Command` and the daemon's launch spec do: the last change of a variable wins.
+        let effective: std::collections::BTreeMap<_, _> =
+            env.overrides_of(inherited).into_iter().collect();
+
+        let value = |name: &str| effective.get(std::ffi::OsStr::new(name)).cloned();
+        for name in [
+            "AWS_ACCESS_KEY_ID",
+            "AWS_SECRET_ACCESS_KEY",
+            "AWS_PROFILE",
+            "AWS_EC2_METADATA_SERVICE_ENDPOINT",
+        ] {
+            assert_eq!(value(name), Some(None), "{name} must be removed");
+        }
+        // On an EC2 host (GitHub's AWS-hosted runners) omp otherwise takes the instance role for a credential.
+        assert_eq!(
+            value("AWS_EC2_METADATA_DISABLED"),
+            Some(Some("true".into()))
+        );
+        assert_eq!(value("PATH"), None, "other variables pass through");
     }
 
     #[tokio::test]

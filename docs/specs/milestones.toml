@@ -562,6 +562,7 @@ requirements = [
   "TST-073",
   "TST-074",
   "TST-075",
+  "TST-022", # the isolated omp hides the host's AWS credentials (AWS-hosted runners)
   # Nix packages
   "ENV-030",
   "ENV-031",

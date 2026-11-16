@@ -13,9 +13,9 @@ only be reachable from the human UI.
 
 - `docs/specs/README.md` — index, conventions, decision log (D-01…D-20), open questions.
 - `docs/specs/07-roadmap.md` — milestones and spike results (done: M0–M8 with M2b, M5b, M5c, M5d, M6b, M8b and M8c,
-  M10, M12, M13, M14; in progress: M9 hardening, M11 macOS desktop, M15 downloads without Nix, M16 media and file
-  viewers, M17 workspace polish; the terminal was removed, D-06); `docs/specs/milestones.toml` — requirement IDs and
-  `status` per milestone (enforced by `cargo xtask spec-trace`).
+  M10, M12, M13, M14, M18 workspace jobs; in progress: M9 hardening, M11 macOS desktop, M15 downloads without Nix, M16
+  media and file viewers, M17 workspace polish; the terminal was removed, D-06); `docs/specs/milestones.toml` —
+  requirement IDs and `status` per milestone (enforced by `cargo xtask spec-trace`).
 - The spec for the area you touch (`00`…`09`).
 
 ## Ground rules

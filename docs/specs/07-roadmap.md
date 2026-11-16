@@ -807,7 +807,7 @@ workspace folder. `workspaces.read_file` and the raw file route now read any abs
 relative path still may not leave the folder. Design: reading reveals nothing an agent of the same token-protected
 daemon could not read (D-17); writes stay where the workspace's rescans, git status and conflict checks see them.
 
-## M18 — Workspace jobs (planned)
+## M18 — Workspace jobs (done)
 
 Scope: jobs a workspace declares in `.omfp/jobs.json` (D-21, [02 — Declared jobs](02-daemon.md#declared-jobs-m18),
 DMN-320..DMN-336): one-shot jobs run by hand, jobs on a cron schedule, services kept running; each a shell command or a
@@ -821,11 +821,14 @@ left column, `omfp:jobs`, `:job-run` and the other job commands, the dialog when
 files' `omfp.jobs` and run events; omp's background `bash` runs called *background commands* so that *job* means only
 these. Agents and widgets: `useJobs` and the docs (AGT-090, AGT-091).
 
-Acceptance (to write as tests when the milestone starts): contract tests of the scheduler on a fake clock (a schedule
-due, missed and skipped while running; a service restarted with its backoff and not after a kill; a file edited, made
-invalid and removed while jobs run); a prompt job against the pinned omp and the fake LLM in a new and a reused thread;
-an E2E journey in headless Chromium — the counts by a workspace's name, `omfp:jobs` running a job and showing its
-output, archiving a thread whose agent started a transient run and choosing *Keep them running*.
+Acceptance: the scheduler on a fake clock with the launcher faked (`jobs/declared.rs` and `tests/declared_jobs.rs`: a
+schedule due, missed and skipped while running; a service restarted with its backoff and not after a kill; a file
+edited, made invalid and removed while jobs run); `contract_declared_jobs` against the pinned omp and the fake LLM (a
+`new` prompt job makes a thread `<name> · <time>` made by `job:<name>` and its run ends `succeeded` on the
+`prompt_result`; a `reuse` job's second run goes to the same thread; while that thread works, `jobs.run` is a
+`conflict` and a due time is a `skipped` run, reason `busy`; the scheduler on a clock the test moves, through the
+daemon's clock port, ARC-012); E2E-72 in headless Chromium — the counts by a workspace's name, `omfp:jobs` running a
+job and showing its output, archiving a thread whose agent started a transient run and choosing *Keep them running*.
 
 Design: the definitions live in the folder because they belong to the workspace like its views; the runs are daemon
 state, so a second daemon showing the folder starts from the file with no history. One run per job, a missed schedule

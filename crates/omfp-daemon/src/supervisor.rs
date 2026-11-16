@@ -136,13 +136,13 @@ pub struct SupervisorConfig {
 }
 
 impl SupervisorConfig {
-    /// Spec defaults: 8 processes, 15 minutes idle timeout, 2000 events kept.
+    /// Spec defaults: 64 processes, 15 minutes idle timeout, 2000 events kept.
     #[must_use]
     pub fn new(omp_program: impl Into<PathBuf>) -> Self {
         Self {
             omp_program: omp_program.into(),
             omp_env: Vec::new(),
-            max_processes: 8,
+            max_processes: 64,
             idle_timeout: Duration::from_mins(15),
             event_capacity: 2000,
             live_buffer: 4096,

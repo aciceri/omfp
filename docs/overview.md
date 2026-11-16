@@ -123,7 +123,7 @@ omfp reads `$XDG_CONFIG_HOME/omfp/config.toml`, else `~/.config/omfp/config.toml
 bind = "127.0.0.1:7420"
 # data_dir, workspaces_root (default ~/.omfp), omp_bin, static_dir, theme_file: paths, `~` allowed
 # allow_omp_mismatch = true    # run with an omp that is not the pinned release (the UI warns)
-# idle_timeout_minutes = 15, max_processes = 8, event_buffer = 2000
+# idle_timeout_minutes = 15, max_processes = 64, event_buffer = 2000
 # allowed_origins = ["https://omfp.example.ts.net"]   # the UI's URL behind a tunnel or reverse proxy
 # title_generation = false     # no generated thread titles
 

@@ -49,7 +49,7 @@ pub struct Cli {
     /// Minutes before an idle, unwatched thread's omp is stopped (DMN-034; default: 15).
     #[arg(long)]
     pub idle_timeout_minutes: Option<u64>,
-    /// Maximum number of omp processes running at once (DMN-038; default: 8).
+    /// Maximum number of omp processes running at once (DMN-038; default: 64).
     #[arg(long)]
     pub max_processes: Option<usize>,
     /// Events kept in memory per thread so reconnecting clients can catch up (DMN-041; default: 2000).
@@ -160,7 +160,7 @@ impl Config {
                 .map(|home| home.join(".omfp"))
                 .ok_or("cannot determine the workspaces root: set --workspaces-root or HOME")?,
         };
-        let max_processes = cli.max_processes.or(options.max_processes).unwrap_or(8);
+        let max_processes = cli.max_processes.or(options.max_processes).unwrap_or(64);
         if max_processes == 0 {
             return Err("--max-processes must be at least 1".into());
         }
@@ -445,7 +445,7 @@ allow_omp_mismatch = true
     fn idle_timeout_process_limit_and_event_buffer_have_spec_defaults() {
         let config = Config::from_cli(parse(&[]), None, Some("/h".into())).unwrap();
         assert_eq!(config.idle_timeout, Duration::from_mins(15));
-        assert_eq!(config.max_processes, 8);
+        assert_eq!(config.max_processes, 64);
         assert_eq!(config.event_buffer, 2000);
         assert!(
             Config::from_cli(parse(&["--max-processes", "0"]), None, Some("/h".into())).is_err()

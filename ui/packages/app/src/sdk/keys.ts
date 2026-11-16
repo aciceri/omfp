@@ -62,10 +62,11 @@ export const VIEW_CHOICES = windowKey<ViewChoices>("viewChoices", NO_VIEW_CHOICE
  */
 export const TAB_CHOICES = windowKey<TabChoices>("tabChoices", NO_TAB_CHOICES, decodeTabChoices);
 
-/** The view the frame renders now and the thread (none: the draft thread) it renders it for (UI-372); not `ready`
- * while it is the built-in view standing in until the workspace's views arrive. */
+/** The view the frame renders now and the thread (none: the draft thread) and workspace it renders it for (UI-372);
+ * not `ready` while it is the built-in view standing in until the workspace's views arrive. */
 export interface ShownView {
   readonly threadId: string | undefined;
+  readonly workspaceId: string | undefined;
   readonly viewId: string;
   readonly ready: boolean;
 }
@@ -73,10 +74,11 @@ export interface ShownView {
 /** Where opening a file or a widget tab selects it (UI-372); `undefined` before the frame rendered a view. */
 export const SHOWN_VIEW = windowKey<ShownView | undefined>("shownView", undefined);
 
-/** An opened tab to select once the frame renders `threadId` (UI-372): a file opened right after a thread switch,
- * before the frame knows the view that thread shows. */
+/** An opened tab to select once the frame renders `threadId` (none: the draft thread of `workspaceId`) in its
+ * workspace's own view (UI-372): a file opened right after a thread switch, or while the workspace's views load. */
 export interface PendingTab {
   readonly threadId: string | undefined;
+  readonly workspaceId: string;
   readonly tabId: string;
 }
 

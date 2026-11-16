@@ -101,12 +101,15 @@ export function openFile(host: OmfpHost, path: string, options: OpenFileOptions 
   selectOpenedTab(host, workspaceId, fileTabId(path));
 }
 
-/** The view the frame renders for the selected thread; `undefined` while it renders another thread (a switch not
- * rendered yet) or none, and, with `ready`, while it is the built-in view standing in until the workspace's views
- * arrive. */
+/** The view the frame renders for the selected thread (none: the draft thread of the current workspace); `undefined`
+ * while it renders another thread or workspace (a switch not rendered yet) or none, and, with `ready`, while it is the
+ * built-in view standing in until the workspace's views arrive. */
 function shownViewId(host: OmfpHost, ready: boolean): string | undefined {
   const shown = host.window.get(SHOWN_VIEW);
-  return shown !== undefined && (shown.ready || !ready) && shown.threadId === host.window.get(SELECTED_THREAD)
+  return shown !== undefined &&
+    (shown.ready || !ready) &&
+    shown.threadId === host.window.get(SELECTED_THREAD) &&
+    shown.workspaceId === currentWorkspaceId(host)
     ? shown.viewId
     : undefined;
 }
@@ -123,7 +126,7 @@ export function selectOpenedTab(host: OmfpHost, workspaceId: string, tabId: stri
   }
   const viewId = shownViewId(host, true);
   if (viewId === undefined) {
-    host.window.set(PENDING_TAB, { threadId: host.window.get(SELECTED_THREAD), tabId });
+    host.window.set(PENDING_TAB, { threadId: host.window.get(SELECTED_THREAD), workspaceId, tabId });
   } else {
     selectTab(host, viewId, MAIN_SLOT, tabId);
   }

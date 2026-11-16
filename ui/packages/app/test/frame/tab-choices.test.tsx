@@ -193,6 +193,32 @@ describe("tabs per thread", () => {
     expect([shownView(), selectedOf(MAIN)]).toEqual(["work", "b.rs"]);
   });
 
+  // spec: UI-372
+  test("a file opened in a draft while its workspace's views load waits for that workspace's draft, not another's", async () => {
+    const test = setup();
+    const { client, host, user } = test;
+    client.indexEvents({ kind: "workspace_upserted", workspace: workspace("w2") });
+    test.flush();
+    const draft = (workspaceId: string) => {
+      act(() => threadActions(host).openDraft(workspaceId));
+      test.flush();
+    };
+    // w1's draft has b.rs open and its chat selected.
+    draft("w1");
+    act(() => openFile(host, "b.rs"));
+    await click(user, MAIN, "Chat");
+    // w2's draft opens b.rs while w2's views load: it waits for w2's view.
+    draft("w2");
+    expect(shownView()).toBe("default");
+    act(() => openFile(host, "b.rs"));
+    draft("w1");
+    expect(selectedOf(MAIN)).toBe("Chat");
+    draft("w2");
+    client.views("w2", { manifest: MANIFEST });
+    test.flush();
+    expect([shownView(), selectedOf(MAIN)]).toEqual(["work", "b.rs"]);
+  });
+
   // spec: UI-372, UI-366
   test("closing a floating panel's selected file selects its neighbour in that panel", async () => {
     const test = setup();

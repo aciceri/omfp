@@ -65,22 +65,30 @@ export function useViewChoicesUpkeep(): void {
 }
 
 /**
- * Publishes the view the frame renders, with the thread it renders it for, as {@link SHOWN_VIEW} (UI-372), before the
- * passive effects of its widgets run; then, once `ready` (the workspace's views arrived, so the view is not the
- * built-in one standing in while they load), selects the {@link PENDING_TAB} opened for that thread in it.
+ * Publishes the view the frame renders, with the thread and workspace it renders it for, as {@link SHOWN_VIEW}
+ * (UI-372), before the passive effects of its widgets run; then, once `ready` (the workspace's views arrived, so the
+ * view is not the built-in one standing in while they load), selects the {@link PENDING_TAB} opened for that thread
+ * (a draft thread: of that workspace) in it.
  */
 export function useShownView(viewId: string | undefined, ready: boolean): void {
   const host = useHost();
   const [threadId] = useWindowState(SELECTED_THREAD);
+  const workspaceId = useCurrentWorkspaceId();
   const [pending] = useWindowState(PENDING_TAB);
   useLayoutEffect(
-    () => host.window.set(SHOWN_VIEW, viewId === undefined ? undefined : { threadId, viewId, ready }),
-    [host, threadId, viewId, ready],
+    () => host.window.set(SHOWN_VIEW, viewId === undefined ? undefined : { threadId, workspaceId, viewId, ready }),
+    [host, threadId, workspaceId, viewId, ready],
   );
   useLayoutEffect(() => {
-    if (ready && pending !== undefined && viewId !== undefined && pending.threadId === threadId) {
+    if (
+      ready &&
+      pending !== undefined &&
+      viewId !== undefined &&
+      pending.threadId === threadId &&
+      pending.workspaceId === workspaceId
+    ) {
       host.window.set(PENDING_TAB, undefined);
       selectTab(host, viewId, MAIN_SLOT, pending.tabId);
     }
-  }, [host, ready, pending, threadId, viewId]);
+  }, [host, ready, pending, threadId, workspaceId, viewId]);
 }

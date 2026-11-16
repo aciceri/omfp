@@ -95,8 +95,8 @@ pub const VERIFY_LOOP: &str = "Verify in the user's window: write → omfp_widge
 
 /// The widgets note (AGT-024): where the views manifest, the workspace's widgets and the user library (`user_library`)
 /// live, the host URIs of the built-in sources, what a widget may import, the rules for the `main` slot, placing a
-/// widget and checking it, how to delegate building one to the `widget-builder` agent (AGT-029), when to notify the
-/// user (AGT-032), an example, and where to read more.
+/// widget and checking it, where declared jobs live (DMN-331, AGT-091), how to delegate building one to the
+/// `widget-builder` agent (AGT-029), when to notify the user (AGT-032), an example, and where to read more.
 #[must_use]
 pub fn widgets_note(path: &Path, user_library: &Path) -> String {
     let display = path.display();
@@ -114,6 +114,8 @@ pub fn widgets_note(path: &Path, user_library: &Path) -> String {
          only registered commands, never code.\n\
          - Keys: {display}/.omfp/keymap.json (schema omfp://schemas/keymap.json) binds keys to commands, built-in or a \
          widget's useCommand, in windows showing this workspace; give a widget a command and bind it there.\n\
+         - Jobs: a workspace's recurring commands, schedules, watchers and prompts are declared in \
+         {display}/.omfp/jobs.json (schema omfp://schemas/jobs.json; details in omfp://docs/widgets, Declared jobs).\n\
          - Notify the user with omfp_notify {{ title, body }} when a long task finished or you need them; once per \
          occasion, never for progress.\n\
          - When something would read better as a visualization or controls (progress, a table, a chart, buttons), \
@@ -318,7 +320,7 @@ mod tests {
             example.lines().count() <= 11,
             "a ten-line example: {example}"
         );
-        assert!(text.lines().count() <= 29, "short: {text}");
+        assert!(text.lines().count() <= 30, "short: {text}");
         assert!(!text.ends_with('\n'));
     }
 
@@ -510,6 +512,81 @@ mod tests {
                 assert!(text.contains(rule), "{rule:?} missing: {text}");
             }
         }
+    }
+
+    // spec: DMN-331, AGT-091
+    #[test]
+    fn the_widgets_note_names_the_jobs_file_and_its_schema() {
+        let text = widgets_note(Path::new("/ws/checkout"), Path::new("/data/omfp/widgets"));
+        assert!(
+            text.contains(
+                "- Jobs: a workspace's recurring commands, schedules, watchers and prompts are declared in \
+                 /ws/checkout/.omfp/jobs.json (schema omfp://schemas/jobs.json; details in omfp://docs/widgets, \
+                 Declared jobs).\n"
+            ),
+            "{text}"
+        );
+        assert_eq!(text.matches("jobs.json").count(), 2, "one line: {text}");
+    }
+
+    // spec: AGT-091
+    #[test]
+    fn the_widgets_docs_declare_jobs_for_agents() {
+        let docs = crate::widgets::DOCS;
+        let section = docs
+            .split_once("\n## Declared jobs\n")
+            .and_then(|(_, rest)| rest.split("\n## ").next())
+            .expect("a Declared jobs section");
+        for needle in [
+            ".omfp/jobs.json",
+            "omfp://schemas/jobs.json",
+            "\"trigger\": \"schedule\"",
+            "\"thread\": \"reuse\"",
+            "\"trigger\": \"service\"",
+            "\"restart\": \"on-failure\"",
+            "\"cwd\":",
+            "a `schedule` job with a `prompt`",
+            "local time zone",
+            "**One run per job**",
+            "**Missed times**",
+            "stays stopped",
+            "see Jobs above",
+            "leaves them running",
+            "50 newest finished runs",
+            "another daemon",
+            "jobs.list",
+            "jobs.runs",
+            "jobs.run",
+            "jobs.define",
+            "jobs.remove",
+            "jobs.enable",
+            "jobs.kill",
+            "jobs/<workspaceId>",
+            "useJobs",
+            "omfp.jobs",
+            "job_started",
+            "job_ended",
+            "job_failed",
+            "`job.run <name>` (`:job-run`)",
+            "[\"job.run\", \"deploy\"]",
+            "An init file's listener runs once per open window, and never when no window is open: it may notify or \
+             show\nsomething, but must not start runs or chain jobs",
+        ] {
+            assert!(
+                section.contains(needle),
+                "{needle:?} missing from Declared jobs"
+            );
+        }
+        for row in [
+            "| `useJobs(workspaceId?)` |",
+            "| `jobs` | The current workspace's declared jobs",
+        ] {
+            assert!(docs.contains(row), "{row:?} missing from the tables");
+        }
+        assert!(
+            docs.contains("start *transient runs*"),
+            "the Jobs section names transient runs"
+        );
     }
 
     // spec: AGT-088

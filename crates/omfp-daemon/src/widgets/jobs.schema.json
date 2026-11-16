@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "omfp://schemas/jobs.json",
+  "title": "omfp workspace jobs",
+  "description": "<workspace>/.omfp/jobs.json: the jobs this workspace declares (DMN-320): named commands or prompts the daemon runs by hand, on a cron schedule, or keeps running as a service. The daemon reads the file on every rescan and poll round and applies it by job name; an invalid file shows its error while the last valid jobs stay. Runs and their history are daemon state, never in the folder. jobs.define, jobs.remove and jobs.enable rewrite it one job at a time. Unknown keys are refused.",
+  "type": "object",
+  "required": ["jobs"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string", "description": "omfp://schemas/jobs.json" },
+    "jobs": {
+      "type": "object",
+      "description": "The jobs by name: the name is the job's identity (its runs, its reused thread and its schedule state), so renaming a job removes one and declares another.",
+      "propertyNames": { "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$" },
+      "additionalProperties": { "$ref": "#/$defs/job" }
+    }
+  },
+  "$defs": {
+    "job": {
+      "type": "object",
+      "description": "One job: exactly one of command and prompt.",
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": "string", "maxLength": 200, "description": "What the job is for." },
+        "trigger": {
+          "enum": ["manual", "schedule", "service"],
+          "default": "manual",
+          "description": "manual: runs only when asked; schedule: runs at the times of `schedule`; service: kept running, started again per `restart`."
+        },
+        "schedule": {
+          "type": "string",
+          "description": "Required with trigger schedule, refused otherwise. A five-field cron expression in the daemon host's local time zone: minute (0-59), hour (0-23), day of month (1-31), month (1-12 or jan-dec), day of week (0-7, 0 and 7 Sunday, or sun-sat), each `*`, a number, a range `a-b`, a list `a,b` or a step `*/n` / `a-b/n`; with both day fields restricted either matches. Or @yearly, @annually, @monthly, @weekly, @daily, @midnight, @hourly. No seconds, no @reboot. A local time a daylight-saving change skips does not fire; one it repeats fires once.",
+          "examples": ["0 8 * * 1-5", "*/15 * * * *", "@daily"]
+        },
+        "missed": {
+          "enum": ["skip", "run"],
+          "default": "skip",
+          "description": "Only with trigger schedule: what to do with due times the daemon missed (not running, host asleep): skip drops them, run runs once for all of them."
+        },
+        "command": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "A shell command, run as `sh -c <command>` in its own process group with the daemon's environment; its output shows on its run."
+        },
+        "prompt": { "$ref": "#/$defs/prompt" },
+        "cwd": {
+          "type": "string",
+          "minLength": 1,
+          "not": { "pattern": "^/" },
+          "description": "Only with command: the folder it runs in, relative to the workspace folder (`..` resolved without following links; it may not leave the folder). Default: the workspace folder."
+        },
+        "restart": {
+          "enum": ["always", "on-failure"],
+          "default": "always",
+          "description": "Only with trigger service: always restarts after any end; on-failure only after a non-zero exit or a signal the daemon did not send. The delay starts at 1 s and doubles up to 60 s while runs last under 60 s."
+        },
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "false: the job never runs, by schedule or by hand."
+        }
+      },
+      "oneOf": [{ "required": ["command"] }, { "required": ["prompt"] }],
+      "allOf": [
+        {
+          "if": { "required": ["trigger"], "properties": { "trigger": { "const": "schedule" } } },
+          "then": { "required": ["schedule"] },
+          "else": { "properties": { "schedule": false, "missed": false } }
+        },
+        {
+          "if": { "required": ["trigger"], "properties": { "trigger": { "const": "service" } } },
+          "then": { "required": ["command"] },
+          "else": { "properties": { "restart": false } }
+        },
+        {
+          "if": { "required": ["prompt"] },
+          "then": { "properties": { "cwd": false } }
+        }
+      ]
+    },
+    "prompt": {
+      "type": "object",
+      "description": "A prompt sent to an omp thread of this workspace.",
+      "required": ["text"],
+      "additionalProperties": false,
+      "properties": {
+        "text": { "type": "string", "pattern": "\\S", "description": "The message sent." },
+        "thread": {
+          "enum": ["new", "reuse"],
+          "default": "new",
+          "description": "new: a new thread per run, titled `<name> · <YYYY-MM-DD HH:MM>`; reuse: the job's own thread, titled `<name>`, made on first use or when it was deleted or archived (a busy one skips the run)."
+        },
+        "model": { "type": "string", "pattern": "^[^/]+/.+$", "description": "provider/id; default: the daemon's default model." },
+        "thinkingLevel": {
+          "enum": ["inherit", "off", "minimal", "low", "medium", "high", "xhigh", "max"],
+          "description": "As threads.create takes it."
+        },
+        "approvalMode": {
+          "enum": ["always-ask", "always-ask-cached", "write", "yolo"],
+          "description": "omp's --approval-mode, as threads.create takes it; default yolo."
+        }
+      }
+    }
+  }
+}

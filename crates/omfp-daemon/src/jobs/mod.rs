@@ -2,10 +2,15 @@
 //! process group, its output lines published on the `job/<id>` topic (PRT-041). Jobs live in memory and belong to
 //! their workspace, not to a client.
 
+pub mod cron;
+pub mod declared;
+pub mod file;
+
 use std::collections::{HashMap, VecDeque};
 use std::os::unix::process::ExitStatusExt;
 use std::path::Path;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -15,7 +20,7 @@ use rustix::process::{Pid, Signal, kill_process_group, test_kill_process_group};
 use serde::Serialize;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::{Child, ChildStderr, ChildStdout, Command};
-use tokio::sync::watch;
+use tokio::sync::{oneshot, watch};
 use tracing::warn;
 
 use crate::event_log::EventLog;
@@ -31,6 +36,10 @@ pub const REPLAY_EVENTS: usize = 4096;
 pub const FINISHED_KEPT: usize = 32;
 /// How long a job's shell has after SIGTERM before its group gets SIGKILL.
 pub const KILL_GRACE: Duration = Duration::from_secs(2);
+/// A declared run keeps at most this many of its last lines in the store (DMN-330)…
+pub const TAIL_LINES: usize = 200;
+/// …totalling at most this much text.
+pub const TAIL_BYTES: usize = 64 * 1024;
 
 const READ_CHUNK: usize = 8192;
 
@@ -82,6 +91,58 @@ impl JobTopic {
             dropped: 0,
         }
     }
+}
+
+/// The `job/<id>` log of a run the daemon no longer runs, from what the store kept of it (DMN-330): its last lines,
+/// `dropped` counting the others.
+#[must_use]
+pub fn stored_log(job: JobInfo, lines: Vec<JobLine>, dropped: u64) -> Arc<JobLog> {
+    let text_bytes = lines.iter().map(|line| line.text.len()).sum();
+    let topic = JobTopic {
+        job,
+        lines: lines.into(),
+        text_bytes,
+        dropped,
+    };
+    Arc::new(EventLog::new(
+        new_id(),
+        topic,
+        apply,
+        REPLAY_EVENTS,
+        REPLAY_EVENTS,
+    ))
+}
+
+/// How a run of a declared job ended (DMN-327, DMN-330).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RunExit {
+    pub code: Option<i32>,
+    pub signal: Option<i32>,
+    pub ended_at: i64,
+    /// The daemon signalled the run (`jobs.kill`, a teardown, the shutdown).
+    pub killed: bool,
+    /// Its last [`TAIL_LINES`] lines, at most [`TAIL_BYTES`] of text, oldest first.
+    pub tail: Vec<JobLine>,
+    /// Every line it printed.
+    pub line_count: u64,
+}
+
+/// The last lines of `topic` the store keeps (DMN-330) and the count of every line.
+fn tail(topic: &JobTopic) -> (Vec<JobLine>, u64) {
+    let mut bytes = 0;
+    let mut tail: Vec<JobLine> = topic
+        .lines
+        .iter()
+        .rev()
+        .take(TAIL_LINES)
+        .take_while(|line| {
+            bytes += line.text.len();
+            bytes <= TAIL_BYTES
+        })
+        .cloned()
+        .collect();
+    tail.reverse();
+    (tail, topic.dropped + topic.lines.len() as u64)
 }
 
 /// [`omfp_protocol::JobState`]'s wire shape over borrowed parts.
@@ -231,6 +292,8 @@ struct Control {
     group: Pid,
     /// Set right after the shell is reaped.
     exited: watch::Sender<bool>,
+    /// Set once the daemon signalled the group.
+    killed: AtomicBool,
 }
 
 /// How often a kill whose shell already exited checks whether the leftovers are gone.
@@ -267,6 +330,7 @@ impl Control {
         if leftovers && !self.group_alive() {
             return None;
         }
+        self.killed.store(true, Ordering::SeqCst);
         self.signal(Signal::TERM);
         let control = Arc::clone(self);
         Some(async move {
@@ -336,6 +400,31 @@ impl Jobs {
         started_by: Option<&str>,
         replaces: Option<&str>,
     ) -> Result<JobInfo, JobError> {
+        self.spawn(workspace_id, folder, command, started_by, replaces, None)
+    }
+
+    /// Runs a declared job's command in `folder` (its `cwd`) as [`Jobs::start`] runs a transient one (DMN-327), started
+    /// by no thread: no thread owns a declared job's runs (DMN-329). The receiver gets how the run ended.
+    pub fn start_run(
+        &self,
+        workspace_id: &str,
+        folder: &Path,
+        command: &str,
+    ) -> Result<(JobInfo, oneshot::Receiver<RunExit>), JobError> {
+        let (sender, receiver) = oneshot::channel();
+        let job = self.spawn(workspace_id, folder, command, None, None, Some(sender))?;
+        Ok((job, receiver))
+    }
+
+    fn spawn(
+        &self,
+        workspace_id: &str,
+        folder: &Path,
+        command: &str,
+        started_by: Option<&str>,
+        replaces: Option<&str>,
+        exit: Option<oneshot::Sender<RunExit>>,
+    ) -> Result<JobInfo, JobError> {
         if command.trim().is_empty() {
             return Err(JobError::EmptyCommand);
         }
@@ -386,6 +475,7 @@ impl Jobs {
         let control = Arc::new(Control {
             group,
             exited: watch::Sender::new(false),
+            killed: AtomicBool::new(false),
         });
         registry.jobs.insert(
             job.id.clone(),
@@ -402,10 +492,13 @@ impl Jobs {
             tokio::spawn(escalation);
         }
         drop(registry);
-        tokio::spawn(
-            self.clone()
-                .run(job.id.clone(), child, (stdout, stderr), log, control),
-        );
+        tokio::spawn(self.clone().run(
+            job.id.clone(),
+            child,
+            (stdout, stderr),
+            (log, control),
+            exit,
+        ));
         Ok(job)
     }
 
@@ -415,8 +508,8 @@ impl Jobs {
         id: String,
         mut child: Child,
         (stdout, stderr): (ChildStdout, ChildStderr),
-        log: Arc<JobLog>,
-        control: Arc<Control>,
+        (log, control): (Arc<JobLog>, Arc<Control>),
+        exit: Option<oneshot::Sender<RunExit>>,
     ) {
         let shell = async {
             let status = child.wait().await;
@@ -437,11 +530,24 @@ impl Jobs {
         };
         // Kept as finished before anyone sees it finish.
         self.finish(&id);
+        let ended_at = now_ms();
         log.push(JobEvent::JobExited {
             code,
             signal,
-            ended_at: now_ms(),
+            ended_at,
         });
+        if let Some(exit) = exit {
+            let (tail, line_count) = log.with_state(tail);
+            // The declared runtime may be gone (shutdown); nothing waits then.
+            let _ = exit.send(RunExit {
+                code,
+                signal,
+                ended_at,
+                killed: control.killed.load(Ordering::SeqCst),
+                tail,
+                line_count,
+            });
+        }
     }
 
     /// Keeps `id` among its workspace's finished jobs, forgetting the oldest beyond [`FINISHED_KEPT`].
@@ -517,6 +623,21 @@ impl Jobs {
         for escalation in escalations {
             tokio::spawn(escalation);
         }
+    }
+
+    /// The running jobs the agent of `thread` started (DMN-333), oldest first.
+    #[must_use]
+    pub fn running_started_by(&self, thread: &str) -> Vec<JobInfo> {
+        let mut running: Vec<JobInfo> = self
+            .lock()
+            .jobs
+            .values()
+            .filter(|entry| entry.started_by.as_deref() == Some(thread))
+            .map(|entry| entry.log.with_state(|topic| topic.job.clone()))
+            .filter(|job| job.status == JobStatus::Running)
+            .collect();
+        running.sort_by(|a, b| (a.started_at, &a.id).cmp(&(b.started_at, &b.id)));
+        running
     }
 
     /// Forgets the jobs of a removed workspace; one that started meanwhile is killed.

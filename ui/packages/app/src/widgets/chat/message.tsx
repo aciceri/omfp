@@ -287,7 +287,7 @@ function ToolMeta({ card, exitCode }: { card: Card; exitCode: number | undefined
           tone={job.state === "completed" ? "success" : job.state === "running" ? "primary" : "default"}
           data-testid="tool-background"
           data-state={job.state}
-          title={text.tool.backgroundJob(job.jobId)}
+          title={text.tool.backgroundCommand(job.jobId)}
         >
           {text.tool.background[job.state]}
         </Badge>

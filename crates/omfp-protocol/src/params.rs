@@ -953,6 +953,79 @@ pub struct TerminalScreenParams {
     pub wait_ms: Option<u32>,
 }
 
+/// `jobs.runs` params (PRT-203).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct JobRunsParams {
+    pub workspace_id: String,
+    /// The declared job's name.
+    pub job: String,
+    /// Only runs started before this run id.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub before: Option<String>,
+    /// Defaults to 20, capped at 50.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<u32>,
+}
+
+/// `jobs.run` params (PRT-204): one declared job of a workspace.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct JobNameParams {
+    pub workspace_id: String,
+    pub job: String,
+}
+
+/// `jobs.define` params (PRT-205).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DefineJobParams {
+    pub workspace_id: String,
+    pub name: String,
+    /// The job as in `.omfp/jobs.json`; the daemon validates it (DMN-320).
+    pub job: Value,
+    /// Overwrite an existing job of that name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replace: Option<bool>,
+}
+
+/// `jobs.remove` params (PRT-206).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct JobRemoveParams {
+    pub workspace_id: String,
+    pub name: String,
+}
+
+/// `jobs.enable` params (PRT-207).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct EnableJobParams {
+    pub workspace_id: String,
+    pub name: String,
+    pub enabled: bool,
+}
+
+/// What closing a thread does with the transient runs its agent started (PRT-208).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum CloseJobs {
+    /// Kill them as `jobs.kill` does, then close the thread.
+    Kill,
+    /// Leave them running.
+    Keep,
+}
+
+/// `threads.archive` and `threads.delete` params (PRT-208).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadCloseParams {
+    pub thread_id: String,
+    /// Required while runs the thread's agent started still run; otherwise `conflict`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jobs: Option<CloseJobs>,
+}
+
 /// Where `views.mount` puts a widget in a view (PRT-080); `omfp_ui_mount` takes the same `place` (AGT-061).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]

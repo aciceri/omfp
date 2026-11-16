@@ -50,6 +50,7 @@ import {
   strings,
   type ThreadDetails,
   type ThreadStatus,
+  threadJob,
   threadMark,
   useCall,
   useHost,
@@ -407,7 +408,36 @@ function Chips({
     <div className="omfp-thread-header__chips">
       <WorkspaceChipButton chip={view.workspace} onDone={onDone} />
       <Lineage summary={summary} onDone={onDone} />
+      <MadeByJob summary={summary} onDone={onDone} />
     </div>
+  );
+}
+
+/** A thread a declared job made (UI-746): `job <name>` in the provenance place; pressing it shows `omfp:jobs`. */
+function MadeByJob({ summary, onDone }: { summary: ThreadSummary; onDone?: (() => void) | undefined }): ReactNode {
+  const [, reveal] = useWindowState(REVEAL_WIDGET);
+  const job = threadJob(summary);
+  if (job === undefined) {
+    return null;
+  }
+  return (
+    <Button
+      size="sm"
+      variant="quiet"
+      icon={<Icon name="clock" />}
+      className="omfp-thread-header__lineage"
+      data-testid="thread-job"
+      data-job={job}
+      aria-label={text.showJobs(job)}
+      onPress={() => {
+        onDone?.();
+        reveal({ reference: "omfp:jobs", nonce: Date.now(), workspaceId: summary.workspaceId });
+      }}
+    >
+      <span className="omfp-thread-header__lineage-label" title={text.showJobs(job)}>
+        {text.madeByJob(job)}
+      </span>
+    </Button>
   );
 }
 
@@ -752,8 +782,9 @@ function HeaderState({ status, failure }: { status: ThreadStatus; failure: strin
 }
 
 /**
- * `N in background` while jobs or subagents of the thread run (UI-274); a press shows `omfp:background` — its tab, or
- * a floating panel when the view lacks it. Its own component: only it follows the thread's events.
+ * `N in background` while background commands or subagents of the thread run (UI-274, UI-747), saying so in its
+ * tooltip; a press shows `omfp:background` — its tab, or a floating panel when the view lacks it. Its own component:
+ * only it follows the thread's events.
  */
 function BackgroundBadge({ threadId }: { threadId: string }): ReactNode {
   const running = useRunningInBackground(threadId);
@@ -768,7 +799,7 @@ function BackgroundBadge({ threadId }: { threadId: string }): ReactNode {
       data-count={running}
       onPress={() => reveal({ reference: "omfp:background", nonce: Date.now() })}
     >
-      {text.inBackground(running)}
+      <span title={text.inBackgroundTitle(running)}>{text.inBackground(running)}</span>
     </Button>
   );
 }

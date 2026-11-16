@@ -10,7 +10,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::{Map, Value, json};
 
 use crate::dto::{
-    JobStream, RepoStatus, Settings, Theme, ThreadSummary, WidgetInfo, Workspace, WorkspaceBinding,
+    JobStream, JobView, RepoStatus, RunInfo, Settings, Theme, ThreadSummary, WidgetInfo, Workspace,
+    WorkspaceBinding,
 };
 use crate::method::Call;
 use crate::topic::Topic;
@@ -354,6 +355,7 @@ impl<'de> Deserialize<'de> for EventFrame {
             Topic::Views(_) => serde_json::from_value(raw.event).map(TopicEvent::Views),
             Topic::Job(_) => serde_json::from_value(raw.event).map(TopicEvent::Job),
             Topic::Terminal(_) => serde_json::from_value(raw.event).map(TopicEvent::Terminal),
+            Topic::Jobs(_) => serde_json::from_value(raw.event).map(TopicEvent::Jobs),
         }
         .map_err(|error| {
             D::Error::custom(format!("invalid event for topic {}: {error}", raw.topic))
@@ -378,6 +380,7 @@ pub enum TopicEvent {
     Views(ViewsEvent),
     Job(JobEvent),
     Terminal(TerminalEvent),
+    Jobs(JobsEvent),
 }
 /// Change on the `index` topic.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -488,4 +491,22 @@ pub enum TerminalEvent {
         #[serde(rename = "endedAt")]
         ended_at: i64,
     },
+}
+
+/// Change on a `jobs/<workspaceId>` topic, whose state is a `JobsState` (PRT-200).
+#[allow(clippy::large_enum_variant)] // A wire type, built once per event; boxing would only add allocations.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum JobsEvent {
+    /// The whole state: a file was applied or refused.
+    JobsSet {
+        jobs: Vec<JobView>,
+        error: Option<String>,
+    },
+    /// One job changed, or appeared; replace it by name.
+    JobUpdated { job: JobView },
+    /// A run started; the job's state comes with `job_updated`.
+    RunStarted { run: RunInfo },
+    /// A run ended; the job's state comes with `job_updated`.
+    RunEnded { run: RunInfo },
 }

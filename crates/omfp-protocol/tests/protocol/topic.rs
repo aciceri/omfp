@@ -1,11 +1,11 @@
-//! Topic names (`index`, `thread/<id>`, `workspace/<id>`, `views/<id>`, `job/<id>`, `terminal/<id>`).
+//! Topic names (`index`, `thread/<id>`, `workspace/<id>`, `views/<id>`, `job/<id>`, `jobs/<id>`, `terminal/<id>`).
 
 use omfp_protocol::Topic;
 use serde_json::json;
 
 use crate::samples::{THREAD_ID, WORKSPACE_ID};
 
-// spec: TRM-100
+// spec: TRM-100, PRT-200
 #[test]
 fn topics_round_trip_through_their_names() {
     let cases = [
@@ -26,6 +26,10 @@ fn topics_round_trip_through_their_names() {
         (
             Topic::Terminal("01TERMINAL".to_owned()),
             "terminal/01TERMINAL".to_owned(),
+        ),
+        (
+            Topic::Jobs(WORKSPACE_ID.to_owned()),
+            format!("jobs/{WORKSPACE_ID}"),
         ),
         // Ids are any non-empty `[A-Za-z0-9_-]` string.
         (Topic::Job("a-b_C9".to_owned()), "job/a-b_C9".to_owned()),
@@ -52,6 +56,8 @@ fn malformed_topics_are_rejected() {
         "Thread/01J",
         "threads/01J",
         "repo/01J",
+        "jobs/",
+        "jobs/a/b",
         "/01J",
         " index",
     ] {

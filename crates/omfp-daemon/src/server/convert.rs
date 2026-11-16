@@ -5,7 +5,8 @@ use std::path::PathBuf;
 
 use omfp_protocol::{
     CreatedBy, DiffPage, ErrorBody, ErrorCode, FileChange, FileDiff, FileStatus, ForkOrigin,
-    GitStatus, Provenance, RepoKind, ThreadSummary, TitleSource, Workspace, WorkspaceRepo,
+    GitStatus, JobCounts, Provenance, RepoKind, ThreadSummary, TitleSource, Workspace,
+    WorkspaceRepo,
 };
 use serde_json::json;
 
@@ -133,13 +134,15 @@ fn provenance(created_by: &store::Provenance, client: Option<&String>) -> Proven
             store::Provenance::Thread(thread_id) => CreatedBy::Thread {
                 thread_id: thread_id.clone(),
             },
+            store::Provenance::Job(job) => CreatedBy::Job { job: job.clone() },
         },
         client: client.cloned(),
     }
 }
 
 /// The protocol's workspace: the record, its discovered repositories (with the other workspaces holding the same
-/// checkout, from `holders`), its threads (DMN-027) and its place in the column (DMN-284).
+/// checkout, from `holders`), its threads (DMN-027), its place in the column (DMN-284) and the counts of its declared
+/// jobs (PRT-210).
 pub(crate) fn workspace(
     ws: &store::Workspace,
     repos: &[Discovered],
@@ -147,6 +150,7 @@ pub(crate) fn workspace(
     holders: &HashMap<PathBuf, Vec<String>>,
     clients: &HashMap<String, String>,
     position: u32,
+    jobs: Option<JobCounts>,
 ) -> Workspace {
     let text = |path: &std::path::Path| path.to_string_lossy().into_owned();
     Workspace {
@@ -184,6 +188,7 @@ pub(crate) fn workspace(
         provenance: provenance(&ws.created_by, clients.get(&ws.id)),
         created_at: ws.created_at,
         position,
+        jobs,
     }
 }
 

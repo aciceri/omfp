@@ -1194,3 +1194,52 @@ requirements = [
   "TRM-106",
   "E2E-71",
 ]
+
+[M18]
+status = "in-progress"
+requirements = [
+  # Daemon: the jobs file, schedules, services, command and prompt runs, the store, the jobs topic
+  "DMN-320",
+  "DMN-321",
+  "DMN-322",
+  "DMN-323",
+  "DMN-324",
+  "DMN-325",
+  "DMN-326",
+  "DMN-327",
+  "DMN-328",
+  "DMN-329",
+  "DMN-330",
+  "DMN-331",
+  "DMN-332",
+  "DMN-333",
+  "DMN-334",
+  "DMN-335",
+  "DMN-336",
+  # Protocol: jobs/<id>, jobs.list/runs/run/define/remove/enable, closing a thread with its runs, counts
+  "PRT-200",
+  "PRT-201",
+  "PRT-202",
+  "PRT-203",
+  "PRT-204",
+  "PRT-205",
+  "PRT-206",
+  "PRT-207",
+  "PRT-208",
+  "PRT-209",
+  "PRT-210",
+  # Window: counts by the workspace, omfp:jobs, the close dialog, job commands, init files' jobs
+  "UI-740",
+  "UI-741",
+  "UI-742",
+  "UI-743",
+  "UI-744",
+  "UI-745",
+  "UI-746",
+  "UI-747",
+  "UI-748",
+  "UI-749",
+  # Agents: useJobs and the Declared jobs docs
+  "AGT-090",
+  "AGT-091",
+]

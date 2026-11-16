@@ -10,8 +10,8 @@ use serde_json::{Map, Value, json};
 use std::fmt::Debug;
 
 use crate::dto::{
-    DiffPage, FileCandidates, FileContent, FileWritten, GitStatus, JobInfo, Settings, TerminalInfo,
-    TerminalScreen, Theme, ThreadSummary, Workspace,
+    DiffPage, FileCandidates, FileContent, FileWritten, GitStatus, JobInfo, JobRuns, JobView,
+    JobsState, RunInfo, Settings, TerminalInfo, TerminalScreen, Theme, ThreadSummary, Workspace,
 };
 use crate::{activity, auth, lists, mcp, params, session, windows};
 use omfp_core::wire;
@@ -165,12 +165,12 @@ methods! {
     /// Puts a thread just before another of a workspace in the left column, or last; another workspace moves it
     /// there (PRT-171, DMN-282, DMN-283).
     ThreadsReorder = "threads.reorder" (params::ReorderThreadParams) -> params::Empty;
-    /// Archives a thread.
-    ThreadsArchive = "threads.archive" (params::ThreadRef) -> params::Empty;
+    /// Archives a thread; `jobs` says what happens to the runs its agent started (PRT-208).
+    ThreadsArchive = "threads.archive" (params::ThreadCloseParams) -> params::Empty;
     /// Brings an archived thread back.
     ThreadsUnarchive = "threads.unarchive" (params::ThreadRef) -> params::Empty;
-    /// Deletes a thread; its workspace is kept.
-    ThreadsDelete = "threads.delete" (params::ThreadRef) -> params::Empty;
+    /// Deletes a thread; its workspace is kept; `jobs` as for `threads.archive` (PRT-208).
+    ThreadsDelete = "threads.delete" (params::ThreadCloseParams) -> params::Empty;
     /// Forks a thread into a new thread of the same workspace, with its conversation up to an entry (DMN-300); the
     /// source is untouched.
     ThreadsFork = "threads.fork" (params::ForkParams) -> ThreadSummary;
@@ -275,6 +275,18 @@ methods! {
     TerminalsResize = "terminals.resize" (params::TerminalResizeParams) -> params::Empty;
     /// Kills a PTY session (TRM-101).
     TerminalsKill = "terminals.kill" (params::TerminalRef) -> params::Empty;
+    /// The declared jobs of a workspace, as on `jobs/<id>` (PRT-202).
+    JobsList = "jobs.list" (params::WorkspaceRef) -> JobsState;
+    /// The stored runs of a declared job, newest first (PRT-203).
+    JobsRuns = "jobs.runs" (params::JobRunsParams) -> JobRuns;
+    /// Starts a run of a declared job (PRT-204).
+    JobsRun = "jobs.run" (params::JobNameParams) -> RunInfo;
+    /// Writes a job into `.omfp/jobs.json` and answers it once applied (PRT-205).
+    JobsDefine = "jobs.define" (params::DefineJobParams) -> JobView;
+    /// Removes a job from `.omfp/jobs.json` (PRT-206).
+    JobsRemove = "jobs.remove" (params::JobRemoveParams) -> params::Empty;
+    /// Enables or disables a job in `.omfp/jobs.json` (PRT-207).
+    JobsEnable = "jobs.enable" (params::EnableJobParams) -> JobView;
     /// The init file and TSX view errors every window showing the workspace reports (PRT-116).
     ViewsErrors = "views.errors" (params::WorkspaceRef) -> params::ViewErrors;
     /// The windows that reported to the daemon, the most recently focused first: workspace, thread, view, errors

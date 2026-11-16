@@ -50,7 +50,7 @@ pub(crate) fn uris(text: &str) -> Vec<String> {
 
 /// The `omfp://` URIs every reader gets (threads' host URIs and the MCP resources): the method catalogue, the docs and
 /// their index, the keymap, the schemas and the built-in widgets.
-pub(crate) const STATIC_URIS: [&str; 8] = [
+pub(crate) const STATIC_URIS: [&str; 9] = [
     METHODS_URL,
     shell::INDEX_URL,
     DOCS_URL,
@@ -58,6 +58,7 @@ pub(crate) const STATIC_URIS: [&str; 8] = [
     shell::KEYMAP_URL,
     SCHEMA_URL,
     keymap::SCHEMA_URL,
+    crate::jobs::file::SCHEMA_URL,
     BUILTIN_URL,
 ];
 

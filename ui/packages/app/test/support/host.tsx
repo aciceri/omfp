@@ -13,6 +13,9 @@ import {
   type IndexSnapshot,
   type JobEvent,
   type JobState,
+  type JobsEvent,
+  type JobsState,
+  jobsTopic,
   jobTopic,
   type ParamsOf,
   type ResultOf,
@@ -215,6 +218,19 @@ export class FakeClient implements SdkClient {
   jobEvents(jobId: string, ...events: JobEvent[]): void {
     for (const event of events) {
       this.#apply(jobTopic(jobId), event);
+    }
+    this.notify();
+  }
+
+  /** Answers `jobs/<workspaceId>` with `state` (no jobs and no error by default). */
+  jobs(workspaceId: string, state: Partial<JobsState> = {}): void {
+    this.#snapshot(jobsTopic(workspaceId), { jobs: [], error: null, ...state });
+  }
+
+  /** Applies live `jobs/<workspaceId>` events after {@link FakeClient.jobs}. */
+  jobsEvents(workspaceId: string, ...events: JobsEvent[]): void {
+    for (const event of events) {
+      this.#apply(jobsTopic(workspaceId), event);
     }
     this.notify();
   }

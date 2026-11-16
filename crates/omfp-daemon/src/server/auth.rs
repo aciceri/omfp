@@ -58,6 +58,7 @@ pub enum Permission {
 
 /// The method → permission table; `None` for an unknown method.
 #[must_use]
+#[allow(clippy::too_many_lines)] // One flat table of every method.
 pub fn permission(method: &str) -> Option<Permission> {
     use Permission::{Connect, Drive, Manage, Read};
     Some(match method {
@@ -88,6 +89,8 @@ pub fn permission(method: &str) -> Option<Permission> {
         | "settings.get"
         | "widgets.library"
         | "terminals.screen"
+        | "jobs.list"
+        | "jobs.runs"
         | "views.errors"
         | "windows.list"
         | "windows.state"
@@ -119,7 +122,10 @@ pub fn permission(method: &str) -> Option<Permission> {
         | "views.mount"
         | "views.mount_update"
         | "views.unmount"
-        | "widgets.save" => Manage,
+        | "widgets.save"
+        | "jobs.define"
+        | "jobs.remove"
+        | "jobs.enable" => Manage,
         "thread.prompt"
         | "thread.steer"
         | "thread.follow_up"
@@ -147,6 +153,7 @@ pub fn permission(method: &str) -> Option<Permission> {
         | "interaction.respond"
         | "jobs.start"
         | "jobs.kill"
+        | "jobs.run"
         | "terminals.start"
         | "terminals.input"
         | "terminals.resize"

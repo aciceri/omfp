@@ -1,19 +1,23 @@
 /**
- * The frame's dialogs: the workspace delete confirmation (UI-020), the `views.json` reset confirmation (UI-430)
- * and the token screen (UI-002).
+ * The frame's dialogs: the workspace delete confirmation (UI-020), the `views.json` reset confirmation (UI-430), the
+ * question about a closed thread's running commands (UI-744) and the token screen (UI-002).
  */
 
 import { Button, Checkbox, ConfirmDialog, Dialog, TextField } from "@omfp/kit";
-import type { ThreadSummary, Workspace } from "@omfp/protocol";
+import type { CloseJobs, RunInfo, ThreadSummary, Workspace } from "@omfp/protocol";
 import { type FormEvent, type ReactNode, useMemo, useState } from "react";
 import { keyLabel } from "../keymap/keymap.ts";
 import {
+  CLOSE_THREAD,
+  closeThread,
   DELETE_WORKSPACE,
+  formatDuration,
   RESET_VIEWS,
   removeWorkspace,
   reportError,
   reportSuccess,
   useHost,
+  useThreadSummary,
   useThreads,
   useWindowState,
   useWorkspaces,
@@ -22,6 +26,79 @@ import { strings } from "../strings/index.ts";
 import { DEFAULT_MANIFEST } from "../view/views.ts";
 import { displayTitle } from "../vm/threads.ts";
 
+/**
+ * Closing a thread whose agent's commands still run (UI-744, PRT-208): asked once, the dialog lists them (command, how
+ * long they ran) and repeats the archive or delete with *Stop them* (`jobs: "kill"`) or *Keep them running*
+ * (`jobs: "keep"`); Cancel, which has the focus, leaves the thread as it was.
+ */
+export function CloseThreadDialog(): ReactNode {
+  const host = useHost();
+  const [request, setRequest] = useWindowState(CLOSE_THREAD);
+  const summary = useThreadSummary(request?.threadId);
+  const text = strings.shell.closeRuns;
+  const choose = (jobs: CloseJobs) => {
+    if (request !== undefined) {
+      setRequest(undefined);
+      void closeThread(host, request.method, request.threadId, jobs);
+    }
+  };
+  return (
+    <Dialog
+      isOpen={request !== undefined}
+      onOpenChange={(open) => {
+        if (!open) {
+          setRequest(undefined);
+        }
+      }}
+      title={text.title(summary === undefined ? (request?.threadId ?? "") : displayTitle(summary))}
+      role="alertdialog"
+      data-testid="close-runs-dialog"
+    >
+      {({ close }) =>
+        request === undefined ? null : (
+          <>
+            <div className="omfp-dialog__message">
+              <p>{text.message(request.runs.length)}</p>
+              <ul data-testid="close-runs-list">
+                {request.runs.map((run) => (
+                  <ClosedRun key={run.id} run={run} />
+                ))}
+              </ul>
+            </div>
+            <div className="omfp-dialog__actions">
+              <Button
+                variant="quiet"
+                onPress={close}
+                autoFocus
+                kbd={keyLabel("Escape")}
+                data-testid="close-runs-cancel"
+              >
+                {text.cancel}
+              </Button>
+              <Button onPress={() => choose("keep")} data-testid="close-runs-keep">
+                {text.keep}
+              </Button>
+              <Button variant="danger" onPress={() => choose("kill")} data-testid="close-runs-stop">
+                {text.stop}
+              </Button>
+            </div>
+          </>
+        )
+      }
+    </Dialog>
+  );
+}
+
+/** One run of {@link CloseThreadDialog}: its command (PRT-201) and how long it ran. */
+function ClosedRun({ run }: { run: RunInfo }): ReactNode {
+  const text = strings.shell.closeRuns;
+  const command = run.command ?? undefined;
+  return (
+    <li data-testid="close-run" data-run={run.id}>
+      <code>{command ?? text.command}</code> {text.ran(formatDuration(Date.now() - run.startedAt))}
+    </li>
+  );
+}
 /**
  * `:view-reset` (UI-107, UI-430): the current default manifest replaces the workspace's views.json, valid or not, only
  * once confirmed; the result is announced and shown as a success toast, failures go to the error list.

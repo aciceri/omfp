@@ -454,3 +454,33 @@ describe("a fork's header", () => {
     expect(screen.queryAllByTestId("fork-lineage").length).toBe(0);
   });
 });
+
+describe("a job's thread in the header", () => {
+  // spec: UI-746
+  test("a thread a job made says `job <name>` where a fork names its source, and reveals omfp:jobs", async () => {
+    const made = thread("t1", "mail · 2026-11-16 07:00", "w1", {
+      provenance: { createdBy: { kind: "job", job: "mail" }, client: "omfp-daemon" },
+    });
+    const test = setup(made);
+    const mark = await screen.findByTestId("thread-job");
+    expect(mark.textContent).toBe("job mail");
+    expect(mark.getAttribute("aria-label")).toBe("Made by job mail: show the jobs");
+    await test.user.click(mark);
+    expect(test.host.window.get(REVEAL_WIDGET)).toMatchObject({ reference: "omfp:jobs", workspaceId: "w1" });
+    cleanup();
+    setup();
+    expect(screen.queryAllByTestId("thread-job").length).toBe(0);
+  });
+});
+
+describe("one meaning of job in the header", () => {
+  // spec: UI-747
+  test("the background badge's tooltip names background commands, not jobs", () => {
+    const test = setup();
+    const events = fixtureEvents("async_bash_tool_call");
+    test.client.thread("t1", events.slice(0, events.findIndex(isFrame("tool_execution_end")) + 1));
+    test.flush();
+    const tip = screen.getByTestId("background-badge").querySelector("[title]")?.getAttribute("title");
+    expect(tip).toBe("1 background command or subagent runs: show them");
+  });
+});

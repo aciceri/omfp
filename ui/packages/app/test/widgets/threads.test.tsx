@@ -411,8 +411,8 @@ describe("omfp:threads", () => {
     await user.click(within(dialog).getByTestId("confirm-delete-workspace"));
     await waitFor(() => expect(client.callsTo("workspaces.remove")).toHaveLength(1));
     expect(client.calls.map((call) => [call.method, call.params])).toEqual([
-      ["threads.delete", { threadId: "t2" }],
-      ["threads.delete", { threadId: "t3" }],
+      ["threads.delete", { threadId: "t2", jobs: "kill" }],
+      ["threads.delete", { threadId: "t3", jobs: "kill" }],
       ["workspaces.remove", { workspaceId: "w2" }],
     ]);
   });

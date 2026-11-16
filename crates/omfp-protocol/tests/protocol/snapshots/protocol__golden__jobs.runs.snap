@@ -1,0 +1,59 @@
+---
+source: crates/omfp-protocol/tests/protocol/golden.rs
+expression: golden
+---
+{
+  "request": {
+    "id": "c42",
+    "method": "jobs.runs",
+    "params": {
+      "before": "01RUNOLDER",
+      "job": "nightly",
+      "limit": 2,
+      "workspaceId": "01JD8X3Q4T9V2W6Y5Z7A1B3C5E"
+    },
+    "type": "request"
+  },
+  "response": {
+    "id": "c42",
+    "ok": true,
+    "result": {
+      "more": true,
+      "runs": [
+        {
+          "command": "cargo test",
+          "endedAt": 1700000060000,
+          "exitCode": 0,
+          "id": "01RUN",
+          "job": "nightly",
+          "reason": null,
+          "signal": null,
+          "startedAt": 1700000000000,
+          "startedBy": {
+            "kind": "user"
+          },
+          "status": "succeeded",
+          "threadId": null,
+          "trigger": "manual",
+          "workspaceId": "01JD8X3Q4T9V2W6Y5Z7A1B3C5E"
+        },
+        {
+          "command": "cargo test",
+          "endedAt": 1699999000000,
+          "exitCode": null,
+          "id": "01RUNSKIPPED",
+          "job": "nightly",
+          "reason": "the previous run still runs",
+          "signal": null,
+          "startedAt": 1699999000000,
+          "startedBy": null,
+          "status": "skipped",
+          "threadId": null,
+          "trigger": "schedule",
+          "workspaceId": "01JD8X3Q4T9V2W6Y5Z7A1B3C5E"
+        }
+      ]
+    },
+    "type": "response"
+  }
+}

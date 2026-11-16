@@ -30,15 +30,17 @@ pub use auth::{
 pub use dto::{
     BuiltinTheme, CreatedBy, Density, DiffPage, FileCandidate, FileCandidates, FileChange,
     FileContent, FileDiff, FileKind, FileMatch, FileStatus, FileWritten, FontSettings, ForkOrigin,
-    GitStatus, IndexSnapshot, JobInfo, JobLine, JobState, JobStatus, JobStream, KeymapEntry,
-    KeymapMode, Motion, NotificationMode, PathEntry, Provenance, RepoKind, RepoStatus,
-    RestartReason, SeenRepository, Settings, TerminalCursor, TerminalInfo, TerminalScreen,
-    TerminalState, TerminalStatus, Theme, ThreadSummary, TitleSource, UiSettings, ViewsState,
-    WidgetInfo, WidgetSource, Workspace, WorkspaceBinding, WorkspaceRepo,
+    GitStatus, IndexSnapshot, JobCounts, JobDefinition, JobInfo, JobLine, JobPrompt, JobRunStatus,
+    JobRuns, JobState, JobStatus, JobStream, JobTrigger, JobView, JobViewStatus, JobsState,
+    KeymapEntry, KeymapMode, MissedPolicy, Motion, NotificationMode, PathEntry, PromptThread,
+    Provenance, RepoKind, RepoStatus, RestartPolicy, RestartReason, RunInfo, RunTrigger,
+    SeenRepository, Settings, TerminalCursor, TerminalInfo, TerminalScreen, TerminalState,
+    TerminalStatus, Theme, ThreadSummary, TitleSource, UiSettings, ViewsState, WidgetInfo,
+    WidgetSource, Workspace, WorkspaceBinding, WorkspaceRepo,
 };
 pub use envelope::{
-    ErrorBody, ErrorCode, EventFrame, IndexEvent, JobEvent, ProtocolError, Request, Response,
-    ServerFrame, TerminalEvent, TopicEvent, TransientEvent, ViewsEvent, WorkspaceEvent,
+    ErrorBody, ErrorCode, EventFrame, IndexEvent, JobEvent, JobsEvent, ProtocolError, Request,
+    Response, ServerFrame, TerminalEvent, TopicEvent, TransientEvent, ViewsEvent, WorkspaceEvent,
     decode_request,
 };
 pub use lists::{ListThreadsParams, ThreadList, WorkspaceList};
@@ -47,21 +49,22 @@ pub use mcp::{
 };
 pub use method::{Call, METHODS, Method, method_description, method_schemas};
 pub use params::{
-    AddRepoParams, ApprovalMode, BashParams, BtwParams, CompactParams, CompletePathParams,
-    CopyWidgetParams, CreateThreadParams, CreateWorkspaceParams, Empty, FindFileParams, ForkParams,
-    GoalParams, HelloParams, HelloResult, InteractionResponse, JobRef, LabelParams,
-    LiveConnectParams, LiveConnected, LiveMuteParams, LiveMuted, LiveStarted, MessageParams,
-    NavigateParams, PathCompletions, Position, PromptBehavior, PromptParams, PromptResult,
-    QueueMessageParams, ReadFileParams, RemoveRepoParams, RemoveWorkspaceParams,
+    AddRepoParams, ApprovalMode, BashParams, BtwParams, CloseJobs, CompactParams,
+    CompletePathParams, CopyWidgetParams, CreateThreadParams, CreateWorkspaceParams,
+    DefineJobParams, Empty, EnableJobParams, FindFileParams, ForkParams, GoalParams, HelloParams,
+    HelloResult, InteractionResponse, JobNameParams, JobRef, JobRemoveParams, JobRunsParams,
+    LabelParams, LiveConnectParams, LiveConnected, LiveMuteParams, LiveMuted, LiveStarted,
+    MessageParams, NavigateParams, PathCompletions, Position, PromptBehavior, PromptParams,
+    PromptResult, QueueMessageParams, ReadFileParams, RemoveRepoParams, RemoveWorkspaceParams,
     ReorderThreadParams, ReorderWorkspaceParams, RepoRef, RepoSource, RepoSuggestions,
     ReportWidgetsParams, RespondParams, SearchThreadsParams, SetModelParams, SetSettingsParams,
     SetThinkingParams, SetViewsParams, SetWidgetStateParams, StartJobParams, StartTerminalParams,
     SubagentMessagesParams, SubagentRef, SubagentSteerParams, SubscribeParams, SubscribeResult,
     SuggestReposParams, TerminalInputParams, TerminalRef, TerminalResizeParams,
-    TerminalScreenParams, ThreadGit, ThreadRef, ThreadSearchResult, ThreadSearchResults,
-    ThreadWorkspace, TopicParams, UpdateThreadParams, UpdateWorkspaceParams, WidgetCopied,
-    WidgetJobReport, WidgetReport, WidgetReportState, WorkspaceDiffParams, WorkspaceRef,
-    WriteFileParams,
+    TerminalScreenParams, ThreadCloseParams, ThreadGit, ThreadRef, ThreadSearchResult,
+    ThreadSearchResults, ThreadWorkspace, TopicParams, UpdateThreadParams, UpdateWorkspaceParams,
+    WidgetCopied, WidgetJobReport, WidgetReport, WidgetReportState, WorkspaceDiffParams,
+    WorkspaceRef, WriteFileParams,
 };
 pub use params::{FileErrorKind, FileErrorReport, ViewErrors, WindowFileErrors};
 pub use params::{

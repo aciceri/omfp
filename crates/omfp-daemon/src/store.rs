@@ -5,7 +5,10 @@
 //! truth, and the repositories inside a workspace are discovered from its folder (DMN-022). All calls are blocking;
 //! the server layer runs them on blocking tasks.
 
+mod jobs;
 mod migrate;
+
+pub use jobs::{FINISHED_RUNS_KEPT, JobRun, JobState, RunEnd, RunOutput};
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -42,16 +45,22 @@ pub enum Provenance {
     User,
     Thread(String),
     Mcp,
+    /// A declared job's prompt run (DMN-334).
+    Job(String),
 }
 
+/// The stored prefix of a job provenance; thread ids are ULIDs and never start with it.
+const JOB_PREFIX: &str = "job:";
+
 impl Provenance {
-    /// Stored form: `user`, `mcp` or the thread id (a ULID, never one of the two).
+    /// Stored form: `user`, `mcp`, `job:<name>` or the thread id (a ULID, never one of the others).
     #[must_use]
-    pub fn as_str(&self) -> &str {
+    pub fn as_str(&self) -> std::borrow::Cow<'_, str> {
         match self {
-            Self::User => "user",
-            Self::Mcp => "mcp",
-            Self::Thread(id) => id,
+            Self::User => "user".into(),
+            Self::Mcp => "mcp".into(),
+            Self::Thread(id) => id.as_str().into(),
+            Self::Job(job) => format!("{JOB_PREFIX}{job}").into(),
         }
     }
 
@@ -60,7 +69,10 @@ impl Provenance {
         match value {
             "user" => Self::User,
             "mcp" => Self::Mcp,
-            _ => Self::Thread(value.to_owned()),
+            _ => match value.strip_prefix(JOB_PREFIX) {
+                Some(job) => Self::Job(job.to_owned()),
+                None => Self::Thread(value.to_owned()),
+            },
         }
     }
 }
@@ -636,7 +648,7 @@ impl Store {
     /// Checks that a provenance names an existing thread, if it names one (ARC-009).
     pub fn check_provenance(&self, created_by: &Provenance) -> Result<()> {
         match created_by {
-            Provenance::User | Provenance::Mcp => Ok(()),
+            Provenance::User | Provenance::Mcp | Provenance::Job(_) => Ok(()),
             Provenance::Thread(id) => ensure_thread(&self.conn(), id),
         }
     }
@@ -1092,6 +1104,18 @@ mod tests {
         assert_eq!(Provenance::parse("user"), Provenance::User);
         assert_eq!(Provenance::parse("mcp"), Provenance::Mcp);
         assert_eq!(Provenance::parse("01J"), Provenance::Thread("01J".into()));
+    }
+
+    // spec: PRT-209, DMN-334
+    #[test]
+    fn a_job_provenance_is_stored_as_job_and_its_name() {
+        let job = Provenance::Job("nightly".into());
+        assert_eq!(job.as_str(), "job:nightly");
+        assert_eq!(Provenance::parse("job:nightly"), job);
+        assert_eq!(
+            Provenance::parse("01JABCDEF"),
+            Provenance::Thread("01JABCDEF".into())
+        );
     }
 
     fn sent(text: &str, thread_id: &str, workspace_id: &str, at: i64) -> SentPrompt {

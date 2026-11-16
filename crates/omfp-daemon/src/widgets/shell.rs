@@ -112,12 +112,15 @@ pub fn index() -> String {
          config and its workspace's `.omfp/keymap.json` add.\n\
          - {SCHEMA_URL} — the JSON Schema of `.omfp/views.json`.\n\
          - {} — the JSON Schema of `.omfp/keymap.json`.\n\
+         - {} — the JSON Schema of `.omfp/jobs.json`, the commands and prompts this workspace runs by hand, on a \
+         schedule or as services.\n\
          - {BUILTIN_URL} — the built-in widgets; {BUILTIN_URL}/<name>[/<path>] their sources.\n\
          - {} — the protocol methods `omfp_call` accepts; {}/<name> gives one's params and result schemas.\n\
          \n\
          Check a widget, an init file (`init`, `user:init`) or a TSX view (`views/<file>`) with `omfp_widget_check`, \
          and what the open windows show with `omfp_windows` ({DOCS_URL}, \"Checking your work in the window\").\n",
         keymap::SCHEMA_URL,
+        crate::jobs::file::SCHEMA_URL,
         crate::agent_tools::catalog::METHODS_URL,
         crate::agent_tools::catalog::METHODS_URL,
     )
@@ -379,6 +382,7 @@ mod tests {
             KEYMAP_URL,
             SCHEMA_URL,
             keymap::SCHEMA_URL,
+            crate::jobs::file::SCHEMA_URL,
             BUILTIN_URL,
             crate::agent_tools::catalog::METHODS_URL,
         ] {

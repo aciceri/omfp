@@ -1,0 +1,37 @@
+---
+source: crates/omfp-protocol/tests/protocol/golden.rs
+expression: golden
+---
+{
+  "request": {
+    "id": "c42",
+    "method": "jobs.run",
+    "params": {
+      "job": "nightly",
+      "workspaceId": "01JD8X3Q4T9V2W6Y5Z7A1B3C5E"
+    },
+    "type": "request"
+  },
+  "response": {
+    "id": "c42",
+    "ok": true,
+    "result": {
+      "command": "cargo test",
+      "endedAt": null,
+      "exitCode": null,
+      "id": "01RUN",
+      "job": "nightly",
+      "reason": null,
+      "signal": null,
+      "startedAt": 1700000000000,
+      "startedBy": {
+        "kind": "user"
+      },
+      "status": "running",
+      "threadId": null,
+      "trigger": "manual",
+      "workspaceId": "01JD8X3Q4T9V2W6Y5Z7A1B3C5E"
+    },
+    "type": "response"
+  }
+}

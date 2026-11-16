@@ -34,6 +34,8 @@ export type OpenFiles = Readonly<Record<string, FileTabs>>;
 export interface OpenFileOptions {
   readonly line?: number | undefined;
   readonly diff?: boolean | undefined;
+  /** The workspace whose file `path` is, among its open files; the window's current workspace by default. */
+  readonly workspaceId?: string | undefined;
 }
 
 /** The tab id of a file in the `main` slot (the slot's own children use their layout path). */

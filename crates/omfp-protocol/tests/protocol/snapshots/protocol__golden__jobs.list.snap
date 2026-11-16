@@ -1,0 +1,119 @@
+---
+source: crates/omfp-protocol/tests/protocol/golden.rs
+expression: golden
+---
+{
+  "request": {
+    "id": "c42",
+    "method": "jobs.list",
+    "params": {
+      "workspaceId": "01JD8X3Q4T9V2W6Y5Z7A1B3C5E"
+    },
+    "type": "request"
+  },
+  "response": {
+    "id": "c42",
+    "ok": true,
+    "result": {
+      "error": null,
+      "jobs": [
+        {
+          "job": {
+            "command": "cargo test",
+            "cwd": "app",
+            "description": "Nightly test run",
+            "enabled": true,
+            "missed": "run",
+            "restart": "always",
+            "schedule": "0 3 * * *",
+            "trigger": "schedule"
+          },
+          "lastRun": {
+            "command": "cargo test",
+            "endedAt": 1700000060000,
+            "exitCode": 0,
+            "id": "01RUN",
+            "job": "nightly",
+            "reason": null,
+            "signal": null,
+            "startedAt": 1700000000000,
+            "startedBy": {
+              "kind": "user"
+            },
+            "status": "succeeded",
+            "threadId": null,
+            "trigger": "manual",
+            "workspaceId": "01JD8X3Q4T9V2W6Y5Z7A1B3C5E"
+          },
+          "name": "nightly",
+          "nextAt": 1700010000000,
+          "run": null,
+          "status": "idle"
+        },
+        {
+          "job": {
+            "enabled": true,
+            "missed": "skip",
+            "prompt": {
+              "model": "fake/scripted",
+              "text": "Triage the new issues",
+              "thread": "reuse"
+            },
+            "restart": "always",
+            "trigger": "manual"
+          },
+          "lastRun": null,
+          "name": "triage",
+          "nextAt": null,
+          "run": {
+            "command": null,
+            "endedAt": null,
+            "exitCode": null,
+            "id": "01RUNPROMPT",
+            "job": "triage",
+            "reason": null,
+            "signal": null,
+            "startedAt": 1700000000000,
+            "startedBy": {
+              "kind": "user"
+            },
+            "status": "running",
+            "threadId": "01JD8X3Q4T9V2W6Y5Z7A1B3C4D",
+            "trigger": "manual",
+            "workspaceId": "01JD8X3Q4T9V2W6Y5Z7A1B3C5E"
+          },
+          "status": "running"
+        },
+        {
+          "job": {
+            "command": "npm run dev",
+            "enabled": true,
+            "missed": "skip",
+            "restart": "on-failure",
+            "trigger": "service"
+          },
+          "lastRun": {
+            "command": "npm run dev",
+            "endedAt": 1700000005000,
+            "exitCode": null,
+            "id": "01RUNWEB",
+            "job": "web",
+            "reason": null,
+            "signal": 9,
+            "startedAt": 1700000000000,
+            "startedBy": null,
+            "status": "failed",
+            "threadId": null,
+            "trigger": "service",
+            "workspaceId": "01JD8X3Q4T9V2W6Y5Z7A1B3C5E"
+          },
+          "name": "web",
+          "nextAt": 1700000007000,
+          "run": null,
+          "status": "waiting"
+        }
+      ]
+    },
+    "type": "response"
+  }
+}

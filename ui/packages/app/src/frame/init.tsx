@@ -2,13 +2,23 @@
  * The init files in the window (UI-260..UI-263): imports the user's `init.ts` (its
  * version on the `index` topic) and the current workspace's `.omfp/init.ts` (on its `views/<id>` topic) from the
  * daemon's widget base, again when a version or the current workspace changes; gives them the current workspace, its
- * `views.json` and repositories (UI-267); hands thread changes to their listeners; and shows the banner of a file that
- * failed. What the files add (bindings, views, panels) the frame reads with {@link useInit}.
+ * `views.json` and repositories (UI-267); hands thread changes to their listeners; follows the `jobs/<id>` of every
+ * workspace whose jobs the index counts and hands each run event to their listeners once (UI-748); and shows the
+ * banner of a file that failed. What the files add (bindings, views, panels) the frame reads with {@link useInit}.
  */
 
-import type { ThreadSummary, ViewsState } from "@omfp/protocol";
+import { jobsTopic, type ThreadSummary, type ViewsState } from "@omfp/protocol";
 import { type ReactNode, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
-import { type InitError, type InitRepo, type InitSnapshot, useHost, useSnapshot, useThreads } from "../sdk/index.ts";
+import {
+  type InitError,
+  type InitRepo,
+  type InitSnapshot,
+  runEventKinds,
+  useHost,
+  useSnapshot,
+  useThreads,
+  useWorkspaces,
+} from "../sdk/index.ts";
 import { strings } from "../strings/index.ts";
 import { useWidgetBase } from "../view/slot.tsx";
 import { threadNotices } from "./notifications.ts";
@@ -80,7 +90,39 @@ export function InitLoader({
       }
     }
   }, [threads, init]);
+  useRunEvents();
   return null;
+}
+
+/**
+ * Follows `jobs/<id>` of every workspace whose `jobs` the index carries (PRT-210) and hands each run event to the init
+ * files' listeners (UI-748) as the model applies it — once, never one of a snapshot, and without waiting for a frame
+ * (a background tab renders none).
+ */
+function useRunEvents(): void {
+  const { init, topics, client } = useHost();
+  const workspaces = useWorkspaces();
+  const counted = [...workspaces.values()]
+    .filter((workspace) => workspace.jobs !== undefined && workspace.jobs !== null)
+    .map((workspace) => workspace.id)
+    .join(" ");
+  useEffect(() => {
+    const releases = counted === "" ? [] : counted.split(" ").map((id) => topics.retain(jobsTopic(id)));
+    return () => {
+      for (const release of releases) {
+        release();
+      }
+    };
+  }, [topics, counted]);
+  useEffect(
+    () =>
+      client.model.onRunEvent((_workspaceId, { kind, run }) => {
+        for (const event of runEventKinds(kind, run)) {
+          init.emit(event, run);
+        }
+      }),
+    [client, init],
+  );
 }
 
 /** One banner per init file that failed (UI-263); nothing while they work. */

@@ -48,7 +48,7 @@ fn resources() -> [(
     &'static str,
     &'static str,
     &'static str,
-); 8] {
+); 9] {
     [
         (
             METHODS_URL,
@@ -97,6 +97,13 @@ fn resources() -> [(
             "omfp-schema-keymap",
             "keymap.json schema",
             "The JSON Schema of .omfp/keymap.json.",
+            "application/json",
+        ),
+        (
+            crate::jobs::file::SCHEMA_URL,
+            "omfp-schema-jobs",
+            "jobs.json schema",
+            "The JSON Schema of .omfp/jobs.json.",
             "application/json",
         ),
         (

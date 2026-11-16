@@ -8,6 +8,7 @@ import type { ThreadSummary } from "@omfp/protocol";
 import type { MouseEvent, PointerEventHandler, ReactNode } from "react";
 import { useThreadActions, useThreads, useWindowState } from "../../sdk/index.ts";
 import { strings } from "../../strings/index.ts";
+import { threadJob } from "../../vm/jobs.ts";
 import { displayTitle, forkLineage, statusLabel, threadMark, threadStatus } from "../../vm/threads.ts";
 import { relativeAge } from "./age.ts";
 import { SPAWNED_BY } from "./keys.ts";
@@ -50,6 +51,8 @@ export function SummaryRow({
   const fresh = useFresh(status);
   const filtering = spawnedBy === thread.id;
   const lineage = forkLineage(thread, useThreads());
+  // A thread a declared job made says so in its tooltip (UI-746).
+  const job = threadJob(thread);
   const middleClick = (event: MouseEvent) => {
     if (event.button === 1) {
       // Prevent autoscroll on press; delete only on release, without selecting the thread.
@@ -101,6 +104,7 @@ export function SummaryRow({
         "data-reorder-handle": reorder === undefined ? undefined : "true",
         onMouseDown: middleClick,
         onAuxClick: middleClick,
+        ...(job === undefined ? {} : { title: text.madeByJob(title, job), "data-job": job }),
       }}
       actions={
         <>

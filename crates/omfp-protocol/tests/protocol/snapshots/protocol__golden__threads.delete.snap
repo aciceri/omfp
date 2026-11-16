@@ -7,6 +7,7 @@ expression: golden
     "id": "c42",
     "method": "threads.delete",
     "params": {
+      "jobs": "keep",
       "threadId": "01JD8X3Q4T9V2W6Y5Z7A1B3C4D"
     },
     "type": "request"

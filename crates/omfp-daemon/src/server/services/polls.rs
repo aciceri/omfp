@@ -3,8 +3,9 @@
 //! fingerprint changed, and a full scan of each watched workspace every [`FULL_SCAN`] anyway (edits outside omfp that
 //! touch no git file). The fingerprint does not see `.omfp/`, so every round also reads the views and widget folders
 //! again (DMN-082; a full scan does it as part of the rescan). A workspace is watched while a client subscribes to
-//! `workspace/<id>` or `views/<id>` or to the `thread/<id>` of one of its threads, or while one of its threads runs
-//! omp. Every round also compares the MCP configs of the running threads with the ones their omp read (DMN-201).
+//! `workspace/<id>`, `views/<id>` or `jobs/<id>` or to the `thread/<id>` of one of its threads, or while one of its
+//! threads runs omp. Every round also looks at the declared jobs file of every workspace, watched or not (DMN-322),
+//! and compares the MCP configs of the running threads with the ones their omp read (DMN-201).
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -51,9 +52,12 @@ impl Services {
         })
     }
 
-    /// One round: a full scan of each watched workspace that has none yet, changed, or is due; the views of the others.
+    /// One round: a full scan of each watched workspace that has none yet, changed, or is due; the views of the others;
+    /// the jobs files of all.
     async fn poll(&self, scanned: &mut HashMap<String, Scanned>) -> Result<(), ErrorBody> {
         self.supervisor.check_mcp_configs().await;
+        // Jobs run without windows: an edit of their file applies whether anyone watches the workspace or not.
+        self.declared.poll_files().await;
         let (store, supervisor) = (Arc::clone(&self.store), self.supervisor.clone());
         let watched = blocking(move || watched(&store, &supervisor)).await?;
         // A workspace watched again starts with a full scan.
@@ -244,6 +248,52 @@ mod tests {
         until(start, 61).await;
 
         assert_eq!(h.full_scans(), 0);
+    }
+
+    // spec: DMN-322
+    #[tokio::test]
+    async fn a_poll_round_applies_the_jobs_file_of_an_unwatched_workspace() {
+        use omfp_protocol::{JobRunStatus, JobsEvent};
+
+        let h = harness().await;
+        let folder = h.app.parent().unwrap().to_owned();
+        let log = h.services.declared.log(&h.workspace).await.unwrap();
+        let mut events = log.listen();
+        let mut next = async || {
+            tokio::time::timeout(Duration::from_secs(30), events.recv())
+                .await
+                .expect("no jobs event came")
+                .unwrap()
+                .event
+                .clone()
+        };
+        let service = |enabled: bool| {
+            serde_json::json!({ "jobs": { "watch": {
+                "trigger": "service", "command": "while true; do sleep 0.01; done", "enabled": enabled
+            } } })
+            .to_string()
+        };
+        std::fs::create_dir_all(folder.join(".omfp")).unwrap();
+        std::fs::write(folder.join(".omfp/jobs.json"), service(true)).unwrap();
+
+        h.services.poll(&mut HashMap::new()).await.unwrap();
+
+        let run = loop {
+            if let JobsEvent::RunStarted { run } = next().await {
+                break run;
+            }
+        };
+        std::fs::write(folder.join(".omfp/jobs.json"), service(false)).unwrap();
+
+        h.services.poll(&mut HashMap::new()).await.unwrap();
+
+        let ended = loop {
+            if let JobsEvent::RunEnded { run } = next().await {
+                break run;
+            }
+        };
+        assert_eq!((ended.id, ended.status), (run.id, JobRunStatus::Killed));
+        assert_eq!(h.full_scans(), 0, "the workspace was never rescanned");
     }
 
     // spec: DMN-023

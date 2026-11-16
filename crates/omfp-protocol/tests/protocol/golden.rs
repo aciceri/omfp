@@ -35,6 +35,11 @@ use omfp_protocol::{
 use omfp_protocol::{
     AuthProvider, AuthProviders, AuthStatus, LoggedIn, LoggedOut, LoginCancelled, ProviderRef,
 };
+use omfp_protocol::{
+    CloseJobs, DefineJobParams, EnableJobParams, JobDefinition, JobNameParams, JobPrompt,
+    JobRemoveParams, JobRunStatus, JobRuns, JobRunsParams, JobTrigger, JobView, JobViewStatus,
+    JobsState, MissedPolicy, PromptThread, RestartPolicy, RunInfo, RunTrigger, ThreadCloseParams,
+};
 use omfp_protocol::{ContextUsage, SessionTokens, SessionUsage, ThreadSession};
 use omfp_protocol::{
     CreatedBy, ForkOrigin, ListThreadsParams, Provenance, RestartReason, ThreadList, ThreadSummary,
@@ -381,9 +386,21 @@ fn threads_examples() -> Vec<(&'static str, Value)> {
             },
             &Empty {},
         ),
-        example::<method::ThreadsArchive>(thread_ref(), &Empty {}),
+        example::<method::ThreadsArchive>(
+            ThreadCloseParams {
+                thread_id: THREAD_ID.to_owned(),
+                jobs: Some(CloseJobs::Kill),
+            },
+            &Empty {},
+        ),
         example::<method::ThreadsUnarchive>(thread_ref(), &Empty {}),
-        example::<method::ThreadsDelete>(thread_ref(), &Empty {}),
+        example::<method::ThreadsDelete>(
+            ThreadCloseParams {
+                thread_id: THREAD_ID.to_owned(),
+                jobs: Some(CloseJobs::Keep),
+            },
+            &Empty {},
+        ),
         example::<method::ThreadsFork>(
             ForkParams {
                 thread_id: THREAD_ID.to_owned(),
@@ -928,6 +945,196 @@ fn terminal_examples() -> Vec<(&'static str, Value)> {
                 terminal_id: "01TERMINAL".to_owned(),
             },
             &Empty {},
+        ),
+    ]
+}
+
+fn nightly_job() -> JobDefinition {
+    JobDefinition {
+        description: Some("Nightly test run".to_owned()),
+        trigger: JobTrigger::Schedule,
+        schedule: Some("0 3 * * *".to_owned()),
+        missed: MissedPolicy::Run,
+        command: Some("cargo test".to_owned()),
+        prompt: None,
+        cwd: Some("app".to_owned()),
+        restart: RestartPolicy::Always,
+        enabled: true,
+    }
+}
+
+fn nightly_run(status: JobRunStatus, ended_at: Option<i64>, exit_code: Option<i32>) -> RunInfo {
+    RunInfo {
+        id: "01RUN".to_owned(),
+        workspace_id: WORKSPACE_ID.to_owned(),
+        job: Some("nightly".to_owned()),
+        trigger: RunTrigger::Manual,
+        started_by: Some(CreatedBy::User),
+        thread_id: None,
+        command: Some("cargo test".to_owned()),
+        started_at: 1_700_000_000_000,
+        ended_at,
+        status,
+        reason: None,
+        exit_code,
+        signal: None,
+    }
+}
+
+fn nightly_view(enabled: bool) -> JobView {
+    JobView {
+        name: "nightly".to_owned(),
+        job: JobDefinition {
+            enabled,
+            ..nightly_job()
+        },
+        status: if enabled {
+            JobViewStatus::Idle
+        } else {
+            JobViewStatus::Disabled
+        },
+        run: None,
+        last_run: Some(nightly_run(
+            JobRunStatus::Succeeded,
+            Some(1_700_000_060_000),
+            Some(0),
+        )),
+        next_at: enabled.then_some(1_700_010_000_000),
+    }
+}
+
+fn triage_view() -> JobView {
+    JobView {
+        name: "triage".to_owned(),
+        job: JobDefinition {
+            description: None,
+            trigger: JobTrigger::Manual,
+            schedule: None,
+            missed: MissedPolicy::Skip,
+            command: None,
+            prompt: Some(JobPrompt {
+                text: "Triage the new issues".to_owned(),
+                thread: PromptThread::Reuse,
+                model: Some("fake/scripted".to_owned()),
+                thinking_level: None,
+                approval_mode: None,
+            }),
+            cwd: None,
+            restart: RestartPolicy::Always,
+            enabled: true,
+        },
+        status: JobViewStatus::Running,
+        run: Some(RunInfo {
+            id: "01RUNPROMPT".to_owned(),
+            job: Some("triage".to_owned()),
+            thread_id: Some(THREAD_ID.to_owned()),
+            command: None,
+            ..nightly_run(JobRunStatus::Running, None, None)
+        }),
+        last_run: None,
+        next_at: None,
+    }
+}
+
+fn web_view() -> JobView {
+    JobView {
+        name: "web".to_owned(),
+        job: JobDefinition {
+            description: None,
+            trigger: JobTrigger::Service,
+            schedule: None,
+            missed: MissedPolicy::Skip,
+            command: Some("npm run dev".to_owned()),
+            prompt: None,
+            cwd: None,
+            restart: RestartPolicy::OnFailure,
+            enabled: true,
+        },
+        status: JobViewStatus::Waiting,
+        run: None,
+        last_run: Some(RunInfo {
+            id: "01RUNWEB".to_owned(),
+            job: Some("web".to_owned()),
+            trigger: RunTrigger::Service,
+            command: Some("npm run dev".to_owned()),
+            started_by: None,
+            signal: Some(9),
+            ..nightly_run(JobRunStatus::Failed, Some(1_700_000_005_000), None)
+        }),
+        next_at: Some(1_700_000_007_000),
+    }
+}
+
+fn jobs_examples() -> Vec<(&'static str, Value)> {
+    let prompt_job = triage_view();
+    let service_job = web_view();
+    vec![
+        example::<method::JobsList>(
+            workspace_ref(),
+            &JobsState {
+                jobs: vec![nightly_view(true), prompt_job, service_job],
+                error: None,
+            },
+        ),
+        example::<method::JobsRuns>(
+            JobRunsParams {
+                workspace_id: WORKSPACE_ID.to_owned(),
+                job: "nightly".to_owned(),
+                before: Some("01RUNOLDER".to_owned()),
+                limit: Some(2),
+            },
+            &JobRuns {
+                runs: vec![
+                    nightly_run(JobRunStatus::Succeeded, Some(1_700_000_060_000), Some(0)),
+                    RunInfo {
+                        id: "01RUNSKIPPED".to_owned(),
+                        trigger: RunTrigger::Schedule,
+                        started_by: None,
+                        reason: Some("the previous run still runs".to_owned()),
+                        started_at: 1_699_999_000_000,
+                        ..nightly_run(JobRunStatus::Skipped, Some(1_699_999_000_000), None)
+                    },
+                ],
+                more: true,
+            },
+        ),
+        example::<method::JobsRun>(
+            JobNameParams {
+                workspace_id: WORKSPACE_ID.to_owned(),
+                job: "nightly".to_owned(),
+            },
+            &nightly_run(JobRunStatus::Running, None, None),
+        ),
+        example::<method::JobsDefine>(
+            DefineJobParams {
+                workspace_id: WORKSPACE_ID.to_owned(),
+                name: "nightly".to_owned(),
+                job: json!({
+                    "description": "Nightly test run",
+                    "trigger": "schedule",
+                    "schedule": "0 3 * * *",
+                    "missed": "run",
+                    "command": "cargo test",
+                    "cwd": "app"
+                }),
+                replace: Some(true),
+            },
+            &nightly_view(true),
+        ),
+        example::<method::JobsRemove>(
+            JobRemoveParams {
+                workspace_id: WORKSPACE_ID.to_owned(),
+                name: "nightly".to_owned(),
+            },
+            &Empty {},
+        ),
+        example::<method::JobsEnable>(
+            EnableJobParams {
+                workspace_id: WORKSPACE_ID.to_owned(),
+                name: "nightly".to_owned(),
+                enabled: false,
+            },
+            &nightly_view(false),
         ),
     ]
 }
@@ -1654,6 +1861,7 @@ fn every_method_has_a_golden_request_and_response() {
         ui_settings_examples(),
         widget_examples(),
         terminal_examples(),
+        jobs_examples(),
         view_error_examples(),
         window_examples(),
         mount_examples(),

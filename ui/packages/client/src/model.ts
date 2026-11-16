@@ -1,7 +1,7 @@
 /**
  * Pure client state kept from the daemon's frames: connection status, the `index` topic, per-thread `ThreadState`,
- * workspace git status, per-workspace views state (PRT-040) and per-job output (PRT-041), plus the position
- * `{epoch, seq}` of every subscribed topic.
+ * workspace git status, per-workspace views state (PRT-040), per-job output (PRT-041) and per-workspace declared jobs
+ * (PRT-200), plus the position `{epoch, seq}` of every subscribed topic.
  *
  * Thread state comes only from the shared reducer (UI-010): snapshots are the daemon's reducer output, events are
  * applied with `reduce` from `@omfp/core` (PRT-021). Exposed data is immutable: a change replaces the objects on its
@@ -18,10 +18,14 @@ import {
   type IndexSnapshot,
   type JobEvent,
   type JobState,
+  type JobsEvent,
+  type JobsState,
+  type JobView,
   type LoginActivity,
   type Position,
   parseTopic,
   type RepoStatus,
+  type RunInfo,
   type Settings,
   type SubscribeParams,
   type SubscribeResult,
@@ -37,6 +41,7 @@ import {
 import {
   decodeIndexSnapshot,
   decodeJobState,
+  decodeJobsState,
   decodeRepoStatusList,
   decodeTerminalState,
   decodeThreadState,
@@ -98,6 +103,26 @@ export interface ThreadView {
   readonly closed: readonly ClosedInteraction[];
 }
 
+/** A `run_started` or `run_ended` event of a `jobs/<workspaceId>` topic (PRT-200), as the model applied it. */
+export interface RunEvent {
+  /** Increases by one per run event the model applies, across workspaces: what a reader saw ends at a `seq`. */
+  readonly seq: number;
+  readonly kind: "run_started" | "run_ended";
+  readonly run: RunInfo;
+}
+
+/** Run events a `jobs/<id>` topic keeps (newest last). */
+export const RUN_EVENTS_KEPT = 64;
+
+/** One subscribed `jobs/<workspaceId>` topic. */
+export interface WorkspaceJobs {
+  /** The topic's state (PRT-200): the declared jobs by name and why the current file is refused. */
+  readonly state: JobsState;
+  /** The run events applied live, oldest first, at most {@link RUN_EVENTS_KEPT}; a snapshot carries none (its runs
+   * were never announced to this client) and keeps the ones before it. */
+  readonly runs: readonly RunEvent[];
+}
+
 /** How a subscription started (PRT-020): the daemon replayed the missed events, or sent the full state. */
 export type StartMode = "replay" | "snapshot";
 
@@ -134,6 +159,8 @@ export interface Dirty {
   jobs: Set<string>;
   /** Terminal ids whose state changed or went away. */
   terminals: Set<string>;
+  /** Workspace ids whose declared jobs changed or went away. */
+  workspaceJobs: Set<string>;
 }
 
 function emptyDirty(): Dirty {
@@ -146,6 +173,7 @@ function emptyDirty(): Dirty {
     views: new Set(),
     jobs: new Set(),
     terminals: new Set(),
+    workspaceJobs: new Set(),
   };
 }
 
@@ -159,7 +187,8 @@ export function isDirtyEmpty(dirty: Dirty): boolean {
     dirty.workspaces.size === 0 &&
     dirty.views.size === 0 &&
     dirty.jobs.size === 0 &&
-    dirty.terminals.size === 0
+    dirty.terminals.size === 0 &&
+    dirty.workspaceJobs.size === 0
   );
 }
 
@@ -194,6 +223,11 @@ export interface ModelView {
   readonly jobs: ReadonlyMap<string, JobState>;
   /** State of subscribed `terminal/<id>` topics (TRM-100), by terminal id. */
   readonly terminals: ReadonlyMap<string, TerminalState>;
+  /** State of subscribed `jobs/<workspaceId>` topics (PRT-200), by workspace id. */
+  readonly workspaceJobs: ReadonlyMap<string, WorkspaceJobs>;
+  /** Calls `listener` with each `run_started` / `run_ended` event of a `jobs/<workspaceId>` topic as it is applied
+   * live (never for a snapshot), whether or not anything renders in between; returns its removal. */
+  onRunEvent(listener: (workspaceId: string, event: RunEvent) => void): () => void;
 
   /** Subscribed topics in subscription order. */
   readonly topics: readonly TopicState[];
@@ -378,6 +412,30 @@ function applyTerminalEvent(terminal: TerminalState, event: TerminalEvent): Term
   }
 }
 
+/** `jobs` with `job` in place of the job of its name, or inserted in name order. */
+function upsertJob(jobs: readonly JobView[], job: JobView): JobView[] {
+  const at = jobs.findIndex((candidate) => candidate.name === job.name);
+  if (at >= 0) {
+    return jobs.with(at, job);
+  }
+  const before = jobs.findIndex((candidate) => candidate.name > job.name);
+  return before < 0 ? [...jobs, job] : [...jobs.slice(0, before), job, ...jobs.slice(before)];
+}
+
+function applyJobsEvent(jobs: WorkspaceJobs, event: JobsEvent, seq: number): WorkspaceJobs {
+  switch (event.kind) {
+    case "jobs_set":
+      return { ...jobs, state: { jobs: event.jobs, error: event.error ?? null } };
+    case "job_updated":
+      return { ...jobs, state: { ...jobs.state, jobs: upsertJob(jobs.state.jobs, event.job) } };
+    case "run_started":
+    case "run_ended": {
+      const runs = [...jobs.runs, { seq, kind: event.kind, run: event.run }];
+      return { ...jobs, runs: runs.length > RUN_EVENTS_KEPT ? runs.slice(runs.length - RUN_EVENTS_KEPT) : runs };
+    }
+  }
+}
+
 /** Applies one event with the shared reducer and records the interactions it closed. */
 function applyToView(view: ThreadView, event: ThreadEvent): ThreadView {
   const pending = view.state.interactions;
@@ -402,6 +460,9 @@ export class Model implements ModelView {
   #views: ReadonlyMap<string, ViewsState> = new Map();
   #jobs: ReadonlyMap<string, JobState> = new Map();
   #terminals: ReadonlyMap<string, TerminalState> = new Map();
+  #workspaceJobs: ReadonlyMap<string, WorkspaceJobs> = new Map();
+  #runSeq = 0;
+  readonly #runListeners = new Set<(workspaceId: string, event: RunEvent) => void>();
   #topics: readonly TopicState[] = [];
   #dirty: Dirty = emptyDirty();
   #revision = 0;
@@ -436,6 +497,17 @@ export class Model implements ModelView {
 
   get terminals(): ReadonlyMap<string, TerminalState> {
     return this.#terminals;
+  }
+
+  get workspaceJobs(): ReadonlyMap<string, WorkspaceJobs> {
+    return this.#workspaceJobs;
+  }
+
+  onRunEvent(listener: (workspaceId: string, event: RunEvent) => void): () => void {
+    this.#runListeners.add(listener);
+    return () => {
+      this.#runListeners.delete(listener);
+    };
   }
 
   get topics(): readonly TopicState[] {
@@ -524,6 +596,10 @@ export class Model implements ModelView {
       case "terminal":
         this.#terminals = without(this.#terminals, parsed.id);
         this.#dirty.terminals.add(parsed.id);
+        break;
+      case "jobs":
+        this.#workspaceJobs = without(this.#workspaceJobs, parsed.id);
+        this.#dirty.workspaceJobs.add(parsed.id);
         break;
       case undefined:
         break;
@@ -660,6 +736,16 @@ export class Model implements ModelView {
         this.#dirty.terminals.add(parsed.id);
         return undefined;
       }
+      case "jobs": {
+        const jobs = decodeJobsState(state);
+        if (!jobs.ok) {
+          return jobs.error;
+        }
+        const runs = this.#workspaceJobs.get(parsed.id)?.runs ?? [];
+        this.#workspaceJobs = upsert(this.#workspaceJobs, parsed.id, { state: jobs.value, runs });
+        this.#dirty.workspaceJobs.add(parsed.id);
+        return undefined;
+      }
       case undefined:
         return `invalid topic ${topic}`;
     }
@@ -740,6 +826,27 @@ export class Model implements ModelView {
         if (parsed?.kind === "terminal" && terminal !== undefined) {
           this.#terminals = upsert(this.#terminals, parsed.id, applyTerminalEvent(terminal, event));
           this.#dirty.terminals.add(parsed.id);
+        }
+        break;
+      }
+      case "jobs_set":
+      case "job_updated":
+      case "run_started":
+      case "run_ended": {
+        const jobs = parsed?.kind === "jobs" ? this.#workspaceJobs.get(parsed.id) : undefined;
+        if (parsed?.kind === "jobs" && jobs !== undefined) {
+          if (event.kind === "run_started" || event.kind === "run_ended") {
+            this.#runSeq += 1;
+          }
+          this.#workspaceJobs = upsert(this.#workspaceJobs, parsed.id, applyJobsEvent(jobs, event, this.#runSeq));
+          this.#dirty.workspaceJobs.add(parsed.id);
+          if (event.kind === "run_started" || event.kind === "run_ended") {
+            // Synchronously, so a window that renders no frame for a while (a background tab) misses none.
+            const applied: RunEvent = { seq: this.#runSeq, kind: event.kind, run: event.run };
+            for (const listener of [...this.#runListeners]) {
+              listener(parsed.id, applied);
+            }
+          }
         }
         break;
       }

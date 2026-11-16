@@ -197,7 +197,7 @@ describe("omfp:background", () => {
   // spec: UI-271, UI-400
   test("a job's row reveals the chat when its card is not shown, also when it is mounted in a tab not selected", async () => {
     const test = setup(running);
-    await test.user.click(screen.getByRole("button", { name: "Show the card of background job bg_1" }));
+    await test.user.click(screen.getByRole("button", { name: "Show the card of background command bg_1" }));
     expect(test.host.window.get(REVEAL_WIDGET)?.reference).toBe("omfp:chat");
     act(() => test.host.window.set(REVEAL_WIDGET, undefined));
     // Hidden as `<Activity mode="hidden">` hides a tab's content.
@@ -206,7 +206,7 @@ describe("omfp:background", () => {
     hidden.innerHTML = '<div data-testid="tool-card" data-call="call_bash_bg"></div>';
     document.body.append(hidden);
     try {
-      await test.user.click(screen.getByRole("button", { name: "Show the card of background job bg_1" }));
+      await test.user.click(screen.getByRole("button", { name: "Show the card of background command bg_1" }));
       expect(test.host.window.get(REVEAL_WIDGET)?.reference).toBe("omfp:chat");
     } finally {
       hidden.remove();
@@ -246,7 +246,7 @@ describe("omfp:background", () => {
     expect(section("background-older")).toEqual(["bg_3", "bg_2"]);
 
     // Opened, the failed job joins the others.
-    await test.user.click(screen.getByRole("button", { name: "Show the card of background job bg_1" }));
+    await test.user.click(screen.getByRole("button", { name: "Show the card of background command bg_1" }));
     expect(section("background-recent")).toEqual(["bg_8", "bg_7", "bg_6", "bg_5", "bg_4"]);
     expect(section("background-older")).toEqual(["bg_3", "bg_2", "bg_1"]);
 

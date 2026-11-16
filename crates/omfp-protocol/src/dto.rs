@@ -30,6 +30,10 @@ pub enum CreatedBy {
         thread_id: String,
     },
     Mcp,
+    /// A run of the declared job `job` of the entity's workspace (PRT-209).
+    Job {
+        job: String,
+    },
 }
 
 /// A repository the daemon has seen in a workspace, suggested when adding repositories (DMN-021).
@@ -72,6 +76,9 @@ pub struct Workspace {
     pub created_at: i64,
     /// Its place among the workspaces in the left column, from 0; the same in every window (PRT-172, DMN-284).
     pub position: u32,
+    /// Its declared jobs at a glance; absent without jobs and without a refused file (PRT-210).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jobs: Option<JobCounts>,
 }
 
 /// A repository discovered in a workspace folder (DMN-022).
@@ -649,6 +656,200 @@ pub struct JobState {
     pub lines: Vec<JobLine>,
     /// How many older lines were left out.
     pub dropped: u64,
+}
+
+/// When a declared job runs (DMN-320).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum JobTrigger {
+    /// Only when asked.
+    #[default]
+    Manual,
+    /// At the times of its cron `schedule` (DMN-323).
+    Schedule,
+    /// Kept running (DMN-326).
+    Service,
+}
+
+/// What a schedule does with times the daemon missed (DMN-325).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MissedPolicy {
+    #[default]
+    Skip,
+    /// One catch-up run, however many times were missed.
+    Run,
+}
+
+/// When a service starts again after its run ended (DMN-326).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum RestartPolicy {
+    #[default]
+    #[serde(rename = "always")]
+    Always,
+    #[serde(rename = "on-failure")]
+    OnFailure,
+}
+
+/// Which thread a prompt run sends to (DMN-328).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PromptThread {
+    /// A new thread per run.
+    #[default]
+    New,
+    /// The job's own thread, made on first use.
+    Reuse,
+}
+
+/// The prompt a prompt job sends (DMN-328).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct JobPrompt {
+    pub text: String,
+    pub thread: PromptThread,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking_level: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub approval_mode: Option<String>,
+}
+
+/// A job of `.omfp/jobs.json` with its defaults filled in (DMN-320, PRT-200).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct JobDefinition {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub trigger: JobTrigger,
+    /// The cron expression of a `schedule` job.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub schedule: Option<String>,
+    pub missed: MissedPolicy,
+    /// `sh -c` command; exactly one of `command` and `prompt`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<JobPrompt>,
+    /// Folder of a command run, relative to the workspace folder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    pub restart: RestartPolicy,
+    pub enabled: bool,
+}
+
+/// How a run ended, or that it still runs (DMN-330).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum JobRunStatus {
+    Running,
+    Succeeded,
+    Failed,
+    Killed,
+    /// Not started: the job still ran, or its reused thread was busy (`reason`).
+    Skipped,
+    /// Still running when the daemon stopped.
+    Interrupted,
+}
+
+/// What started a run (PRT-201).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum RunTrigger {
+    Manual,
+    Schedule,
+    /// A catch-up run for missed times (DMN-325).
+    Missed,
+    Service,
+    /// A transient run of `jobs.start`.
+    Start,
+}
+
+/// One run of a job (PRT-201); its id is a job id (`job/<id>`, `jobs.kill`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RunInfo {
+    pub id: String,
+    pub workspace_id: String,
+    /// The declared job; `null` for a transient run.
+    pub job: Option<String>,
+    pub trigger: RunTrigger,
+    /// Who asked; `null` for the scheduler and the supervisor.
+    pub started_by: Option<CreatedBy>,
+    /// A prompt run's thread.
+    pub thread_id: Option<String>,
+    /// The command a command run ran (its output is `job/<id>`); `null` for a prompt run.
+    pub command: Option<String>,
+    pub started_at: i64,
+    pub ended_at: Option<i64>,
+    pub status: JobRunStatus,
+    /// Why it was skipped or could not start.
+    pub reason: Option<String>,
+    pub exit_code: Option<i32>,
+    pub signal: Option<i32>,
+}
+
+/// Where a declared job stands (PRT-200).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum JobViewStatus {
+    Disabled,
+    Idle,
+    Running,
+    /// A service between restarts (`nextAt`).
+    Waiting,
+    /// A service killed through the protocol, or one that ended under `on-failure` without failing.
+    Stopped,
+}
+
+/// A declared job with its state (PRT-200).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct JobView {
+    pub name: String,
+    pub job: JobDefinition,
+    pub status: JobViewStatus,
+    /// The running run.
+    pub run: Option<RunInfo>,
+    /// The newest finished run that was not skipped.
+    pub last_run: Option<RunInfo>,
+    /// The next time of a schedule or a waiting service's restart (Unix ms).
+    pub next_at: Option<i64>,
+}
+
+/// State of a `jobs/<workspaceId>` topic (PRT-200).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct JobsState {
+    /// The jobs of the last valid `jobs.json`, by name.
+    pub jobs: Vec<JobView>,
+    /// Why the current file is refused; `null` when valid or absent.
+    pub error: Option<String>,
+}
+
+/// `jobs.runs` result (PRT-203): newest first.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct JobRuns {
+    pub runs: Vec<RunInfo>,
+    /// Older runs exist.
+    pub more: bool,
+}
+
+/// A workspace's declared jobs at a glance, on the `index` topic (PRT-210).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct JobCounts {
+    pub total: u32,
+    pub manual: u32,
+    pub schedule: u32,
+    pub service: u32,
+    pub running: u32,
+    /// Enabled jobs whose last run failed.
+    pub failing: u32,
+    /// The current `jobs.json` is refused.
+    pub error: bool,
 }
 
 /// The process state of a daemon-owned PTY session (TRM-100).

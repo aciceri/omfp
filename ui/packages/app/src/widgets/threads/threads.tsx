@@ -2,7 +2,8 @@
  * The left column the frame renders outside any view (UI-020..023, UI-026, UI-100, UI-169, UI-170, UI-240): the
  * brand, the full-text filter (`/`), the "+ workspace" field, the "spawned by" filter in force, then one section per
  * workspace in the daemon's order (UI-620) — `▾`/`▸`, name (the current one in
- * gradient text), path, count, a menu with rename and remove, a delete button, its threads (state mark, title, time;
+ * gradient text), its job counts (UI-740), path, count, a menu with rename and remove, a delete button, its threads
+ * (state mark, title, time;
  * unread titles bold), its draft thread, a collapsed "Archived (N)" row and "+ thread". Sections collapse (`za`); the
  * collapsed set is window-local and survives reloads. Threads and sections are dragged (and moved by keys) into
  * another place, a thread into another workspace (UI-621..UI-627, `reorder.ts`). Its
@@ -64,6 +65,7 @@ import {
   updateSeen,
   visibleOrder,
 } from "../../vm/threads.ts";
+import { JobCounts } from "./job-counts.tsx";
 import { ARCHIVED_OPEN, COLLAPSED_WORKSPACES, SEEN, SPAWNED_BY, THREAD_QUERY } from "./keys.ts";
 import { type DragStart, type DragState, useMoveCommands, useReorder, useReorderDrag } from "./reorder.ts";
 import { SummaryRow } from "./summary-row.tsx";
@@ -468,6 +470,11 @@ function WorkspaceGroup({
       data-drop-into={target?.kind === "thread" && target.workspaceId === workspace.id ? "true" : undefined}
       headProps={{ onPointerDown: start({ kind: "workspace", id: workspace.id }) }}
       name={workspace.name}
+      badges={
+        workspace.jobs === undefined || workspace.jobs === null ? undefined : (
+          <JobCounts workspaceId={workspace.id} counts={workspace.jobs} />
+        )
+      }
       path={workspace.path}
       count={section.threadIds.length}
       expanded={!collapsed}

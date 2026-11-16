@@ -1076,6 +1076,137 @@
     font-size: var(--omfp-fs-xs);
   }
 
+  /* omfp:jobs (UI-742, UI-743): a row per job (name, state, trigger, action, last run) with Run or Stop and
+   * Enable/Disable beside it, the expanded one's runs under it. */
+  .omfp-jobs {
+    display: flex;
+    flex-direction: column;
+    gap: var(--omfp-s2);
+    padding: var(--omfp-s2) var(--omfp-s3) var(--omfp-s3);
+    font-family: var(--omfp-font-code);
+  }
+
+  .omfp-jobs__error {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--omfp-s2);
+  }
+
+  .omfp-jobs__list,
+  .omfp-jobs__run-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--omfp-s1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .omfp-jobs__item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--omfp-s1);
+  }
+
+  .omfp-jobs__head,
+  .omfp-jobs__run-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--omfp-s2);
+  }
+
+  .omfp-jobs__row {
+    display: grid;
+    flex: 1;
+    grid-template-columns: auto 1fr;
+    align-items: baseline;
+    column-gap: var(--omfp-s2);
+    min-inline-size: 0;
+    padding: var(--omfp-s1) var(--omfp-s2);
+    border: 0;
+    border-radius: var(--omfp-r-card);
+    background: transparent;
+    color: var(--omfp-on-surface);
+    font: inherit;
+    font-size: var(--omfp-fs-xs);
+    text-align: start;
+    cursor: pointer;
+  }
+
+  .omfp-jobs__row:hover,
+  .omfp-jobs__row[aria-expanded="true"] {
+    background: var(--omfp-hover);
+  }
+
+  .omfp-jobs__name {
+    font-weight: var(--omfp-fw-strong);
+    color: var(--omfp-primary);
+  }
+
+  .omfp-jobs__trigger,
+  .omfp-jobs__action,
+  .omfp-jobs__last {
+    grid-column: 1 / -1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .omfp-jobs__trigger,
+  .omfp-jobs__last,
+  .omfp-jobs__muted {
+    font-size: var(--omfp-fs-2xs);
+    color: var(--omfp-on-surface-variant);
+  }
+
+  .omfp-jobs__last[data-status="failed"] {
+    color: var(--omfp-error);
+  }
+
+  .omfp-jobs__actions {
+    display: flex;
+    gap: var(--omfp-s1);
+  }
+
+  .omfp-jobs__runs {
+    display: flex;
+    flex-direction: column;
+    gap: var(--omfp-s1);
+    margin-inline-start: var(--omfp-s3);
+    font-size: var(--omfp-fs-xs);
+  }
+
+  .omfp-jobs__output {
+    max-block-size: 16rem;
+  }
+
+  /* A workspace's job counts after its name in the left column (UI-740). */
+  .omfp-job-counts__parts {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--omfp-s1);
+    font-size: var(--omfp-fs-2xs);
+  }
+
+  .omfp-job-counts__part {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .omfp-job-counts__part[data-part="failing"] {
+    color: var(--omfp-error);
+  }
+
+  .omfp-job-counts__part[data-part="error"] {
+    color: var(--omfp-warn);
+  }
+
+  .omfp-job-counts__part[data-part="total"] {
+    color: var(--omfp-on-surface-variant);
+  }
+
   /* The last output line of a running background job in its card's head (UI-270). */
   .omfp-tool-card__last-line {
     max-inline-size: 24ch;

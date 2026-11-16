@@ -39,6 +39,8 @@ export {
   JOB_TEXT_LIMIT,
   Model,
   type ModelView,
+  RUN_EVENTS_KEPT,
+  type RunEvent,
   type StartMode,
   type Subscribed,
   type SubscribeError,
@@ -47,6 +49,7 @@ export {
   type ThreadView,
   type TopicState,
   type TopicSync,
+  type WorkspaceJobs,
 } from "./model.ts";
 export {
   BACKOFF_CAP_MS,

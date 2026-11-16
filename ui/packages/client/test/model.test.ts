@@ -6,7 +6,11 @@ import {
   type EventFrame,
   INDEX_TOPIC,
   type JobState,
+  type JobsState,
+  type JobView,
+  jobsTopic,
   jobTopic,
+  type RunInfo,
   type SubscribeResult,
   type TerminalState,
   type TopicEvent,
@@ -22,6 +26,7 @@ import {
   isDirtyEmpty,
   JOB_TEXT_LIMIT,
   Model,
+  RUN_EVENTS_KEPT,
   TERMINAL_BYTES_LIMIT,
   TERMINAL_CHUNKS_LIMIT,
   type ThreadView,
@@ -678,6 +683,110 @@ describe("model", () => {
     expect(chunkBounded?.dropped).toBe(1 + TERMINAL_BYTES_LIMIT);
   });
 
+  // spec: PRT-200
+  test("a jobs topic replaces its state on jobs_set, a job by name on job_updated, and keeps run events", () => {
+    const model = new Model();
+    const topic = jobsTopic("01W");
+    model.track(topic);
+    const run: RunInfo = {
+      id: "01RUN",
+      workspaceId: "01W",
+      job: "deploy",
+      trigger: "manual",
+      startedBy: null,
+      threadId: null,
+      startedAt: 5,
+      endedAt: null,
+      status: "running",
+      reason: null,
+      exitCode: null,
+      signal: null,
+    };
+    const job = (name: string, status: JobView["status"] = "idle"): JobView => ({
+      name,
+      job: { trigger: "manual", missed: "skip", restart: "always", enabled: true, command: "make" },
+      status,
+      run: null,
+      lastRun: null,
+      nextAt: null,
+    });
+    const state: JobsState = { jobs: [job("b"), job("d")], error: null };
+    expect(model.applySubscribed(topic, snapshot("j1", 1, { jobs: state.jobs }))).toEqual({
+      ok: true,
+      mode: "snapshot",
+    });
+    expect(model.workspaceJobs.get("01W")).toEqual({ state, runs: [] });
+    expect([...model.takeDirty().workspaceJobs]).toEqual(["01W"]);
+
+    const events: TopicEvent[] = [
+      { kind: "job_updated", job: job("c") },
+      { kind: "job_updated", job: job("a") },
+      { kind: "run_started", run },
+      { kind: "job_updated", job: { ...job("b", "running"), run } },
+      { kind: "run_ended", run: { ...run, status: "failed", endedAt: 9, exitCode: 1 } },
+    ];
+    for (const [at, event] of events.entries()) {
+      expect(decodeServerFrame({ type: "event", topic, epoch: "j1", seq: at + 2, event }).ok).toBe(true);
+      expect(model.applyEvent({ type: "event", topic, epoch: "j1", seq: at + 2, event })).toBe("applied");
+    }
+    const followed = model.workspaceJobs.get("01W");
+    expect(followed?.state.jobs.map(({ name, status }) => `${name}:${status}`)).toEqual([
+      "a:idle",
+      "b:running",
+      "c:idle",
+      "d:idle",
+    ]);
+    expect(followed?.runs.map(({ seq, kind, run }) => `${seq}:${kind}:${run.status}`)).toEqual([
+      "1:run_started:running",
+      "2:run_ended:failed",
+    ]);
+
+    const refused: TopicEvent = { kind: "jobs_set", jobs: [job("a")], error: "jobs.x: unknown key" };
+    expect(model.applyEvent({ type: "event", topic, epoch: "j1", seq: 7, event: refused })).toBe("applied");
+    expect(model.workspaceJobs.get("01W")?.state).toEqual({ jobs: [job("a")], error: "jobs.x: unknown key" });
+
+    // A new snapshot announces no run; those applied before stay.
+    model.resync(topic);
+    expect(model.applySubscribed(topic, snapshot("j2", 3, state)).ok).toBe(true);
+    expect(model.workspaceJobs.get("01W")?.state).toEqual(state);
+    expect(model.workspaceJobs.get("01W")?.runs.length).toBe(2);
+
+    const bad = { type: "event", topic, epoch: "j2", seq: 4, event: { kind: "run_started", run: { id: 1 } } };
+    expect(decodeServerFrame(bad).ok).toBe(false);
+    expect(model.untrack(topic)).toBe(true);
+    expect(model.workspaceJobs.has("01W")).toBe(false);
+  });
+
+  // spec: PRT-200, UI-748
+  test("a jobs topic refuses a malformed snapshot and keeps only its newest run events", () => {
+    const model = new Model();
+    const topic = jobsTopic("01W");
+    model.track(topic);
+    expect(model.applySubscribed(topic, snapshot("j1", 1, { jobs: [{ name: "a" }] })).ok).toBe(false);
+    model.track(topic);
+    expect(model.applySubscribed(topic, snapshot("j1", 1, { jobs: [] })).ok).toBe(true);
+    const run: RunInfo = { id: "01RUN", workspaceId: "01W", trigger: "schedule", startedAt: 1, status: "running" };
+    const heard: string[] = [];
+    const stop = model.onRunEvent((workspaceId, event) => heard.push(`${workspaceId} ${event.seq} ${event.run.id}`));
+    for (let seq = 2; seq < RUN_EVENTS_KEPT + 12; seq += 1) {
+      const event: TopicEvent = { kind: "run_started", run: { ...run, id: `run${seq}` } };
+      expect(model.applyEvent({ type: "event", topic, epoch: "j1", seq, event })).toBe("applied");
+    }
+    const runs = model.workspaceJobs.get("01W")?.runs ?? [];
+    expect(runs.length).toBe(RUN_EVENTS_KEPT);
+    expect(runs.at(-1)?.run.id).toBe(`run${RUN_EVENTS_KEPT + 11}`);
+    expect(runs.at(-1)?.seq).toBe(RUN_EVENTS_KEPT + 10);
+    // Listeners hear every live run event as it is applied, beyond what the topic keeps; a snapshot says nothing.
+    expect(heard.length).toBe(RUN_EVENTS_KEPT + 10);
+    expect(heard.at(0)).toBe("01W 1 run2");
+    model.resync(topic);
+    model.applySubscribed(topic, snapshot("j2", 1, { jobs: [] }));
+    stop();
+    const event: TopicEvent = { kind: "run_ended", run };
+    expect(model.applyEvent({ type: "event", topic, epoch: "j2", seq: 2, event })).toBe("applied");
+    expect(heard.length).toBe(RUN_EVENTS_KEPT + 10);
+  });
+
   // spec: DMN-080, PRT-041
   test("a job topic keeps at most a mebibyte of text, counting the lines it drops", () => {
     const model = new Model();
@@ -723,6 +832,7 @@ describe("model", () => {
       views: new Set(),
       jobs: new Set(),
       terminals: new Set(),
+      workspaceJobs: new Set(),
     };
     expect(model.takeDirty()).toEqual(expected);
     expect(isDirtyEmpty(model.takeDirty())).toBe(true);

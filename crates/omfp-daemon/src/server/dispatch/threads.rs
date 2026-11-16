@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use omfp_core::wire::{ImageContent, ThinkingLevel};
 use omfp_protocol::{
-    Call, ErrorBody, LiveMuted, PromptBehavior, PromptResult, ThreadGit, ThreadWorkspace,
-    ThreadsStopped,
+    Call, CloseJobs, CreatedBy, ErrorBody, ErrorCode, JobRunStatus, LiveMuted, PromptBehavior,
+    PromptResult, RunInfo, RunTrigger, ThreadGit, ThreadWorkspace, ThreadsStopped,
 };
 use omp_rpc::{
     BashCommand, BtwCommand, CancelSubagentCommand, CompactCommand, FollowUpCommand, ForkCommand,
@@ -14,7 +14,7 @@ use omp_rpc::{
     SetModelCommand, SetThinkingLevelCommand, SteerCommand, SteerSubagentCommand,
     StreamingBehavior,
 };
-use serde_json::Value;
+use serde_json::{Value, json};
 
 use super::workspaces::create_workspace;
 use super::{Reply, empty, ok};
@@ -165,6 +165,57 @@ async fn remove_new_workspace(services: &Services, workspace_id: String) {
     services.refresh_index_quietly().await;
 }
 
+/// Before `threads.archive` or `threads.delete` (PRT-208, DMN-333): the transient runs the thread's agent started and
+/// that still run. Without `jobs` they make the call a `conflict` listing them; `kill` kills them as `jobs.kill` does,
+/// without waiting for their end; `keep` leaves them running.
+fn close_jobs(
+    services: &Services,
+    thread_id: &str,
+    jobs: Option<CloseJobs>,
+) -> Result<(), ErrorBody> {
+    let running = services.jobs.running_started_by(thread_id);
+    if running.is_empty() {
+        return Ok(());
+    }
+    match jobs {
+        Some(CloseJobs::Keep) => Ok(()),
+        Some(CloseJobs::Kill) => {
+            for job in running {
+                // A run that ended and was forgotten meanwhile needs no kill.
+                let _ = services.jobs.kill(&job.id);
+            }
+            Ok(())
+        }
+        None => {
+            let runs: Vec<RunInfo> = running
+                .into_iter()
+                .map(|job| RunInfo {
+                    id: job.id,
+                    workspace_id: job.workspace_id,
+                    job: None,
+                    trigger: RunTrigger::Start,
+                    started_by: Some(CreatedBy::Thread {
+                        thread_id: thread_id.to_owned(),
+                    }),
+                    thread_id: None,
+                    command: Some(job.command),
+                    started_at: job.started_at,
+                    ended_at: None,
+                    status: JobRunStatus::Running,
+                    reason: None,
+                    exit_code: None,
+                    signal: None,
+                })
+                .collect();
+            Err(ErrorBody::new(
+                ErrorCode::Conflict,
+                "runs the thread's agent started still run: pass jobs \"kill\" or \"keep\"",
+            )
+            .with_details(json!({ "runs": runs })))
+        }
+    }
+}
+
 pub(super) async fn threads(services: &Services, principal: &Principal, call: Call) -> Reply {
     let threads = Arc::clone(&services.threads);
     let supervisor = &services.supervisor;
@@ -192,6 +243,7 @@ pub(super) async fn threads(services: &Services, principal: &Principal, call: Ca
             ok(&services.thread_summary(&id).await?)
         }
         Call::ThreadsArchive(params) => {
+            close_jobs(services, &params.thread_id, params.jobs)?;
             supervisor
                 .stop(&params.thread_id)
                 .await
@@ -209,6 +261,7 @@ pub(super) async fn threads(services: &Services, principal: &Principal, call: Ca
             let id = params.thread_id.clone();
             let reader = Arc::clone(&threads);
             blocking(move || reader.get(&id).map_err(thread_error)).await?;
+            close_jobs(services, &params.thread_id, params.jobs)?;
             supervisor
                 .forget(&params.thread_id)
                 .await
@@ -504,5 +557,312 @@ pub(super) async fn thread(services: &Services, principal: &Principal, call: Cal
             "`{}` is not a thread method",
             other.method()
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use omfp_protocol::{CloseJobs, StartJobParams, ThreadCloseParams};
+    use tempfile::TempDir;
+
+    use super::*;
+    use crate::agent::FakeLauncher;
+    use crate::git::{FakeGit, Git};
+    use crate::paths::DataDir;
+    use crate::server::dispatch::dispatch;
+    use crate::store::{Provenance, Store};
+    use crate::supervisor::{Supervisor, SupervisorConfig};
+    use crate::threads::Threads;
+    use crate::widgets::Widgets;
+    use crate::workspaces::{NewWorkspace, Workspaces};
+
+    async fn services(dir: &TempDir) -> Services {
+        let data = DataDir::new(dir.path().join("data"));
+        std::fs::create_dir_all(data.root()).unwrap();
+        let root = dir.path().join("workspaces");
+        let store = Arc::new(Store::open(&data.db(), &root).unwrap());
+        let threads = Arc::new(Threads::new(Arc::clone(&store), data.clone()));
+        let workspaces = Arc::new(Workspaces::new(
+            Arc::clone(&store),
+            Arc::new(FakeGit::new()) as Arc<dyn Git>,
+            root,
+        ));
+        let widgets = Arc::new(Widgets::new(data.widgets(), None));
+        let supervisor = Supervisor::new(
+            Arc::new(FakeLauncher::new()),
+            Arc::clone(&threads),
+            Arc::clone(&workspaces),
+            data,
+            SupervisorConfig::new("omp"),
+        );
+        Services::new(store, threads, workspaces, supervisor, widgets)
+            .await
+            .unwrap()
+    }
+
+    fn owner() -> Principal {
+        Principal::Owner {
+            client: "omfp/web".into(),
+        }
+    }
+
+    /// A workspace, a thread in it and a run its agent started, still running.
+    async fn thread_with_run(services: &Services) -> (String, String) {
+        let ws = services
+            .workspaces
+            .create(NewWorkspace::new())
+            .unwrap()
+            .workspace
+            .id;
+        let thread = services
+            .threads
+            .create(NewThread::new("t", &ws))
+            .unwrap()
+            .id;
+        let agent = Principal::Agent {
+            thread_id: thread.clone(),
+            client: "omp".into(),
+        };
+        let job = dispatch(
+            services,
+            &agent,
+            Call::JobsStart(StartJobParams {
+                workspace_id: ws,
+                command: "while true; do sleep 0.01; done".to_owned(),
+                replaces: None,
+            }),
+        )
+        .await
+        .unwrap();
+        (thread, job["id"].as_str().unwrap().to_owned())
+    }
+
+    fn close(delete: bool, thread_id: &str, jobs: Option<CloseJobs>) -> Call {
+        let params = ThreadCloseParams {
+            thread_id: thread_id.to_owned(),
+            jobs,
+        };
+        if delete {
+            Call::ThreadsDelete(params)
+        } else {
+            Call::ThreadsArchive(params)
+        }
+    }
+
+    fn running(services: &Services, job_id: &str) -> bool {
+        services.jobs.log(job_id).unwrap().with_state(|topic| {
+            serde_json::to_value(topic).unwrap()["job"]["status"]["state"] == "running"
+        })
+    }
+
+    async fn until_ended(services: &Services, job_id: &str) {
+        let log = services.jobs.log(job_id).unwrap();
+        let mut live = log.subscribe(None).live;
+        tokio::time::timeout(Duration::from_secs(60), async {
+            while running(services, job_id) {
+                let _ = live.recv().await;
+            }
+        })
+        .await
+        .expect("the run did not end");
+    }
+
+    /// Whether the thread is still there and not archived.
+    fn open(services: &Services, thread_id: &str) -> Option<bool> {
+        services
+            .threads
+            .get(thread_id)
+            .ok()
+            .map(|thread| thread.archived_at.is_none())
+    }
+
+    // spec: PRT-208, DMN-333
+    #[tokio::test(flavor = "multi_thread")]
+    async fn closing_a_thread_whose_agents_runs_still_run_without_jobs_is_a_conflict_listing_them()
+    {
+        for delete in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let services = services(&dir).await;
+            let (thread, job) = thread_with_run(&services).await;
+
+            let error = dispatch(&services, &owner(), close(delete, &thread, None))
+                .await
+                .unwrap_err();
+
+            assert_eq!(error.code, ErrorCode::Conflict);
+            let details = error.details.unwrap();
+            let runs = details["runs"].as_array().unwrap();
+            assert_eq!(runs.len(), 1);
+            let run = &runs[0];
+            assert_eq!(run["id"], json!(job));
+            assert_eq!(run["job"], Value::Null);
+            assert_eq!(run["trigger"], json!("start"));
+            assert_eq!(
+                run["startedBy"],
+                json!({ "kind": "thread", "threadId": thread })
+            );
+            assert_eq!(run["status"], json!("running"));
+            assert_eq!(run["threadId"], Value::Null);
+            assert_eq!(open(&services, &thread), Some(true));
+            assert!(running(&services, &job));
+            services.jobs.kill(&job).unwrap();
+            until_ended(&services, &job).await;
+        }
+    }
+
+    // spec: PRT-208, DMN-333
+    #[tokio::test(flavor = "multi_thread")]
+    async fn closing_a_thread_with_kill_kills_its_agents_runs_and_closes_it() {
+        for delete in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let services = services(&dir).await;
+            let (thread, job) = thread_with_run(&services).await;
+
+            dispatch(
+                &services,
+                &owner(),
+                close(delete, &thread, Some(CloseJobs::Kill)),
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(open(&services, &thread), (!delete).then_some(false));
+            until_ended(&services, &job).await;
+        }
+    }
+
+    // spec: PRT-208, DMN-333
+    #[tokio::test(flavor = "multi_thread")]
+    async fn closing_a_thread_with_keep_leaves_its_agents_runs_running() {
+        for delete in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let services = services(&dir).await;
+            let (thread, job) = thread_with_run(&services).await;
+
+            dispatch(
+                &services,
+                &owner(),
+                close(delete, &thread, Some(CloseJobs::Keep)),
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(open(&services, &thread), (!delete).then_some(false));
+            assert!(running(&services, &job));
+            services.jobs.kill(&job).unwrap();
+            until_ended(&services, &job).await;
+        }
+    }
+
+    // spec: DMN-329, PRT-208
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_declared_run_an_agent_asked_for_never_holds_its_thread_back() {
+        for delete in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let services = services(&dir).await;
+            let ws = services
+                .workspaces
+                .create(NewWorkspace::new())
+                .unwrap()
+                .workspace
+                .id;
+            let thread = services
+                .threads
+                .create(NewThread::new("t", &ws))
+                .unwrap()
+                .id;
+            let agent = Principal::Agent {
+                thread_id: thread.clone(),
+                client: "omp".into(),
+            };
+            dispatch(
+                &services,
+                &agent,
+                Call::JobsDefine(omfp_protocol::DefineJobParams {
+                    workspace_id: ws.clone(),
+                    name: "loop".into(),
+                    job: json!({ "command": "while true; do sleep 0.01; done" }),
+                    replace: None,
+                }),
+            )
+            .await
+            .unwrap();
+            let run = dispatch(
+                &services,
+                &agent,
+                Call::JobsRun(omfp_protocol::JobNameParams {
+                    workspace_id: ws.clone(),
+                    job: "loop".into(),
+                }),
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                run["startedBy"],
+                json!({ "kind": "thread", "threadId": thread })
+            );
+            let run_id = run["id"].as_str().unwrap();
+
+            dispatch(&services, &owner(), close(delete, &thread, None))
+                .await
+                .unwrap();
+
+            assert_eq!(open(&services, &thread), (!delete).then_some(false));
+            assert!(running(&services, run_id));
+            dispatch(
+                &services,
+                &owner(),
+                Call::JobsKill(omfp_protocol::JobRef {
+                    job_id: run_id.to_owned(),
+                }),
+            )
+            .await
+            .unwrap();
+            until_ended(&services, run_id).await;
+        }
+    }
+
+    // spec: PRT-209, DMN-334
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_job_started_thread_reads_back_its_provenance_and_belongs_to_no_spawned_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        let services = services(&dir).await;
+        let ws = services
+            .workspaces
+            .create(NewWorkspace::new())
+            .unwrap()
+            .workspace
+            .id;
+        let root = services
+            .threads
+            .create(NewThread::new("root", &ws))
+            .unwrap()
+            .id;
+        let by_job = services
+            .threads
+            .create(NewThread {
+                created_by: Provenance::Job("nightly".into()),
+                ..NewThread::new("nightly", &ws)
+            })
+            .unwrap()
+            .id;
+
+        let thread = services.threads.get(&by_job).unwrap();
+        assert_eq!(thread.created_by, Provenance::Job("nightly".into()));
+        let summary = services.thread_summary(&by_job).await.unwrap();
+        assert_eq!(
+            serde_json::to_value(&summary.provenance).unwrap()["createdBy"],
+            json!({ "kind": "job", "job": "nightly" })
+        );
+        assert_eq!(
+            services.store.spawned_thread_ids(&root).unwrap(),
+            Vec::<String>::new()
+        );
+        assert_eq!(
+            services.store.spawned_thread_ids(&by_job).unwrap(),
+            Vec::<String>::new()
+        );
     }
 }

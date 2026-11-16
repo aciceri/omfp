@@ -9,6 +9,7 @@ import type {
   ErrorBody,
   IndexEvent,
   JobEvent,
+  JobsEvent,
   MethodName,
   ParamsOf,
   TerminalEvent,
@@ -34,7 +35,7 @@ export type FailureResponse = { type: "response"; id: string; ok: false; error: 
 export type Response = SuccessResponse | FailureResponse;
 
 /** The `event` of an event frame; its kind follows from the topic. */
-export type TopicEvent = IndexEvent | ThreadEvent | WorkspaceEvent | ViewsEvent | JobEvent | TerminalEvent;
+export type TopicEvent = IndexEvent | ThreadEvent | WorkspaceEvent | ViewsEvent | JobEvent | JobsEvent | TerminalEvent;
 
 /** One event of a topic (PRT-022): `seq` is strictly increasing, without gaps, within an `epoch`. */
 export type EventFrame = { type: "event"; topic: Topic; epoch: string; seq: number; event: TopicEvent };

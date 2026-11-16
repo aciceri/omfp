@@ -111,7 +111,8 @@ pub fn host_uris(
         "omfp, the window the user works in: {} indexes these docs; {} lists the protocol methods omfp_call accepts \
          and {}/<name> gives one's params and result schemas; {DOCS_URL} documents widgets (SDK, kit, views, init \
          files, TSX views); {} describes the window and {} its keys and commands; {SCHEMA_URL} is the JSON Schema of \
-         .omfp/views.json and {} of .omfp/keymap.json; {BUILTIN_URL} lists the built-in widgets and \
+         .omfp/views.json, {} of .omfp/keymap.json and {} of .omfp/jobs.json; {BUILTIN_URL} lists the built-in \
+         widgets and \
          {BUILTIN_URL}/<name> shows one's source; {CHECK_URL}/<name> checks a widget, an init file (`init`, \
          `user:init`) or a TSX view (`views/<file>`): compile errors, what open windows report, a widget no window \
          shows rendered out of sight; {} describes the open windows showing this workspace (views and where each \
@@ -122,6 +123,7 @@ pub fn host_uris(
         shell::SHELL_URL,
         shell::KEYMAP_URL,
         keymap::SCHEMA_URL,
+        crate::jobs::file::SCHEMA_URL,
         shell::WINDOWS_URL
     ))
     .immutable(true);

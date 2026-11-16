@@ -20,6 +20,15 @@ expression: golden
     "result": {
       "createdAt": 1794268800000,
       "id": "01JD8X3Q4T9V2W6Y5Z7A1B3C5E",
+      "jobs": {
+        "error": false,
+        "failing": 1,
+        "manual": 1,
+        "running": 1,
+        "schedule": 1,
+        "service": 1,
+        "total": 3
+      },
       "name": "checkout-v2",
       "path": "/home/dev/omfp/workspaces/checkout-v2",
       "position": 0,

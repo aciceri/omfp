@@ -464,6 +464,7 @@ describe("session", () => {
       views: new Set(),
       jobs: new Set(),
       terminals: new Set(),
+      workspaceJobs: new Set(),
     });
   });
 

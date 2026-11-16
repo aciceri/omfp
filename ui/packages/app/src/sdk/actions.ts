@@ -4,6 +4,7 @@
  */
 
 import { CallError } from "@omfp/client";
+import type { CloseJobs, RunInfo } from "@omfp/protocol";
 import { useMemo } from "react";
 import { strings } from "../strings/index.ts";
 import { expandPastes } from "../vm/paste.ts";
@@ -14,6 +15,8 @@ import { useThreadSummary, useWindowState } from "./hooks.ts";
 import { type OmfpHost, useHost } from "./host.tsx";
 import { isObject } from "./json.ts";
 import {
+  CLOSE_THREAD,
+  type CloseRequest,
   DRAFT_MESSAGE,
   DRAFT_THREAD,
   draftKey,
@@ -169,6 +172,42 @@ function discardDraft(host: OmfpHost): void {
   host.window.reset(DRAFT_MESSAGE);
 }
 
+/** The runs a `conflict` of `threads.archive` or `threads.delete` lists (PRT-208); `undefined` for another failure. */
+function conflictRuns(error: unknown): readonly RunInfo[] | undefined {
+  if (!(error instanceof CallError) || error.failure.kind !== "daemon" || error.failure.error.code !== "conflict") {
+    return undefined;
+  }
+  const { details } = error.failure.error;
+  const runs = isObject(details) ? details.runs : undefined;
+  // The daemon's `RunInfo`s (PRT-208).
+  return Array.isArray(runs) && runs.length > 0 ? (runs as RunInfo[]) : undefined;
+}
+
+/**
+ * Archives or deletes `threadId` (UI-026) — every entry point goes through here — with `jobs` saying what becomes of
+ * the commands its agent started (PRT-208). Without `jobs`, a `conflict` listing them asks the frame's dialog
+ * ({@link CLOSE_THREAD}, UI-744), which calls again with the choice; any other failure is reported. The window forgets
+ * the thread once it is closed.
+ */
+export async function closeThread(
+  host: OmfpHost,
+  method: CloseRequest["method"],
+  threadId: string,
+  jobs?: CloseJobs,
+): Promise<void> {
+  try {
+    await host.client.call(method, jobs === undefined ? { threadId } : { threadId, jobs });
+    forget(host, threadId);
+  } catch (error) {
+    const runs = jobs === undefined ? conflictRuns(error) : undefined;
+    if (runs === undefined) {
+      reportError(host, error);
+    } else {
+      host.window.set(CLOSE_THREAD, { method, threadId, runs });
+    }
+  }
+}
+
 /** Deletes `threadIds` first (the daemon refuses a workspace that still has threads), then removes the workspace,
  * which deletes its folder (DMN-028), stopping at the first failure (reported to `ERRORS`); drops the draft thread
  * started in it. Resolves to whether everything worked. */
@@ -183,7 +222,8 @@ export async function removeWorkspace(
   try {
     for (const threadId of threadIds) {
       forget(host, threadId);
-      await host.client.call("threads.delete", { threadId });
+      // The workspace goes with its folder: what the threads' agents started there goes too (PRT-208).
+      await host.client.call("threads.delete", { threadId, jobs: "kill" });
     }
     await host.client.call("workspaces.remove", { workspaceId });
     return true;
@@ -251,15 +291,9 @@ export function threadActions(host: OmfpHost): ThreadActions {
         return false;
       }
     },
-    archive: (threadId) => {
-      forget(host, threadId);
-      return attempt(() => client.call("threads.archive", { threadId }));
-    },
+    archive: (threadId) => closeThread(host, "threads.archive", threadId),
     unarchive: (threadId) => attempt(() => client.call("threads.unarchive", { threadId })),
-    remove: (threadId) => {
-      forget(host, threadId);
-      return attempt(() => client.call("threads.delete", { threadId }));
-    },
+    remove: (threadId) => closeThread(host, "threads.delete", threadId),
     rename: (threadId, title) => attempt(() => client.call("threads.update", { threadId, title })),
     stop: (threadId) => attempt(() => client.call("thread.stop", { threadId })),
     restart: (threadId) => attempt(() => client.call("thread.restart", { threadId })),

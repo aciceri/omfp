@@ -138,6 +138,12 @@ pub fn read_uri(url: &str, builtin: Option<&Path>) -> Result<HostUriRead, String
             immutable: Some(true),
             ..HostUriRead::default()
         }),
+        crate::jobs::file::SCHEMA_URL => Ok(HostUriRead {
+            content: crate::jobs::file::SCHEMA.to_owned(),
+            content_type: Some(HostUriResultContentType::ApplicationJson),
+            immutable: Some(true),
+            ..HostUriRead::default()
+        }),
         BUILTIN_URL => Ok(markdown(list_builtins(builtin_folder(builtin)?))),
         _ => match url
             .strip_prefix(BUILTIN_URL)
@@ -148,14 +154,15 @@ pub fn read_uri(url: &str, builtin: Option<&Path>) -> Result<HostUriRead, String
                 "unknown omfp URL {url}: omfp serves {} (the index of these docs), {} (the protocol methods omfp_call \
                  accepts) and {}/<name> (one's schemas), {DOCS_URL} (the widget SDK and kit reference), {} (the \
                  window: left column, mode line, view tabs, `:` commands), {} (the default keys and commands), \
-                 {SCHEMA_URL} (the views manifest schema), {} (the workspace keymap schema), {BUILTIN_URL} (the \
-                 built-in widgets) and {BUILTIN_URL}/<name>[/<path>] (their sources)",
+                 {SCHEMA_URL} (the views manifest schema), {} (the workspace keymap schema), {} (the workspace jobs \
+                 schema), {BUILTIN_URL} (the built-in widgets) and {BUILTIN_URL}/<name>[/<path>] (their sources)",
                 shell::INDEX_URL,
                 crate::agent_tools::catalog::METHODS_URL,
                 crate::agent_tools::catalog::METHODS_URL,
                 shell::SHELL_URL,
                 shell::KEYMAP_URL,
-                keymap::SCHEMA_URL
+                keymap::SCHEMA_URL,
+                crate::jobs::file::SCHEMA_URL
             )),
         },
     }

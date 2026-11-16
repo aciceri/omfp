@@ -1,0 +1,54 @@
+---
+source: crates/omfp-protocol/tests/protocol/golden.rs
+expression: golden
+---
+{
+  "request": {
+    "id": "c42",
+    "method": "jobs.enable",
+    "params": {
+      "enabled": false,
+      "name": "nightly",
+      "workspaceId": "01JD8X3Q4T9V2W6Y5Z7A1B3C5E"
+    },
+    "type": "request"
+  },
+  "response": {
+    "id": "c42",
+    "ok": true,
+    "result": {
+      "job": {
+        "command": "cargo test",
+        "cwd": "app",
+        "description": "Nightly test run",
+        "enabled": false,
+        "missed": "run",
+        "restart": "always",
+        "schedule": "0 3 * * *",
+        "trigger": "schedule"
+      },
+      "lastRun": {
+        "command": "cargo test",
+        "endedAt": 1700000060000,
+        "exitCode": 0,
+        "id": "01RUN",
+        "job": "nightly",
+        "reason": null,
+        "signal": null,
+        "startedAt": 1700000000000,
+        "startedBy": {
+          "kind": "user"
+        },
+        "status": "succeeded",
+        "threadId": null,
+        "trigger": "manual",
+        "workspaceId": "01JD8X3Q4T9V2W6Y5Z7A1B3C5E"
+      },
+      "name": "nightly",
+      "nextAt": null,
+      "run": null,
+      "status": "disabled"
+    },
+    "type": "response"
+  }
+}

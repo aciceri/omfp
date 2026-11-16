@@ -82,9 +82,10 @@ export const intervalPoll: FilePoll = (check) => {
   return () => clearInterval(timer);
 };
 
-/** Opens `path` in this window's current workspace (UI-115); without a workspace it reports why. */
+/** Opens `path` in this window's current workspace, or in `options.workspaceId`'s (UI-115); without a workspace it
+ * reports why. */
 export function openFile(host: OmfpHost, path: string, options: OpenFileOptions = {}): void {
-  const workspaceId = currentWorkspaceId(host);
+  const workspaceId = options.workspaceId ?? currentWorkspaceId(host);
   if (workspaceId === undefined) {
     reportError(host, new Error(strings.shell.files.noWorkspace(path)));
     return;

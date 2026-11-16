@@ -28,9 +28,9 @@ use omfp_protocol::{
     Empty, FileMatch, FindFileParams, HelloParams, InteractionResponse, LabelParams, MessageParams,
     PromptParams, ReadFileParams, RemoveRepoParams, RemoveWorkspaceParams, RepoRef, RepoSource,
     RespondParams, SearchThreadsParams, SetModelParams, SetThinkingParams, SubagentRef,
-    SubagentSteerParams, SubscribeParams, SubscribeResult, SuggestReposParams, Theme, ThreadRef,
-    ThreadWorkspace, Topic, TopicParams, UpdateThreadParams, UpdateWorkspaceParams,
-    WorkspaceDiffParams, WorkspaceRef, WriteFileParams,
+    SubagentSteerParams, SubscribeParams, SubscribeResult, SuggestReposParams, Theme,
+    ThreadCloseParams, ThreadRef, ThreadWorkspace, Topic, TopicParams, UpdateThreadParams,
+    UpdateWorkspaceParams, WorkspaceDiffParams, WorkspaceRef, WriteFileParams,
 };
 use omfp_protocol::{ListActivityParams, StopThreadParams};
 use tempfile::TempDir;
@@ -110,6 +110,13 @@ fn new_thread(title: &str) -> CreateThreadParams {
 fn thread_ref(thread_id: &str) -> ThreadRef {
     ThreadRef {
         thread_id: thread_id.into(),
+    }
+}
+
+fn thread_close(thread_id: &str) -> ThreadCloseParams {
+    ThreadCloseParams {
+        thread_id: thread_id.into(),
+        jobs: None,
     }
 }
 
@@ -298,12 +305,16 @@ async fn thread_management_methods_return_their_declared_results() {
         [("plan.md", FileMatch::Basename)]
     );
 
-    client.typed::<ThreadsArchive>(thread_ref(&thread.id)).await;
+    client
+        .typed::<ThreadsArchive>(thread_close(&thread.id))
+        .await;
     client
         .typed::<ThreadsUnarchive>(thread_ref(&thread.id))
         .await;
     let doomed = client.typed::<ThreadsCreate>(new_thread("doomed")).await;
-    client.typed::<ThreadsDelete>(thread_ref(&doomed.id)).await;
+    client
+        .typed::<ThreadsDelete>(thread_close(&doomed.id))
+        .await;
     let found = client
         .typed::<ThreadsSearch>(SearchThreadsParams {
             query: "nothing was said".into(),
@@ -327,6 +338,79 @@ async fn theme_methods_return_their_declared_results() {
     };
     assert_eq!(client.typed::<ThemeSet>(theme.clone()).await, Empty {});
     assert_eq!(client.typed::<ThemeGet>(Empty {}).await, theme);
+}
+
+// spec: TST-117, PRT-202, PRT-203, PRT-204, PRT-205, PRT-206, PRT-207
+#[tokio::test(flavor = "multi_thread")]
+async fn declared_job_methods_return_their_declared_results() {
+    use omfp_protocol::method::{JobsDefine, JobsEnable, JobsList, JobsRemove, JobsRun, JobsRuns};
+    use omfp_protocol::{
+        DefineJobParams, EnableJobParams, JobNameParams, JobRemoveParams, JobRunsParams,
+        JobViewStatus,
+    };
+
+    let daemon = daemon().await;
+    let mut client = daemon.client().await;
+    let ws = client
+        .typed::<WorkspacesCreate>(CreateWorkspaceParams {
+            name: None,
+            link: None,
+        })
+        .await
+        .id;
+
+    let view = client
+        .typed::<JobsDefine>(DefineJobParams {
+            workspace_id: ws.clone(),
+            name: "check".into(),
+            job: serde_json::json!({ "command": "true" }),
+            replace: None,
+        })
+        .await;
+    assert_eq!(view.name, "check");
+    let state = client
+        .typed::<JobsList>(WorkspaceRef {
+            workspace_id: ws.clone(),
+        })
+        .await;
+    assert_eq!(state.jobs, [view]);
+    let run = client
+        .typed::<JobsRun>(JobNameParams {
+            workspace_id: ws.clone(),
+            job: "check".into(),
+        })
+        .await;
+    assert_eq!(run.job.as_deref(), Some("check"));
+    let runs = client
+        .typed::<JobsRuns>(JobRunsParams {
+            workspace_id: ws.clone(),
+            job: "check".into(),
+            before: None,
+            limit: Some(1),
+        })
+        .await;
+    assert_eq!(runs.runs[0].id, run.id);
+    let view = client
+        .typed::<JobsEnable>(EnableJobParams {
+            workspace_id: ws.clone(),
+            name: "check".into(),
+            enabled: false,
+        })
+        .await;
+    assert!(!view.job.enabled);
+    assert!(matches!(
+        view.status,
+        JobViewStatus::Disabled | JobViewStatus::Running
+    ));
+    assert_eq!(
+        client
+            .typed::<JobsRemove>(JobRemoveParams {
+                workspace_id: ws,
+                name: "check".into(),
+            })
+            .await,
+        Empty {}
+    );
 }
 
 // spec: TST-117

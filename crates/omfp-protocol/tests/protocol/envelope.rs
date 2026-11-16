@@ -4,10 +4,11 @@ use std::path::Path;
 
 use omfp_core::{ProcessState, ThreadEvent};
 use omfp_protocol::{
-    ErrorBody, ErrorCode, EventFrame, IndexEvent, JobEvent, JobStream, KeymapMode, MAX_FRAME_BYTES,
-    PROTOCOL_VERSION, ReportWidgetsParams, Response, ServerFrame, Topic, TopicEvent,
-    TransientEvent, ViewsEvent, ViewsState, WidgetInfo, WidgetSource, WindowAnswer, WindowRequest,
-    WorkspaceBinding, WorkspaceEvent,
+    CreatedBy, ErrorBody, ErrorCode, EventFrame, IndexEvent, JobDefinition, JobEvent, JobRunStatus,
+    JobStream, JobTrigger, JobView, JobViewStatus, JobsEvent, KeymapMode, MAX_FRAME_BYTES,
+    MissedPolicy, PROTOCOL_VERSION, ReportWidgetsParams, Response, RestartPolicy, RunInfo,
+    RunTrigger, ServerFrame, Topic, TopicEvent, TransientEvent, ViewsEvent, ViewsState, WidgetInfo,
+    WidgetSource, WindowAnswer, WindowRequest, WorkspaceBinding, WorkspaceEvent,
 };
 use serde_json::{Value, json};
 
@@ -416,6 +417,86 @@ fn job_event_frames() {
         round_trip(&exited)["event"],
         json!({ "kind": "job_exited", "code": null, "signal": 15, "endedAt": 1_700_000_000_000_i64 })
     );
+}
+
+// spec: PRT-200, PRT-201, PRT-209
+#[test]
+fn jobs_event_frames() {
+    let topic = Topic::Jobs(WORKSPACE_ID.to_owned());
+    let run = RunInfo {
+        id: "01RUN".to_owned(),
+        workspace_id: WORKSPACE_ID.to_owned(),
+        job: Some("nightly".to_owned()),
+        trigger: RunTrigger::Missed,
+        started_by: Some(CreatedBy::Job {
+            job: "nightly".to_owned(),
+        }),
+        thread_id: None,
+        command: Some("cargo test".to_owned()),
+        started_at: 1_700_000_000_000,
+        ended_at: None,
+        status: JobRunStatus::Running,
+        reason: None,
+        exit_code: None,
+        signal: None,
+    };
+    let run_json = json!({
+        "id": "01RUN", "workspaceId": WORKSPACE_ID, "job": "nightly", "trigger": "missed",
+        "startedBy": { "kind": "job", "job": "nightly" }, "threadId": null, "command": "cargo test",
+        "startedAt": 1_700_000_000_000_i64, "endedAt": null, "status": "running",
+        "reason": null, "exitCode": null, "signal": null
+    });
+    let view = JobView {
+        name: "web".to_owned(),
+        job: JobDefinition {
+            description: None,
+            trigger: JobTrigger::Service,
+            schedule: None,
+            missed: MissedPolicy::Skip,
+            command: Some("npm run dev".to_owned()),
+            prompt: None,
+            cwd: None,
+            restart: RestartPolicy::OnFailure,
+            enabled: true,
+        },
+        status: JobViewStatus::Stopped,
+        run: None,
+        last_run: None,
+        next_at: None,
+    };
+    let view_json = json!({
+        "name": "web",
+        "job": { "trigger": "service", "missed": "skip", "command": "npm run dev",
+                 "restart": "on-failure", "enabled": true },
+        "status": "stopped", "run": null, "lastRun": null, "nextAt": null
+    });
+    let cases = [
+        (
+            JobsEvent::JobsSet {
+                jobs: vec![view.clone()],
+                error: Some("jobs.web.trigger: unknown".to_owned()),
+            },
+            json!({ "kind": "jobs_set", "jobs": [view_json], "error": "jobs.web.trigger: unknown" }),
+        ),
+        (
+            JobsEvent::JobUpdated { job: view },
+            json!({ "kind": "job_updated", "job": view_json }),
+        ),
+        (
+            JobsEvent::RunStarted { run: run.clone() },
+            json!({ "kind": "run_started", "run": run_json }),
+        ),
+        (
+            JobsEvent::RunEnded { run },
+            json!({ "kind": "run_ended", "run": run_json }),
+        ),
+    ];
+    for (jobs_event, wire) in cases {
+        let frame = event(topic.clone(), TopicEvent::Jobs(jobs_event));
+        let value = round_trip(&frame);
+        assert_eq!(value["topic"], json!(format!("jobs/{WORKSPACE_ID}")));
+        assert_eq!(value["event"], wire);
+    }
 }
 
 #[test]

@@ -106,6 +106,21 @@ export {
   toggleOption,
 } from "../vm/interaction.ts";
 export {
+  formatWhen,
+  type JobCountsView,
+  type JobEventKind,
+  type JobRow,
+  jobCountsView,
+  jobRow,
+  type RunRow,
+  runEventKinds,
+  runMark,
+  runOutcome,
+  runRow,
+  startedByText,
+  threadJob,
+} from "../vm/jobs.ts";
+export {
   type LivePanelView,
   type LiveSupport,
   type LocalLive,
@@ -234,6 +249,7 @@ export {
   workspaceRow,
 } from "../vm/workspaces.ts";
 export {
+  closeThread,
   currentWorkspaceId,
   errorMessage,
   removeWorkspace,
@@ -312,7 +328,9 @@ export type {
   InitCommand,
   InitContext,
   InitError,
+  InitEventKind,
   InitFile,
+  InitJobs,
   InitRepo,
   InitSnapshot,
   InitWorkspace,
@@ -320,8 +338,11 @@ export type {
   ViewsApi,
 } from "./init.ts";
 export { Layout, type ViewEntry, type ViewOrigin, type ViewSpec } from "./init-views.ts";
+export { type JobActions, type Jobs, jobActions, useJobs } from "./jobs.ts";
 export {
   AUTH_REVISION,
+  CLOSE_THREAD,
+  type CloseRequest,
   COLOR_SCHEME,
   type ColorScheme,
   DELETE_WORKSPACE,

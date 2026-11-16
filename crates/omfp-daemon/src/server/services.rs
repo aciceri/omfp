@@ -16,8 +16,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use omfp_protocol::{
-    ErrorBody, IndexEvent, IndexSnapshot, RepoStatus, SetSettingsParams, Settings, Theme,
-    ThreadSummary, Workspace, WorkspaceEvent,
+    ErrorBody, IndexEvent, IndexSnapshot, JobCounts, RepoStatus, SetSettingsParams, Settings,
+    Theme, ThreadSummary, Workspace, WorkspaceEvent,
 };
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -27,6 +27,7 @@ use super::convert::{self, bad_request, internal, workspace_error};
 use crate::config_file::{ConfigFile, DaemonOptions, write_back};
 use crate::event_log::EventLog;
 use crate::jobs::Jobs;
+use crate::jobs::declared::{Declared, SystemClock};
 use crate::paths::replace_file;
 use crate::store::{Store, StoreError, new_id, now_ms};
 use crate::supervisor::Supervisor;
@@ -118,6 +119,8 @@ pub(crate) struct Services {
     pub index: Arc<IndexLog>,
     /// The workspaces' jobs (DMN-080, DMN-081).
     pub jobs: Jobs,
+    /// The jobs the workspaces declare (DMN-320..DMN-336).
+    pub declared: Declared,
     /// Interactive PTY sessions (TRM-100..105).
     pub terminals: Terminals,
     /// Serializes index refreshes so their events never interleave.
@@ -162,6 +165,15 @@ impl Services {
         supervisor: Supervisor,
         widgets: Arc<Widgets>,
     ) -> Result<Self, ErrorBody> {
+        let jobs = Jobs::default();
+        let declared = Declared::new(
+            Arc::clone(&store),
+            jobs.clone(),
+            supervisor.clone(),
+            Arc::clone(&threads),
+            Arc::new(SystemClock),
+            jiff::tz::TimeZone::system(),
+        );
         let services = Self {
             store,
             threads,
@@ -182,7 +194,8 @@ impl Services {
                 INDEX_CAPACITY,
                 LIVE_BUFFER,
             )),
-            jobs: Jobs::default(),
+            jobs,
+            declared,
             terminals: Terminals::default(),
             refresh: Arc::new(tokio::sync::Mutex::new(())),
             workspace_logs: Arc::new(Mutex::new(HashMap::new())),
@@ -197,8 +210,11 @@ impl Services {
             login_board: Arc::default(),
         };
         let workspaces = Arc::clone(&services.workspaces);
-        blocking(move || {
-            for ws in workspaces.list().map_err(workspace_error)? {
+        let declared = services.declared.clone();
+        let scanned = blocking(move || {
+            declared.recover()?;
+            let list = workspaces.list().map_err(workspace_error)?;
+            for ws in &list {
                 match workspaces.rescan(&ws.id) {
                     Ok((view, _)) if view.repos.iter().any(|repo| repo.is_root) => {}
                     Ok(_) if !ws.path.is_dir() => {}
@@ -212,7 +228,7 @@ impl Services {
                     }
                 }
             }
-            Ok(())
+            Ok(list)
         })
         .await?;
         services
@@ -221,6 +237,10 @@ impl Services {
         services.supervisor.set_agent_host(Arc::new(
             crate::agent_tools::rpc::ServicesAgentHost::new(services.clone()),
         ));
+        // Each workspace's jobs once its first scan is done (DMN-322).
+        for ws in scanned {
+            services.declared.reload(&ws.id).await;
+        }
         services.refresh_index().await?;
         Ok(services)
     }
@@ -269,6 +289,7 @@ impl Services {
         }
         self.sync_roots(id).await?;
         self.refresh_views(id).await;
+        self.declared.reload(id).await;
         Ok(view)
     }
 
@@ -299,6 +320,17 @@ impl Services {
             while let Ok(_) | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) =
                 changes.recv().await
             {
+                services.refresh_index_quietly().await;
+            }
+        })
+    }
+
+    /// Refreshes the index whenever the declared jobs' counts change or a job made a thread (DMN-335).
+    pub fn spawn_job_counts(&self) -> JoinHandle<()> {
+        let mut changes = self.declared.subscribe_changes();
+        let services = self.clone();
+        tokio::spawn(async move {
+            while changes.changed().await.is_ok() {
                 services.refresh_index_quietly().await;
             }
         })
@@ -366,9 +398,18 @@ impl Services {
         let workspaces = Arc::clone(&self.workspaces);
         let supervisor = self.supervisor.clone();
         let settings = self.settings();
-        let fresh =
-            blocking(move || load_index(&store, &workspaces, &supervisor, &previous, settings))
-                .await?;
+        let counts = self.declared.counts();
+        let fresh = blocking(move || {
+            load_index(
+                &store,
+                &workspaces,
+                &supervisor,
+                &previous,
+                settings,
+                &counts,
+            )
+        })
+        .await?;
         for event in diff_index(&current, fresh) {
             self.index.push(event);
         }
@@ -658,6 +699,7 @@ fn load_index(
     supervisor: &Supervisor,
     previous: &IndexSnapshot,
     settings: Settings,
+    counts: &HashMap<String, JobCounts>,
 ) -> Result<IndexSnapshot, ErrorBody> {
     let clients = store.created_clients()?;
     let forks = store.thread_forks()?;
@@ -687,7 +729,15 @@ fn load_index(
                 .filter(|thread| thread.workspace_id == ws.id)
                 .map(|thread| thread.id.clone())
                 .collect();
-            convert::workspace(ws, repos, thread_ids, &holders, &clients, position(&ws.id))
+            convert::workspace(
+                ws,
+                repos,
+                thread_ids,
+                &holders,
+                &clients,
+                position(&ws.id),
+                counts.get(&ws.id).copied(),
+            )
         })
         .collect();
     let threads = threads

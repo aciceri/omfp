@@ -21,6 +21,7 @@ import {
   resizePanel,
   useHost,
   useWindowState,
+  useWorkspaces,
 } from "../sdk/index.ts";
 import { strings } from "../strings/index.ts";
 import { containsWidget, hasMainSlot } from "../view/layout.ts";
@@ -62,16 +63,21 @@ export interface RevealedWidgetProps extends FloatingWidgetsProps {
  * The widget of the window's latest reveal request (UI-274, UI-373) when neither the view nor a panel of the manifest
  * holds it: a closable tab of the view's `main` slot (with the open files, window-local per workspace, UI-373), else,
  * in a view without a `main` slot, a floating panel of this window only (`views.json` is not written); closing it
- * drops the request.
+ * drops the request. A request for another workspace than the current one always floats, its widget given that
+ * workspace as its `workspaceId` prop (UI-741).
  */
 export function RevealedWidget({ view, panels, workspaceId, views, registry }: RevealedWidgetProps): ReactNode {
   const [request, setRequest] = useWindowState(REVEAL_WIDGET);
   const [, setOpened] = useWindowState(OPEN_FILES);
-  const names = request === undefined ? [] : [request.reference];
+  const workspaces = useWorkspaces();
+  const other =
+    request?.workspaceId !== undefined && request.workspaceId !== workspaceId ? request.workspaceId : undefined;
+  const names = request === undefined || other !== undefined ? [] : [request.reference];
   const held =
-    (view !== undefined && containsWidget(view.tree, names)) ||
-    panels.some((panel) => containsWidget(panel.tree, names));
-  const tab = !held && workspaceId !== undefined && view !== undefined && hasMainSlot(view.tree);
+    names.length > 0 &&
+    ((view !== undefined && containsWidget(view.tree, names)) ||
+      panels.some((panel) => containsWidget(panel.tree, names)));
+  const tab = !held && other === undefined && workspaceId !== undefined && view !== undefined && hasMainSlot(view.tree);
   // Once the view's tabs showed it (their effects run first) or a tab of `main` opened it, the request is done: a later
   // view without the widget must not float it.
   useEffect(() => {
@@ -88,21 +94,32 @@ export function RevealedWidget({ view, panels, workspaceId, views, registry }: R
       setRequest(undefined);
     }
   }, [request, held, tab, workspaceId, setOpened, setRequest]);
-  if (request === undefined || workspaceId === undefined || held || tab) {
+  // Without a current workspace, the other workspace's panel floats in its own.
+  const host = workspaceId ?? other;
+  if (request === undefined || host === undefined || held || tab) {
     return null;
   }
-  const panel: ResolvedPanel = {
-    id: `reveal/${request.reference}`,
-    title: widgetTitle(request.reference),
-    node: request.reference,
-    tree: { kind: "widget", name: request.reference, props: {} },
-  };
+  const title = widgetTitle(request.reference);
+  const panel: ResolvedPanel =
+    other === undefined
+      ? {
+          id: `reveal/${request.reference}`,
+          title,
+          node: request.reference,
+          tree: { kind: "widget", name: request.reference, props: {} },
+        }
+      : {
+          id: `reveal/${request.reference}/${other}`,
+          title: text.ofWorkspace(title, workspaces.get(other)?.name ?? other),
+          node: [request.reference, { workspaceId: other }],
+          tree: { kind: "widget", name: request.reference, props: { workspaceId: other } },
+        };
   return (
     <FloatingWidget
       panel={panel}
       index={panels.length}
-      workspaceId={workspaceId}
-      views={views}
+      workspaceId={host}
+      views={host === workspaceId ? views : undefined}
       registry={registry}
       onClose={() => setRequest(undefined)}
     />

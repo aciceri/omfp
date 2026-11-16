@@ -22,9 +22,11 @@ pub enum Topic {
     Job(String),
     /// Interactive PTY output of one terminal session (TRM-100).
     Terminal(String),
+    /// The declared jobs of one workspace and their runs (PRT-200).
+    Jobs(String),
 }
 
-/// A topic name that is not `index` or `<thread|workspace|views|job|terminal>/<id>`.
+/// A topic name that is not `index` or `<thread|workspace|views|job|jobs|terminal>/<id>`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TopicParseError {
     pub name: String,
@@ -34,7 +36,7 @@ impl fmt::Display for TopicParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "invalid topic {:?}: expected `index` or `<thread|workspace|views|job|terminal>/<id>`",
+            "invalid topic {:?}: expected `index` or `<thread|workspace|views|job|jobs|terminal>/<id>`",
             self.name
         )
     }
@@ -64,6 +66,7 @@ impl FromStr for Topic {
                 "views" => Some(Self::Views(id.to_owned())),
                 "job" => Some(Self::Job(id.to_owned())),
                 "terminal" => Some(Self::Terminal(id.to_owned())),
+                "jobs" => Some(Self::Jobs(id.to_owned())),
                 _ => None,
             },
             _ => None,
@@ -83,6 +86,7 @@ impl fmt::Display for Topic {
             Self::Views(id) => write!(f, "views/{id}"),
             Self::Job(id) => write!(f, "job/{id}"),
             Self::Terminal(id) => write!(f, "terminal/{id}"),
+            Self::Jobs(id) => write!(f, "jobs/{id}"),
         }
     }
 }
@@ -107,9 +111,9 @@ impl JsonSchema for Topic {
 
     fn json_schema(_generator: &mut SchemaGenerator) -> Schema {
         json_schema!({
-            "description": "`index`, `thread/<id>`, `workspace/<id>`, `views/<id>`, `job/<id>` or `terminal/<id>`.",
+            "description": "`index`, `thread/<id>`, `workspace/<id>`, `views/<id>`, `job/<id>`, `jobs/<id>` or `terminal/<id>`.",
             "type": "string",
-            "pattern": "^(index|(thread|workspace|views|job|terminal)/[A-Za-z0-9_-]+)$"
+            "pattern": "^(index|(thread|workspace|views|job|jobs|terminal)/[A-Za-z0-9_-]+)$"
         })
     }
 }

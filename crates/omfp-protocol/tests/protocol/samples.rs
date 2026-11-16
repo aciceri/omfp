@@ -2,9 +2,9 @@
 
 use omfp_core::ProcessState;
 use omfp_protocol::{
-    BuiltinTheme, CreatedBy, Density, FileChange, FileStatus, FontSettings, GitStatus, KeymapEntry,
-    KeymapMode, Motion, NotificationMode, Provenance, RepoKind, RepoStatus, Settings, Theme,
-    ThreadSummary, TitleSource, UiSettings, Workspace, WorkspaceRepo,
+    BuiltinTheme, CreatedBy, Density, FileChange, FileStatus, FontSettings, GitStatus, JobCounts,
+    KeymapEntry, KeymapMode, Motion, NotificationMode, Provenance, RepoKind, RepoStatus, Settings,
+    Theme, ThreadSummary, TitleSource, UiSettings, Workspace, WorkspaceRepo,
 };
 
 pub const WORKSPACE_ID: &str = "01JD8X3Q4T9V2W6Y5Z7A1B3C5E";
@@ -55,6 +55,15 @@ pub fn workspace() -> Workspace {
         provenance: user_provenance(),
         created_at: CREATED_AT,
         position: 0,
+        jobs: Some(JobCounts {
+            total: 3,
+            manual: 1,
+            schedule: 1,
+            service: 1,
+            running: 1,
+            failing: 1,
+            error: false,
+        }),
     }
 }
 
@@ -97,6 +106,7 @@ pub fn root_workspace() -> Workspace {
         },
         created_at: CREATED_AT,
         position: 1,
+        jobs: None,
     }
 }
 

@@ -157,6 +157,13 @@ export type CheckWidgetParams = {
   workspaceId: string;
 };
 
+/** What closing a thread does with the transient runs its agent started (PRT-208). */
+export type CloseJobs =
+  /** Kill them as `jobs.kill` does, then close the thread. */
+  | "kill"
+  /** Leave them running. */
+  | "keep";
+
 /** Who registered a command of a window (PRT-122). */
 export type CommandSource =
   | "user_init" | "workspace_init"
@@ -235,7 +242,22 @@ export type CreatedBy =
   }
   | {
     kind: "mcp";
+  }
+  /** A run of the declared job `job` of the entity's workspace (PRT-209). */
+  | {
+    job: string;
+    kind: "job";
   };
+
+/** `jobs.define` params (PRT-205). */
+export type DefineJobParams = {
+  /** The job as in `.omfp/jobs.json`; the daemon validates it (DMN-320). */
+  job: unknown;
+  name: string;
+  /** Overwrite an existing job of that name. */
+  replace?: boolean | null;
+  workspaceId: string;
+};
 
 /** Row height and spacing of the UI. */
 export type Density = "compact" | "normal";
@@ -249,6 +271,13 @@ export type DiffPage = {
 
 /** No params, or the `{}` result. */
 export type Empty = Record<string, never>;
+
+/** `jobs.enable` params (PRT-207). */
+export type EnableJobParams = {
+  enabled: boolean;
+  name: string;
+  workspaceId: string;
+};
 
 /** The `error` of a failed response. */
 export type ErrorBody = {
@@ -573,6 +602,35 @@ export type InteractionResponse =
     answers: unknown[];
   };
 
+/** A workspace's declared jobs at a glance, on the `index` topic (PRT-210). */
+export type JobCounts = {
+  /** The current `jobs.json` is refused. */
+  error: boolean;
+  /** Enabled jobs whose last run failed. */
+  failing: number;
+  manual: number;
+  running: number;
+  schedule: number;
+  service: number;
+  total: number;
+};
+
+/** A job of `.omfp/jobs.json` with its defaults filled in (DMN-320, PRT-200). */
+export type JobDefinition = {
+  /** `sh -c` command; exactly one of `command` and `prompt`. */
+  command?: string | null;
+  /** Folder of a command run, relative to the workspace folder. */
+  cwd?: string | null;
+  description?: string | null;
+  enabled: boolean;
+  missed: MissedPolicy;
+  prompt?: JobPrompt | null;
+  restart: RestartPolicy;
+  /** The cron expression of a `schedule` job. */
+  schedule?: string | null;
+  trigger: JobTrigger;
+};
+
 /** Change on a `job/<id>` topic, whose state is a `JobState` (PRT-041). */
 export type JobEvent =
   /** One more output line. */
@@ -605,9 +663,56 @@ export type JobLine = {
   text: string;
 };
 
+/** `jobs.run` params (PRT-204): one declared job of a workspace. */
+export type JobNameParams = {
+  job: string;
+  workspaceId: string;
+};
+
+/** The prompt a prompt job sends (DMN-328). */
+export type JobPrompt = {
+  approvalMode?: string | null;
+  model?: string | null;
+  text: string;
+  thinkingLevel?: string | null;
+  thread: PromptThread;
+};
+
 /** Params naming one job. */
 export type JobRef = {
   jobId: string;
+};
+
+/** `jobs.remove` params (PRT-206). */
+export type JobRemoveParams = {
+  name: string;
+  workspaceId: string;
+};
+
+/** How a run ended, or that it still runs (DMN-330). */
+export type JobRunStatus =
+  | "running" | "succeeded" | "failed" | "killed"
+  /** Not started: the job still ran, or its reused thread was busy (`reason`). */
+  | "skipped"
+  /** Still running when the daemon stopped. */
+  | "interrupted";
+
+/** `jobs.runs` result (PRT-203): newest first. */
+export type JobRuns = {
+  /** Older runs exist. */
+  more: boolean;
+  runs: RunInfo[];
+};
+
+/** `jobs.runs` params (PRT-203). */
+export type JobRunsParams = {
+  /** Only runs started before this run id. */
+  before?: string | null;
+  /** The declared job's name. */
+  job: string;
+  /** Defaults to 20, capped at 50. */
+  limit?: number | null;
+  workspaceId: string;
 };
 
 /** State of a `job/<id>` topic (PRT-041). */
@@ -636,6 +741,68 @@ export type JobStatus =
 
 /** Which output of a job a line comes from. */
 export type JobStream = "stdout" | "stderr";
+
+/** When a declared job runs (DMN-320). */
+export type JobTrigger =
+  /** Only when asked. */
+  | "manual"
+  /** At the times of its cron `schedule` (DMN-323). */
+  | "schedule"
+  /** Kept running (DMN-326). */
+  | "service";
+
+/** A declared job with its state (PRT-200). */
+export type JobView = {
+  job: JobDefinition;
+  /** The newest finished run that was not skipped. */
+  lastRun?: RunInfo | null;
+  name: string;
+  /** The next time of a schedule or a waiting service's restart (Unix ms). */
+  nextAt?: number | null;
+  /** The running run. */
+  run?: RunInfo | null;
+  status: JobViewStatus;
+};
+
+/** Where a declared job stands (PRT-200). */
+export type JobViewStatus =
+  | "disabled" | "idle" | "running"
+  /** A service between restarts (`nextAt`). */
+  | "waiting"
+  /** A service killed through the protocol, or one that ended under `on-failure` without failing. */
+  | "stopped";
+
+/** Change on a `jobs/<workspaceId>` topic, whose state is a `JobsState` (PRT-200). */
+export type JobsEvent =
+  /** The whole state: a file was applied or refused. */
+  | {
+    error?: string | null;
+    jobs: JobView[];
+    kind: "jobs_set";
+  }
+  /** One job changed, or appeared; replace it by name. */
+  | {
+    job: JobView;
+    kind: "job_updated";
+  }
+  /** A run started; the job's state comes with `job_updated`. */
+  | {
+    kind: "run_started";
+    run: RunInfo;
+  }
+  /** A run ended; the job's state comes with `job_updated`. */
+  | {
+    kind: "run_ended";
+    run: RunInfo;
+  };
+
+/** State of a `jobs/<workspaceId>` topic (PRT-200). */
+export type JobsState = {
+  /** Why the current file is refused; `null` when valid or absent. */
+  error?: string | null;
+  /** The jobs of the last valid `jobs.json`, by name. */
+  jobs: JobView[];
+};
 
 /** One key binding of the config file's `[keymap]` (UI-097). */
 export type KeymapEntry = {
@@ -844,6 +1011,12 @@ export type MessageParams = {
   threadId: string;
 };
 
+/** What a schedule does with times the daemon missed (DMN-325). */
+export type MissedPolicy =
+  | "skip"
+  /** One catch-up run, however many times were missed. */
+  | "run";
+
 /** How much the UI animates (UI-145); `prefers-reduced-motion: reduce` caps it at `none`. */
 export type Motion =
   /** Every effect of the motion catalogue (default). */
@@ -991,6 +1164,13 @@ export type PromptResult = {
   promptId: string;
 };
 
+/** Which thread a prompt run sends to (DMN-328). */
+export type PromptThread =
+  /** A new thread per run. */
+  | "new"
+  /** The job's own thread, made on first use. */
+  | "reuse";
+
 /** Who created an entity (ARC-009). */
 export type Provenance = {
   /** `client` of the creating connection's `system.hello` (PRT-033). */
@@ -1128,6 +1308,9 @@ export type RespondParams = {
   threadId: string;
 };
 
+/** When a service starts again after its run ended (DMN-326). */
+export type RestartPolicy = "always" | "on-failure";
+
 /**
  * Why the daemon restarts a thread's omp by itself (PRT-134, DMN-228): omp loads MCP servers and lists a provider's
  * models only at startup.
@@ -1158,6 +1341,36 @@ export type RunInWindowParams = {
   windowId?: number | null;
   workspaceId?: string | null;
 };
+
+/** One run of a job (PRT-201); its id is a job id (`job/<id>`, `jobs.kill`). */
+export type RunInfo = {
+  /** The command a command run ran (its output is `job/<id>`); `null` for a prompt run. */
+  command?: string | null;
+  endedAt?: number | null;
+  exitCode?: number | null;
+  id: string;
+  /** The declared job; `null` for a transient run. */
+  job?: string | null;
+  /** Why it was skipped or could not start. */
+  reason?: string | null;
+  signal?: number | null;
+  startedAt: number;
+  /** Who asked; `null` for the scheduler and the supervisor. */
+  startedBy?: CreatedBy | null;
+  status: JobRunStatus;
+  /** A prompt run's thread. */
+  threadId?: string | null;
+  trigger: RunTrigger;
+  workspaceId: string;
+};
+
+/** What started a run (PRT-201). */
+export type RunTrigger =
+  | "manual" | "schedule" | "service"
+  /** A catch-up run for missed times (DMN-325). */
+  | "missed"
+  /** A transient run of `jobs.start`. */
+  | "start";
 
 /** `widgets.save` params (PRT-083, AGT-064): exactly one of `widget` (with `workspaceId`) and `code`. */
 export type SaveWidgetParams = {
@@ -1437,6 +1650,13 @@ export type Theme = {
   css: string | null;
 };
 
+/** `threads.archive` and `threads.delete` params (PRT-208). */
+export type ThreadCloseParams = {
+  /** Required while runs the thread's agent started still run; otherwise `conflict`. */
+  jobs?: CloseJobs | null;
+  threadId: string;
+};
+
 /** `thread.git` result: the git status of every repository of the thread's workspace. */
 export type ThreadGit = {
   /** In the order of the workspace's `repos`. */
@@ -1576,7 +1796,7 @@ export type TitleSource =
   /** Set by the user or an agent (`threads.create`, `threads.update`, host tool `set_thread_title`); never replaced. */
   | "set";
 
-/** `index`, `thread/<id>`, `workspace/<id>`, `views/<id>`, `job/<id>` or `terminal/<id>`. */
+/** `index`, `thread/<id>`, `workspace/<id>`, `views/<id>`, `job/<id>`, `jobs/<id>` or `terminal/<id>`. */
 export type Topic = string;
 
 /** Params naming one topic (`unsubscribe`). */
@@ -1994,6 +2214,8 @@ export type WindowView = {
 export type Workspace = {
   createdAt: number;
   id: string;
+  /** Its declared jobs at a glance; absent without jobs and without a refused file (PRT-210). */
+  jobs?: JobCounts | null;
   /** Unique among workspaces. */
   name: string;
   /** Absolute path of the folder (under the daemon's workspaces root), unique among workspaces. */
@@ -2125,9 +2347,9 @@ export interface Methods {
   "threads.create": { params: CreateThreadParams; result: ThreadSummary };
   "threads.update": { params: UpdateThreadParams; result: ThreadSummary };
   "threads.reorder": { params: ReorderThreadParams; result: Empty };
-  "threads.archive": { params: ThreadRef; result: Empty };
+  "threads.archive": { params: ThreadCloseParams; result: Empty };
   "threads.unarchive": { params: ThreadRef; result: Empty };
-  "threads.delete": { params: ThreadRef; result: Empty };
+  "threads.delete": { params: ThreadCloseParams; result: Empty };
   "threads.fork": { params: ForkParams; result: ThreadSummary };
   "threads.search": { params: SearchThreadsParams; result: ThreadSearchResults };
   "thread.prompt": { params: PromptParams; result: PromptResult };
@@ -2178,6 +2400,12 @@ export interface Methods {
   "terminals.input": { params: TerminalInputParams; result: Empty };
   "terminals.resize": { params: TerminalResizeParams; result: Empty };
   "terminals.kill": { params: TerminalRef; result: Empty };
+  "jobs.list": { params: WorkspaceRef; result: JobsState };
+  "jobs.runs": { params: JobRunsParams; result: JobRuns };
+  "jobs.run": { params: JobNameParams; result: RunInfo };
+  "jobs.define": { params: DefineJobParams; result: JobView };
+  "jobs.remove": { params: JobRemoveParams; result: Empty };
+  "jobs.enable": { params: EnableJobParams; result: JobView };
   "views.errors": { params: WorkspaceRef; result: ViewErrors };
   "windows.list": { params: ListWindowsParams; result: WindowList };
   "windows.state": { params: WindowRef; result: WindowState };
@@ -2283,6 +2511,12 @@ export const METHODS: readonly MethodName[] = [
   "terminals.input",
   "terminals.resize",
   "terminals.kill",
+  "jobs.list",
+  "jobs.runs",
+  "jobs.run",
+  "jobs.define",
+  "jobs.remove",
+  "jobs.enable",
   "views.errors",
   "windows.list",
   "windows.state",

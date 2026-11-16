@@ -3,7 +3,8 @@
  * workspace and thread actions on the selected thread (UI-021, UI-023, UI-026, UI-030), a rescan of the current
  * workspace (DMN-023), colour scheme (UI-091, window-local), density and `:set` (daemon settings, UI-094, UI-097), the
  * view switch (UI-101), the next and previous view (UI-302) and `:view-reset` (UI-107, UI-430), adding a widget to the view
- * (UI-300), copying a widget into the workspace (UI-106) and saving a workspace widget to the user library (UI-233).
+ * (UI-300), copying a widget into the workspace (UI-106), saving a workspace widget to the user library (UI-233) and
+ * the current workspace's declared jobs (UI-745).
  */
 
 import type { ReactNode } from "react";
@@ -12,10 +13,13 @@ import {
   chooseView,
   currentWorkspaceId,
   FOCUS_COMPOSER,
+  type JobActions,
+  jobActions,
   type OpenFileOptions,
   openFile,
   RENAMING_THREAD,
   RESET_VIEWS,
+  REVEAL_WIDGET,
   reportError,
   reportSuccess,
   SELECTED_THREAD,
@@ -127,6 +131,67 @@ export function GlobalCommands({ viewIds, currentView, widgets, addWidget }: Glo
         host.client.call("workspaces.rescan", { workspaceId }).catch((error: unknown) => reportError(host, error));
       }
     },
+  });
+  const hasWorkspace = () => currentWorkspaceId(host) !== undefined;
+  // The names of the current workspace's jobs, as its `jobs/<id>` holds them (the frame follows it, UI-748).
+  const jobNames = (before: readonly string[]) => {
+    const workspaceId = currentWorkspaceId(host);
+    const jobs = workspaceId === undefined ? undefined : host.frames.getSnapshot().workspaceJobs.get(workspaceId);
+    return before.length > 0 || jobs === undefined ? [] : jobs.state.jobs.map((job) => job.name);
+  };
+  // `:job-* <name>` on the current workspace's job, through the methods `omfp:jobs` calls (UI-743); errors are toasts.
+  const onJob =
+    (act: (jobs: JobActions, name: string) => Promise<unknown>, done?: (name: string) => string) =>
+    (args: readonly string[]) => {
+      const [name] = args;
+      if (name === undefined || name === "") {
+        reportError(host, strings.shell.jobs.needsName);
+        return;
+      }
+      act(jobActions(host.client, currentWorkspaceId(host)), name).then(
+        () => done !== undefined && reportSuccess(host, done(name)),
+        (error: unknown) => reportError(host, error),
+      );
+    };
+  useCommand({
+    id: "job.run",
+    title: titles.jobRun,
+    aliases: ["job-run"],
+    enabled: hasWorkspace,
+    args: jobNames,
+    run: onJob((jobs, name) => jobs.run(name), strings.shell.jobs.started),
+  });
+  useCommand({
+    id: "job.kill",
+    title: titles.jobKill,
+    aliases: ["job-kill"],
+    enabled: hasWorkspace,
+    args: jobNames,
+    run: onJob((jobs, name) => jobs.kill(name)),
+  });
+  useCommand({
+    id: "job.enable",
+    title: titles.jobEnable,
+    aliases: ["job-enable"],
+    enabled: hasWorkspace,
+    args: jobNames,
+    run: onJob((jobs, name) => jobs.enable(name, true)),
+  });
+  useCommand({
+    id: "job.disable",
+    title: titles.jobDisable,
+    aliases: ["job-disable"],
+    enabled: hasWorkspace,
+    args: jobNames,
+    run: onJob((jobs, name) => jobs.enable(name, false)),
+  });
+  useCommand({
+    id: "job.list",
+    title: titles.jobList,
+    aliases: ["jobs"],
+    enabled: hasWorkspace,
+    // Like the left column's job counts for the current workspace (UI-741).
+    run: () => host.window.set(REVEAL_WIDGET, { reference: "omfp:jobs", nonce: Date.now() }),
   });
   useCommand({
     id: "thread.archive",

@@ -331,6 +331,41 @@
       ]
     },
     {
+      "id": "job.disable",
+      "title": "Disable a job of the current workspace in .omfp/jobs.json (:job-disable <name>)",
+      "aliases": [
+        "job-disable"
+      ]
+    },
+    {
+      "id": "job.enable",
+      "title": "Enable a job of the current workspace in .omfp/jobs.json (:job-enable <name>)",
+      "aliases": [
+        "job-enable"
+      ]
+    },
+    {
+      "id": "job.kill",
+      "title": "Stop the running run of a job of the current workspace (:job-kill <name>)",
+      "aliases": [
+        "job-kill"
+      ]
+    },
+    {
+      "id": "job.list",
+      "title": "Show the jobs of the current workspace (omfp:jobs)",
+      "aliases": [
+        "jobs"
+      ]
+    },
+    {
+      "id": "job.run",
+      "title": "Run a job of the current workspace (:job-run <name>)",
+      "aliases": [
+        "job-run"
+      ]
+    },
+    {
       "id": "nav.bottom",
       "title": "Last thread",
       "aliases": []
@@ -528,7 +563,7 @@
       "aliases": [
         "stop"
       ],
-      "description": "Ends the thread's omp process, with its background jobs and live voice; Restart starts it again. To stop only the running turn, use Abort (ctrl+c)."
+      "description": "Ends the thread's omp process, with its background commands and live voice; Restart starts it again. To stop only the running turn, use Abort (ctrl+c)."
     },
     {
       "id": "thread.stopSpawned",

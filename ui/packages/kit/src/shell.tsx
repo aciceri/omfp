@@ -291,6 +291,8 @@ export interface WorkspaceSectionProps extends Omit<HTMLAttributes<HTMLElement>,
   current?: boolean;
   /** Said after the current workspace's name to screen readers (`current`). */
   currentLabel?: string;
+  /** Compact buttons right after the name, always shown (a workspace's job counts, UI-740). */
+  badges?: ReactNode;
   /** Replaces the name: a rename field. */
   editor?: ReactNode;
   /** Buttons after the count (a menu, delete), shown on hover and focus. */
@@ -319,6 +321,7 @@ export function WorkspaceSection({
   current = false,
   currentLabel,
   editor,
+  badges,
   actions,
   headClassName,
   headProps,
@@ -358,6 +361,7 @@ export function WorkspaceSection({
             {current && currentLabel !== undefined && <span className="omfp-visually-hidden"> ({currentLabel})</span>}
           </h2>
         )}
+        {badges}
         {count !== undefined && <span className="omfp-wsection__count">{count}</span>}
         {actions !== undefined && <span className="omfp-wsection__actions">{actions}</span>}
       </div>

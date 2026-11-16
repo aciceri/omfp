@@ -15,10 +15,14 @@ import {
   type JobEvent,
   type JobInfo,
   type JobState,
+  type JobsEvent,
+  type JobsState,
+  type JobView,
   type LoginActivity,
   type ParsedTopic,
   parseTopic,
   type RepoStatus,
+  type RunInfo,
   type ServerFrame,
   type Settings,
   type SubscribeResult,
@@ -268,12 +272,20 @@ const TERMINAL_EVENTS: Record<TerminalEvent["kind"], (event: Record<string, unkn
   exited: (event) => typeof event.endedAt === "number" && isOptionalNumber(event.code),
 };
 
+const JOBS_EVENTS: Record<JobsEvent["kind"], (event: Record<string, unknown>) => boolean> = {
+  jobs_set: (event) => isJobViewList(event.jobs) && isOptionalString(event.error),
+  job_updated: (event) => isJobView(event.job),
+  run_started: (event) => isRunInfo(event.run),
+  run_ended: (event) => isRunInfo(event.run),
+};
+
 const EVENT_TABLES: Record<ParsedTopic["kind"], Record<string, (event: Record<string, unknown>) => boolean>> = {
   index: INDEX_EVENTS,
   thread: THREAD_EVENTS,
   workspace: WORKSPACE_EVENTS,
   views: VIEWS_EVENTS,
   job: JOB_EVENTS,
+  jobs: JOBS_EVENTS,
   terminal: TERMINAL_EVENTS,
 };
 
@@ -660,4 +672,47 @@ export function decodeTerminalState(value: unknown): Decoded<TerminalState> {
     );
   }
   return { ok: true, value: value as TerminalState };
+}
+
+function isRunInfo(value: unknown): value is RunInfo {
+  return (
+    isObject(value) &&
+    typeof value.id === "string" &&
+    typeof value.workspaceId === "string" &&
+    isOptionalString(value.job) &&
+    typeof value.trigger === "string" &&
+    typeof value.startedAt === "number" &&
+    typeof value.status === "string" &&
+    isOptionalNumber(value.endedAt) &&
+    isOptionalString(value.threadId) &&
+    isOptionalString(value.reason) &&
+    isOptionalNumber(value.exitCode) &&
+    isOptionalNumber(value.signal) &&
+    (value.startedBy === undefined || isNullableObject(value.startedBy))
+  );
+}
+
+function isJobView(value: unknown): value is JobView {
+  return (
+    isObject(value) &&
+    typeof value.name === "string" &&
+    typeof value.status === "string" &&
+    isObject(value.job) &&
+    typeof value.job.trigger === "string" &&
+    typeof value.job.enabled === "boolean" &&
+    [value.run, value.lastRun].every((run) => run === undefined || run === null || isRunInfo(run)) &&
+    isOptionalNumber(value.nextAt)
+  );
+}
+
+function isJobViewList(value: unknown): value is JobView[] {
+  return Array.isArray(value) && value.every(isJobView);
+}
+
+/** Decodes the state of a `jobs/<workspaceId>` snapshot (PRT-200); `error` defaults to `null`. */
+export function decodeJobsState(value: unknown): Decoded<JobsState> {
+  if (!isObject(value) || !isJobViewList(value.jobs) || !isOptionalString(value.error)) {
+    return invalid("expected `{ jobs: { name, job, status, run, lastRun, nextAt }[], error }`");
+  }
+  return { ok: true, value: { jobs: value.jobs, error: value.error ?? null } };
 }

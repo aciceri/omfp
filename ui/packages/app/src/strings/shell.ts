@@ -47,6 +47,8 @@ export const shell = {
     clearSpawned: "Show every thread",
     /** The notice of a stop with the spawned threads (UI-242). */
     stoppedSpawned: (count: number) => (count === 1 ? "Stopped 1 thread" : `Stopped ${count} threads`),
+    /** The tooltip of a thread a declared job made (UI-746). */
+    madeByJob: (title: string, job: string) => `${title} · job ${job}`,
   },
   /** Dragging and moving rows and sections of the left column (UI-620..UI-627). */
   reorder: {
@@ -87,8 +89,13 @@ export const shell = {
     submit: "Connect",
   },
   header: {
-    /** The badge of running background work (UI-274). */
+    /** The badge of running background work (UI-274), and its tooltip (UI-747). */
     inBackground: (count: number) => `${count} in background`,
+    inBackgroundTitle: (count: number) =>
+      `${count} background ${count === 1 ? "command or subagent runs" : "commands and subagents run"}: show them`,
+    /** A thread a declared job made (UI-746): its provenance, and the button revealing the jobs. */
+    madeByJob: (job: string) => `job ${job}`,
+    showJobs: (job: string) => `Made by job ${job}: show the jobs`,
     rename: "Rename",
     renameLabel: "Title",
     save: "Save",
@@ -203,8 +210,8 @@ export const shell = {
     label: "Background",
     noThread: "No thread selected",
     none: "Nothing runs in the background",
-    noneHint: "Background jobs of the agent and its subagents appear here.",
-    showJob: (id: string) => `Show the card of background job ${id}`,
+    noneHint: "Background commands of the agent and its subagents appear here.",
+    showJob: (id: string) => `Show the card of background command ${id}`,
     subagent: (name: string) => `Subagent ${name}`,
     state: { running: "running", completed: "done", failed: "failed", cancelled: "cancelled" },
     stopRequested: "stop requested",
@@ -224,6 +231,98 @@ export const shell = {
     steerPlaceholder: "Tell it what to do differently",
     roleUser: "task",
     roleAssistant: "subagent",
+  },
+  /** `omfp:jobs`, the left column's job counts and the job commands (UI-740..UI-745). */
+  jobs: {
+    label: "Jobs",
+    noWorkspace: "No workspace",
+    loading: "Reading the jobs…",
+    none: "No jobs",
+    noneHint:
+      "Declare jobs in .omfp/jobs.json: commands or prompts run by hand, on a schedule or kept running as services.",
+    openFile: "Open jobs.json",
+    /** The `job-counts` button's tooltip and name (UI-740), its parts joined by ` · `. */
+    counts: (total: number, parts: string) => `${total} ${total === 1 ? "job" : "jobs"}: ${parts}`,
+    countService: (count: number) => `${count} ${count === 1 ? "service" : "services"}`,
+    countSchedule: (count: number) => `${count} scheduled`,
+    countManual: (count: number) => `${count} manual`,
+    countRunning: (count: number) => `${count} running`,
+    countFailed: (count: number) => `${count} failed`,
+    invalid: (error: string | undefined) =>
+      error === undefined ? "jobs.json is invalid" : `jobs.json is invalid: ${error}`,
+    /** A row's trigger (UI-742). */
+    manual: "manual",
+    schedule: (cron: string, next: string | undefined) => (next === undefined ? cron : `${cron} · next ${next}`),
+    service: (restart: "always" | "on-failure") =>
+      `service · restart ${restart === "always" ? "always" : "on failure"}`,
+    prompt: (thread: "new" | "reuse") => `prompt · ${thread === "new" ? "new thread" : "reuse thread"}`,
+    /** A row's state (UI-742). */
+    status: {
+      running: (duration: string | undefined) => (duration === undefined ? "running" : `running ${duration}`),
+      waiting: (at: string | undefined) => (at === undefined ? "waiting" : `waiting · restart ${at}`),
+      stopped: "stopped",
+      disabled: "disabled",
+      idle: "idle",
+    },
+    /** A run's end (UI-742, UI-743). */
+    runStatus: {
+      running: "running",
+      succeeded: "succeeded",
+      failed: "failed",
+      killed: "killed",
+      skipped: "skipped",
+      interrupted: "interrupted",
+    },
+    exit: (code: number) => `exit ${code}`,
+    signal: (signal: number) => `signal ${signal}`,
+    lastRun: (when: string, outcome: string) => `last ${when}: ${outcome}`,
+    never: "never ran",
+    /** What started a run (UI-743). */
+    trigger: {
+      manual: "by hand",
+      schedule: "scheduled",
+      missed: "missed time",
+      service: "service",
+      start: "transient",
+    },
+    startedBy: (who: string) => `by ${who}`,
+    /** Who asked for a run (its `startedBy`, PRT-201). */
+    who: { user: "you", mcp: "an MCP client", agent: (title: string) => title, job: (name: string) => `job ${name}` },
+    run: "Run",
+    start: "Start",
+    stop: "Stop",
+    enable: "Enable",
+    disable: "Disable",
+    runLabel: (name: string) => `Run ${name}`,
+    startLabel: (name: string) => `Start ${name}`,
+    stopLabel: (name: string) => `Stop ${name}`,
+    enableLabel: (name: string) => `Enable ${name}`,
+    disableLabel: (name: string) => `Disable ${name}`,
+    runs: (name: string) => `Runs of ${name}`,
+    noRuns: "No runs yet",
+    readingRuns: "Reading the runs…",
+    loadOlder: "Load older",
+    output: (id: string) => `Output of run ${id}`,
+    openThread: (title: string) => `Open ${title}`,
+    ended: (start: string, end: string) => `${start} – ${end}`,
+    /** Commands and init files acting on a job (UI-745, UI-748). */
+    started: (name: string) => `${name} started`,
+    notRunning: (name: string) => `${name} is not running`,
+    unknown: (name: string) => `No job ${name} in this workspace`,
+    needsName: "Name a job of the current workspace",
+  },
+  /** Closing a thread whose agent's commands still run (UI-744). */
+  closeRuns: {
+    title: (title: string) => `\u201c${title}\u201d still runs commands`,
+    message: (count: number) =>
+      count === 1
+        ? "Its agent started a command that still runs. Stop it, or keep it running without the thread?"
+        : `Its agent started ${count} commands that still run. Stop them, or keep them running without the thread?`,
+    ran: (duration: string) => `running for ${duration}`,
+    command: "command",
+    stop: "Stop them",
+    keep: "Keep them running",
+    cancel: "Cancel",
   },
   /** `omfp:mcp` (UI-290..UI-294). */
   mcp: {
@@ -476,6 +575,8 @@ export const shell = {
   },
   /** Floating widget panels (UI-230). */
   panels: {
+    /** A widget revealed for another workspace than the current one (UI-741). */
+    ofWorkspace: (title: string, workspace: string) => `${title} · ${workspace}`,
     move: (title: string) => `Move ${title} (arrow keys)`,
     resize: (title: string) => `Resize ${title} (arrow keys)`,
     minimise: (title: string) => `Minimise ${title}`,
@@ -516,6 +617,7 @@ export const shell = {
       "omfp:changes": "Changes",
       "omfp:file": "File",
       "omfp:background": "Background",
+      "omfp:jobs": "Jobs",
       "omfp:todos": "Todos",
       "omfp:tree": "Tree",
       "omfp:activity": "Activity",
@@ -658,9 +760,9 @@ export const shell = {
       "Immediately removes the thread's history without confirmation; its workspace is kept. Use Archive to keep the conversation.",
     rename: "Rename the thread (:rename <title>, or in place without one)",
     stop: "Stop process",
-    /** `:describe-command stop` (UI-524): what Stop process ends, unlike Abort. */
+    /** `:describe-command stop` (UI-524, UI-747): what Stop process ends, unlike Abort. */
     stopDescription:
-      "Ends the thread's omp process, with its background jobs and live voice; Restart starts it again. To stop only the running turn, use Abort (ctrl+c).",
+      "Ends the thread's omp process, with its background commands and live voice; Restart starts it again. To stop only the running turn, use Abort (ctrl+c).",
     stopSpawned: "Stop process of the thread and of every thread it spawned",
     spawnedBy: "Show only the threads the selected one spawned (again: every thread)",
     restart: "Restart the thread's process",
@@ -669,6 +771,12 @@ export const shell = {
     forkDescription:
       "Makes a new thread in the same workspace holding the conversation up to the message, the message included; the thread you fork from is left as it is.",
     nextAttention: "Next thread needing attention",
+    /** The job commands (UI-745). */
+    jobRun: "Run a job of the current workspace (:job-run <name>)",
+    jobKill: "Stop the running run of a job of the current workspace (:job-kill <name>)",
+    jobEnable: "Enable a job of the current workspace in .omfp/jobs.json (:job-enable <name>)",
+    jobDisable: "Disable a job of the current workspace in .omfp/jobs.json (:job-disable <name>)",
+    jobList: "Show the jobs of the current workspace (omfp:jobs)",
     theme: "Colour scheme (system, light, dark) and built-in theme (synth, catppuccin, gruvbox, …)",
     density: "Density (compact, normal)",
     set: "Change a setting (:set key=value)",

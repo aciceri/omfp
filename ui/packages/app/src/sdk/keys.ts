@@ -1,6 +1,7 @@
 /** Window state slots shared by several widgets and the frame. Widget-private slots live next to their widget. */
 
 import type { ImageContent } from "@omfp/core";
+import type { RunInfo } from "@omfp/protocol";
 import { decodeViewChoices, NO_VIEW_CHOICES, type ViewChoices } from "../vm/view-choices.ts";
 import { type WindowKey, windowKey } from "./window-store.ts";
 
@@ -106,13 +107,25 @@ export const LOGIN = windowKey<LoginRequest | undefined>("login", undefined);
 export const AUTH_REVISION = windowKey<number>("authRevision", 0);
 
 /** A request to show a built-in widget (UI-274): the frame selects the tab holding `reference` in the current view,
- * else floats it in a panel of this window; `nonce` tells one request from the next. */
+ * else floats it in a panel of this window; `nonce` tells one request from the next. With `workspaceId` of another
+ * workspace than the current one, it floats `reference { workspaceId }` (UI-741). */
 export interface RevealRequest {
   readonly reference: string;
   readonly nonce: number;
+  readonly workspaceId?: string;
 }
 
 export const REVEAL_WIDGET = windowKey<RevealRequest | undefined>("revealWidget", undefined);
+
+/** A thread close the daemon refused while commands its agent started still run (UI-744, PRT-208): the frame asks
+ * what to do with them, then repeats the call. */
+export interface CloseRequest {
+  readonly method: "threads.archive" | "threads.delete";
+  readonly threadId: string;
+  readonly runs: readonly RunInfo[];
+}
+
+export const CLOSE_THREAD = windowKey<CloseRequest | undefined>("closeThread", undefined);
 
 /**
  * A request to open a subagent's detail (transcript and steer) under its row of `omfp:background` (UI-492); reveal

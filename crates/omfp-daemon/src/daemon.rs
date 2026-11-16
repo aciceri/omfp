@@ -21,6 +21,7 @@ use crate::config::{Cli, Config, default_config_file, web_bundle};
 use crate::conventions;
 use crate::git::{Git, GitCli};
 use crate::jobs::Jobs;
+use crate::jobs::declared::Declared;
 use crate::omp_binary;
 use crate::paths::{
     DataDir, create_private_dir, make_private_file, private_file_options, replace_file,
@@ -196,6 +197,7 @@ pub struct DaemonHandle {
     data_dir: PathBuf,
     supervisor: Supervisor,
     jobs: Jobs,
+    declared: Declared,
     terminals: crate::terminals::Terminals,
     stop: watch::Sender<bool>,
     stop_request: Arc<Notify>,
@@ -278,7 +280,10 @@ impl DaemonHandle {
     pub async fn shutdown(self) -> anyhow::Result<()> {
         let _ = self.stop.send(true);
         self.terminals.shutdown();
+        // No declared run starts or restarts while everything stops; the ends of the killed ones are recorded.
+        self.declared.close();
         tokio::join!(self.supervisor.shutdown(), self.jobs.shutdown());
+        self.declared.wait_recorded().await;
         for task in &self.background {
             task.abort();
         }
@@ -377,12 +382,14 @@ pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHa
         .await
         .map_err(|error| anyhow::anyhow!(error.message))?;
     let jobs = services.jobs.clone();
+    let declared = services.declared.clone();
     let (threads_list, follow_threads) = services.spawn_thread_list();
     let mut background = vec![
         supervisor.spawn_reaper(),
         services.spawn_index_updates(),
         services.spawn_model_updates(),
         services.spawn_rescans(),
+        services.spawn_job_counts(),
         services.spawn_polls(),
         follow_threads,
     ];
@@ -464,6 +471,7 @@ pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHa
         data_dir,
         supervisor,
         jobs,
+        declared,
         terminals,
         stop,
         stop_request: Arc::new(Notify::new()),

@@ -33,6 +33,9 @@ getrandom = "0.4"
 hex = "0.4"
 # `Last-Modified` and `If-Modified-Since` of raw workspace files (DMN-253); already in the tree through hyper.
 httpdate = "1"
+# Cron schedules of declared jobs in the host's local time zone, across daylight-saving changes (DMN-323): its time
+# zones read the system's tz database (MIT OR Unlicense).
+jiff = "0.2"
 insta = { version = "1", features = ["json"] }
 # Widget modules (DMN-084, DMN-085): TypeScript/JSX → ES modules, checked imports; oxc pinned as validated in S-12.
 oxc_allocator = "=0.158.0"

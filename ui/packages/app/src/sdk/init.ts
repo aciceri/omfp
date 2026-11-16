@@ -9,7 +9,7 @@
  * error, shown in a banner by the frame; the window keeps working.
  */
 
-import type { ThreadSummary } from "@omfp/protocol";
+import type { JobView, RunInfo, ThreadSummary } from "@omfp/protocol";
 import {
   type InitBindings,
   type KeymapOverride,
@@ -20,10 +20,12 @@ import {
 import { strings } from "../strings/index.ts";
 import { type LayoutNode, parseLayout } from "../view/layout.ts";
 import type { ResolvedPanel, Views } from "../view/views.ts";
+import type { JobEventKind } from "../vm/jobs.ts";
 import { errorMessage } from "./actions.ts";
 import { type Command, scopesAt } from "./commands.ts";
 import type { OmfpHost, SdkClient } from "./host.tsx";
 import { type InitFile, InitViews } from "./init-views.ts";
+import { type JobActions, jobActions } from "./jobs.ts";
 import { classifyModule, type Importer } from "./modules.ts";
 import type { NoticeRequest } from "./notify.ts";
 
@@ -33,6 +35,9 @@ export type { InitFile } from "./init-views.ts";
 
 /** The thread changes an init file can listen to (the same as the window's notices, UI-192). */
 export type ThreadEventKind = "attention" | "failed" | "finished";
+
+/** Every event an init file can listen to: thread changes, and runs of the declared jobs (UI-748). */
+export type InitEventKind = ThreadEventKind | JobEventKind;
 
 /** A key binding an init file makes; `mode` defaults to `normal`. */
 export interface InitBinding {
@@ -87,6 +92,16 @@ export interface InitWorkspace {
   readonly repos: readonly InitRepo[];
 }
 
+/** `omfp.jobs` (UI-748): the current workspace's declared jobs, and the actions on them by name. */
+export interface InitJobs extends JobActions {
+  /** The jobs of its `jobs/<id>` as the window holds it at the call; `[]` before it arrived. */
+  list(): readonly JobView[];
+  /** The job named `name` of {@link InitJobs.list}. */
+  get(name: string): JobView | undefined;
+  /** Why its `jobs.json` is refused; `null` when valid, absent or not known yet. */
+  readonly error: string | null;
+}
+
 /** What an init file's default export receives. */
 export interface InitApi {
   /** Which file this is. */
@@ -105,10 +120,17 @@ export interface InitApi {
   notify(request: NoticeRequest): void;
   /** Calls `listener` whenever a thread starts needing the user, fails, or finishes a turn; returns its removal. */
   on(event: ThreadEventKind, listener: (thread: ThreadSummary) => void): () => void;
+  /**
+   * Calls `listener` once per run of a declared job of any workspace whose jobs the index counts, as this window hears
+   * of it: when it starts, when it ends, and when it ends `failed` (UI-748); returns its removal.
+   */
+  on(event: JobEventKind, listener: (run: RunInfo) => void): () => void;
   /** The views of this window (UI-267): `load`, `use`, `transform`. */
   readonly views: ViewsApi;
   /** The current workspace and its repositories. */
   readonly workspace: InitWorkspace;
+  /** The current workspace's declared jobs (UI-748). */
+  readonly jobs: InitJobs;
   /** Floats `node` (a layout node; its `title` prop labels it) over every view of this window. */
   panel(id: string, node: unknown): () => void;
   /** Runs a command by id or alias in the scopes around the focused element; `false` when nothing answers. */
@@ -145,8 +167,8 @@ interface Transform {
 }
 
 interface Listener {
-  readonly event: ThreadEventKind;
-  readonly listener: (thread: ThreadSummary) => void;
+  readonly event: InitEventKind;
+  readonly listener: (value: ThreadSummary | RunInfo) => void;
 }
 
 /** One run of an init file, from its import until it is replaced. */
@@ -269,7 +291,10 @@ export class InitFiles {
   }
 
   /** Every listener of `event`, the user's file's first (the frame calls it for each thread change). */
-  emit(event: ThreadEventKind, thread: ThreadSummary): void {
+  emit(event: ThreadEventKind, thread: ThreadSummary): void;
+  /** The same for a run of a declared job (the frame calls it for each run event, UI-748). */
+  emit(event: JobEventKind, run: RunInfo): void;
+  emit(event: InitEventKind, value: ThreadSummary | RunInfo): void {
     for (const file of FILES) {
       const run = this.#runs[file];
       for (const entry of [...run.listeners]) {
@@ -277,7 +302,7 @@ export class InitFiles {
           this.#guard(
             run,
             (message) => text.listener(event, message),
-            () => entry.listener(thread),
+            () => entry.listener(value),
           );
         }
       }
@@ -394,6 +419,10 @@ export class InitFiles {
       this.#changed();
     };
     const context = () => this.#context;
+    const jobsState = () => {
+      const { workspaceId } = this.#context;
+      return workspaceId === undefined ? undefined : host.client.model.workspaceJobs.get(workspaceId)?.state;
+    };
     return {
       file: run.file,
       workspaceId: run.workspaceId,
@@ -432,8 +461,9 @@ export class InitFiles {
         );
       },
       notify: (request) => host.notices.notify(request),
-      on: (event, listener) => {
-        const entry: Listener = { event, listener };
+      on: (event: InitEventKind, listener: (value: never) => void) => {
+        // Each kind's listener gets that kind's value (`emit`'s overloads).
+        const entry: Listener = { event, listener: listener as (value: ThreadSummary | RunInfo) => void };
         run.listeners.add(entry);
         return this.#own(run, () => run.listeners.delete(entry));
       },
@@ -484,6 +514,16 @@ export class InitFiles {
           run.readRepos = JSON.stringify(repos);
           return repos;
         },
+      },
+      jobs: {
+        list: () => jobsState()?.jobs ?? [],
+        get: (name) => jobsState()?.jobs.find((job) => job.name === name),
+        get error() {
+          return jobsState()?.error ?? null;
+        },
+        run: (name) => jobActions(host.client, context().workspaceId).run(name),
+        kill: (name) => jobActions(host.client, context().workspaceId).kill(name),
+        enable: (name, enabled) => jobActions(host.client, context().workspaceId).enable(name, enabled),
       },
       panel: (id, node) => {
         const parsed = parseLayout(node, `panels.${id}`);

@@ -3,7 +3,7 @@
  * one snapshot, and React renders from snapshots only, so streaming deltas cost at most one render per frame.
  */
 
-import type { ConnectionStatus, Dirty, Index, ModelView, ThreadView, TopicState } from "@omfp/client";
+import type { ConnectionStatus, Dirty, Index, ModelView, ThreadView, TopicState, WorkspaceJobs } from "@omfp/client";
 import type { JobState, RepoStatus, TerminalState, ViewsState } from "@omfp/protocol";
 
 /** What the store reads from the client. */
@@ -33,6 +33,8 @@ export interface Snapshot {
   readonly jobs: ReadonlyMap<string, JobState>;
   /** Followed PTY sessions (TRM-100), by terminal id. */
   readonly terminals: ReadonlyMap<string, TerminalState>;
+  /** Followed declared jobs (PRT-200) and the run events applied live, by workspace id. */
+  readonly workspaceJobs: ReadonlyMap<string, WorkspaceJobs>;
   readonly topics: readonly TopicState[];
 }
 
@@ -55,6 +57,7 @@ function capture(model: ModelView, dirty: Dirty, frame: number): Snapshot {
     views: model.views,
     jobs: model.jobs,
     terminals: model.terminals,
+    workspaceJobs: model.workspaceJobs,
     topics: model.topics,
   };
 }

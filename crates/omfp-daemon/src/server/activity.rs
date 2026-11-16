@@ -26,7 +26,7 @@ pub(crate) fn pending(principal: &Principal, call: &Call) -> Option<NewActivity>
     let thread_id = match principal.created_by() {
         Provenance::Thread(thread_id) => Some(thread_id),
         Provenance::Mcp => None,
-        Provenance::User => return None,
+        Provenance::User | Provenance::Job(_) => return None,
     };
     if matches!(
         permission(call.method()),

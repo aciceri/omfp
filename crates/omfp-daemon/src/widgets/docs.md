@@ -229,12 +229,13 @@ export default function init(omfp: InitApi) {
 | `views.transform(fn)` | `fn(views)` changes the views it gets (or returns other views): applied after `use`, the user's file's first, each in registration order; one that throws changes nothing. |
 | `workspace` | `{ id, repos }`: the current workspace and its repositories (`{ name, path, kind }`, `kind` as `omfp:workspace` shows it: `link`, `worktree`, `clone`, …). |
 | `panel(id, node)` | Floats a layout node over every view (its `title` prop labels it); closing it hides it until the file runs again. |
-| `on(event, listener)` | `"attention"` (a thread starts needing the user), `"failed"`, `"finished"` (a turn ended): `listener(thread)` gets the thread summary. Use it for auto-actions, e.g. select or notify. |
+| `on(event, listener)` | `"attention"` (a thread starts needing the user), `"failed"`, `"finished"` (a turn ended): `listener(thread)` gets the thread summary. Use it for auto-actions, e.g. select or notify. `"job_started"`, `"job_ended"`, `"job_failed"`: `listener(run)` gets the run of a declared job (see Declared jobs); notify or show, never start runs. |
 | `notify({ title, body, threadId? })` | Like `useNotify()`. |
 | `run(name, args?)` | Runs any command by id or alias, e.g. `run("view.switch", ["logs"])`. |
 | `call(method, params)` | Any protocol method, like `useCall()`. |
 | `onCleanup(fn)` | Called before the file runs again or goes away. |
 | `host` | The window's SDK host (`commands`, `window` state, `notices`, `client`), for anything else. |
+| `jobs` | The current workspace's declared jobs: `list()`, `get(name)` and `error` as `jobs/<id>` holds them at the call; `run(name)`, `kill(name)`, `enable(name, enabled)` (see Declared jobs). |
 
 Command ids are dotted, `<area>.<action>` like the built-ins (`thread.archive`, `view.switch`; `omfp://keymap` lists
 them): name a workspace's commands `ws.<action>` (`ws.ops`, `ws.deploy`) and the user's own `my.<action>` so they
@@ -413,6 +414,7 @@ export default function Tests({ command = "make test" }: { command?: string }) {
 | `useWidget()` | `{ instance, reference, workspaceId }` of the calling widget. |
 | `useStored(key, initial)` | `[value, set, loaded]`: JSON state the daemon keeps per workspace, widget instance and key, shared live by every window and kept across reloads and restarts. `set(value)` or `set((previous) => next)`; `set(null)` deletes the key. `loaded` is `false` while the state has not arrived yet (`value` is then `initial`). |
 | `useJob(command, { key? })` | `{ status, lines, stdout, stderr, exitCode, signal, runs, startedAt, endedAt, state, refreshing, restart, kill }` for `sh -c <command>` run by the daemon in the workspace folder (environment, limits and retention: see Jobs below). `status` is `"pending"` (no job yet, or a start or restart on its way), `"running"`, `"succeeded"` (exit code 0) or `"failed"` (another code, or a signal). The first mount starts the job; reloads, other windows and moving the widget follow the same job (stored as `job:<command>`: `{ id, runs }`). `lines` are stdout and stderr interleaved, `stdout` and `stderr` each one's lines; `runs` counts the jobs started (a restart adds one), `startedAt`/`endedAt` (ms) date the current one; `restart()` kills a running job and starts a new one; `state` is the raw `job/<id>` state. A mount following the job again (the widget mounted again, its view shown again) shows the window's last copy of it at once, `refreshing: true`, until the daemon's state of the job arrives. Without `key` every distinct command is its own job and its own stored key, so a command built from input (a search per query) leaves one job behind per query: pass `key` (``useJob(`rg -n ${query}`, { key: "search" })``) to keep one job slot (stored as `jobkey:<key>`: `{ id, runs, command }`): a new command under the key replaces the previous job (stopped if it still runs, its output gone; `pending` with no lines until the new one is known), and `restart()` replaces it the same way. `omfp_widget_check` shows each job's status and last lines. |
+| `useJobs(workspaceId?)` | `{ jobs, error, loaded, run(name), kill(name), enable(name, enabled) }`: the jobs the widget's workspace (or `workspaceId`) declares in `.omfp/jobs.json`, live from `jobs/<id>` (see Declared jobs). `jobs` is `[]` and `loaded` `false` until the state arrived; `error` says why the file is refused. `run` calls `jobs.run`, `kill` `jobs.kill` on the job's running run, `enable` `jobs.enable`; each rejects with the method's error. A job's runs: `useCall("jobs.runs", { workspaceId, job })`. |
 | `useTerminal(command, { cwd?, cols?, rows?, key? })` | `{ id, state, status, refreshing, runs, input(data), resize(cols, rows), screen(options?), kill() }` for an interactive `sh -c <command>` on a daemon-owned PTY. The hook stores the session id per widget instance, so remounts and other windows follow the same `terminal/<id>` instead of starting another process. `cwd` is workspace-relative. Input accepts text or bytes and is never stored; output is memory-only and bounded (see Terminal sessions below). `screen({ afterRevision?, waitMs? })` reads the visible plain-text screen and may wait at most 30 seconds for its revision to change. |
 | `useToolRun(toolCallId)` | A tool run of the selected thread, or `useToolRun({ match: /nextest/, threadId? })` for the latest run whose command matches: `{ toolCallId, toolName, status, output, lines, isError }` or `undefined`. While a `bash` command runs, `output` is the latest tail omp streams. |
 | `useCall()` | `call(method, params)`: any daemon protocol method, e.g. `call("thread.prompt", { threadId, text })`; `call("thread.session", { threadId })` gives a thread's session id, session file, model, cwd, roots and cost without starting omp. |
@@ -462,7 +464,9 @@ export default function Tests({ command = "make test" }: { command?: string }) {
 
 ### Jobs
 
-What a `useJob` command (a `jobs.start` job, followed on `job/<id>`) runs in:
+`jobs.start` and `useJob` start *transient runs*: runs of no declared job, for a widget's own commands (what the
+workspace runs by hand, on a schedule or keeps running belongs in `.omfp/jobs.json`, see Declared jobs). What a `useJob`
+command (a `jobs.start` run, followed on `job/<id>`) runs in:
 
 - **Shell**: `sh -c <command>`, non-interactive and not a login shell, so no `~/.profile`, `~/.bashrc`, aliases or shell
   functions; `sh` is the first one on the daemon's `PATH` (bash in POSIX mode on NixOS, `/bin/sh` on macOS). Use
@@ -481,7 +485,7 @@ What a `useJob` command (a `jobs.start` job, followed on `job/<id>`) runs in:
   What a job detaches (`setsid`, its own process group) is out of reach.
 - **Output**: stdout and stderr are read as lines (invalid UTF-8 replaced, a line longer than 64 KiB cut into pieces);
   the job keeps its newest lines up to 1 MiB of text and counts the older ones in `state.dropped`.
-- **Retention**: jobs live in the daemon's memory only. A workspace keeps its 32 most recently finished jobs; an older
+- **Retention**: transient runs live in the daemon's memory only. A workspace keeps its 32 most recently finished jobs; an older
   one is forgotten (its `job/<id>` is then `not_found`). A daemon restart forgets them all, so `useJob` starts the
   command again the next time the widget mounts. A job replaced under a `key` is forgotten at once. What `useJob`
   stores (`job:<command>`, `jobkey:<key>`) stays in the workspace's widget state until the widget sets it to `null` or
@@ -506,6 +510,150 @@ control. `useJob` remains preferable for commands whose output a widget parses.
   and the hook starts a replacement. Workspace removal, daemon shutdown and cascade stop of the creating agent kill it.
 
 The SDK also exports the view models and strings the built-in widgets use; read a copied built-in to see them.
+
+## Declared jobs
+
+A workspace declares its jobs in `<workspace>/.omfp/jobs.json` (schema `omfp://schemas/jobs.json`), next to
+`views.json` and `keymap.json`: named shell commands or prompts the daemon runs by hand, on a schedule or keeps running.
+A *job* is the definition, a *run* one execution of it. When the user asks for something recurring or lasting — "read
+my mail every morning" (a `schedule` job with a `prompt`), "watch the inbox folder" (a `service`), "a deploy I can run
+with a key" (a `manual` job) — declare a job instead of looping, sleeping or starting a background command.
+
+```json
+{
+  "$schema": "omfp://schemas/jobs.json",
+  "jobs": {
+    "test": { "description": "Fast tests", "command": "nix develop -c just test", "cwd": "omfp" },
+    "mail": {
+      "trigger": "schedule",
+      "schedule": "0 8 * * 1-5",
+      "prompt": { "text": "Read my unread mail and list what needs an answer.", "thread": "reuse" }
+    },
+    "inbox-watch": { "trigger": "service", "command": "./scripts/watch-inbox.sh", "restart": "on-failure" }
+  }
+}
+```
+
+`test` runs when asked, in the repository `omfp`; `mail` runs at 08:00 Monday to Friday, sending its prompt to the
+same thread every time; `inbox-watch` is kept running and started again when it fails.
+
+A job's name is 1–64 characters of `a-z`, `0-9`, `.`, `_`, `-`, starting with a letter or digit; it is the job's
+identity (its runs, its reused thread and its schedule state), so renaming a job removes one and declares another. Its
+keys:
+
+| Key | What it is |
+| --- | --- |
+| `description` | Optional, at most 200 characters: what the job is for. |
+| `trigger` | `manual` (default: runs only when asked), `schedule` (runs at the times of `schedule`) or `service` (kept running). |
+| `schedule` | A cron expression (below); required with `trigger: "schedule"`, refused otherwise. |
+| `missed` | `skip` (default) or `run`, only with `schedule`: what a missed time does (below). |
+| `command` | A non-blank shell command run as `sh -c`. Exactly one of `command` and `prompt`; a `service` needs `command`. |
+| `prompt` | `{ text, thread?, model?, thinkingLevel?, approvalMode? }`: `text` not blank; `thread` `new` (default) or `reuse`; `model` as `provider/id`, `thinkingLevel` and `approvalMode` as `threads.create` takes them (else the defaults). |
+| `cwd` | Only with `command`: a folder of the workspace, relative to the workspace folder (it may not leave it); default the workspace folder. |
+| `restart` | Only with `service`: `always` (default) or `on-failure`. |
+| `enabled` | Default `true`; a disabled job never runs, by schedule or by hand. |
+
+Any other key (at the top level besides `$schema`, in a job, in a prompt) is refused, so a mistyped key never silently
+changes when something runs. The daemon reads the file at startup and on every rescan and applies it by name: a new job
+is set up, a removed or disabled one torn down (its running command killed), a changed one keeps its running run (a
+running service is restarted with the new definition). An invalid file is refused with its first broken rule as
+`<JSON path>: <reason>` (`jobs.mail.schedule: hour: 25 is out of range 0-23`) and the last valid jobs keep running, so
+a bad edit never stops a watcher; the error shows in `jobs/<id>`, `useJobs().error` and the window.
+
+- **Schedules**: five cron fields — minute (0–59), hour (0–23), day of month (1–31), month (1–12 or `jan`…`dec`),
+  day of week (0–7, 0 and 7 Sunday, or `sun`…`sat`; names case-insensitive) — each `*`, a number, a range `a-b`, a
+  list `a,b`, or a step `*/n` or `a-b/n`; when both day of month and day of week are restricted, a time matching either
+  fires. `@yearly` (`@annually`), `@monthly`, `@weekly`, `@daily` (`@midnight`) and `@hourly` work; there is no seconds
+  field and no `@reboot` (use a `service`). Times are in the daemon host's local time zone: a time a daylight-saving
+  change skips does not fire, one it repeats fires once.
+- **One run per job**: a job has at most one running run, whatever its trigger. A scheduled time while the run still
+  runs records a `skipped` run (reason `running`); `jobs.run` on a running job is `conflict`.
+- **Missed times**: a time the scheduler reaches more than 60 s late (the daemon was not running, the host slept) is
+  missed. `missed: "skip"` drops it; `missed: "run"` runs the job once (trigger `missed`), however many were missed. A
+  newly declared job never runs for times before the daemon first saw it.
+- **Services**: an enabled service runs whenever the daemon runs, started again after its run ends — `always` after
+  any end, `on-failure` after a non-zero exit or a signal the daemon did not send — after 1 s, doubled after each run
+  shorter than 60 s up to 60 s, reset by a run that lasted 60 s. A service killed through `jobs.kill` (Stop in the
+  window) stays stopped until it is run by hand, disabled and enabled again, changed, or the daemon starts again.
+- **Command runs** run like transient runs (see Jobs above: `sh -c`, the daemon's environment, no dev shell, stdin
+  `/dev/null`, no timeout, output on `job/<id>`), in `cwd` instead of the workspace folder. A run ends `succeeded` on
+  exit code 0, `failed` on another code or a signal, `killed` when killed.
+- **Prompt runs**: `thread: "new"` creates a thread in the workspace with `text` as its first message, titled
+  `<name> · <YYYY-MM-DD HH:MM>`; `thread: "reuse"` sends `text` to the job's own thread (created and titled `<name>`
+  the first time, and again when that thread was deleted or archived). A reused thread that is busy (starting, working,
+  waiting on a dialog) makes a `skipped` run (reason `busy`). The run ends with the turn: `succeeded` or `failed`.
+  Threads a job made say `job <name>` (`createdBy: { kind: "job", job }`).
+- **Jobs belong to the workspace**: no thread owns a declared job or its runs, not even the thread whose agent declared
+  it or ran it; stopping, archiving or deleting that thread leaves them running. Removing the workspace tears them down.
+- **Runs are the daemon's**: the daemon keeps each job's 50 newest finished runs in its store (a command run with its
+  last 200 lines), never in the workspace. The file is all a folder needs: a copy of it (a git clone) runs the same
+  jobs on another daemon, starting without their runs and their reused threads.
+
+Over the protocol (`omfp_call`), `jobs.define` is how you declare one — or edit `jobs.json` with your file tools; both
+apply at once:
+
+| Method | What it does |
+| --- | --- |
+| `jobs.list { workspaceId }` | `{ jobs, error }`: each job `{ name, job, status, run, lastRun, nextAt }` (`job` with its defaults filled in; `status` `disabled`, `idle`, `running`, `waiting` or `stopped`; `nextAt` the next scheduled time or service restart, ms). |
+| `jobs.runs { workspaceId, job, before?, limit? }` | `{ runs, more }`: the job's kept runs, newest first (`limit` default 20, at most 50; `before` a run id). |
+| `jobs.run { workspaceId, job }` | Starts a run now and answers it (`{ id, job, trigger, status, startedAt, … }`; its id is a `job/<id>` like any job). |
+| `jobs.define { workspaceId, name, job, replace? }` | Writes the job into `jobs.json` and answers it once applied; `replace: true` to change an existing one. |
+| `jobs.remove { workspaceId, name }` | Removes it from `jobs.json`; its kept runs stay readable. |
+| `jobs.enable { workspaceId, name, enabled }` | Enables or disables it in `jobs.json`. |
+| `jobs.kill { jobId }` | Stops a run (`run.id`); a killed service stays stopped. |
+
+```json
+{ "method": "jobs.define", "params": { "workspaceId": "<id>", "name": "mail", "job": {
+  "trigger": "schedule", "schedule": "0 8 * * *",
+  "prompt": { "text": "Read my unread mail and list what needs an answer.", "thread": "reuse" } } } }
+```
+
+The topic `jobs/<workspaceId>` holds `{ jobs, error }` and publishes `jobs_set` (the file applied or refused),
+`job_updated { job }`, and `run_started { run }` / `run_ended { run }` (skipped runs included).
+
+In the window, `omfp:jobs` lists the jobs, and the commands `job.run <name>` (`:job-run`), `job.kill <name>`,
+`job.enable <name>`, `job.disable <name>` and `job.list` (`:jobs`) act on the current workspace's; none is bound to a
+key, so `.omfp/keymap.json` binds `["job.run", "deploy"]` without an init file:
+`{ "keys": "Space d", "command": "job.run", "args": ["deploy"] }`.
+
+A widget follows them with `useJobs`:
+
+```tsx
+import { Button, Card } from "omfp/kit";
+import { useJobs, useReportError } from "omfp/sdk";
+
+export default function Jobs() {
+  const { jobs, error, run } = useJobs();
+  const report = useReportError();
+  return (
+    <Card title={error ?? `${jobs.length} jobs`}>
+      {jobs.map((job) => (
+        <Button key={job.name} isDisabled={job.status === "running"} onPress={() => run(job.name).catch(report)}>
+          {`${job.name}: ${job.lastRun?.status ?? job.status}`}
+        </Button>
+      ))}
+    </Card>
+  );
+}
+```
+
+An init file reads and acts on the current workspace's jobs through `omfp.jobs` (`list()`, `get(name)`, `error`,
+`run(name)`, `kill(name)`, `enable(name, enabled)`) and hears their runs with `on("job_started" | "job_ended" |
+"job_failed", (run) => …)`:
+
+```ts
+import type { InitApi } from "omfp/sdk";
+
+export default function init(omfp: InitApi) {
+  omfp.on("job_failed", (run) =>
+    omfp.notify({ title: `${run.job ?? "job"} failed`, body: run.reason ?? `exit ${run.exitCode}` }),
+  );
+}
+```
+
+An init file's listener runs once per open window, and never when no window is open: it may notify or show
+something, but must not start runs or chain jobs (two windows would start them twice, a closed laptop never). What
+must happen without a window is a job of the daemon: a `schedule` or a `service`.
 
 ## omfp/kit
 

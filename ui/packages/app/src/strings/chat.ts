@@ -49,14 +49,14 @@ export const chat = {
     lines: (first: number, last: number, total: number) => `${first}–${last} of ${total}`,
     fetchFailed: "The URL could not be fetched.",
     exitCode: (code: number) => `exit ${code}`,
-    /** The mark of a `bash` call that became a background job (UI-270), by job state. */
+    /** The mark of a `bash` call that became a background command (UI-270, UI-747), by its state. */
     background: {
       running: "background",
       completed: "background · done",
       failed: "background · failed",
       cancelled: "background · cancelled",
     },
-    backgroundJob: (id: string) => `Background job ${id}`,
+    backgroundCommand: (id: string) => `Background command ${id}`,
     cwd: (cwd: string) => `in ${cwd}`,
     output: "Output",
     noOutput: "No output",

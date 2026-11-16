@@ -189,7 +189,14 @@ async fn run(services: &Services, principal: &Principal, call: Call) -> Reply {
             services.set_widget_state(params).await?;
             empty()
         }
-        call @ (Call::JobsStart(_) | Call::JobsKill(_)) => jobs(services, principal, call).await,
+        call @ (Call::JobsStart(_)
+        | Call::JobsKill(_)
+        | Call::JobsList(_)
+        | Call::JobsRuns(_)
+        | Call::JobsRun(_)
+        | Call::JobsDefine(_)
+        | Call::JobsRemove(_)
+        | Call::JobsEnable(_)) => jobs(services, principal, call).await,
         call @ (Call::TerminalsStart(_)
         | Call::TerminalsScreen(_)
         | Call::TerminalsInput(_)
@@ -210,8 +217,10 @@ async fn run(services: &Services, principal: &Principal, call: Call) -> Reply {
     }
 }
 
-/// `jobs.start` and `jobs.kill` (DMN-080, DMN-081); an agent's job records its thread (DMN-162).
+/// `jobs.*`: transient runs (DMN-080, DMN-081; an agent's run records its thread, DMN-162) and the jobs a workspace
+/// declares (PRT-202..PRT-207); `jobs.kill` of a declared run goes through its job (DMN-326).
 async fn jobs(services: &Services, principal: &Principal, call: Call) -> Reply {
+    let declared = &services.declared;
     match call {
         Call::JobsStart(params) => {
             let workspaces = Arc::clone(&services.workspaces);
@@ -220,7 +229,7 @@ async fn jobs(services: &Services, principal: &Principal, call: Call) -> Reply {
                 blocking(move || workspaces.get(&workspace_id).map_err(workspace_error)).await?;
             let started_by = match principal.created_by() {
                 Provenance::Thread(thread_id) => Some(thread_id),
-                Provenance::User | Provenance::Mcp => None,
+                Provenance::User | Provenance::Mcp | Provenance::Job(_) => None,
             };
             ok(&services.jobs.start(
                 &workspace.id,
@@ -231,9 +240,34 @@ async fn jobs(services: &Services, principal: &Principal, call: Call) -> Reply {
             )?)
         }
         Call::JobsKill(params) => {
-            services.jobs.kill(&params.job_id)?;
+            match declared.kill(&params.job_id).await {
+                Some(killed) => killed?,
+                None => services.jobs.kill(&params.job_id)?,
+            }
             empty()
         }
+        Call::JobsList(params) => ok(&declared.list(&params.workspace_id).await?),
+        Call::JobsRuns(params) => ok(&declared
+            .runs(params.workspace_id, params.job, params.before, params.limit)
+            .await?),
+        Call::JobsRun(params) => ok(&declared
+            .run(&params.workspace_id, &params.job, principal.created_by())
+            .await?),
+        Call::JobsDefine(params) => ok(&declared
+            .define(
+                &params.workspace_id,
+                params.name,
+                params.job,
+                params.replace.unwrap_or(false),
+            )
+            .await?),
+        Call::JobsRemove(params) => {
+            declared.remove(&params.workspace_id, params.name).await?;
+            empty()
+        }
+        Call::JobsEnable(params) => ok(&declared
+            .enable(&params.workspace_id, params.name, params.enabled)
+            .await?),
         _ => Err(internal("not a jobs method")),
     }
 }
@@ -248,7 +282,7 @@ async fn terminals(services: &Services, principal: &Principal, call: Call) -> Re
                 blocking(move || workspaces.get(&workspace_id).map_err(workspace_error)).await?;
             let started_by = match principal.created_by() {
                 Provenance::Thread(thread_id) => Some(thread_id),
-                Provenance::User | Provenance::Mcp => None,
+                Provenance::User | Provenance::Mcp | Provenance::Job(_) => None,
             };
             ok(&services.terminals.start(StartTerminal {
                 workspace_id: &workspace.id,

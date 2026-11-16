@@ -481,23 +481,30 @@ impl Connection {
                 }
                 Err(error) => Err((id, error)),
             },
-            Topic::Job(job_id) => match services.jobs.log(job_id) {
-                Ok(log) => {
-                    let subscription = log.subscribe(since.as_ref());
-                    let task = self
-                        .start(
-                            id,
-                            topic.clone(),
-                            since,
-                            subscription,
-                            TopicEvent::Job,
-                            generation,
-                        )
-                        .await;
-                    Ok((task, None))
+            Topic::Job(job_id) => {
+                // A run of a declared job the engine no longer holds serves what the store kept (DMN-330).
+                let log = match services.jobs.log(job_id) {
+                    Ok(log) => Ok(log),
+                    Err(error) => services.declared.stored_log(job_id).await.ok_or(error),
+                };
+                match log {
+                    Ok(log) => {
+                        let subscription = log.subscribe(since.as_ref());
+                        let task = self
+                            .start(
+                                id,
+                                topic.clone(),
+                                since,
+                                subscription,
+                                TopicEvent::Job,
+                                generation,
+                            )
+                            .await;
+                        Ok((task, None))
+                    }
+                    Err(error) => Err((id, error.into())),
                 }
-                Err(error) => Err((id, error.into())),
-            },
+            }
             Topic::Terminal(terminal_id) => match services.terminals.log(terminal_id, None) {
                 Ok(log) => {
                     let subscription = log.subscribe(since.as_ref());
@@ -514,6 +521,25 @@ impl Connection {
                     Ok((task, None))
                 }
                 Err(error) => Err((id, error.into())),
+            },
+            Topic::Jobs(workspace_id) => match services.declared.log(workspace_id).await {
+                Ok(log) => {
+                    // Watched like `views/<id>`: the polls read its jobs file every round (DMN-322).
+                    let guard = services.supervisor.watch_workspace(workspace_id);
+                    let subscription = log.subscribe(since.as_ref());
+                    let task = self
+                        .start(
+                            id.clone(),
+                            topic.clone(),
+                            since,
+                            subscription,
+                            TopicEvent::Jobs,
+                            generation,
+                        )
+                        .await;
+                    Ok((task, Some(Watch::Workspace { _guard: guard })))
+                }
+                Err(error) => Err((id, error)),
             },
         };
         match started {

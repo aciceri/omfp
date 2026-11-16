@@ -68,7 +68,7 @@
     "reference": {
       "type": "string",
       "pattern": "\\S",
-      "description": "`omfp:<name>` (built-in: omfp:header, omfp:chat, omfp:transcript, omfp:interactions, omfp:composer, omfp:workspace, omfp:changes, omfp:background, omfp:todos, omfp:tree, omfp:activity, omfp:mcp, omfp:file, omfp:terminal, omfp:web; a workspace widget of the same name replaces it; the retired omfp:subagents shows omfp:background), `./widgets/<name>` (<workspace>/.omfp/widgets/<name>/) or `user:<name>` (<data-dir>/widgets/<name>/). An unknown reference shows an error in place of the widget."
+      "description": "`omfp:<name>` (built-in: omfp:header, omfp:chat, omfp:transcript, omfp:interactions, omfp:composer, omfp:workspace, omfp:changes, omfp:background, omfp:todos, omfp:tree, omfp:activity, omfp:mcp, omfp:file, omfp:terminal, omfp:jobs, omfp:web; a workspace widget of the same name replaces it; the retired omfp:subagents shows omfp:background), `./widgets/<name>` (<workspace>/.omfp/widgets/<name>/) or `user:<name>` (<data-dir>/widgets/<name>/). An unknown reference shows an error in place of the widget."
     },
     "props": {
       "type": "object",

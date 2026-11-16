@@ -7,7 +7,7 @@ import type { Topic } from "./generated.ts";
 /** A topic name taken apart. */
 export type ParsedTopic =
   | { kind: "index" }
-  | { kind: "thread" | "workspace" | "views" | "job" | "terminal"; id: string };
+  | { kind: "thread" | "workspace" | "views" | "job" | "jobs" | "terminal"; id: string };
 
 /** The `index` topic: workspaces and thread summaries. */
 export const INDEX_TOPIC: Topic = "index";
@@ -15,7 +15,7 @@ export const INDEX_TOPIC: Topic = "index";
 /** Ids are ULIDs today; any non-empty `[A-Za-z0-9_-]` string is accepted. */
 const ID = /^[A-Za-z0-9_-]+$/;
 
-/** Parses a topic name; `undefined` unless it is `index` or `<thread|workspace|views|job>/<id>`. */
+/** Parses a topic name; `undefined` unless it is `index` or `<thread|workspace|views|job|jobs|terminal>/<id>`. */
 export function parseTopic(name: string): ParsedTopic | undefined {
   if (name === "index") {
     return { kind: "index" };
@@ -34,6 +34,7 @@ export function parseTopic(name: string): ParsedTopic | undefined {
     case "workspace":
     case "views":
     case "job":
+    case "jobs":
     case "terminal":
       return { kind, id };
     default:
@@ -64,6 +65,11 @@ export function viewsTopic(workspaceId: string): Topic {
 /** The topic of one job's output (PRT-041). */
 export function jobTopic(jobId: string): Topic {
   return formatTopic({ kind: "job", id: jobId });
+}
+
+/** The topic of one workspace's declared jobs and their runs (PRT-200). */
+export function jobsTopic(workspaceId: string): Topic {
+  return formatTopic({ kind: "jobs", id: workspaceId });
 }
 
 /** The topic of one daemon-owned PTY session. */

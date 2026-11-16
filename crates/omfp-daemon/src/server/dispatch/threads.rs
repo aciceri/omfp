@@ -144,13 +144,8 @@ async fn create_thread(
 /// Best effort: removes a thread `threads.create` or `threads.fork` made and whose omp could not start (DMN-211,
 /// DMN-303).
 pub(super) async fn discard_thread(services: &Services, id: &str) {
-    if let Err(error) = services.supervisor.forget(id).await {
-        tracing::warn!(thread = %id, %error, "cannot stop the thread that failed to start");
-    }
-    let threads = Arc::clone(&services.threads);
-    let id = id.to_owned();
-    if let Err(error) = blocking(move || threads.delete(&id).map_err(thread_error)).await {
-        tracing::warn!(message = %error.message, "cannot delete the thread that failed to start");
+    if let Err(error) = services.supervisor.delete(id).await {
+        tracing::warn!(thread = %id, %error, "cannot delete the thread that failed to start");
     }
 }
 
@@ -261,14 +256,12 @@ pub(super) async fn threads(services: &Services, principal: &Principal, call: Ca
         }
         Call::ThreadsDelete(params) => {
             let id = params.thread_id.clone();
-            let reader = Arc::clone(&threads);
-            blocking(move || reader.get(&id).map_err(thread_error)).await?;
+            blocking(move || threads.get(&id).map_err(thread_error)).await?;
             close_jobs(services, &params.thread_id, params.jobs)?;
             supervisor
-                .forget(&params.thread_id)
+                .delete(&params.thread_id)
                 .await
                 .map_err(supervisor_error)?;
-            blocking(move || threads.delete(&params.thread_id).map_err(thread_error)).await?;
             services.refresh_index_quietly().await;
             empty()
         }

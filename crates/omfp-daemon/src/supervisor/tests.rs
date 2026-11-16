@@ -15,7 +15,7 @@ use crate::agent::{FakeCall, FakeLauncher, FakeReply, FakeRun};
 use crate::event_log::Start;
 use crate::git::{FakeGit, Git};
 use crate::host_tools::{NOTIFY, OPEN_FILE, SET_THREAD_TITLE, run_set_thread_title};
-use crate::store::Store;
+use crate::store::{Store, StoreError};
 use crate::threads::NewThread;
 use crate::workspaces::{NewWorkspace, Workspaces};
 
@@ -1269,6 +1269,110 @@ async fn a_restart_dropped_mid_way_still_starts_the_new_process() {
     assert_eq!(h.launcher.launches().len(), 2);
     assert!(h.launcher.process(0).is_closed());
     assert!(!h.launcher.process(1).is_closed());
+}
+
+// spec: DMN-039
+#[tokio::test]
+async fn a_start_asked_while_the_thread_is_deleted_leaves_no_process_and_no_directory() {
+    let h = harness(|_| {});
+    let id = h.thread();
+    h.supervisor.start(&id).await.unwrap();
+    let close = h.launcher.gate_closes();
+    let deletion = tokio::spawn({
+        let (supervisor, id) = (h.supervisor.clone(), id.clone());
+        async move { supervisor.delete(&id).await }
+    });
+    close.arrived(1).await;
+    // The records go before the stop: every start from now on finds no thread.
+    assert!(matches!(
+        h.threads.get(&id),
+        Err(ThreadError::Store(StoreError::NotFound { .. }))
+    ));
+
+    // A window opening the thread asks omp for its commands while the deletion stops omp: the start waits for the
+    // lifecycle lock the stop holds, and a launch after it would recreate the directory.
+    let start = tokio::spawn({
+        let (supervisor, id) = (h.supervisor.clone(), id.clone());
+        async move { supervisor.start(&id).await }
+    });
+    tokio::task::yield_now().await;
+    close.open();
+
+    deletion.await.unwrap().unwrap();
+    assert!(matches!(
+        start.await.unwrap(),
+        Err(SupervisorError::Thread(ThreadError::Store(
+            StoreError::NotFound { .. }
+        )))
+    ));
+    assert_eq!(h.launcher.launches().len(), 1);
+    assert!(h.launcher.process(0).is_closed());
+    assert!(!h.supervisor.is_running(&id));
+    assert!(!h.data.thread(&id).exists());
+    assert!(matches!(
+        h.supervisor.start(&id).await,
+        Err(SupervisorError::Thread(_))
+    ));
+}
+
+// spec: DMN-039
+#[tokio::test]
+async fn a_thread_deleted_while_its_omp_starts_has_that_omp_stopped_before_the_deletion_returns() {
+    let h = harness(|_| {});
+    let id = h.thread();
+    let launches = h.launcher.gate_launches();
+    let start = tokio::spawn({
+        let (supervisor, id) = (h.supervisor.clone(), id.clone());
+        async move { supervisor.start(&id).await }
+    });
+    launches.arrived(1).await;
+
+    let deletion = tokio::spawn({
+        let (supervisor, id) = (h.supervisor.clone(), id.clone());
+        async move { supervisor.delete(&id).await }
+    });
+    tokio::task::yield_now().await;
+    launches.open();
+
+    deletion.await.unwrap().unwrap();
+    let _ = start.await.unwrap();
+    assert_eq!(h.launcher.launches().len(), 1);
+    assert!(h.launcher.process(0).is_closed());
+    assert!(!h.supervisor.is_running(&id));
+    assert!(!h.data.thread(&id).exists());
+}
+
+// spec: DMN-028, DMN-039
+#[tokio::test]
+async fn a_workspace_is_not_removed_while_a_deleted_threads_omp_still_starts_in_it() {
+    let h = harness(|_| {});
+    let id = h.thread();
+    let ws = h.threads.get(&id).unwrap().workspace_id;
+    let launches = h.launcher.gate_launches();
+    let start = tokio::spawn({
+        let (supervisor, id) = (h.supervisor.clone(), id.clone());
+        async move { supervisor.start(&id).await }
+    });
+    launches.arrived(1).await;
+    let deletion = tokio::spawn({
+        let (supervisor, id) = (h.supervisor.clone(), id.clone());
+        async move { supervisor.delete(&id).await }
+    });
+    while h.threads.get(&id).is_ok() {
+        tokio::task::yield_now().await;
+    }
+
+    // The thread's record is gone, but its omp still starts in the folder, which the launch creates again.
+    let removal = h.workspaces.check_removal(&ws, false);
+    launches.open();
+    assert!(
+        matches!(removal, Err(WorkspaceError::HasThreads(_))),
+        "{removal:?}"
+    );
+    deletion.await.unwrap().unwrap();
+    let _ = start.await.unwrap();
+    assert!(h.launcher.process(0).is_closed());
+    h.workspaces.remove(&ws, false).unwrap();
 }
 
 #[test]

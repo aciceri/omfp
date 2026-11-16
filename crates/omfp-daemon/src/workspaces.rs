@@ -148,6 +148,32 @@ pub struct Workspaces {
     repo_locks: Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>,
     /// The last scan of each workspace (DMN-023).
     scans: Mutex<HashMap<String, Vec<Discovered>>>,
+    /// Workspaces with threads being deleted, by how many (DMN-039): those threads have no record any more while
+    /// their omp may still be starting in the folder, so the workspace cannot be removed yet (DMN-028).
+    deleting: Mutex<HashMap<String, usize>>,
+}
+
+/// Holds off the removal of a workspace while one of its threads is deleted ([`Workspaces::hold_removal`]).
+#[derive(Debug)]
+pub struct RemovalHold<'a> {
+    workspaces: &'a Workspaces,
+    id: String,
+}
+
+impl Drop for RemovalHold<'_> {
+    fn drop(&mut self) {
+        let mut deleting = self
+            .workspaces
+            .deleting
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if let Some(count) = deleting.get_mut(&self.id) {
+            *count -= 1;
+            if *count == 0 {
+                deleting.remove(&self.id);
+            }
+        }
+    }
 }
 
 impl Workspaces {
@@ -159,6 +185,7 @@ impl Workspaces {
             root,
             repo_locks: Mutex::new(HashMap::new()),
             scans: Mutex::new(HashMap::new()),
+            deleting: Mutex::new(HashMap::new()),
         }
     }
 
@@ -287,10 +314,26 @@ impl Workspaces {
         self.view(ws)
     }
 
-    /// Whether [`Self::remove`] would go ahead (DMN-028): no thread left in the workspace, and without `force` no
-    /// worktree or clone with uncommitted changes.
+    /// Whether [`Self::remove`] would go ahead (DMN-028): no thread left in the workspace, none being deleted
+    /// (DMN-039), and without `force` no worktree or clone with uncommitted changes.
     pub fn check_removal(&self, id: &str, force: bool) -> Result<()> {
         self.checked_removal(id, force).map(drop)
+    }
+
+    /// Holds off the removal of workspace `id` while one of its threads is deleted (DMN-039), until the returned
+    /// hold drops. Take it before deleting the thread's records: the removal checks the records first, then the holds.
+    #[must_use]
+    pub fn hold_removal(&self, id: &str) -> RemovalHold<'_> {
+        *self
+            .deleting
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .entry(id.to_owned())
+            .or_default() += 1;
+        RemovalHold {
+            workspaces: self,
+            id: id.to_owned(),
+        }
     }
 
     /// The workspace and, when its folder exists, its repositories, once the removal checks passed.
@@ -300,7 +343,14 @@ impl Workspaces {
         force: bool,
     ) -> Result<(Workspace, Option<Vec<Discovered>>)> {
         let ws = self.get(id)?;
-        if !self.store.workspace_thread_ids(id)?.is_empty() {
+        // Records before holds: a deletion holds the workspace before it deletes its thread's records.
+        if !self.store.workspace_thread_ids(id)?.is_empty()
+            || self
+                .deleting
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .contains_key(id)
+        {
             return Err(WorkspaceError::HasThreads(ws.id));
         }
         if !std::fs::symlink_metadata(&ws.path).is_ok_and(|meta| meta.is_dir()) {

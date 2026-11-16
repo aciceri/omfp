@@ -7,6 +7,11 @@ The version's section is also the source of the GitHub release notes.
 
 ## Unreleased
 
+### Fixed
+
+- Deleting a thread while its oh-my-pi process is starting (for example right after opening it) no longer leaves
+  that process running for the deleted thread or its data directory behind.
+
 ## 0.2.0 — 2026-11-17
 
 ### Added

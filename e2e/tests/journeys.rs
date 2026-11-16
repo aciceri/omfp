@@ -1165,7 +1165,7 @@ async fn until_rows(journey: &Journey, thread_id: &str, count: usize) -> anyhow:
         .await
 }
 
-// spec: UI-020, UI-026, UI-482, DMN-028
+// spec: UI-020, UI-026, UI-482, DMN-028, DMN-039
 #[tokio::test(flavor = "multi_thread")]
 async fn an_archived_thread_is_found_under_archived_unarchived_then_deleted_with_workspaces()
 -> anyhow::Result<()> {

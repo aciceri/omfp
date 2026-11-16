@@ -645,6 +645,21 @@ impl Store {
         Ok(())
     }
 
+    /// Deletes a thread with its roots if it still lives in workspace `workspace_id`: `false` (nothing deleted) when
+    /// it moved to another one meanwhile (DMN-039); its workspace stays.
+    pub fn delete_thread_in(&self, id: &str, workspace_id: &str) -> Result<bool> {
+        let conn = self.conn();
+        if conn.execute(
+            "DELETE FROM threads WHERE id = ?1 AND workspace_id = ?2",
+            [id, workspace_id],
+        )? == 1
+        {
+            return Ok(true);
+        }
+        ensure_thread(&conn, id)?;
+        Ok(false)
+    }
+
     /// Checks that a provenance names an existing thread, if it names one (ARC-009).
     pub fn check_provenance(&self, created_by: &Provenance) -> Result<()> {
         match created_by {

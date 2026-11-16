@@ -1757,18 +1757,8 @@ impl Declared {
     }
 
     async fn discard_thread(&self, id: &str) {
-        if let Err(error) = self.inner.supervisor.forget(id).await {
-            warn!(thread = %id, %error, "cannot stop the thread that failed to start");
-        }
-        let (threads, id) = (Arc::clone(&self.inner.threads), id.to_owned());
-        if let Err(error) = blocking(move || {
-            threads
-                .delete(&id)
-                .map_err(crate::server::convert::thread_error)
-        })
-        .await
-        {
-            warn!(message = %error.message, "cannot delete the thread that failed to start");
+        if let Err(error) = self.inner.supervisor.delete(id).await {
+            warn!(thread = %id, %error, "cannot delete the thread that failed to start");
         }
     }
 

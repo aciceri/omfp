@@ -569,6 +569,8 @@ requirements = [
   "ENV-032",
   "ENV-033",
   "ENV-034",
+  # Deterministic thread deletion (#125)
+  "DMN-039",
 ]
 
 [M10]

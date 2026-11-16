@@ -195,9 +195,21 @@ impl Threads {
     }
 
     /// Deletes the thread and its directory (sessions, log). Its workspace is never removed implicitly. The caller
-    /// makes sure no omp process runs for it.
+    /// makes sure no omp process runs or starts for it; `Supervisor::delete` does (DMN-039).
     pub fn delete(&self, id: &str) -> Result<()> {
         self.store.delete_thread(id)?;
+        self.remove_dir(id)
+    }
+
+    /// Deletes the thread's records if it still lives in workspace `workspace_id`, keeping its directory for
+    /// [`Self::remove_dir`]: once they are gone no omp can start for the thread (DMN-039). `false` (nothing deleted)
+    /// when it moved to another workspace meanwhile (DMN-283).
+    pub fn delete_record(&self, id: &str, workspace_id: &str) -> Result<bool> {
+        Ok(self.store.delete_thread_in(id, workspace_id)?)
+    }
+
+    /// Removes the thread's directory (sessions, log), if there is one.
+    pub fn remove_dir(&self, id: &str) -> Result<()> {
         match std::fs::remove_dir_all(self.data.thread(id)) {
             Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error.into()),
             _ => Ok(()),

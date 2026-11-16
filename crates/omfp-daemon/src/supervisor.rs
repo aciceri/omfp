@@ -809,24 +809,50 @@ impl Supervisor {
             .map_err(|error| SupervisorError::Internal(error.to_string()))?
     }
 
-    /// Stops the thread and forgets its actor (the thread was deleted). Cancellation-safe ([`Self::detached`]).
-    pub async fn forget(&self, id: &str) -> Result<()> {
+    /// Deletes the thread (DMN-039): its records first, so no omp can start for it any more (every start reads them
+    /// under the thread's lifecycle lock), then its process, waiting for a start under way, then its directory. Once it
+    /// returns no omp runs for the thread and nothing writes its directory again. Until then its workspace cannot be
+    /// removed (DMN-028): a start under way still creates its folder. The hold names the workspace the records name
+    /// when they go, which a move (DMN-283) may change meanwhile. Cancellation-safe ([`Self::detached`]).
+    pub async fn delete(&self, id: &str) -> Result<()> {
         let id = id.to_owned();
         self.detached(|supervisor| async move {
-            let Some(actor) = supervisor.lookup(&id) else {
-                return Ok(());
+            let workspaces = Arc::clone(&supervisor.inner.workspaces);
+            let _hold = loop {
+                let threads = Arc::clone(&supervisor.inner.threads);
+                let thread_id = id.clone();
+                let workspace_id = blocking(move || threads.get(&thread_id))
+                    .await??
+                    .workspace_id;
+                let hold = workspaces.hold_removal(&workspace_id);
+                let threads = Arc::clone(&supervisor.inner.threads);
+                let thread_id = id.clone();
+                if blocking(move || threads.delete_record(&thread_id, &workspace_id)).await?? {
+                    break hold;
+                }
             };
-            {
-                let _lifecycle = actor.lifecycle.lock().await;
-                supervisor.stop_locked(&actor).await?;
-            }
-            if let Some(task) = lock(&actor.title_task).take() {
-                task.abort();
-            }
-            lock(&supervisor.inner.actors).remove(&id);
+            supervisor.forget(&id).await?;
+            let threads = Arc::clone(&supervisor.inner.threads);
+            blocking(move || threads.remove_dir(&id)).await??;
             Ok(())
         })
         .await
+    }
+
+    /// Stops the thread's process and forgets its actor (the thread's records are gone).
+    async fn forget(&self, id: &str) -> Result<()> {
+        let Some(actor) = self.lookup(id) else {
+            return Ok(());
+        };
+        {
+            let _lifecycle = actor.lifecycle.lock().await;
+            self.stop_locked(&actor).await?;
+        }
+        if let Some(task) = lock(&actor.title_task).take() {
+            task.abort();
+        }
+        lock(&self.inner.actors).remove(id);
+        Ok(())
     }
 
     /// Sends a prompt, starting omp first when needed (DMN-070); returns at admission (PRT-030).

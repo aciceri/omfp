@@ -240,3 +240,23 @@ fn deleting_a_thread_removes_its_directory_but_never_its_workspace() {
     assert_eq!(entries(&ws.path), ["README"]);
     assert_not_found(env.threads.delete(&thread.id));
 }
+
+// spec: DMN-039, DMN-283
+#[test]
+fn a_deletion_names_the_workspace_and_deletes_nothing_once_the_thread_moved_away() {
+    let env = env();
+    let (shop, blog) = (env.workspace("shop"), env.workspace("blog"));
+    let thread = env.threads.create(NewThread::new("t", &shop.id)).unwrap();
+    assert!(
+        env.threads
+            .reorder(&thread.id, Some(&blog.id), None)
+            .unwrap()
+    );
+
+    assert!(!env.threads.delete_record(&thread.id, &shop.id).unwrap());
+    assert_eq!(env.threads.get(&thread.id).unwrap().workspace_id, blog.id);
+
+    assert!(env.threads.delete_record(&thread.id, &blog.id).unwrap());
+    assert_not_found(env.threads.get(&thread.id));
+    assert_not_found(env.threads.delete_record(&thread.id, &blog.id));
+}

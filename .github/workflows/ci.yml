@@ -168,6 +168,8 @@ jobs:
           rust: "false"
       - run: nix develop -c just package
 
+  # cargo mutants builds in copies of the tree without target/, so the job borrows test-ts's cargo cache for the
+  # registry and git checkouts and stores none of its own (TST-072).
   mutants:
     name: mutation gate (omfp-core, omfp-protocol)
     needs: dev-shell
@@ -178,6 +180,7 @@ jobs:
       - uses: ./.github/actions/dev-shell
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
+          target-cache: "false"
       - run: nix develop -c just mutants-gate
 
   # The fast Rust tests (`just test`) run here once, instrumented.

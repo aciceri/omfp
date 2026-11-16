@@ -197,8 +197,9 @@ The aggregate `required` job has no build step and therefore needs none of that 
   rerun. The `dev-shell` job builds the Linux dev shell before any other Linux job starts (TST-076), so a cold cache on
   `master` builds omp once, not once per job; `macos` builds its own. A pull request does not push, so there the other
   jobs fetch what master cached and build only what the pull request changed.
-- **Cargo**: registry and `target/` per job, keyed on `Cargo.lock`, the manifests, `rust-toolchain.toml` and `rustc
-  -vV`; saved on `master` only, restored by pull requests.
+- **Cargo**: registry, git checkouts and `target/` per job, keyed on `Cargo.lock`, the manifests, `rust-toolchain.toml`
+  and `rustc -vV`; saved on `master` only, restored by pull requests. `mutants` (`target-cache: "false"`) restores
+  `test-ts`'s cache and saves none (TST-072). Each Rust job's summary reports its cache: exact hit, sizes.
 - **Web bundle**: built once by `web`, shared as an artifact (7 days).
 
 Secrets and variables (repository settings → Secrets and variables → Actions):

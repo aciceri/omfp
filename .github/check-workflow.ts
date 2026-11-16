@@ -9,7 +9,9 @@
  * - TST-071: actionlint passes; every action of every workflow (ENV-051 too) is pinned by a major tag or a commit SHA.
  *   The other rules are about `ci.yml` only.
  * - TST-072: the Nix store comes from the `omfp` Cachix cache, which only pushes to master fill; the cargo cache is
- *   saved on master only; every recipe job hands the dev-shell action the Cachix token.
+ *   saved on master only, by the jobs with a target cache; a job without one (the mutation gate's) restores the cache
+ *   of a job that saves one; the dev-shell action reports the cargo cache in the job summary; every recipe job hands
+ *   the dev-shell action the Cachix token.
  * - TST-073: the web bundle is built once: every job running the e2e or desktop tests needs the `build-web` job and
  *   serves its artifact through `OMFP_WEB_BUNDLE`.
  * - TST-075: before installing Nix, the dev-shell action pools the runner's disk into a Btrfs /nix with
@@ -180,20 +182,48 @@ const setupStep = (setup: Action, action: string) =>
   setup.runs.steps.find((step) => step.uses?.startsWith(`${action}@`));
 
 /** TST-072 */
-function checkCaches({ workflow, setup }: Inputs, problems: string[]) {
+function checkCaches({ workflow, setup }: Inputs, ranBy: Map<string, string[]>, problems: string[]) {
   const cachix = setupStep(setup, "cachix/cachix-action");
   if (cachix?.with?.name !== "omfp") problems.push(`${SETUP} must use the omfp Cachix cache`);
   if (cachix?.with?.skipPush !== expression(`!(github.event_name == 'push' && ${ON_MASTER})`)) {
     problems.push(`${SETUP} must push to Cachix on pushes to master only`);
   }
-  if (setupStep(setup, "Swatinem/rust-cache")?.with?.["save-if"] !== expression(ON_MASTER)) {
-    problems.push(`${SETUP} must save the cargo cache on master only`);
+  const rustCache = setupStep(setup, "Swatinem/rust-cache");
+  if (rustCache?.with?.["save-if"] !== expression(`inputs.target-cache == 'true' && ${ON_MASTER}`)) {
+    problems.push(`${SETUP} must save the cargo cache on master only, and only for jobs with a target cache`);
+  }
+  // A job without a target cache restores a saving job's entry: the same key and paths (target/ included).
+  const lender = /^\$\{\{ inputs\.target-cache == 'false' && '([\w-]+)' \|\| '' \}\}$/.exec(
+    rustCache?.with?.["shared-key"] ?? "",
+  )?.[1];
+  const lenderSetup = workflow.jobs[lender ?? ""]?.steps?.find((step) => step.uses === SETUP_USES)?.with;
+  if (
+    lender === undefined ||
+    workflow.jobs[lender]?.if !== undefined ||
+    lenderSetup === undefined ||
+    lenderSetup.rust === "false" ||
+    lenderSetup["target-cache"] === "false" ||
+    rustCache?.with?.["cache-targets"] !== undefined
+  ) {
+    problems.push(`${SETUP} must restore a job without a target cache from the cargo cache of a job that saves one`);
+  }
+  const report = setupStep(setup, "srz-zumix/post-run-action")?.with?.["post-run"] ?? "";
+  if (!report.includes("steps.rust-cache.outputs.cache-hit") || !report.includes("$GITHUB_STEP_SUMMARY")) {
+    problems.push(`${SETUP} must report the cargo cache's hit and sizes in the job summary`);
   }
   for (const [id, job] of Object.entries(workflow.jobs)) {
     if (id === REQUIRED_GATE) continue;
     const token = job.steps?.find((step) => step.uses === SETUP_USES)?.with?.["cachix-auth-token"];
     if (token !== expression("secrets.CACHIX_AUTH_TOKEN")) {
       problems.push(`job ${id} must hand ${SETUP_USES} the CACHIX_AUTH_TOKEN secret`);
+    }
+  }
+  for (const id of ranBy.get("mutants-gate") ?? []) {
+    const setupWith = workflow.jobs[id]?.steps?.find((step) => step.uses === SETUP_USES)?.with;
+    if (setupWith?.["target-cache"] !== "false") {
+      problems.push(
+        `job ${id} must not keep a cargo cache of its own (target-cache: "false"): cargo mutants builds in copies`,
+      );
     }
   }
 }
@@ -300,7 +330,9 @@ function checkMacos({ workflow, macosLabel }: Inputs, problems: string[]) {
       ),
   );
   if (triggers.join() !== "pull_request" || types.join() !== "labeled" || !dispatches) {
-    problems.push(`${MACOS_LABEL} must run ${WORKFLOW} on the branch of a pull request labeled ci/macos, and only then`);
+    problems.push(
+      `${MACOS_LABEL} must run ${WORKFLOW} on the branch of a pull request labeled ci/macos, and only then`,
+    );
   }
 }
 
@@ -338,7 +370,7 @@ export function check(inputs: Inputs): string[] {
   checkRecipes(inputs, ranBy, problems);
   checkRequiredGate(inputs, problems);
   checkPins(inputs, problems);
-  checkCaches(inputs, problems);
+  checkCaches(inputs, ranBy, problems);
   checkBundle(inputs, ranBy, problems);
   checkDisk(inputs, problems);
   checkShellJob(inputs, problems);

@@ -1,6 +1,6 @@
 // Run by `just check-workflow` from the repository root (`bun test ./.github`).
 import { describe, expect, test } from "bun:test";
-import { check, type Inputs, MACOS_LABEL, read, WORKFLOW, type Workflow } from "./check-workflow.ts";
+import { type Action, check, type Inputs, MACOS_LABEL, read, WORKFLOW, type Workflow } from "./check-workflow.ts";
 
 const repository = await read(process.env.JUST ?? "just");
 
@@ -16,6 +16,13 @@ function withMacosLabel(edit: (workflow: Workflow) => void): Inputs {
   const macosLabel = structuredClone(repository.macosLabel);
   edit(macosLabel);
   return { ...repository, macosLabel };
+}
+
+/** The repository's inputs with the dev-shell action changed by `edit` (on a copy). */
+function withSetup(edit: (setup: Action) => void): Inputs {
+  const setup = structuredClone(repository.setup);
+  edit(setup);
+  return { ...repository, setup };
 }
 
 describe("check-workflow", () => {
@@ -67,6 +74,63 @@ describe("check-workflow", () => {
       }),
     );
     expect(problems).toContain("job test-desktop must serve the bundle of job web through OMFP_WEB_BUNDLE");
+  });
+
+  // spec: TST-072
+  test("a mutation job keeping a cargo cache of its own fails", () => {
+    const problems = check(
+      withWorkflow((workflow) => {
+        const setup = workflow.jobs.mutants?.steps?.find((step) => step.uses === "./.github/actions/dev-shell");
+        if (setup?.with !== undefined) delete setup.with["target-cache"];
+      }),
+    );
+    expect(problems).toContain(
+      'job mutants must not keep a cargo cache of its own (target-cache: "false"): cargo mutants builds in copies',
+    );
+  });
+
+  // spec: TST-072
+  test("a dev-shell action without the cargo cache report fails", () => {
+    const problems = check(
+      withSetup((setup) => {
+        setup.runs.steps = setup.runs.steps.filter((step) => !step.uses?.startsWith("srz-zumix/post-run-action@"));
+      }),
+    );
+    expect(problems).toContain(
+      ".github/actions/dev-shell/action.yml must report the cargo cache's hit and sizes in the job summary",
+    );
+  });
+
+  // spec: TST-072
+  test("a job without a target cache borrowing from a job that saves none fails", () => {
+    const borrowFrom = (lender: string) =>
+      check(
+        withSetup((setup) => {
+          const rustCache = setup.runs.steps.find((step) => step.uses?.startsWith("Swatinem/rust-cache@"));
+          if (rustCache?.with !== undefined) {
+            rustCache.with["shared-key"] = `\${{ inputs.target-cache == 'false' && '${lender}' || '' }}`;
+          }
+        }),
+      );
+    const problem =
+      ".github/actions/dev-shell/action.yml must restore a job without a target cache from the cargo cache of a job that saves one";
+    expect(borrowFrom("mutants")).toContain(problem);
+    expect(borrowFrom("package")).toContain(problem);
+    expect(borrowFrom("macos")).toContain(problem);
+    expect(borrowFrom("cov")).not.toContain(problem);
+  });
+
+  // spec: TST-072
+  test("saving the cargo cache of a job without a target cache fails", () => {
+    const problems = check(
+      withSetup((setup) => {
+        const rustCache = setup.runs.steps.find((step) => step.uses?.startsWith("Swatinem/rust-cache@"));
+        if (rustCache?.with !== undefined) rustCache.with["save-if"] = "${{ github.ref == 'refs/heads/master' }}";
+      }),
+    );
+    expect(problems).toContain(
+      ".github/actions/dev-shell/action.yml must save the cargo cache on master only, and only for jobs with a target cache",
+    );
   });
 
   // spec: TST-118

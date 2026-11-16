@@ -11,6 +11,13 @@ inputs:
     description: Whether the job compiles Rust ("true"/"false"); then the cargo cache is restored (and saved on master).
     required: false
     default: "true"
+  target-cache:
+    description: >-
+      Whether a Rust job keeps a cargo cache of its own, target/ included ("true"/"false"). "false", for a job whose
+      builds never use target/ (cargo mutants builds in copies without it), restores the Cargo registry and git
+      checkouts from the test-ts job's cache and saves nothing.
+    required: false
+    default: "true"
 runs:
   using: composite
   steps:
@@ -65,9 +72,29 @@ runs:
         cat "$RUNNER_TEMP/toolchain-bin" >> "$GITHUB_PATH"
         df -h / /nix
 
+    # TST-072: keyed on the job, Cargo.lock, the Cargo.toml files, rust-toolchain.toml and `rustc -vV`; pull requests
+    # restore master's cache without writing their own. Each job's cache also holds the registry and git checkouts
+    # (~0.9 GB, the oh-my-pi git database of omp-rpc most of it), so a job without a target/ cache borrows test-ts's
+    # (the same paths and key) instead of storing a copy of its own.
     - uses: Swatinem/rust-cache@v2
+      id: rust-cache
       if: inputs.rust == 'true'
       with:
-        # Keyed on the job, Cargo.lock, the Cargo.toml files, rust-toolchain.toml and `rustc -vV`; pull requests
-        # restore master's cache without writing their own.
-        save-if: ${{ github.ref == 'refs/heads/master' }}
+        shared-key: ${{ inputs.target-cache == 'false' && 'test-ts' || '' }}
+        save-if: ${{ inputs.target-cache == 'true' && github.ref == 'refs/heads/master' }}
+
+    # Cache telemetry in the job summary (and the log) when the job ends: whether rust-cache matched its key exactly,
+    # whether the job has a cache of its own, and the sizes of target/ and CARGO_HOME (what a save on master stores
+    # after rust-cache prunes them).
+    - name: Report the cargo cache
+      if: inputs.rust == 'true'
+      uses: srz-zumix/post-run-action@v3
+      with:
+        post-run: |
+          {
+            echo "### Cargo cache: ${{ github.job }}"
+            echo
+            echo "| exact hit | own cache | target/ | CARGO_HOME |"
+            echo "| --- | --- | --- | --- |"
+            echo "| ${{ steps.rust-cache.outputs.cache-hit || 'false' }} | ${{ inputs.target-cache }} | $(du -sh target/ 2>/dev/null | cut -f1) | $(du -sh "${CARGO_HOME:-$HOME/.cargo}" 2>/dev/null | cut -f1) |"
+          } | tee -a "$GITHUB_STEP_SUMMARY"

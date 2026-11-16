@@ -48,6 +48,8 @@ Initial release, planned as 0.1.0.
   workspace lookup, disambiguation and missing-file feedback without loosening inline prose path recognition.
 - Empty workspace/init keymap updates no longer cancel a pending leader chord during thread previews. Actual
   changed mappings still apply with normal sequence-reset behavior.
+- The provider login picker no longer overlaps long provider names, ids and login status. Each row shows the name
+  on its own line with the id and status under it, wraps long text and grows to fit, so its highlight covers it.
 
 ### Changed
 

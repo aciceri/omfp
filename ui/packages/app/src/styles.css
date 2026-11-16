@@ -289,17 +289,37 @@
     animation: omfp-spin 1s linear infinite;
   }
 
+  /* A provider row (UI-382): the name on its own line, the id and status on a subordinate, wrapping one under it. The
+   * row keeps its content's height (`flex: none`: the kit's row minimum would otherwise let the capped, scrolling list
+   * squeeze it so its text spills into the next row), and long names and ids wrap rather than hide. */
   .omfp-login__provider {
+    flex: none;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: var(--omfp-s1);
+    padding-block: var(--omfp-s2);
+  }
+
+  .omfp-login__name {
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .omfp-login__meta {
     display: flex;
     flex-wrap: wrap;
-    align-items: baseline;
-    gap: var(--omfp-s2);
+    align-items: center;
+    gap: var(--omfp-s1) var(--omfp-s3);
+    min-inline-size: 0;
   }
 
   .omfp-login__id {
+    min-inline-size: 0;
     color: var(--omfp-on-surface-variant);
     font-family: var(--omfp-font-code);
     font-size: var(--omfp-fs-xs);
+    overflow-wrap: anywhere;
   }
 
   .omfp-login__mark {

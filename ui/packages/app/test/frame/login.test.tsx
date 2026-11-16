@@ -137,6 +137,75 @@ describe("logging in", () => {
     expect(test.client.callsTo("auth.providers").length).toBe(1);
   });
 
+  // spec: UI-382
+  test("each provider row puts the long name on its own line over the id and status, and keyboard picking still works", async () => {
+    const test = setup();
+    run(test, "login");
+    const picker = await screen.findByTestId("login-picker");
+    const [providers] = test.client.callsTo("auth.providers");
+    const long = "ChatGPT Plus/Pro (Codex Subscription) with a name long enough to wrap in a narrow dialog";
+    await settle(() =>
+      providers?.resolve({
+        providers: [
+          {
+            id: "openai-codex-subscription-with-a-very-long-identifier",
+            name: long,
+            available: true,
+            authenticated: true,
+          },
+          { id: "zai-coding-plan-unavailable", name: "Z.AI Coding Plan", available: false, authenticated: false },
+          { id: "anthropic", name: "Anthropic (Claude Pro/Max)", available: true, authenticated: false },
+        ],
+      }),
+    );
+    const rows = within(picker).getAllByTestId("login-provider");
+    // Two lines per row: the whole name first, then the id with the row's status, nothing truncated.
+    const structure = rows.map((row) =>
+      Array.from(row.children, (child) => [
+        (child as HTMLElement).dataset.testid,
+        Array.from(child.children.length === 0 ? [child] : child.children, (part) => [
+          part.className,
+          part.textContent,
+        ]),
+      ]),
+    );
+    expect(structure).toEqual([
+      [
+        ["login-provider-name", [["omfp-login__name", long]]],
+        [
+          "login-provider-meta",
+          [
+            ["omfp-login__id", "openai-codex-subscription-with-a-very-long-identifier"],
+            ["omfp-login__mark", "logged in"],
+          ],
+        ],
+      ],
+      [
+        ["login-provider-name", [["omfp-login__name", "Z.AI Coding Plan"]]],
+        [
+          "login-provider-meta",
+          [
+            ["omfp-login__id", "zai-coding-plan-unavailable"],
+            ["omfp-login__note", "not available here"],
+          ],
+        ],
+      ],
+      [
+        ["login-provider-name", [["omfp-login__name", "Anthropic (Claude Pro/Max)"]]],
+        ["login-provider-meta", [["omfp-login__id", "anthropic"]]],
+      ],
+    ]);
+    expect(rows.map((row) => row.getAttribute("aria-disabled") === "true")).toEqual([false, true, false]);
+
+    // The keyboard moves over the rows, skipping the disabled one, and Enter picks the focused provider.
+    act(() => (rows[0] as HTMLElement).focus());
+    await test.user.keyboard("{ArrowDown}");
+    expect(document.activeElement?.getAttribute("data-provider")).toBe("anthropic");
+    await test.user.keyboard("{Enter}");
+    expect(test.client.callsTo("auth.login").map((call) => call.params)).toEqual([{ providerId: "anthropic" }]);
+    expect(screen.queryAllByTestId("login-picker").length).toBe(0);
+  });
+
   // spec: UI-380
   test("a login_url request opens the page and shows its toast with Open, Copy and the instructions until the login ends", async () => {
     const test = setup();

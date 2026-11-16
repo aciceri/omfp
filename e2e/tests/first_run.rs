@@ -10,6 +10,34 @@ use serde_json::json;
 const WELCOME: &str = "[data-testid=welcome]";
 const VIEW: &str = "[data-testid=view]";
 
+/// The provider picker's first three rows, checked in the page: each holds its whole text (so the hover, selection and
+/// focus backgrounds cover it), its id and status line sits under its name, no row overlaps the one before, and the
+/// long name of the third wraps rather than being cut (UI-382). Evaluates to the problems found.
+const PROVIDER_ROW_PROBLEMS: &str = "
+    const rows = [...document.querySelectorAll('[data-testid=login-picker] [data-testid=login-provider]')].slice(0, 3);
+    const problems = [];
+    const inside = (inner, outer) => inner.left >= outer.left - 0.5 && inner.right <= outer.right + 0.5
+      && inner.top >= outer.top - 0.5 && inner.bottom <= outer.bottom + 0.5;
+    rows.forEach((row, index) => {
+      const box = row.getBoundingClientRect();
+      for (const part of row.querySelectorAll('*')) {
+        const rect = part.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0 && !inside(rect, box)) {
+          problems.push(`row ${index}: ${part.className.baseVal ?? part.className} spills out`);
+        }
+      }
+      const name = row.querySelector('[data-testid=login-provider-name]').getBoundingClientRect();
+      const meta = row.querySelector('[data-testid=login-provider-meta]').getBoundingClientRect();
+      if (meta.top < name.bottom - 0.5) problems.push(`row ${index}: the id line overlaps the name`);
+      if (row.scrollWidth > row.clientWidth) problems.push(`row ${index}: overflows sideways`);
+      const previous = rows[index - 1]?.getBoundingClientRect();
+      if (previous && box.top < previous.bottom - 0.5) problems.push(`row ${index}: overlaps row ${index - 1}`);
+    });
+    const long = rows[2].querySelector('[data-testid=login-provider-name]');
+    const lines = long.getBoundingClientRect().height / parseFloat(getComputedStyle(long).lineHeight);
+    if (lines < 1.5) problems.push(`the long name did not wrap (${lines} lines)`);
+    return problems;";
+
 /// Waits until `css` matches exactly `count` elements.
 async fn until_count(journey: &Journey, css: &str, count: usize) -> anyhow::Result<()> {
     journey
@@ -19,15 +47,27 @@ async fn until_count(journey: &Journey, css: &str, count: usize) -> anyhow::Resu
         .await
 }
 
-// spec: E2E-43, UI-500, UI-501, UI-502, UI-503, DMN-235, DMN-236
+// spec: E2E-43, UI-382, UI-500, UI-501, UI-502, UI-503, DMN-235, DMN-236
 #[tokio::test(flavor = "multi_thread")]
 async fn without_a_usable_model_the_window_welcomes_with_the_login_and_shows_the_view_after_it()
 -> anyhow::Result<()> {
     let launcher = FakeLauncher::new();
     launcher.set_usable_models(0);
-    let mut providers = vec![json!({
-        "id": "anthropic", "name": "Anthropic (Claude Pro/Max)", "available": true, "authenticated": false
-    })];
+    // Long names and ids, a logged-in and an unavailable provider right after Anthropic: their rows must stay legible.
+    let mut providers = vec![
+        json!({
+            "id": "anthropic", "name": "Anthropic (Claude Pro/Max)", "available": true, "authenticated": false
+        }),
+        json!({
+            "id": "openai-codex", "name": "ChatGPT Plus/Pro (Codex Subscription)",
+            "available": true, "authenticated": true
+        }),
+        json!({
+            "id": "zai-coding-plan-international-endpoint-with-a-long-identifier",
+            "name": "Z.AI Coding Plan (International, GLM-4.6 and GLM-4.5 Air through the coding endpoint)",
+            "available": false, "authenticated": false
+        }),
+    ];
     providers.extend((0..48).map(|i| {
         json!({
             "id": format!("provider-{i}"), "name": format!("Provider {i}"),
@@ -84,6 +124,8 @@ async fn without_a_usable_model_the_window_welcomes_with_the_login_and_shows_the
     assert!(bottom.as_f64().unwrap_or(f64::MAX) <= height, "{geometry}");
     assert!(action.as_f64().unwrap_or(f64::MAX) <= height, "{geometry}");
     assert_eq!(scrolling, &json!(true), "{geometry}");
+    let problems = journey.eval(PROVIDER_ROW_PROBLEMS, Vec::new()).await?;
+    assert_eq!(problems, json!([]), "provider rows");
     journey.screenshot("first-run-picker").await?;
     journey
         .click("[data-testid=login-picker] [data-testid=login-provider]")

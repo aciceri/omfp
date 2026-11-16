@@ -326,7 +326,8 @@ export function Login(): ReactNode {
 }
 
 /** The provider picker (UI-382): omp's providers with their ids, a mark on those omp holds a credential for, the ones
- * it cannot log in to here disabled; a pick starts the login. */
+ * it cannot log in to here disabled; a pick starts the login. Each row puts the name on its own line and the id and
+ * status on a subordinate one under it; the row grows with its wrapped text. */
 function ProviderPicker({
   isOpen,
   providers,
@@ -379,15 +380,19 @@ function ProviderPicker({
                 data-testid="login-provider"
                 data-provider={provider.id}
               >
-                <span>{provider.name}</span>
-                <code className="omfp-login__id">{provider.id}</code>
-                {provider.authenticated && (
-                  <span className="omfp-login__mark" data-testid="login-authenticated">
-                    <Icon name="circle-check" />
-                    {text.authenticated}
-                  </span>
-                )}
-                {!provider.available && <span className="omfp-login__note">{text.unavailable}</span>}
+                <span className="omfp-login__name" data-testid="login-provider-name">
+                  {provider.name}
+                </span>
+                <span className="omfp-login__meta" data-testid="login-provider-meta">
+                  <code className="omfp-login__id">{provider.id}</code>
+                  {provider.authenticated && (
+                    <span className="omfp-login__mark" data-testid="login-authenticated">
+                      <Icon name="circle-check" />
+                      {text.authenticated}
+                    </span>
+                  )}
+                  {!provider.available && <span className="omfp-login__note">{text.unavailable}</span>}
+                </span>
               </ListBoxItem>
             )}
           </ListBox>

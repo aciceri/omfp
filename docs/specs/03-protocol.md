@@ -140,7 +140,7 @@ previous settings stay). A thread summary carries `title` (`""` until the first 
 | `thread.steer` / `thread.follow_up` | `threadId`, `text`, `images?` | `{}` |
 | `thread.abort` | `threadId` | `{ steering[], followUp[] }` (to restore into the composer) |
 | `thread.queue.remove` / `.promote` | `threadId`, `message`, `queue?` | `{ removed }` / `{ promoted }` |
-| `thread.set_model` / `thread.set_thinking` | `threadId`, `provider`+`modelId` / `level` | `{}` |
+| `thread.set_model` / `thread.set_thinking` | `threadId`, `provider`+`modelId` / `level` | `{}`; a thread whose omp does not run stores the model and starts omp with it (DMN-339) |
 | `thread.models` / `thread.thinking_levels` / `thread.commands` | `threadId` | `{ models }` / `{ levels }` / `{ commands }` |
 | `thread.compact` | `threadId`, `instructions?` | compaction result |
 | `thread.tree` / `.navigate` / `.fork` / `.label` | `threadId`, `entryId?`, … | tree / result |
@@ -277,8 +277,9 @@ the tool definitions and the system prompt).
 
 | ID | Requirement |
 | --- | --- |
-| PRT-125 | `thread.session { threadId }` (permission `Read`) MUST answer `ThreadSession { threadId, workspaceId, cwd, roots, sessionDir, sessionId?, sessionFile?, model?, thinkingLevel?, approvalMode?, process, settled, needsAttention, messageCount?, usage? }` from what the daemon holds, without starting omp (DMN-213): `cwd` is the workspace folder, `roots` the repository roots the thread's session has (`[]` before its first start), `model` (`provider/id`) and `thinkingLevel` the ones the thread was created or last set with (absent: omp's default), `process`, `settled` and `needsAttention` as on `ThreadSummary`. An unknown thread is `not_found`. |
-| PRT-126 | Fields that need omp are absent when it cannot give them: `sessionId` before the thread's first start; `sessionFile` until omp wrote the session's file; `messageCount` (the messages of the session's current branch, the transcript of the `thread/<id>` topic) until omp loaded the session in this daemon run; `usage { cost, tokens { input, output, cacheRead, cacheWrite, total }, context? { tokens, contextWindow, percent } }` while the thread's omp does not run (DMN-214). |
+| PRT-125 | `thread.session { threadId }` (permission `Read`) MUST answer `ThreadSession { threadId, workspaceId, cwd, roots, sessionDir, sessionId?, sessionFile?, model?, sessionModel?, thinkingLevel?, approvalMode?, process, settled, needsAttention, messageCount?, usage? }` from what the daemon holds, without starting omp (DMN-213): `cwd` is the workspace folder, `roots` the repository roots the thread's session has (`[]` before its first start), `model` (`provider/id`) and `thinkingLevel` the ones the thread was created or last set with (absent: omp's default), `process`, `settled` and `needsAttention` as on `ThreadSummary`. An unknown thread is `not_found`. |
+| PRT-126 | Fields that need omp are absent when it cannot give them: `sessionId` before the thread's first start; `sessionFile` until omp wrote the session's file; `messageCount` (the messages of the session's current branch, the transcript of the `thread/<id>` topic) until the daemon loaded the session in this run (omp's history, or the session file after a failed start, DMN-337); `usage { cost, tokens { input, output, cacheRead, cacheWrite, total }, context? { tokens, contextWindow, percent } }` while the thread's omp does not run (DMN-214). |
+| PRT-211 | `ThreadSession.sessionModel` MUST be the `provider/id` the stored session restores (its saved model, which may be one omp cannot use), read from the session file when the thread's omp could not start (DMN-338); absent otherwise, and again once omp starts. A client tells an unusable saved model by comparing it, after `model` (which wins: omp starts with it), with `auth.models` (UI-751). |
 
 ## Views and jobs (M4)
 

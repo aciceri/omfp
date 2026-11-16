@@ -58,6 +58,10 @@ Initial release, planned as 0.1.0.
 - Adding or removing a repository in a workspace no longer posts the daemon's `Added …` / `Workspace directories:`
   output into every running thread of that workspace, nor counts as thread activity. Directory commands you type
   yourself still show their output.
+- Threads whose saved model can no longer be restored (for example, after moving to omfp's own profile without
+  logging in to that provider) open with their conversation readable instead of only failing. The header says the
+  saved model is unavailable and offers the usable models and Log in; picking one resumes the same conversation with
+  it. omfp never switches the model or provider on its own.
 
 ### Changed
 

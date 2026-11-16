@@ -24,6 +24,7 @@ pub mod omp_profile;
 pub mod paths;
 pub mod search;
 pub mod server;
+pub mod session_file;
 pub mod store;
 pub mod supervisor;
 pub mod terminals;

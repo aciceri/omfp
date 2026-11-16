@@ -6,7 +6,8 @@
  * title row gives the title the room (UI-482): the state, one state-dependent action and a `⋯` popover holding rename,
  * archive and delete. Narrower than {@link COMPACT_BELOW_REM} it is one row (UI-202): title, state and model, the rest
  * in the `⋯` popover. When omp has no model it can use — its start failed saying so, or it lists no model — it offers
- * Log in (UI-388). A forked thread says where it comes from beside its workspace chip (UI-664).
+ * Log in (UI-388). A forked thread says where it comes from beside its workspace chip (UI-664). When a failed start's
+ * saved model is not among the usable ones, it says so and offers them and Log in; only a pick changes it (UI-751).
  */
 
 import type { ThreadSummary } from "@omfp/protocol";
@@ -45,6 +46,7 @@ import {
   requestLogin,
   type SdkClient,
   SELECTED_THREAD,
+  savedModel,
   splitModel,
   statusLabel,
   strings,
@@ -97,7 +99,7 @@ export function HeaderWidget(_props: WidgetProps): ReactNode {
 function DraftHeader({ draft }: { draft: DraftThread }): ReactNode {
   const workspaces = useWorkspaces();
   const chip = useMemo(() => workspaceChip(draft.workspaceId, [...workspaces.values()]), [draft, workspaces]);
-  const [details] = useThreadDetails(undefined, false);
+  const [details] = useThreadDetails(undefined, undefined);
   const [, setDraft] = useWindowState(DRAFT_THREAD);
   return (
     <ChatHeader
@@ -132,7 +134,7 @@ function DraftHeader({ draft }: { draft: DraftThread }): ReactNode {
 function ThreadHeader({ summary }: { summary: ThreadSummary }): ReactNode {
   const workspaces = useWorkspaces();
   const list = useMemo(() => [...workspaces.values()], [workspaces]);
-  const [details, refreshSession] = useThreadDetails(summary.id, summary.process.state === "running");
+  const [details, refreshSession] = useThreadDetails(summary.id, summary.process.state);
   const view = headerView(summary, details, list);
   const header = useRef<HTMLElement>(null);
   // Its own width decides, wherever the view puts it (UI-202); a phone held sideways is always compact (UI-419).
@@ -150,6 +152,7 @@ function ThreadHeader({ summary }: { summary: ThreadSummary }): ReactNode {
         compact ? undefined : (
           <>
             <Chips view={view} summary={summary} />
+            <UnavailableModel view={view} />
             <div className="omfp-thread-header__session">
               <ModelSelect threadId={summary.id} view={view} onChanged={refreshSession} />
               <ThinkingSelect threadId={summary.id} view={view} onChanged={refreshSession} />
@@ -207,6 +210,7 @@ function More({
                 {view.failure}
               </p>
             )}
+            {compact && <UnavailableModel view={view} />}
             <div className="omfp-thread-header__actions">
               <Button
                 size="sm"
@@ -238,13 +242,20 @@ function More({
   );
 }
 
-/** Reads thread details while running, otherwise discovers models without starting a thread. Login/logout changes
- * refresh either list; the function refreshes a thread's session after a model or thinking change. */
-function useThreadDetails(threadId: string | undefined, running: boolean): [ThreadDetails, () => void] {
+/** Reads thread details while running, otherwise discovers models without starting a thread; after a failed start, the
+ * model it resumes with (`thread.session`, UI-751). Login/logout changes refresh either list; the function refreshes a
+ * thread's session after a model or thinking change. */
+function useThreadDetails(
+  threadId: string | undefined,
+  process: ThreadSummary["process"]["state"] | undefined,
+): [ThreadDetails, () => void] {
   const call = useCall();
   const [details, setDetails] = useState<ThreadDetails>(NO_DETAILS);
+  const [saved, setSaved] = useState<string | undefined>(undefined);
   const [authRevision] = useWindowState(AUTH_REVISION);
   const report = useReportError();
+  const running = process === "running";
+  const failed = process === "failed";
   useEffect(() => {
     // Read again on every login or logout.
     void authRevision;
@@ -273,6 +284,25 @@ function useThreadDetails(threadId: string | undefined, running: boolean): [Thre
       live = false;
     };
   }, [call, threadId, running, authRevision, report]);
+  useEffect(() => {
+    setSaved(undefined);
+    if (!failed || threadId === undefined) {
+      return;
+    }
+    let live = true;
+    call("thread.session", { threadId }).then(
+      (session) => {
+        if (live) {
+          setSaved(savedModel(session));
+        }
+      },
+      // Without it the header shows the failure as before.
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [call, threadId, failed]);
   const refresh = () => {
     if (threadId === undefined) {
       return;
@@ -282,7 +312,7 @@ function useThreadDetails(threadId: string | undefined, running: boolean): [Thre
       () => {},
     );
   };
-  return [details, refresh];
+  return [{ ...details, saved }, refresh];
 }
 
 async function fetchDetails(call: SdkClient["call"], threadId: string): Promise<ThreadDetails> {
@@ -296,6 +326,7 @@ async function fetchDetails(call: SdkClient["call"], threadId: string): Promise<
     models: models.status === "fulfilled" ? decodeModels(models.value) : [],
     modelsLoaded: models.status === "fulfilled",
     thinkingLevels: levels.status === "fulfilled" ? decodeThinkingLevels(levels.value) : [],
+    saved: undefined,
   };
 }
 
@@ -539,7 +570,8 @@ function useSessionChange(onChanged: () => void): (request: Promise<unknown>) =>
   };
 }
 
-/** The model list; when omp offers no model, Log in instead (UI-388). */
+/** The model list; when omp offers no model, Log in instead (UI-388). Picking a usable model for a thread whose start
+ * failed on its saved one stores it and starts omp with it on the same conversation (DMN-339, UI-751). */
 function ModelSelect({ threadId, view, onChanged }: SessionProps): ReactNode {
   const call = useCall();
   const report = useReportError();
@@ -557,7 +589,8 @@ function ModelSelect({ threadId, view, onChanged }: SessionProps): ReactNode {
   return <ModelPicker {...view} disabled={pending} onSelectionChange={onModel} />;
 }
 
-/** The same usable-model control before and after daemon thread creation. */
+/** The same usable-model control before and after daemon thread creation; a saved model omp cannot use shows as the
+ * selection, marked unavailable and not pickable (UI-751). */
 function ModelPicker({
   model,
   models,
@@ -585,19 +618,38 @@ function ModelPicker({
       </span>
     );
   }
+  const unavailable = models.some((option) => option.unavailable === true && option.value === model);
   return (
     <Select
       label={text.model}
       hideLabel
-      icon={<Icon name="brain" />}
+      icon={<Icon name={unavailable ? "circle-alert" : "brain"} />}
       placeholder={text.modelPlaceholder}
       data-testid="model-select"
+      data-unavailable={unavailable || undefined}
       className="omfp-thread-header__model"
       isDisabled={disabled || models.length === 0}
-      items={models.map((option) => ({ id: option.value, label: option.label }))}
+      items={models.map((option) => ({
+        id: option.value,
+        label: option.label,
+        ...(option.unavailable === true ? { isDisabled: true } : {}),
+      }))}
       selectedKey={model ?? null}
       onSelectionChange={onSelectionChange}
     />
+  );
+}
+
+/** Why the model list shows the saved model unavailable and what to do (UI-751): pick a usable model, or Log in. */
+function UnavailableModel({ view }: { view: HeaderView }): ReactNode {
+  if (view.unavailable === undefined) {
+    return null;
+  }
+  const sentence = text.modelUnavailable(view.unavailable);
+  return (
+    <p className="omfp-thread-header__unavailable" data-testid="model-unavailable" role="status" title={sentence}>
+      {sentence}
+    </p>
   );
 }
 

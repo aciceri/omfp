@@ -81,6 +81,7 @@ export {
   headerView,
   modelOption,
   NO_DETAILS,
+  savedModel,
   splitModel,
   type ThreadCost,
   type ThreadDetails,

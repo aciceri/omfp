@@ -1,12 +1,12 @@
 /**
  * The thread header (UI-030): title (placeholder until named, DMN-073), the workspace chip (UI-340), model and
  * thinking options, context usage, the cost with its subagents' (UI-690), and process state with its action; archive
- * state (UI-026).
+ * state (UI-026); the saved model a failed start could not use (UI-751).
  */
 
 import type { ThreadState } from "@omfp/core";
 import { compactNumber } from "@omfp/kit";
-import type { ThreadSummary, Workspace } from "@omfp/protocol";
+import type { ThreadSession, ThreadSummary, Workspace } from "@omfp/protocol";
 import { isObject } from "../sdk/json.ts";
 import { strings } from "../strings/index.ts";
 import { needsLogin } from "./login.ts";
@@ -44,14 +44,24 @@ export interface ThreadDetails {
   readonly modelsLoaded: boolean;
   /** `thread.thinking_levels`. */
   readonly thinkingLevels: readonly string[];
+  /** `provider/id` the thread resumes with while its start failed: `thread.session`'s `model`, else its
+   * `sessionModel` (DMN-338, UI-751). */
+  readonly saved: string | undefined;
 }
 
-export const NO_DETAILS: ThreadDetails = { session: undefined, models: [], modelsLoaded: false, thinkingLevels: [] };
+export const NO_DETAILS: ThreadDetails = {
+  session: undefined,
+  models: [],
+  modelsLoaded: false,
+  thinkingLevels: [],
+  saved: undefined,
+};
 
-/** One model choice: `value` is `provider/id`. */
+/** One model choice: `value` is `provider/id`; `unavailable` marks the saved model omp cannot use (UI-751). */
 export interface ModelOption {
   readonly value: string;
   readonly label: string;
+  readonly unavailable?: true;
 }
 
 /** What the process can do next: stop a running or starting one, restart a stopped or failed one. */
@@ -81,10 +91,14 @@ export interface HeaderView {
   readonly archived: boolean;
   /** The daemon holds a restart while background work runs: offer it, named by its reasons (UI-349, PRT-134). */
   readonly restart: PendingRestart | undefined;
-  /** The process failed because omp has no model it can use without a login or a key: offer Log in (UI-388). */
+  /** The process failed because omp has no model it can use without a login or a key, or its saved model is
+   * unavailable: offer Log in (UI-388, UI-751). */
   readonly login: boolean;
   /** omp offers no model at all: the model list offers Log in (UI-388). */
   readonly noModels: boolean;
+  /** `provider/id` of the saved model the failed start could not use, absent from the usable models: the selector
+   * shows it as unavailable, offers the usable ones and Log in; nothing changes until the user picks (UI-751). */
+  readonly unavailable: string | undefined;
 }
 
 /** The header of a thread; the cost comes from {@link threadCost} and {@link costLabel}, so the header does not depend
@@ -95,9 +109,23 @@ export function headerView(
   workspaces: readonly Workspace[],
 ): HeaderView {
   const current = details.session?.model;
-  const model = current === undefined ? undefined : modelValue(current);
+  const process = summary.process;
+  const unavailable =
+    process.state === "failed" &&
+    details.modelsLoaded &&
+    details.saved !== undefined &&
+    !details.models.some((option) => modelValue(option) === details.saved)
+      ? details.saved
+      : undefined;
+  const model = unavailable ?? (current === undefined ? undefined : modelValue(current));
   const models = details.models.map(modelOption);
-  if (current !== undefined && !models.some((option) => option.value === model)) {
+  if (unavailable !== undefined) {
+    models.unshift({
+      value: unavailable,
+      label: strings.shell.header.unavailableOption(unavailable),
+      unavailable: true,
+    });
+  } else if (current !== undefined && !models.some((option) => option.value === model)) {
     models.unshift(modelOption(current));
   }
   const thinking = details.session?.thinkingLevel;
@@ -106,7 +134,6 @@ export function headerView(
     thinkingLevels.unshift(thinking);
   }
   const usage = details.session?.contextUsage;
-  const process = summary.process;
   return {
     title: displayTitle(summary),
     placeholder: summary.titleSource === "placeholder" || summary.title.trim() === "",
@@ -128,8 +155,11 @@ export function headerView(
     action: processAction(process.state),
     archived: isArchived(summary),
     restart: pendingRestart(summary.restartPending),
-    login: process.state === "failed" && (needsLogin(process.message) || needsLogin(process.stderr_tail)),
-    noModels: details.modelsLoaded && models.length === 0,
+    login:
+      unavailable !== undefined ||
+      (process.state === "failed" && (needsLogin(process.message) || needsLogin(process.stderr_tail))),
+    noModels: details.modelsLoaded && (unavailable === undefined ? models : details.models).length === 0,
+    unavailable,
   };
 }
 
@@ -241,6 +271,12 @@ export function costLabel(cost: ThreadCost | undefined): { text: string; descrip
 /** `$0.0123` below a dollar, `$1.23` above. */
 export function formatCost(cost: number): string {
   return cost < 1 ? `$${cost.toFixed(4)}` : `$${cost.toFixed(2)}`;
+}
+
+/** The model a thread whose start failed resumes with (UI-751): `thread.session`'s `model`, the one set on the thread
+ * (omp then starts with it), else its `sessionModel`, the one its session file saved (DMN-338). */
+export function savedModel(session: Pick<ThreadSession, "model" | "sessionModel">): string | undefined {
+  return session.model ?? session.sessionModel ?? undefined;
 }
 
 /** The model choice `provider/id` split in two (the id may contain slashes). */

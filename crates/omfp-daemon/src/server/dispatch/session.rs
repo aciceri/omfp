@@ -34,6 +34,7 @@ pub(super) async fn thread_session(
             (state.session.clone(), count)
         });
     let status = supervisor.status(id);
+    let session_model = supervisor.session_model(id);
     let usage = supervisor
         .call_if_running(id, OmpCall::SessionStats)
         .await
@@ -74,6 +75,7 @@ pub(super) async fn thread_session(
             session_id: thread.omp_session_id,
             session_file,
             model: thread.model,
+            session_model,
             thinking_level: thread.thinking_level,
             // A value saved before DMN-210 that omp does not take is left out.
             approval_mode: thread

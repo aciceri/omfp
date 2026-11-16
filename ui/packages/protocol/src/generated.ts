@@ -1690,7 +1690,8 @@ export type ThreadSearchResults = {
 /**
  * `thread.session` result: what the daemon knows of a thread's omp session; it never starts omp (PRT-125). Absent
  * fields are unknown: `sessionId` before the thread's first start, `sessionFile` until omp wrote it, `messageCount`
- * until omp loaded the session in this daemon run, `usage` while omp does not run (PRT-126).
+ * until the daemon loaded the session in this run (omp's history, or the session file after a failed start),
+ * `sessionModel` unless the thread's last start failed, `usage` while omp does not run (PRT-126, PRT-211).
  */
 export type ThreadSession = {
   /** omp's `--approval-mode` (DMN-074, DMN-210). */
@@ -1722,6 +1723,11 @@ export type ThreadSession = {
   sessionFile?: string | null;
   /** omp's session id; absent before the thread's first start. */
   sessionId?: string | null;
+  /**
+   * `provider/id` the stored session restores, read from its session file when the thread's omp could not start
+   * (DMN-338, PRT-211): its saved model, which may be one omp cannot use; absent unless the last start failed.
+   */
+  sessionModel?: string | null;
   /** Idle with nothing queued or pending (omp's `session_settled`); `false` while the agent works. */
   settled: boolean;
   /** omp's thinking level the thread was created or last set with (`thread.set_thinking`); absent: omp's default. */

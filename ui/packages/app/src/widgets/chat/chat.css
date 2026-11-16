@@ -74,6 +74,25 @@
     color: var(--omfp-error);
   }
 
+  /* The saved model a failed start could not use (UI-751): in the full header's bar it gives way (ellipsis, the
+   * sentence whole as its tooltip) to the session controls; in the compact `⋯` popover it wraps like the failure. */
+  .omfp-thread-header__unavailable {
+    flex: 0 1 auto;
+    min-inline-size: 0;
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--omfp-fs-xs);
+    color: var(--omfp-warning);
+  }
+
+  .omfp-thread-header__more .omfp-thread-header__unavailable {
+    max-inline-size: 28rem;
+    overflow-wrap: anywhere;
+    white-space: normal;
+  }
+
   .omfp-thread-header__meter {
     display: inline-flex;
   }

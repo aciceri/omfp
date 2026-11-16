@@ -19,7 +19,7 @@ use omfp_core::{
 use omfp_protocol::RestartReason;
 use omp_rpc::{
     FollowUpCommand, GetMessagesResult, LiveLevelsEvent, PromptCommand, RpcAgentEvent,
-    RpcNotification, SteerCommand,
+    RpcNotification, SetModelCommand, SteerCommand,
 };
 use serde_json::Value;
 use tokio::sync::{broadcast, mpsc, watch};
@@ -353,6 +353,9 @@ struct Actor {
     prompting: tokio::sync::RwLock<()>,
     /// The source session file a forked thread's first start copies (`--fork`, DMN-301), taken by that start.
     fork_source: Mutex<Option<PathBuf>>,
+    /// The model the stored session restores, read from its file when omp could not start (DMN-338); cleared when omp
+    /// starts.
+    session_model: Mutex<Option<String>>,
 }
 
 impl Actor {
@@ -385,6 +388,7 @@ impl Actor {
             restart: Mutex::new(restart::DueRestart::default()),
             prompting: tokio::sync::RwLock::new(()),
             fork_source: Mutex::new(None),
+            session_model: Mutex::new(None),
         }
     }
 
@@ -702,10 +706,44 @@ impl Supervisor {
             .and_then(|actor| lock(&actor.last_prompt).clone())
     }
 
+    /// The model the thread's stored session restores, known from its session file after omp could not start
+    /// (DMN-338); `None` while omp runs or before a failed start.
+    #[must_use]
+    pub fn session_model(&self, id: &str) -> Option<String> {
+        self.lookup(id)
+            .and_then(|actor| lock(&actor.session_model).clone())
+    }
+
     /// Starts omp for the thread if it is not running.
     pub async fn start(&self, id: &str) -> Result<()> {
         let actor = self.actor(id).await?;
         self.ensure_running(&actor).await.map(drop)
+    }
+
+    /// `thread.set_model` (DMN-339): a running omp switches with `set_model`, then the thread stores the choice. A
+    /// thread whose omp does not run stores it first and starts omp with it (`--model`, DMN-030), resuming the same
+    /// session: the change never needs the session's saved model, which may be one omp cannot restore. Nothing else
+    /// ever changes the model.
+    pub async fn set_model(&self, id: &str, command: SetModelCommand) -> Result<()> {
+        let actor = self.actor(id).await?;
+        let model = format!("{}/{}", command.provider, command.model_id);
+        if actor.process().is_none() {
+            let lifecycle = actor.lifecycle.lock().await;
+            if actor.process().is_none() {
+                self.store_model(id, model).await?;
+                return self.start_locked(&actor).await.map(drop);
+            }
+            drop(lifecycle);
+        }
+        self.call(id, OmpCall::SetModel(command)).await?;
+        self.store_model(id, model).await
+    }
+
+    async fn store_model(&self, id: &str, model: String) -> Result<()> {
+        let threads = Arc::clone(&self.inner.threads);
+        let id = id.to_owned();
+        blocking(move || threads.set_model(&id, Some(&model))).await??;
+        Ok(())
     }
 
     /// Stops the thread's omp process, if any. Cancellation-safe ([`Self::detached`]).
@@ -1217,27 +1255,7 @@ impl Supervisor {
             },
         );
 
-        if let Some(session_id) = thread.omp_session_id.clone() {
-            let launcher = Arc::clone(&self.inner.launcher);
-            let probe = spec.clone();
-            let lease = blocking(move || launcher.session_lease(&probe, &session_id)).await?;
-            match lease {
-                Ok(Lease::Held) => {
-                    let error = SupervisorError::SessionLeased {
-                        session_id: thread.omp_session_id.unwrap_or_default(),
-                    };
-                    self.fail(actor, error.to_string(), String::new());
-                    return Err(error);
-                }
-                Ok(Lease::Free) => {}
-                Ok(Lease::Unknown) => {
-                    warn!(thread = %actor.id, "omp could not probe the session lease; starting anyway");
-                }
-                Err(error) => {
-                    return Err(self.failed_start(actor, error.to_string(), String::new()));
-                }
-            }
-        }
+        self.check_lease(actor, &thread, &spec).await?;
 
         let agent_tools = lock(&self.inner.agent_host)
             .clone()
@@ -1256,7 +1274,9 @@ impl Supervisor {
             match host_tools::host_uris(self.inner.config.builtin_widgets.clone(), check_host) {
                 Ok(uris) => uris,
                 Err(error) => {
-                    return Err(self.failed_start(actor, error.to_string(), String::new()));
+                    return Err(self
+                        .failed_start(actor, &thread, error.to_string(), String::new())
+                        .await);
                 }
             };
         let launcher = Arc::clone(&self.inner.launcher);
@@ -1268,7 +1288,9 @@ impl Supervisor {
                 let tail = blocking(move || stderr_tail(&path, STDERR_TAIL_LINES))
                     .await
                     .unwrap_or_default();
-                return Err(self.failed_start(actor, error.to_string(), tail));
+                return Err(self
+                    .failed_start(actor, &thread, error.to_string(), tail)
+                    .await);
             }
         };
 
@@ -1276,6 +1298,8 @@ impl Supervisor {
         actor.log.new_epoch(new_id());
         // omp numbers prompts per process (PRT-030, DMN-152).
         lock(&actor.last_prompt).take();
+        // omp's own history follows; it knows the session's model (`thread.state`).
+        lock(&actor.session_model).take();
         for event in startup_events(&launched.startup) {
             self.push(actor, event);
         }
@@ -1308,6 +1332,34 @@ impl Supervisor {
             warn!(thread = %actor.id, %error, "cannot remove stale roots");
         }
         Ok(process)
+    }
+
+    /// A stored session another omp process owns fails the start (DMN-033); its transcript stays readable (DMN-337).
+    async fn check_lease(&self, actor: &Actor, thread: &Thread, spec: &LaunchSpec) -> Result<()> {
+        let Some(session_id) = thread.omp_session_id.clone() else {
+            return Ok(());
+        };
+        let launcher = Arc::clone(&self.inner.launcher);
+        let probe = spec.clone();
+        let lease = blocking(move || launcher.session_lease(&probe, &session_id)).await?;
+        match lease {
+            Ok(Lease::Held) => {
+                let error = SupervisorError::SessionLeased {
+                    session_id: thread.omp_session_id.clone().unwrap_or_default(),
+                };
+                self.history_from_file(actor, thread).await;
+                self.fail(actor, error.to_string(), String::new());
+                Err(error)
+            }
+            Ok(Lease::Free) => Ok(()),
+            Ok(Lease::Unknown) => {
+                warn!(thread = %actor.id, "omp could not probe the session lease; starting anyway");
+                Ok(())
+            }
+            Err(error) => Err(self
+                .failed_start(actor, thread, error.to_string(), String::new())
+                .await),
+        }
     }
 
     /// What the thread's `omfp_open_file` host tool calls (DMN-060): [`Self::open_file`] on this thread. It holds the
@@ -1354,13 +1406,46 @@ impl Supervisor {
     }
 
     /// Fails the thread whose omp could not start and returns the error carrying omp's stderr tail (DMN-212); omp's
-    /// refusal without a usable model may contradict the known count of usable models (DMN-237).
-    fn failed_start(&self, actor: &Actor, message: String, stderr_tail: String) -> SupervisorError {
+    /// refusal without a usable model may contradict the known count of usable models (DMN-237). The transcript stays
+    /// readable from the session file (DMN-337).
+    async fn failed_start(
+        &self,
+        actor: &Actor,
+        thread: &Thread,
+        message: String,
+        stderr_tail: String,
+    ) -> SupervisorError {
         self.failed_with(&stderr_tail);
+        self.history_from_file(actor, thread).await;
         self.fail(actor, message.clone(), stderr_tail.clone());
         SupervisorError::Start {
             message,
             stderr_tail,
+        }
+    }
+
+    /// A thread whose omp could not start shows its stored session's current branch, read from the session file
+    /// without omp, as the `history` event omp's start would have given (DMN-337), and knows the model that session
+    /// restores (DMN-338). Without a session file nothing changes; an unreadable one is only logged.
+    async fn history_from_file(&self, actor: &Actor, thread: &Thread) {
+        let dir = thread.session_dir.clone();
+        let session_id = thread.omp_session_id.clone();
+        let read = blocking(move || crate::session_file::read(&dir, session_id.as_deref()))
+            .await
+            .and_then(|read| read.map_err(|error| SupervisorError::Internal(error.to_string())));
+        match read {
+            Ok(Some(read)) => {
+                *lock(&actor.session_model) = read.model;
+                self.push(
+                    actor,
+                    ThreadEvent::History {
+                        session: read.session,
+                        messages: read.messages,
+                    },
+                );
+            }
+            Ok(None) => {}
+            Err(error) => warn!(thread = %actor.id, %error, "cannot read the session file"),
         }
     }
 

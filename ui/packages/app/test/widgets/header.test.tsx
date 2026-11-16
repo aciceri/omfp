@@ -395,6 +395,52 @@ describe("omfp:header", () => {
     expect(screen.queryAllByTestId("header-login").length).toBe(0);
   });
 
+  // spec: UI-751
+  test("a failed start's unusable saved model: the header says so, offers the usable models and Log in, and only a pick changes it", async () => {
+    const base = testHost();
+    answer(base.client);
+    base.client.answers.set("auth.models", () => ({ models: [opus] }));
+    base.client.answers.set("thread.session", () => ({ sessionModel: "anthropic/claude-opus-5-5" }));
+    base.host.window.set(SELECTED_THREAD, "t1");
+    const { client, host, flush } = renderWithHost(<HeaderWidget />, base);
+    client.connected();
+    const failed = thread("t1", "x", "w1", {
+      process: {
+        state: "failed",
+        message: "omp failed to start: omp did not become ready: server closed",
+        stderr_tail: "SessionModelRestoreError: Could not restore model anthropic/claude-opus-5-5",
+      },
+    });
+    client.index({ workspaces: [workspace("w1")], threads: [failed] });
+    flush();
+    const user = userEvent.setup();
+
+    const note = await screen.findByTestId("model-unavailable");
+    expect(note.textContent).toBe(
+      "The saved model anthropic/claude-opus-5-5 is unavailable. Choose another model or log in to resume this conversation.",
+    );
+    const select = screen.getByTestId("model-select");
+    expect(select.dataset.unavailable).toBe("true");
+    expect(within(select).getByRole("button").textContent).toContain("anthropic/claude-opus-5-5 (unavailable)");
+    // Read without starting omp; nothing is switched by itself.
+    expect(client.callsTo("thread.state").length).toBe(0);
+    expect(client.callsTo("thread.set_model").length).toBe(0);
+
+    // Log in beside Restart opens the provider picker.
+    expect(screen.getByTestId("process-action").dataset.action).toBe("restart");
+    await user.click(screen.getByTestId("header-login"));
+    expect(host.window.get(LOGIN)).toEqual({ providerId: undefined });
+
+    // The saved model cannot be picked again; a usable one is stored and resumes the conversation.
+    await user.click(within(select).getByRole("button"));
+    const saved = await screen.findByRole("option", { name: "anthropic/claude-opus-5-5 (unavailable)" });
+    expect(saved.getAttribute("aria-disabled")).toBe("true");
+    await user.click(await screen.findByRole("option", { name: "Opus (anthropic)" }));
+    expect(client.callsTo("thread.set_model").map((call) => call.params)).toEqual([
+      { threadId: "t1", provider: "anthropic", modelId: "opus" },
+    ]);
+  });
+
   // spec: UI-385, UI-388
   test("with no model the model list offers Log in, and a login of the window reads the models again", async () => {
     setup();

@@ -220,6 +220,9 @@ struct Script {
     outputs: HashMap<String, Vec<String>>,
     /// The stderr of the next launches that fail as omp exiting at startup does (DMN-211).
     failures: VecDeque<String>,
+    /// The stderr of every later thread launch without `--model`, which fails as omp does when it cannot restore the
+    /// session's saved model (`SessionModelRestoreError`, DMN-337).
+    saved_model_failure: Option<String>,
     /// What every later check of the usable models answers (DMN-235); `None`: one model, as a configured omp has.
     models: Option<u32>,
     /// The specs of every check of the usable models so far, oldest first.
@@ -350,6 +353,13 @@ impl FakeLauncher {
         lock(&self.script).failures.push_back(stderr.to_owned());
     }
 
+    /// Fails every later launch without an explicit model (`--model`, DMN-030) as omp exiting at startup does, after
+    /// writing `stderr` to its stderr log: omp cannot restore the session's saved model, and only an explicit choice
+    /// overrides it (DMN-339). Checks of the usable models are no such launch.
+    pub fn fail_launches_without_model(&self, stderr: &str) {
+        lock(&self.script).saved_model_failure = Some(stderr.to_owned());
+    }
+
     /// Answers every later check of the usable models (DMN-235) with `count`; by default the fake's omp has one model.
     pub fn set_usable_models(&self, count: u32) {
         lock(&self.script).models = Some(count);
@@ -383,7 +393,12 @@ impl AgentLauncher for FakeLauncher {
             gate.pass();
         }
         let mut script = lock(&self.script);
-        if let Some(stderr) = script.failures.pop_front() {
+        if let Some(stderr) = script.failures.pop_front().or_else(|| {
+            spec.model
+                .is_none()
+                .then(|| script.saved_model_failure.clone())
+                .flatten()
+        }) {
             std::fs::write(&spec.stderr_log, stderr)?;
             return Err(StartError::Connect(omp_rpc::Error::Closed));
         }

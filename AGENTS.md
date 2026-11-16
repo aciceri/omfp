@@ -85,7 +85,8 @@ crates/omfp-daemon    daemon library: omp adapter (omp.rs), agent port + FakeLau
                       workspaces/scan.rs, cheap change check in workspaces/fingerprint.rs, reading and writing
                       workspace files with a hash check in workspaces/files.rs, add/remove repo,
                       suggestions of seen repositories), path completion (fs_complete.rs), conversation search over
-                      session files (search.rs), threads, git port + FakeGit, host tools and the `omfp://` host URIs
+                      session files (search.rs), a session's current branch and saved model read from its file without
+                      omp after a failed start (session_file.rs), threads, git port + FakeGit, host tools and the `omfp://` host URIs
                       (host_tools.rs), the agent tool registry (agent_tools/: `omfp_call`, `omfp_thread_wait`, the
                       method catalogue `omfp://protocol/methods`, the RPC host tool adapter, the mount tools, the
                       check tools `omfp_widget_check`/`omfp_views_errors` in agent_tools/checks.rs, the window tools `omfp_windows`/`omfp_window_run` in agent_tools/windows.rs),
@@ -245,6 +246,10 @@ tag, the `omp-rpc` git tag in `Cargo.toml`, `omfp_core::OMP_VERSION` and the rel
   `/mcp reauth <name>` runs in the background (the prompt returns at once), opens the browser on omp's host itself and
   reports in later `command_output` frames (the OAuth URL, then `✓ Reauthorized "<name>" …`); the daemon reloads a
   thread whose MCP configs changed or whose server was reauthorized once it is free (DMN-200..204).
+- Resuming a session whose saved model is unusable (no credential for its provider, absent from the catalog) makes
+  `omp --mode rpc-ui` exit at startup with `SessionModelRestoreError: Could not restore model <provider/id>`
+  (fail-closed restore, `sdk.ts`); an explicit `--model` skips the restore and resumes the same session with that
+  model. The daemon then shows the history from the session file and lets the user pick a model (DMN-337..339).
 - `omp --mode rpc-ui` exits at startup (status 1, `No default model selected. Use /login, …` on stderr) when no model is
   usable: on a fresh install every thread start fails with that `stderrTail` (DMN-212). With an explicit `--model` of
   omp's bundled catalog (`anthropic/claude-sonnet-4-5`) it starts without any credential; the daemon's short-lived

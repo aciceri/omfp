@@ -125,6 +125,10 @@ export const shell = {
     logIn: "Log in",
     logInHint: "omp has no model it can use: log in to a provider",
     noModels: "No models",
+    /** The saved model of a thread whose omp could not start, absent from the usable models (UI-751). */
+    unavailableOption: (model: string) => `${model} (unavailable)`,
+    modelUnavailable: (model: string) =>
+      `The saved model ${model} is unavailable. Choose another model or log in to resume this conversation.`,
   },
   deleteWorkspace: {
     title: (name: string) => `Delete workspace \u201c${name}\u201d?`,

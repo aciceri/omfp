@@ -387,6 +387,170 @@ async fn a_session_open_elsewhere_fails_the_start_with_a_clear_error() {
     assert!(!h.supervisor.is_running(&id));
 }
 
+/// Writes the stored session `session_id` of thread `id` as omp would: a header, a `model_change` to `model`, then one
+/// question and its answer.
+fn saved_session(h: &Harness, id: &str, session_id: &str, model: &str) {
+    let dir = h.threads.get(id).unwrap().session_dir;
+    std::fs::create_dir_all(&dir).unwrap();
+    let (provider, model_id) = model.split_once('/').unwrap();
+    let lines = [
+        json!({ "type": "session", "version": 3, "id": session_id, "timestamp": "2026-11-11T23:25:36.429Z" }),
+        json!({ "type": "model_change", "id": "m1", "parentId": null, "timestamp": "2026-11-11T23:25:36.489Z",
+                "model": model }),
+        json!({ "type": "message", "id": "u1", "parentId": "m1", "timestamp": "2026-11-11T23:25:36.751Z",
+                "message": { "role": "user", "content": [{ "type": "text", "text": "old question" }], "timestamp": 1 } }),
+        json!({ "type": "message", "id": "a1", "parentId": "u1", "timestamp": "2026-11-11T23:25:37.717Z",
+                "message": { "role": "assistant", "content": [{ "type": "text", "text": "old answer" }],
+                             "provider": provider, "model": model_id, "stopReason": "stop", "timestamp": 2 } }),
+    ];
+    let text: Vec<String> = lines.iter().map(ToString::to_string).collect();
+    std::fs::write(
+        dir.join(format!("2026-11-11T23-25-36-429Z_{session_id}.jsonl")),
+        text.join("\n"),
+    )
+    .unwrap();
+    h.threads.set_omp_session_id(id, session_id).unwrap();
+}
+
+/// The roles and first texts of the thread's transcript.
+async fn transcript(h: &Harness, id: &str) -> Vec<String> {
+    h.log(id).await.with_state(|state| {
+        state
+            .transcript
+            .iter()
+            .map(|entry| {
+                let message = serde_json::to_value(&entry.message).unwrap();
+                format!(
+                    "{}: {}",
+                    message["role"].as_str().unwrap(),
+                    message["content"][0]["text"].as_str().unwrap_or_default()
+                )
+            })
+            .collect()
+    })
+}
+
+// spec: DMN-337, DMN-338, DMN-339
+#[tokio::test]
+async fn a_thread_whose_saved_model_cannot_start_shows_its_history_and_resumes_with_a_chosen_model()
+{
+    let h = harness(|_| {});
+    let id = h.thread();
+    saved_session(&h, &id, "S-old", "anthropic/claude-opus-5-5");
+    h.launcher.fail_next_launch(
+        "SessionModelRestoreError: Could not restore model anthropic/claude-opus-5-5",
+    );
+
+    let error = h.supervisor.start(&id).await.unwrap_err();
+
+    assert!(matches!(error, SupervisorError::Start { .. }), "{error}");
+    assert_eq!(
+        transcript(&h, &id).await,
+        ["user: old question", "assistant: old answer"],
+        "the conversation stays readable without omp"
+    );
+    let (process, session) = h
+        .log(&id)
+        .await
+        .with_state(|state| (state.process.clone(), state.session.clone()));
+    assert!(
+        matches!(&process, ProcessState::Failed { stderr_tail, .. } if stderr_tail.contains("Could not restore model")),
+        "{process:?}"
+    );
+    assert_eq!(
+        session.map(|session| session.session_id).as_deref(),
+        Some("S-old")
+    );
+    assert_eq!(
+        h.supervisor.session_model(&id).as_deref(),
+        Some("anthropic/claude-opus-5-5")
+    );
+    assert_eq!(
+        h.threads.get(&id).unwrap().model,
+        None,
+        "nothing is chosen for the user"
+    );
+
+    // The user's explicit choice: stored, then omp starts with it on the same session.
+    h.supervisor
+        .set_model(
+            &id,
+            SetModelCommand {
+                provider: "fake".into(),
+                model_id: "scripted".into(),
+            },
+        )
+        .await
+        .unwrap();
+
+    assert!(h.supervisor.is_running(&id));
+    assert_eq!(
+        h.threads.get(&id).unwrap().model.as_deref(),
+        Some("fake/scripted")
+    );
+    let launches = h.launcher.launches();
+    assert_eq!(launches.len(), 1, "the failed start never launched");
+    assert_eq!(launches[0].spec.model.as_deref(), Some("fake/scripted"));
+    assert_eq!(
+        launches[0].spec.session_dir,
+        h.threads.get(&id).unwrap().session_dir
+    );
+    assert!(
+        !launches[0]
+            .process
+            .calls()
+            .iter()
+            .any(|call| matches!(call, FakeCall::Call(OmpCall::SetModel(_)))),
+        "the launch flag carries the model"
+    );
+    assert_eq!(h.supervisor.session_model(&id), None);
+}
+
+// spec: DMN-339
+#[tokio::test]
+async fn a_running_thread_switches_its_model_through_omp_and_stores_it() {
+    let h = harness(|_| {});
+    let id = h.thread();
+    h.supervisor.start(&id).await.unwrap();
+
+    h.supervisor
+        .set_model(
+            &id,
+            SetModelCommand {
+                provider: "fake".into(),
+                model_id: "scripted".into(),
+            },
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(h.launcher.launches().len(), 1, "no restart");
+    assert!(h.launcher.process(0).calls().iter().any(|call| matches!(
+        call,
+        FakeCall::Call(OmpCall::SetModel(command)) if command.provider == "fake" && command.model_id == "scripted"
+    )));
+    assert_eq!(
+        h.threads.get(&id).unwrap().model.as_deref(),
+        Some("fake/scripted")
+    );
+}
+
+// spec: DMN-337
+#[tokio::test]
+async fn a_session_open_elsewhere_still_shows_its_history() {
+    let h = harness(|_| {});
+    let id = h.thread();
+    saved_session(&h, &id, "S-busy", "fake/scripted");
+    h.launcher.hold_lease("S-busy");
+
+    h.supervisor.start(&id).await.unwrap_err();
+
+    assert_eq!(
+        transcript(&h, &id).await,
+        ["user: old question", "assistant: old answer"]
+    );
+}
+
 // spec: DMN-038
 #[tokio::test]
 async fn starting_beyond_the_process_limit_fails_explicitly() {

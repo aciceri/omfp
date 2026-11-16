@@ -1206,6 +1206,13 @@ requirements = [
   "UI-760",
   # The selected tab of every tabs container remembered per thread and view (#101)
   "UI-372",
+  # Reopening a thread whose saved model is unavailable (#95): history from the session file, explicit model pick
+  "DMN-337",
+  "DMN-338",
+  "DMN-339",
+  "PRT-211",
+  "UI-751",
+  "E2E-73",
 ]
 
 [M18]

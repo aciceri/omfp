@@ -661,6 +661,8 @@ fn thread_session() -> ThreadSession {
              2026-11-13T09-12-44-120Z_0f8e2c4a-5b1d-4e7f-9a3c-2d6b8e1f4a7c.jsonl"
         )),
         model: Some("anthropic/claude-sonnet-4-5".to_owned()),
+        // A running thread: only a failed start reads the saved model from the session file.
+        session_model: None,
         thinking_level: Some("high".to_owned()),
         approval_mode: Some(ApprovalMode::Yolo),
         process: ProcessState::Running,

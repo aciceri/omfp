@@ -859,6 +859,15 @@ The earlier omp terminal handoff remains removed (D-06, PRT-135): the user did n
 singular `terminal.*` methods, permission and thread process state were never built. TRM-001..022 and E2E-07 remain
 in [05](05-terminal.md) and [06](06-testing.md) as removed rows; the independent PTY API reuses `terminal/<id>`.
 
+## Threads whose saved model is unavailable
+
+M17 keeps old conversations readable when omp cannot restore their saved model (#95, DMN-337..339, PRT-211, UI-751,
+E2E-73). omp 18.18.6 restores a resumed session's model fail-closed in RPC mode (`SessionModelRestoreError`, its
+`sdk.ts`) unless `--model` names one, so a profile without that provider's login could not even show the transcript.
+The daemon now reads the session file itself after a failed start, and `thread.set_model` on a thread whose omp does
+not run stores the pick and starts omp with it. Nothing picks a model or a provider on the user's behalf: a silent
+substitution would send the conversation to another provider.
+
 ## Later (noted, not scheduled)
 
 - Helix-style modal editing in the composer (UI-095 keeps a keymap with modes, so it fits later).

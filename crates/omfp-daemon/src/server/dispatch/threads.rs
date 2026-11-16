@@ -381,19 +381,14 @@ pub(super) async fn thread(services: &Services, principal: &Principal, call: Cal
             forward(params.thread_id, OmpCall::PromoteQueued(command)).await
         }
         Call::ThreadSetModel(params) => {
-            let model = format!("{}/{}", params.provider, params.model_id);
             let command = SetModelCommand {
                 provider: params.provider,
                 model_id: params.model_id,
             };
-            forward(params.thread_id.clone(), OmpCall::SetModel(command)).await?;
-            let threads = Arc::clone(&services.threads);
-            blocking(move || {
-                threads
-                    .set_model(&params.thread_id, Some(&model))
-                    .map_err(thread_error)
-            })
-            .await?;
+            supervisor
+                .set_model(&params.thread_id, command)
+                .await
+                .map_err(supervisor_error)?;
             empty()
         }
         Call::ThreadSetThinking(params) => {

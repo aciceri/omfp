@@ -10,6 +10,7 @@ import {
   formatCost,
   headerView,
   NO_DETAILS,
+  savedModel,
   splitModel,
   type ThreadDetails,
   threadCost,
@@ -42,6 +43,7 @@ function details(): ThreadDetails {
     models: decodeModels({ models: [{ ...opus, id: "haiku", name: "Haiku" }, { broken: true }] }),
     modelsLoaded: true,
     thinkingLevels: decodeThinkingLevels({ levels: ["off", "low", 3] }),
+    saved: undefined,
   };
 }
 
@@ -131,6 +133,38 @@ describe("header", () => {
     // Not before `thread.models` answered, nor while omp lists models.
     expect(headerView(thread("t", "x", "w"), NO_DETAILS, []).noModels).toBe(false);
     expect(headerView(thread("t", "x", "w"), details(), []).noModels).toBe(false);
+  });
+
+  // spec: UI-751
+  test("a failed start whose saved model is not usable shows it unavailable, the usable models and Log in", () => {
+    const failed = thread("t", "x", "w", {
+      process: { state: "failed", message: "omp failed to start: server closed" },
+    });
+    const saved = { ...details(), session: undefined, saved: "anthropic/claude-opus-5-5" };
+    const view = headerView(failed, saved, []);
+    expect([view.unavailable, view.model, view.login, view.noModels]).toEqual([
+      "anthropic/claude-opus-5-5",
+      "anthropic/claude-opus-5-5",
+      true,
+      false,
+    ]);
+    expect(view.models).toEqual([
+      { value: "anthropic/claude-opus-5-5", label: "anthropic/claude-opus-5-5 (unavailable)", unavailable: true },
+      { value: "anthropic/haiku", label: "Haiku (anthropic)" },
+    ]);
+    // No usable model at all: `No models` and Log in.
+    expect(headerView(failed, { ...saved, models: [] }, []).noModels).toBe(true);
+
+    // A usable saved model, a running thread, or models not read yet: nothing is unavailable.
+    const usable = { ...saved, saved: "anthropic/haiku" };
+    expect(headerView(failed, usable, []).unavailable).toBeUndefined();
+    expect(headerView(thread("t", "x", "w"), saved, []).unavailable).toBeUndefined();
+    expect(headerView(failed, { ...saved, modelsLoaded: false }, []).unavailable).toBeUndefined();
+
+    // The model set on the thread wins over the one its session file saved.
+    expect(savedModel({ model: "fake/scripted", sessionModel: "anthropic/claude-opus-5-5" })).toBe("fake/scripted");
+    expect(savedModel({ sessionModel: "anthropic/claude-opus-5-5" })).toBe("anthropic/claude-opus-5-5");
+    expect(savedModel({ model: null, sessionModel: null })).toBeUndefined();
   });
 
   // spec: UI-030, UI-691

@@ -180,6 +180,9 @@ use, every window follows (`auth.status`).
   omp once that thread is free, so it sees the new models; a thread whose start failed needs Restart.
 - **Log in** buttons show where omp says it needs a login: on an error toast quoting omp's refusal, beside Restart in
   the header of a thread whose start failed that way, and instead of the model list when omp offers no model.
+- A thread whose saved model omp cannot use any more (its provider not logged in here) still opens with its
+  conversation; its header says the saved model is unavailable, offers the usable models and **Log in**. Picking a
+  model resumes the same conversation with it; omfp never picks one for you.
 - `:logout <provider>` removes omp's stored credentials of the provider and says how many it removed and what still
   authenticates it (e.g. an environment variable).
 

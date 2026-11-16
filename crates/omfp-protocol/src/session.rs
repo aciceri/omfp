@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 
 /// `thread.session` result: what the daemon knows of a thread's omp session; it never starts omp (PRT-125). Absent
 /// fields are unknown: `sessionId` before the thread's first start, `sessionFile` until omp wrote it, `messageCount`
-/// until omp loaded the session in this daemon run, `usage` while omp does not run (PRT-126).
+/// until the daemon loaded the session in this run (omp's history, or the session file after a failed start),
+/// `sessionModel` unless the thread's last start failed, `usage` while omp does not run (PRT-126, PRT-211).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadSession {
@@ -30,6 +31,10 @@ pub struct ThreadSession {
     /// `provider/id` the thread was created or last set with (`thread.set_model`); absent: omp's default model.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// `provider/id` the stored session restores, read from its session file when the thread's omp could not start
+    /// (DMN-338, PRT-211): its saved model, which may be one omp cannot use; absent unless the last start failed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_model: Option<String>,
     /// omp's thinking level the thread was created or last set with (`thread.set_thinking`); absent: omp's default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thinking_level: Option<String>,

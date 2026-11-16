@@ -1695,6 +1695,68 @@ async fn thread_session_answers_the_sessions_small_facts_without_starting_omp() 
     );
 }
 
+// spec: PRT-211, DMN-337, DMN-338, DMN-339
+#[tokio::test(flavor = "multi_thread")]
+async fn a_thread_whose_saved_model_is_unusable_reads_its_history_and_takes_another_model() {
+    let daemon = daemon(&[]).await;
+    let mut client = daemon.client("test").await;
+    let thread = create_thread(&mut client).await;
+    let session_dir = daemon
+        .dir
+        .path()
+        .join("threads")
+        .join(&thread)
+        .join("sessions");
+    std::fs::create_dir_all(&session_dir).unwrap();
+    let lines = [
+        json!({ "type": "session", "version": 3, "id": "S-old", "timestamp": "2026-11-11T23:25:36.429Z" }),
+        json!({ "type": "model_change", "id": "m1", "parentId": null, "timestamp": "2026-11-11T23:25:36.489Z",
+                "model": "anthropic/claude-opus-5-5" }),
+        json!({ "type": "message", "id": "u1", "parentId": "m1", "timestamp": "2026-11-11T23:25:36.751Z",
+                "message": { "role": "user", "content": "old question", "timestamp": 1 } }),
+    ];
+    let text: Vec<String> = lines.iter().map(ToString::to_string).collect();
+    std::fs::write(
+        session_dir.join("2026-11-11T23-25-36-429Z_S-old.jsonl"),
+        text.join("\n"),
+    )
+    .unwrap();
+
+    daemon.launcher.fail_next_launch(
+        "SessionModelRestoreError: Could not restore model anthropic/claude-opus-5-5\n",
+    );
+    let error = client
+        .call("thread.commands", json!({ "threadId": thread }))
+        .await
+        .unwrap_err();
+    assert_eq!(error["code"], "thread_failed");
+    let session = client
+        .ok("thread.session", json!({ "threadId": thread }))
+        .await;
+    assert_eq!(session["sessionModel"], "anthropic/claude-opus-5-5");
+    assert_eq!(
+        session["messageCount"], 1,
+        "the history of the session file"
+    );
+    assert_eq!(session["model"], Value::Null, "nothing chosen for the user");
+
+    client
+        .ok(
+            "thread.set_model",
+            json!({ "threadId": thread, "provider": "fake", "modelId": "scripted" }),
+        )
+        .await;
+    let session = client
+        .ok("thread.session", json!({ "threadId": thread }))
+        .await;
+    assert_eq!(session["model"], "fake/scripted");
+    assert_eq!(session["sessionModel"], Value::Null);
+    assert_eq!(session["process"]["state"], "running");
+    let launches = daemon.launcher.launches();
+    assert_eq!(launches.len(), 1);
+    assert_eq!(launches[0].spec.model.as_deref(), Some("fake/scripted"));
+}
+
 // spec: DMN-029
 #[tokio::test(flavor = "multi_thread")]
 async fn a_repository_linked_while_omp_starts_is_a_root_before_the_next_prompt() {

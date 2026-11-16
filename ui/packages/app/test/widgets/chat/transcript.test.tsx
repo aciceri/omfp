@@ -1,6 +1,6 @@
 /** L4: `omfp:transcript` over recorded fixtures. */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
 import type { JsonObject, ThreadEvent } from "@omfp/core";
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -509,6 +509,83 @@ describe("transcript", () => {
     run("nav.bottom");
     expect(current()).toBe("4");
     expect(element.dataset.pinned).toBe("true");
+  });
+
+  // spec: UI-750, UI-370
+  test("day separators label the days of an old thread inside their messages' items", () => {
+    // Monday 16 November 2026, 09:00 local time.
+    setSystemTime(new Date(2026, 10, 16, 9));
+    try {
+      const at = (month: number, day: number, hour: number, year = 2026) =>
+        new Date(year, month - 1, day, hour).getTime();
+      const { host } = renderThread(<TranscriptWidget />, [
+        {
+          kind: "history",
+          session: { session_id: "s", resumed: true },
+          messages: [
+            { role: "user", content: "last year", timestamp: at(11, 12, 10, 2025) },
+            { role: "user", content: "no time" },
+            { role: "user", content: "yesterday morning", timestamp: at(11, 15, 8) },
+            { role: "user", content: "yesterday night", timestamp: at(11, 15, 23) },
+            { role: "user", content: "today", timestamp: at(11, 16, 8) },
+          ],
+        },
+      ]);
+      const separators = screen.getAllByRole("separator");
+      expect(separators.map((separator) => separator.textContent)).toEqual([
+        new Intl.DateTimeFormat(undefined, {
+          weekday: "short",
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        }).format(new Date(2025, 10, 12)),
+        "Yesterday",
+        "Today",
+      ]);
+      expect(separators.map((separator) => separator.getAttribute("aria-label"))).toEqual(
+        separators.map((separator) => separator.textContent),
+      );
+      expect(separators.map((separator) => separator.querySelector("time")?.getAttribute("datetime"))).toEqual([
+        "2025-11-12",
+        "2026-11-15",
+        "2026-11-16",
+      ]);
+      expect(separators.some((separator) => separator.hasAttribute("tabindex"))).toBe(false);
+      // Each separator sits in its message's item: the items are the five messages, `j`/`k` step through them.
+      const rows = screen.getAllByTestId("transcript-item");
+      expect(rows.length).toBe(5);
+      expect(rows.map((row) => row.querySelector('[role="separator"]') !== null)).toEqual([
+        true,
+        false,
+        true,
+        false,
+        true,
+      ]);
+      act(() => transcript().focus());
+      const run = (id: string) => act(() => void host.commands.run(id, [], scopesAt(document.activeElement)));
+      run("nav.prev");
+      expect(document.activeElement?.getAttribute("data-index")).toBe("4");
+      run("nav.prev");
+      expect(document.activeElement?.getAttribute("data-index")).toBe("3");
+    } finally {
+      setSystemTime();
+    }
+  });
+
+  // spec: UI-750
+  test("a thread written today shows no day separator", () => {
+    const now = Date.now();
+    renderThread(<TranscriptWidget />, [
+      {
+        kind: "history",
+        session: { session_id: "s", resumed: true },
+        messages: [
+          { role: "user", content: "hello", timestamp: now },
+          { role: "assistant", content: [{ type: "text", text: "hi" }], timestamp: now },
+        ],
+      },
+    ]);
+    expect(screen.queryAllByRole("separator").length).toBe(0);
   });
 
   /** The transcript with `count` messages laid out by {@link pagedLayout}, focused, and its commands and keys. */

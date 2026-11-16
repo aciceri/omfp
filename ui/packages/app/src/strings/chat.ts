@@ -6,6 +6,9 @@ export const chat = {
   transcript: "Transcript",
   search: "Search conversation",
   closeSearch: "Close search",
+  /** Day separators in the transcript (UI-750). */
+  today: "Today",
+  yesterday: "Yesterday",
   roleUser: "You",
   roleAssistant: "Assistant",
   steeringMark: "steering",

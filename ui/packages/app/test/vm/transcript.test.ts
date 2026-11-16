@@ -8,7 +8,7 @@ import {
   type ThreadEvent,
   type ThreadState,
 } from "@omfp/core";
-import { items, messageView, rowContent, streamingView } from "../../src/vm/transcript.ts";
+import { daySeparator, items, messageView, rowContent, streamingView } from "../../src/vm/transcript.ts";
 import { fixture, fixtureUntil, isFrame } from "../widgets/chat/fixtures.ts";
 
 function kinds(state: ThreadState): string[] {
@@ -340,5 +340,102 @@ describe("streaming cost", () => {
     expect(messageView({ ...state, settled: !state.settled }, 1)).toBe(view);
     const tools = state.tools.map((run) => ({ ...run, status: "failed" as const }));
     expect(messageView({ ...state, tools }, 1)).not.toBe(view);
+  });
+});
+
+/** Local time on `day` of November 2026 (or of another month and year), so the tests hold in any time zone. */
+function local(day: number, hour: number, month = 11, year = 2026): number {
+  return new Date(year, month - 1, day, hour, 30).getTime();
+}
+
+/** A transcript of user messages sent at `times` (`undefined`: without a timestamp). */
+function sentAt(...times: (number | undefined)[]): ThreadState {
+  return {
+    ...emptyThreadState(),
+    transcript: times.map((timestamp, index) => ({
+      message_id: null,
+      message: { role: "user", content: `m${index}`, ...(timestamp === undefined ? {} : { timestamp }) },
+    })),
+  };
+}
+
+function days(state: ThreadState) {
+  return items(state).map((item) => (item.kind.type === "message" ? item.kind.day : undefined));
+}
+
+describe("day separators", () => {
+  // spec: UI-750
+  test("a message on another local day than the previous one is marked, midnight being the boundary", () => {
+    const state = sentAt(local(12, 10), local(12, 23), local(13, 0), local(13, 9), local(15, 8));
+    expect(days(state)).toEqual([
+      { at: local(12, 10), first: true },
+      undefined,
+      { at: local(13, 0), first: false },
+      undefined,
+      { at: local(15, 8), first: false },
+    ]);
+  });
+
+  // spec: UI-750
+  test("messages without a usable timestamp are never marked nor compared", () => {
+    const state = sentAt(undefined, local(12, 10), undefined, 0, local(12, 18), undefined, local(13, 9));
+    expect(days(state)).toEqual([
+      undefined,
+      { at: local(12, 10), first: true },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { at: local(13, 9), first: false },
+    ]);
+  });
+
+  // spec: UI-750
+  test("tool results shown in their call's card do not count as the previous message", () => {
+    const state: ThreadState = {
+      ...emptyThreadState(),
+      transcript: [
+        {
+          message_id: null,
+          message: {
+            role: "assistant",
+            content: [{ type: "toolCall", id: "c1", name: "bash", arguments: {} }],
+            timestamp: local(12, 23),
+          },
+        },
+        { message_id: null, message: { role: "toolResult", toolCallId: "c1", content: [], timestamp: local(13, 1) } },
+        { message_id: null, message: { role: "user", content: "next", timestamp: local(13, 9) } },
+      ],
+    };
+    expect(days(state)).toEqual([
+      { at: local(12, 23), first: true },
+      { at: local(13, 9), first: false },
+    ]);
+  });
+
+  // spec: UI-750
+  test("the first message is labelled only when it was not sent today", () => {
+    const now = local(16, 9);
+    expect(daySeparator({ at: local(16, 1), first: true }, now)).toBeUndefined();
+    expect(daySeparator({ at: local(16, 1), first: false }, now)).toEqual({ label: "Today", date: "2026-11-16" });
+    expect(daySeparator({ at: local(15, 23), first: true }, now)).toEqual({ label: "Yesterday", date: "2026-11-15" });
+    expect(daySeparator({ at: local(14, 23), first: true }, now, "en-GB")).toEqual({
+      label: "Sat 14 Nov",
+      date: "2026-11-14",
+    });
+  });
+
+  // spec: UI-750
+  test("the year shows only for another year than the current one", () => {
+    const newYear = local(1, 9, 1, 2027);
+    expect(daySeparator({ at: local(12, 10), first: true }, local(16, 9), "en-GB")?.label).toBe("Thu 12 Nov");
+    expect(daySeparator({ at: local(12, 10, 11, 2025), first: true }, local(16, 9), "en-GB")?.label).toBe(
+      "Wed, 12 Nov 2025",
+    );
+    expect(daySeparator({ at: local(31, 22, 12, 2026), first: false }, newYear, "en-GB")?.label).toBe("Yesterday");
+    expect(daySeparator({ at: local(30, 22, 12, 2026), first: false }, newYear, "en-GB")).toEqual({
+      label: "Wed, 30 Dec 2026",
+      date: "2026-12-30",
+    });
   });
 });

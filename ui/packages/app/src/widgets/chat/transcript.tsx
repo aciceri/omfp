@@ -5,13 +5,16 @@
  * container, S-11) and the transcript-scope `nav.*` commands (UI-095): `j`/`k` page through an item taller than the
  * viewport before moving on (UI-370), `Ctrl-d`/`Ctrl-u` and PageDown/PageUp scroll and keep the focus while the
  * focused item shows (UI-371). Every scroll is instant, so no motion setting changes them. A user message offers
- * "Fork from here" (UI-660), and `:fork` forks from the current message (UI-663).
+ * "Fork from here" (UI-660), and `:fork` forks from the current message (UI-663). A message sent on another day than
+ * the one before it shows a day separator inside its item, so `j`/`k` never stop on one (UI-750).
  */
 
 import type { ThreadState } from "@omfp/core";
 import { Button, Icon, SearchField } from "omfp/kit";
 import {
   arrivalScroll,
+  type DayMark,
+  daySeparator,
   halfPageScrollTop,
   type ItemEdges,
   isScrollUpKey,
@@ -32,6 +35,7 @@ import {
   SCOPE_ATTRIBUTE,
   type ScrollPosition,
   scrollPosition,
+  startOfDay,
   strings,
   type TranscriptItem,
   useAnnounce,
@@ -110,6 +114,22 @@ function useSettledAnnouncements(settled: boolean): void {
 }
 
 /**
+ * The start of today in the local time zone; it moves on just after local midnight, so the day separators' `Today` and
+ * `Yesterday` stay true in a window left open overnight (UI-750).
+ */
+function useToday(): number {
+  const [today, setToday] = useState(() => startOfDay(Date.now()));
+  useEffect(() => {
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    // A second past midnight: a timer never fires early, but the new day must have begun when it does.
+    const timer = setTimeout(() => setToday(startOfDay(Date.now())), tomorrow.getTime() - Date.now() + 1000);
+    return () => clearTimeout(timer);
+  }, [today]);
+  return today;
+}
+
+/**
  * One thread's transcript; mount it with `key={threadId}` so a fresh scroll container never shows another thread's
  * position. `footer` (the pending interactions, UI-070) sits after the list inside the same scroll container.
  */
@@ -185,6 +205,7 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
   // Unmounting (a thread switch) keeps the measured sizes for the next mount.
   useEffect(() => () => setMeasurements(virtualizer.measurementsCache), [setMeasurements, virtualizer]);
   const [current, setCurrent] = useState<number | undefined>(undefined);
+  const today = useToday();
   useSettledAnnouncements(state.settled);
   const threadActions = useThreadActions();
   const reportError = useReportError();
@@ -516,6 +537,7 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
                     content={content}
                     forkIndex={forkIndex(state, row)}
                     onFork={forkAt}
+                    {...(row.kind.type === "message" && row.kind.day !== undefined ? { day: row.kind.day, today } : {})}
                   />
                 </div>
               );
@@ -562,12 +584,38 @@ const Row = memo(function Row({
   content,
   forkIndex,
   onFork,
+  day,
+  today,
 }: {
   cardKey: string;
   content: RowContent;
   forkIndex: number | undefined;
   onFork: (index: number) => void;
+  /** The message's day mark, with the start of today to label it (UI-750). */
+  day?: DayMark;
+  today?: number;
 }) {
+  const separator = day === undefined || today === undefined ? undefined : daySeparator(day, today);
+  const body = rowBody(cardKey, content, forkIndex, onFork);
+  return separator === undefined ? (
+    body
+  ) : (
+    <>
+      {/* biome-ignore lint/a11y/useSemanticElements: an `<hr>` cannot hold the visible day label (UI-750) */}
+      <div className="omfp-day" role="separator" aria-label={separator.label} data-testid="day-separator">
+        <time dateTime={separator.date}>{separator.label}</time>
+      </div>
+      {body}
+    </>
+  );
+});
+
+function rowBody(
+  cardKey: string,
+  content: RowContent,
+  forkIndex: number | undefined,
+  onFork: (index: number) => void,
+): ReactNode {
   switch (content.type) {
     case "message": {
       const actions =
@@ -598,4 +646,4 @@ const Row = memo(function Row({
     case "notice":
       return <NoticeRowView cardKey={cardKey} row={content.row} />;
   }
-});
+}

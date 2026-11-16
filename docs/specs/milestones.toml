@@ -1184,6 +1184,8 @@ requirements = [
   "UI-730",
   # Workspace-wide fuzzy file picker (#57)
   "UI-731",
+  # Day separators in the transcript (#70)
+  "UI-750",
   # Reusable daemon-owned PTY sessions and the copyable terminal widget (#80)
   "TRM-100",
   "TRM-101",

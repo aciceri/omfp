@@ -201,12 +201,16 @@ export {
 } from "../vm/tool-view.ts";
 export {
   type Block as MessageBlock,
+  type DayMark,
+  type DaySeparator,
+  daySeparator,
   type Item as TranscriptItem,
   items as transcriptItems,
   type MessageView,
   type Role as MessageRole,
   type RowContent as TranscriptRowContent,
   rowContent as transcriptRowContent,
+  startOfDay,
 } from "../vm/transcript.ts";
 export {
   messageEntryId,

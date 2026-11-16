@@ -125,6 +125,23 @@
     background: var(--omfp-sel-bg);
   }
 
+  /* A day separator above a message (UI-750): one small muted line, a rule on each side of the day. */
+  .omfp-day {
+    display: flex;
+    gap: var(--omfp-s2);
+    align-items: center;
+    margin-block-end: calc(var(--omfp-msg-gap) / 2);
+    font-size: var(--omfp-fs-2xs);
+    color: var(--omfp-on-surface-variant);
+  }
+
+  .omfp-day::before,
+  .omfp-day::after {
+    content: "";
+    flex: 1 1 0;
+    border-block-start: var(--omfp-bw) solid var(--omfp-rule);
+  }
+
   /* Messages (UI-171): the kit draws the name line and the bars; prose at 70ch (UI-144). */
   .omfp-message {
     font-size: var(--omfp-fs-md);

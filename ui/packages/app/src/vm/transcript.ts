@@ -30,12 +30,27 @@ import { oneLine, prettyJson, type ToolCard, toolCard } from "./tool.ts";
 /**
  * What an item renders: `state.transcript[index]`, `state.notices[index]` or `state.streaming`. A turn runs from a
  * user's message to the next (a steer or follow-up starts one too): an assistant message after the turn's first
- * `continues` it, shown under the first one's name line without its own (UI-470).
+ * `continues` it, shown under the first one's name line without its own (UI-470). A message sent on another day than
+ * the message shown before it carries a `day` mark, shown as a day separator above it (UI-750).
  */
 export type ItemKind =
-  | { readonly type: "message"; readonly index: number; readonly continues: boolean }
+  | {
+      readonly type: "message";
+      readonly index: number;
+      readonly continues: boolean;
+      readonly day: DayMark | undefined;
+    }
   | { readonly type: "notice"; readonly index: number }
   | { readonly type: "streaming"; readonly continues: boolean };
+
+/**
+ * A day separator before a message (UI-750): when the message was sent, and whether it is the transcript's first
+ * message with a send time (its separator shows only when that day is not today).
+ */
+export interface DayMark {
+  readonly at: number;
+  readonly first: boolean;
+}
 
 /** One row of the transcript with a key that stays stable while the transcript grows. */
 export interface Item {
@@ -136,16 +151,26 @@ export function items(state: ThreadState, showXdevNotices = false): readonly Ite
   };
   // Whether the current turn has shown an assistant message (and so its name line) yet.
   let answered = false;
+  // The local day of the last shown message with a send time.
+  let lastDay: number | undefined;
   for (const [index, { message }] of state.transcript.entries()) {
     noticesUpTo(index);
     if (message.role === "toolResult" && message.toolCallId !== undefined && called.has(message.toolCallId)) {
       continue;
     }
+    const at = sentAt(message);
+    const day = at === undefined ? undefined : startOfDay(at);
     const assistant = message.role === "assistant";
     result.push({
       key: `m${index}`,
-      kind: { type: "message", index, continues: assistant && answered },
+      kind: {
+        type: "message",
+        index,
+        continues: assistant && answered,
+        day: at === undefined || day === lastDay ? undefined : { at, first: lastDay === undefined },
+      },
     });
+    lastDay = day ?? lastDay;
     answered = assistant || (answered && message.role !== "user");
   }
   noticesUpTo(Number.POSITIVE_INFINITY);
@@ -157,6 +182,48 @@ export function items(state: ThreadState, showXdevNotices = false): readonly Ite
   }
   ITEM_LISTS.set(state.transcript, { notices: state.notices, streaming, showXdevNotices, items: result });
   return result;
+}
+
+/** A message's send time (omp's `timestamp`, ms): none when absent or not positive (recorded fixtures zero them). */
+function sentAt(message: AgentMessage): number | undefined {
+  const { timestamp } = message;
+  return typeof timestamp === "number" && Number.isFinite(timestamp) && timestamp > 0 ? timestamp : undefined;
+}
+
+/** The start of the local calendar day holding `at` (ms). */
+export function startOfDay(at: number): number {
+  const date = new Date(at);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+}
+
+/** What a day separator shows: its label and the local date (`YYYY-MM-DD`) for `<time dateTime>`. */
+export interface DaySeparator {
+  readonly label: string;
+  readonly date: string;
+}
+
+/**
+ * The separator a day mark shows at `now` (UI-750), in the local time zone: `Today`, `Yesterday`, else the short
+ * weekday, day and month (`Thu 12 Nov`), with the year when it is not this year's. None for the first message when it
+ * was sent today. `locales` defaults to the user's.
+ */
+export function daySeparator(mark: DayMark, now: number, locales?: Intl.LocalesArgument): DaySeparator | undefined {
+  const day = new Date(startOfDay(mark.at));
+  const today = new Date(startOfDay(now));
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const date = `${String(day.getFullYear()).padStart(4, "0")}-${String(day.getMonth() + 1).padStart(2, "0")}-${String(day.getDate()).padStart(2, "0")}`;
+  if (day.getTime() === today.getTime()) {
+    return mark.first ? undefined : { label: strings.chat.today, date };
+  }
+  if (day.getTime() === yesterday.getTime()) {
+    return { label: strings.chat.yesterday, date };
+  }
+  const year = day.getFullYear() === today.getFullYear() ? {} : { year: "numeric" as const };
+  const label = new Intl.DateTimeFormat(locales, { weekday: "short", day: "numeric", month: "short", ...year }).format(
+    day,
+  );
+  return { label, date };
 }
 
 /** Who wrote a message; `record` for tool results without a visible call, bash executions, summaries, … */

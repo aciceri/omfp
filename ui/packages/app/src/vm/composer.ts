@@ -1,6 +1,7 @@
 /**
- * The composer (UI-060..064): send mode while busy, `/` command completion, key bindings, image attachments, drafts
- * restored after an abort or a failed send, and `Ctrl-C` clearing the draft, then aborting (UI-063).
+ * The composer (UI-060..064): send mode while busy, `/` command completion, `@` file completion (UI-732), key bindings,
+ * image attachments, drafts restored after an abort or a failed send, and `Ctrl-C` clearing the draft, then aborting
+ * (UI-063).
  */
 
 import type { AvailableSlashCommand, ImageContent, ThreadState } from "@omfp/core";
@@ -257,6 +258,94 @@ export function slashSuggestions(draft: string, commands: readonly AvailableSlas
 /** The draft text after picking `suggestion`. */
 export function complete(suggestion: Suggestion): string {
   return `/${suggestion.name} `;
+}
+
+/** What ends a `@` file mention before the caret, as in omp's TUI editor: whitespace, quotes and `=`. */
+const MENTION_DELIMITER = /[\s"'=]/;
+
+/** A `@` file mention being typed: `text.slice(start, end)` is replaced when a file is picked (UI-732). */
+export interface FileMention {
+  /** The index of the `@`. */
+  readonly start: number;
+  /** The caret. */
+  readonly end: number;
+  /** The fuzzy query typed after `@` (or `@"`). */
+  readonly query: string;
+  /** Typed as `@"…`: the picked path is quoted, as omp's TUI does. */
+  readonly quoted: boolean;
+}
+
+/**
+ * The `@` file mention ending at `caret` (UI-732), as omp's TUI finds it: the `@` starts a token (at the line's start or
+ * after a space, a quote or `=`, so an e-mail address is no mention), the query runs to the caret; `@"` opens a quoted
+ * one, which may contain spaces until its closing quote.
+ */
+export function fileMention(text: string, caret: number): FileMention | undefined {
+  const end = Math.min(Math.max(caret, 0), text.length);
+  const lineStart = text.lastIndexOf("\n", end - 1) + 1;
+  const line = text.slice(lineStart, end);
+  let quote: number | undefined;
+  for (let index = 0; index < line.length; index += 1) {
+    if (line[index] === '"') {
+      quote = quote === undefined ? index : undefined;
+    }
+  }
+  if (
+    quote !== undefined &&
+    line[quote - 1] === "@" &&
+    (quote === 1 || MENTION_DELIMITER.test(line[quote - 2] ?? ""))
+  ) {
+    return { start: lineStart + quote - 1, end, query: line.slice(quote + 1), quoted: true };
+  }
+  let tokenStart = line.length;
+  while (tokenStart > 0 && !MENTION_DELIMITER.test(line[tokenStart - 1] ?? "")) {
+    tokenStart -= 1;
+  }
+  return line[tokenStart] === "@"
+    ? { start: lineStart + tokenStart, end, query: line.slice(tokenStart + 1), quoted: false }
+    : undefined;
+}
+
+/**
+ * The text after picking the workspace-relative `path` for `mention`, with the caret after it (UI-732): `@path ` as
+ * omp's TUI inserts it, so omp reads the file into the prompt's context (`@"path" ` when the path has a space or the
+ * mention was quoted); the text after the caret stays.
+ */
+export function completeFile(text: string, mention: FileMention, path: string): { text: string; caret: number } {
+  const inserted = mention.quoted || path.includes(" ") ? `@"${path}" ` : `@${path} `;
+  return {
+    text: `${text.slice(0, mention.start)}${inserted}${text.slice(mention.end)}`,
+    caret: mention.start + inserted.length,
+  };
+}
+
+/**
+ * Whether `path` still matches `query` as `workspaces.find_file { fuzzy: true }` does (a case-insensitive subsequence,
+ * whitespace ignored): narrows the last answer while the next one is on its way (UI-732).
+ */
+export function fuzzyMatches(query: string, path: string): boolean {
+  const lower = path.toLowerCase();
+  let at = 0;
+  for (const letter of query.toLowerCase()) {
+    if (/\s/.test(letter)) {
+      continue;
+    }
+    const found = lower.indexOf(letter, at);
+    if (found < 0) {
+      return false;
+    }
+    at = found + letter.length;
+  }
+  return true;
+}
+
+/**
+ * The file suggestions for `query` (UI-732): the answer's paths when it was for `query`, else those of an older
+ * answer still matching it; at most {@link MAX_SUGGESTIONS}.
+ */
+export function fileSuggestions(query: string, answer: { query: string; paths: readonly string[] }): string[] {
+  const paths = answer.query === query ? answer.paths : answer.paths.filter((path) => fuzzyMatches(query, path));
+  return paths.slice(0, MAX_SUGGESTIONS);
 }
 
 /** The commands of a `thread.commands` result (`{ commands }`), for a thread whose state has none yet. */

@@ -7,10 +7,11 @@ import userEvent from "@testing-library/user-event";
 import { createKeyHandler } from "../../../src/keymap/handler.ts";
 import { DEFAULT_BINDINGS } from "../../../src/keymap/keymap.ts";
 import { draftKey, FOCUS_COMPOSER, type OmfpHost, SELECTED_THREAD } from "../../../src/sdk/index.ts";
+import { FILE_QUERY_DELAY_MS } from "../../../src/widgets/chat/completion.tsx";
 import { ChatWidget, ComposerWidget } from "../../../src/widgets/chat/index.ts";
 import { PointerMedia } from "../../support/pointer.ts";
 import { installResizeObserver, resize } from "../../support/resize.ts";
-import { eventsUntil, fixtureEvents, isFrame } from "./fixtures.ts";
+import { candidates, eventsUntil, fixtureEvents, isFrame } from "./fixtures.ts";
 import { ManualClock, renderThread, THREAD } from "./harness.tsx";
 
 let removeKeymap: (() => void) | undefined;
@@ -36,6 +37,9 @@ function press(key: string, init: KeyboardEventInit = {}): void {
 }
 
 const input = () => screen.getByTestId("composer-input") as HTMLTextAreaElement;
+
+/** The `workspaces.find_file` params of a `@query` in {@link THREAD}'s composer (UI-732). */
+const findFile = (query: string) => ({ workspaceId: "01W", query, fuzzy: true, threadId: THREAD });
 
 /** The thread right after the follow-up was queued: busy, one chip. */
 function queuedEvents(): ThreadEvent[] {
@@ -127,6 +131,86 @@ describe("composer", () => {
         .getAllByTestId("slash-suggestion")
         .map((item) => item.textContent),
     ).toEqual(["/compact"]);
+  });
+
+  // spec: UI-732
+  test("`@` asks find_file fuzzily once typing pauses; Tab inserts the workspace-relative `@path `", async () => {
+    const clock = new ManualClock(1_000);
+    const { client } = renderThread(<ComposerWidget />, fixtureEvents("text_reply"), clock);
+    await userEvent.click(input());
+    await userEvent.keyboard("look at @ma");
+    expect(client.callsTo("workspaces.find_file")).toHaveLength(0);
+    act(() => clock.advance(FILE_QUERY_DELAY_MS));
+    const [found, ...more] = client.callsTo("workspaces.find_file");
+    expect([found?.params, more.length]).toEqual([findFile("ma"), 0]);
+    await act(async () => found?.resolve(candidates("src/main.rs", "docs/manual.md")));
+    const menu = await screen.findByTestId("file-suggestions");
+    expect(
+      within(menu)
+        .getAllByTestId("file-suggestion")
+        .map((item) => item.textContent),
+    ).toEqual(["@src/main.rs", "@docs/manual.md"]);
+    await userEvent.keyboard("{Tab}");
+    expect(input().value).toBe("look at @src/main.rs ");
+    expect(screen.queryByTestId("file-suggestions")).toBeNull();
+    await userEvent.keyboard("please{Enter}");
+    expect(client.callsTo("thread.prompt").map((call) => call.params)).toEqual([
+      { threadId: THREAD, text: "look at @src/main.rs please" },
+    ]);
+  });
+
+  // spec: UI-732
+  test("an answer to an older `@` query is dropped; the last one, narrowed, shows meanwhile; Esc closes the menu", async () => {
+    const clock = new ManualClock(1_000);
+    const { client } = renderThread(<ComposerWidget />, fixtureEvents("text_reply"), clock);
+    await userEvent.click(input());
+    await userEvent.keyboard("@s");
+    act(() => clock.advance(FILE_QUERY_DELAY_MS));
+    await act(async () => client.callsTo("workspaces.find_file")[0]?.resolve(candidates("src/lib.rs", "src/main.rs")));
+    await userEvent.keyboard("m");
+    act(() => clock.advance(FILE_QUERY_DELAY_MS));
+    await userEvent.keyboard("a");
+    // The answer to `sm` comes after `sma` was typed: dropped.
+    await act(async () => client.callsTo("workspaces.find_file")[1]?.resolve(candidates("stale/sm.rs")));
+    const items = () =>
+      within(screen.getByTestId("file-suggestions"))
+        .getAllByTestId("file-suggestion")
+        .map((item) => item.textContent);
+    expect(items()).toEqual(["@src/main.rs"]);
+    act(() => clock.advance(FILE_QUERY_DELAY_MS));
+    expect(client.callsTo("workspaces.find_file").map((call) => call.params)).toEqual([
+      findFile("s"),
+      findFile("sm"),
+      findFile("sma"),
+    ]);
+    await act(async () => client.callsTo("workspaces.find_file")[2]?.resolve(candidates("src/main.rs", "sma.txt")));
+    expect(items()).toEqual(["@src/main.rs", "@sma.txt"]);
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByTestId("file-suggestions")).toBeNull();
+    expect(input().value).toBe("@sma");
+  });
+
+  // spec: UI-732, UI-060
+  test("`/` commands keep their menu, `@` inside a word asks for nothing, `@` after a command's space completes files", async () => {
+    const clock = new ManualClock(1_000);
+    const { client } = renderThread(<ComposerWidget />, fixtureEvents("text_reply"), clock);
+    await userEvent.click(input());
+    await userEvent.keyboard("/secu");
+    act(() => clock.advance(FILE_QUERY_DELAY_MS));
+    expect(await screen.findByTestId("slash-suggestions")).toBeDefined();
+    await userEvent.keyboard("{Tab}");
+    expect(input().value).toBe("/security ");
+    await userEvent.keyboard("mail me@exa");
+    act(() => clock.advance(FILE_QUERY_DELAY_MS));
+    expect(client.callsTo("workspaces.find_file")).toHaveLength(0);
+    await userEvent.keyboard(" @rea");
+    act(() => clock.advance(FILE_QUERY_DELAY_MS));
+    await act(async () => client.callsTo("workspaces.find_file")[0]?.resolve(candidates("README.md")));
+    const menu = await screen.findByTestId("file-suggestions");
+    expect(within(menu).getAllByTestId("file-suggestion")[0]?.textContent).toBe("@README.md");
+    expect(screen.queryByTestId("slash-suggestions")).toBeNull();
+    await userEvent.keyboard("{Tab}");
+    expect(input().value).toBe("/security mail me@exa @README.md ");
   });
   // spec: UI-693
   test("active work is named and timed above the composer, with the one Abort action", async () => {
@@ -227,6 +311,31 @@ describe("composer", () => {
       { threadId: THREAD, text: "chord", behavior: "followUp" },
     ]);
     expect(screen.getByTestId("send").dataset.mode).toBe("steer");
+  });
+
+  // spec: UI-732, UI-061
+  test("with the `@` menu open on a busy thread, ctrl+q and ctrl+enter still queue, shift+enter too", async () => {
+    const clock = new ManualClock(1_000);
+    const { client } = renderThread(<ComposerWidget />, busyEvents(), clock);
+    await userEvent.click(input());
+    const openMenu = async (typed: string) => {
+      await userEvent.keyboard(typed);
+      act(() => clock.advance(FILE_QUERY_DELAY_MS));
+      const calls = client.callsTo("workspaces.find_file");
+      await act(async () => calls[calls.length - 1]?.resolve(candidates("src/main.rs")));
+      await screen.findByTestId("file-suggestions");
+    };
+    await openMenu("see @ma");
+    await userEvent.keyboard("{Control>}q{/Control}");
+    await openMenu("then @ma");
+    await userEvent.keyboard("{Control>}{Enter}{/Control}");
+    await openMenu("last @ma");
+    await userEvent.keyboard("{Shift>}{Enter}{/Shift}");
+    expect(client.callsTo("thread.prompt").map((call) => call.params)).toEqual([
+      { threadId: THREAD, text: "see @ma", behavior: "followUp" },
+      { threadId: THREAD, text: "then @ma", behavior: "followUp" },
+      { threadId: THREAD, text: "last @ma", behavior: "followUp" },
+    ]);
   });
 
   // spec: UI-172, UI-098

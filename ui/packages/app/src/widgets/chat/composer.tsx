@@ -1,10 +1,10 @@
 /**
  * `omfp:composer`: queue chips (UI-062) and the composer (UI-060..064) of the selected thread. Multi-line input with
- * image paste/drop, large pastes as chips (UI-357..UI-360), `/` command completion (React Aria `Autocomplete` +
- * `TextArea` + `Menu` in a non-modal `Popover`, S-11), the send mode on the send button, Esc leaving the composer
- * (never aborting), `Ctrl-C` clearing the draft (restored by `u`) then aborting without restoring the queue (UI-063),
- * `thread.abort` restoring it (the Abort button, `Ctrl-C` in normal mode, UI-368), and drafts per thread. With no
- * thread selected, the composer of the draft thread (UI-023): its first message creates the thread.
+ * image paste/drop, large pastes as chips (UI-357..UI-360), `/` command and `@` file completion (React Aria
+ * `Autocomplete` + `TextArea` + `Menu` in a non-modal `Popover`, S-11, UI-732), the send mode on the send button, Esc
+ * leaving the composer (never aborting), `Ctrl-C` clearing the draft (restored by `u`) then aborting without restoring
+ * the queue (UI-063), `thread.abort` restoring it (the Abort button, `Ctrl-C` in normal mode, UI-368), and drafts per
+ * thread. With no thread selected, the composer of the draft thread (UI-023): its first message creates the thread.
  */
 
 import type { AvailableSlashCommand, ImageContent } from "@omfp/core";
@@ -17,9 +17,6 @@ import {
   IconButton,
   Kbd,
   Composer as KitComposer,
-  Menu,
-  MenuItem,
-  Popover,
   StateMark,
   TextArea,
   type TextAreaProps,
@@ -32,12 +29,14 @@ import {
   canAbort,
   commandsOf,
   complete,
+  completeFile,
   DRAFT_MESSAGE,
   DRAFT_THREAD,
   type DraftThread,
   draftKey,
   EMPTY_DRAFT,
   expandPastes,
+  type FileMention,
   FOCUS_COMPOSER,
   formatDuration,
   INTERRUPT_WINDOW_MS,
@@ -58,7 +57,6 @@ import {
   restoreFailedPrompt,
   SCOPE_ATTRIBUTE,
   type SendMode,
-  type Suggestion,
   sendMode,
   slashSuggestions,
   strings,
@@ -68,6 +66,7 @@ import {
   useHost,
   useThread,
   useThreadActions,
+  useThreadSummary,
   useWindowState,
 } from "omfp/sdk";
 import {
@@ -82,6 +81,16 @@ import {
   useState,
 } from "react";
 import { Attachments } from "./attachments.tsx";
+import {
+  type Completion,
+  CompletionMenu,
+  type Cursor,
+  completionKey,
+  completionsOf,
+  cursorOf,
+  mentionAt,
+  useFileSuggestions,
+} from "./completion.tsx";
 import { usePromptHistory } from "./history.ts";
 import { useLineKeys } from "./line-keys.ts";
 import { LiveVoicePanel, MicButton } from "./live.tsx";
@@ -137,7 +146,7 @@ export function ComposerWidget(_props: WidgetProps) {
 /**
  * The draft thread's composer (UI-023): Enter (or the button) creates the thread with the text as first message; the
  * text stays when that fails. It takes the focus whenever the draft is opened; Esc leaves it, discarding an empty
- * draft.
+ * draft. `@` completes the draft workspace's files (UI-732); with no thread yet there are no `/` commands.
  */
 function DraftComposer({ draft }: { draft: DraftThread }) {
   const actions = useThreadActions();
@@ -171,12 +180,34 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
   };
   useFocusCommands(inputRef, leave);
   const pastes = usePastes(message, setMessage, inputRef);
-  useLineKeys(inputRef, pastes.onChange, message.pastes);
+  /** Esc closed the suggestions; typing opens them again. */
+  const [dismissed, setDismissed] = useState(false);
+  const [cursor, setCursor] = useState<Cursor>();
+  const mention = mentionAt(message.text, cursor);
+  const completions = completionsOf([], useFileSuggestions(draft.workspaceId, undefined, mention?.query));
+  const open = completions.length > 0 && !dismissed;
+  const typed = (value: string) => {
+    pastes.onChange(value);
+    if (inputRef.current !== null) {
+      setCursor(cursorOf(inputRef.current));
+    }
+    setDismissed(false);
+  };
+  useLineKeys(inputRef, typed, message.pastes);
+  const pick = (completion: Completion) => {
+    if (completion.kind === "file" && mention !== undefined) {
+      setCursor(insertFile(inputRef.current, message.text, mention, completion.path, pastes.onChange));
+    }
+    setDismissed(false);
+  };
   const onKeyDownCapture = (event: KeyboardEvent<HTMLElement>) => {
     if (event.target !== inputRef.current || event.nativeEvent.isComposing) {
       return;
     }
     pastes.onKeyDown(event, modifiersOf(event));
+    if (open && completionKey(event, inputRef.current, completions, pick, () => setDismissed(true))) {
+      return;
+    }
     composerKey(event, inputRef.current, { busy: false, touch, onChange: pastes.onChange, send, leave });
   };
   return (
@@ -187,6 +218,11 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
       data-touch={touch || undefined}
       data-workspace-id={draft.workspaceId}
       {...{ [SCOPE_ATTRIBUTE]: "composer" }}
+      onSelect={(event) => {
+        if (event.target === inputRef.current) {
+          setCursor(cursorOf(inputRef.current));
+        }
+      }}
       onSubmit={(event) => {
         event.preventDefault();
         send();
@@ -195,18 +231,34 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
     >
       <KitComposer mode={insert ? "insert" : "normal"}>
         {message.pastes.length > 0 && <PasteChips draft={message} setDraft={setMessage} inputRef={inputRef} />}
-        <ComposerTextArea
-          touch={touch}
-          keys="Enter Alt+Enter Escape"
-          placeholder={labels.placeholder}
-          value={message.text}
-          onChange={pastes.onChange}
-          onFocus={() => setInsert(true)}
-          onBlur={() => setInsert(false)}
-          isReadOnly={sending}
-          inputRef={inputRef}
-          onPaste={pastes.onPaste}
-        />
+        <Autocomplete
+          inputValue={message.text}
+          onInputChange={(value) => {
+            pastes.onChange(value);
+            if (inputRef.current !== null) {
+              setCursor(cursorOf(inputRef.current));
+            }
+            setDismissed(false);
+          }}
+        >
+          <ComposerTextArea
+            touch={touch}
+            keys="Enter Alt+Enter Escape Tab"
+            placeholder={labels.placeholder}
+            onFocus={() => setInsert(true)}
+            onBlur={() => setInsert(false)}
+            isReadOnly={sending}
+            inputRef={inputRef}
+            onPaste={pastes.onPaste}
+          />
+          <CompletionMenu
+            inputRef={inputRef}
+            completions={completions}
+            open={open}
+            onOpenChange={(isOpen) => setDismissed(!isOpen)}
+            pick={pick}
+          />
+        </Autocomplete>
         <ComposerBar hints={touch ? undefined : <KeyHints abortable={false} interruptHint={false} />}>
           <Button
             type="submit"
@@ -292,6 +344,26 @@ function insertLineBreak(input: HTMLTextAreaElement, apply: (text: string) => vo
   input.value = text;
   input.setSelectionRange(selectionStart + 1, selectionStart + 1);
   apply(text);
+}
+
+/**
+ * Picks the workspace-relative `path` for `mention` (UI-732): the text area gets the completed text and the caret after
+ * the inserted `@path ` first, as {@link insertLineBreak} does. Returns the new text and caret.
+ */
+function insertFile(
+  input: HTMLTextAreaElement | null,
+  text: string,
+  mention: FileMention,
+  path: string,
+  apply: (text: string) => void,
+): Cursor {
+  const next = completeFile(text, mention, path);
+  if (input !== null) {
+    input.value = next.text;
+    input.setSelectionRange(next.caret, next.caret);
+  }
+  apply(next.text);
+  return next;
 }
 
 /**
@@ -485,8 +557,13 @@ export const Composer = memo(function Composer({
   const mode = sendMode(busy, queueHeld);
   const other = alternative(mode);
   const commands = useThreadCommands(threadId, known);
-  const suggestions = slashSuggestions(draft.text, commands);
-  const open = suggestions.length > 0 && !dismissed;
+  const commandSuggestions = slashSuggestions(draft.text, commands);
+  /** The text and caret the last edit left: a `@` before the caret asks for files (UI-732). */
+  const [cursor, setCursor] = useState<Cursor>();
+  const mention = commandSuggestions.length > 0 ? undefined : mentionAt(draft.text, cursor);
+  const files = useFileSuggestions(useThreadSummary(threadId)?.workspaceId, threadId, mention?.query);
+  const completions = completionsOf(commandSuggestions, files);
+  const open = completions.length > 0 && !dismissed;
 
   const send = (chosen: SendMode) => {
     if (isBlank(draft) || host.window.get(MODEL_CHANGING).includes(threadId)) {
@@ -531,8 +608,12 @@ export const Composer = memo(function Composer({
     input?.blur();
     nearestTranscript(input)?.focus();
   };
-  const pick = (suggestion: Suggestion) => {
-    setDraft((previous) => ({ ...previous, text: complete(suggestion) }));
+  const pick = (completion: Completion) => {
+    if (completion.kind === "command") {
+      setDraft((previous) => ({ ...previous, text: complete(completion.suggestion) }));
+    } else if (mention !== undefined) {
+      setCursor(insertFile(inputRef.current, draft.text, mention, completion.path, pastes.onChange));
+    }
     setDismissed(false);
   };
   const attach = (files: readonly File[]) => {
@@ -596,6 +677,9 @@ export const Composer = memo(function Composer({
   const history = usePromptHistory(threadId, draft, setDraft, inputRef);
   const typed = (value: string) => {
     pastes.onChange(value);
+    if (inputRef.current !== null) {
+      setCursor(cursorOf(inputRef.current));
+    }
     // Typing ends a history walk; the recalled text stays as the draft (UI-362).
     history.end();
     setDismissed(false);
@@ -615,21 +699,7 @@ export const Composer = memo(function Composer({
     const modifiers = modifiersOf(event);
     pastes.onKeyDown(event, modifiers);
     setQueueHeld(queueModifier(modifiers));
-    if (open && !(event.key === "Enter" && !inputRef.current.hasAttribute("aria-activedescendant"))) {
-      if (event.key === "Tab" && !event.shiftKey) {
-        event.preventDefault();
-        event.stopPropagation();
-        const active = document.getElementById(inputRef.current.getAttribute("aria-activedescendant") ?? "");
-        const name = active?.getAttribute("data-key");
-        const first = suggestions.find((suggestion) => suggestion.name === name) ?? suggestions[0];
-        if (first !== undefined) {
-          pick(first);
-        }
-      } else if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopPropagation();
-        setDismissed(true);
-      }
+    if (open && completionKey(event, inputRef.current, completions, pick, () => setDismissed(true))) {
       return;
     }
     // Up on the first line, Down on the last line: the prompt history (UI-361, UI-362).
@@ -662,6 +732,11 @@ export const Composer = memo(function Composer({
       data-touch={touch || undefined}
       data-tight={tight || undefined}
       {...{ [SCOPE_ATTRIBUTE]: "composer" }}
+      onSelect={(event) => {
+        if (event.target === inputRef.current) {
+          setCursor(cursorOf(inputRef.current));
+        }
+      }}
       onSubmit={(event) => {
         event.preventDefault();
         send(mode);
@@ -697,36 +772,13 @@ export const Composer = memo(function Composer({
             }}
             onPaste={onPaste}
           />
-          <Popover
-            className="omfp-composer__menu"
-            triggerRef={inputRef}
-            isOpen={open}
-            isNonModal
-            placement="top start"
+          <CompletionMenu
+            inputRef={inputRef}
+            completions={completions}
+            open={open}
             onOpenChange={(isOpen) => setDismissed(!isOpen)}
-          >
-            <Menu
-              aria-label={text.commands}
-              data-testid="slash-suggestions"
-              items={suggestions.map((suggestion) => ({ id: suggestion.name, suggestion }))}
-              onAction={(key) => {
-                const chosen = suggestions.find((suggestion) => suggestion.name === key);
-                if (chosen !== undefined) {
-                  pick(chosen);
-                }
-              }}
-            >
-              {({ suggestion }) => (
-                <MenuItem id={suggestion.name} textValue={`/${suggestion.name}`} data-testid="slash-suggestion">
-                  <span className="omfp-composer__command">/{suggestion.name}</span>
-                  {suggestion.hint !== undefined && <span className="omfp-composer__hint"> {suggestion.hint}</span>}
-                  {suggestion.description !== undefined && (
-                    <span className="omfp-composer__description"> {suggestion.description}</span>
-                  )}
-                </MenuItem>
-              )}
-            </Menu>
-          </Popover>
+            pick={pick}
+          />
         </Autocomplete>
         <ComposerActions
           threadId={threadId}

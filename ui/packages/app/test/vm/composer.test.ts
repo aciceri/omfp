@@ -8,6 +8,10 @@ import {
   canAbort,
   commandsOf,
   complete,
+  completeFile,
+  fileMention,
+  fileSuggestions,
+  fuzzyMatches,
   INTERRUPT_WINDOW_MS,
   imageAttachment,
   interruptAction,
@@ -211,6 +215,46 @@ describe("composer", () => {
     const compact: AvailableSlashCommand = { name: "compact", source: "builtin" };
     expect(commandsOf({ commands: [compact, { nope: 1 }] })).toEqual([compact]);
     expect(commandsOf(undefined)).toEqual([]);
+  });
+
+  // spec: UI-732
+  test("a `@` at a token's start before the caret is a file mention; one inside a word is not", () => {
+    const at = (text: string, caret = text.length) => fileMention(text, caret);
+    expect(at("@")).toEqual({ start: 0, end: 1, query: "", quoted: false });
+    expect(at("look at @src/ma")).toEqual({ start: 8, end: 15, query: "src/ma", quoted: false });
+    expect(at("first\n@rea")).toEqual({ start: 6, end: 10, query: "rea", quoted: false });
+    expect(at("key=@conf")).toEqual({ start: 4, end: 9, query: "conf", quoted: false });
+    expect(at('see @"my fi')).toEqual({ start: 4, end: 11, query: "my fi", quoted: true });
+    expect(at('say "hi @src')).toEqual({ start: 8, end: 12, query: "src", quoted: false });
+    // The caret, not the text's end, ends the query.
+    expect(at("@src/main.rs tail", 4)).toEqual({ start: 0, end: 4, query: "src", quoted: false });
+    expect(at("mail me@example.com")).toBeUndefined();
+    expect(at("@src/main.rs done")).toBeUndefined();
+    expect(at('@"a b" c')).toBeUndefined();
+    expect(at("plain text")).toBeUndefined();
+    expect(at("")).toBeUndefined();
+  });
+
+  // spec: UI-732
+  test("picking a file inserts `@path ` as omp's TUI does, quoted with a space, keeping the text after the caret", () => {
+    const pick = (text: string, caret: number, path: string) => {
+      const mention = fileMention(text, caret);
+      return mention === undefined ? undefined : completeFile(text, mention, path);
+    };
+    expect(pick("read @ma", 8, "src/main.rs")).toEqual({ text: "read @src/main.rs ", caret: 18 });
+    expect(pick("read @ma and more", 8, "src/main.rs")).toEqual({ text: "read @src/main.rs  and more", caret: 18 });
+    expect(pick("@not", 4, "docs/my notes.md")).toEqual({ text: '@"docs/my notes.md" ', caret: 20 });
+    expect(pick('@"rea', 5, "README.md")).toEqual({ text: '@"README.md" ', caret: 13 });
+  });
+
+  // spec: UI-732
+  test("file suggestions: the answer for the query, else the older answer narrowed as find_file fuzzy matches", () => {
+    const paths = ["src/main.rs", "src/lib.rs", "README.md", ...Array.from({ length: 10 }, (_, i) => `f${i}.ts`)];
+    expect(fileSuggestions("src", { query: "src", paths })).toEqual(paths.slice(0, 8));
+    expect(fileSuggestions("smain", { query: "s", paths })).toEqual(["src/main.rs"]);
+    expect(fileSuggestions("RE ad", { query: "r", paths })).toEqual(["README.md"]);
+    expect(fuzzyMatches("SRCLIB", "src/lib.rs")).toBe(true);
+    expect(fuzzyMatches("bil", "src/lib.rs")).toBe(false);
   });
 
   // spec: UI-063

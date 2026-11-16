@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { OMP_VERSION, replay, type ThreadEvent, type ThreadState } from "@omfp/core";
-import type { ThreadSummary } from "@omfp/protocol";
+import type { FileCandidates, ThreadSummary } from "@omfp/protocol";
 import { isObject } from "../../../src/sdk/json.ts";
 
 export type FixtureName =
@@ -95,6 +95,11 @@ export function summary(id: string, settled = true): ThreadSummary {
     updatedAt: 1,
     position: 0,
   };
+}
+
+/** A `workspaces.find_file { fuzzy: true }` answer naming `paths`, best first (UI-732). */
+export function candidates(...paths: string[]): FileCandidates {
+  return { candidates: paths.map((path) => ({ path, match: "fuzzy" })) };
 }
 
 /** What {@link priced} makes a fixture's model calls cost: the fake model has no price, so the recorded ones cost 0. */

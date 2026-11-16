@@ -140,7 +140,9 @@ queue a follow-up for after the turn instead. Alt-Enter adds a line. A paste of 
 characters becomes a chip (`Pasted text #1 · 120 lines`) and a `[Paste #1, +120 lines]` token, expanded when the
 message is sent; `Ctrl-Shift-v` (`Cmd-Shift-v` on macOS) pastes it as plain text instead. `Up` with the caret on the
 composer's first line recalls the prompts you sent (this thread's first, then its workspace's, then every other, newest
-first within each); `Down` on the last line goes back and, past the newest, restores what you had typed.
+first within each); `Down` on the last line goes back and, past the newest, restores what you had typed. `@` and part
+of a path suggest the workspace's files (fuzzy, like `Space f`); Tab or Enter inserts `@<path>`, which omp reads into
+the prompt's context.
 
 The composer also takes readline's line-editing keys in insert mode (commands `composer.*`): `Ctrl-a` / `Ctrl-e`
 start / end of the line, `Ctrl-b` / `Ctrl-f` a character back / forward, `Alt-b` / `Alt-f` a word back / forward,

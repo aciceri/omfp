@@ -99,6 +99,35 @@ describe("draft thread", () => {
     await waitFor(() => expect(screen.getByTestId("send").hasAttribute("disabled")).toBe(false));
   });
 
+  // spec: UI-732, UI-023
+  test("`@` completes the draft workspace's files; Enter on the highlighted file inserts it instead of sending", async () => {
+    const { client, user } = setup();
+    await user.type(screen.getByTestId("composer-input"), "explain @rea");
+    await waitFor(() => expect(client.callsTo("workspaces.find_file")).toHaveLength(1));
+    expect(client.callsTo("workspaces.find_file")[0]?.params).toEqual({ workspaceId: "w1", query: "rea", fuzzy: true });
+    await act(async () =>
+      client.callsTo("workspaces.find_file")[0]?.resolve({
+        candidates: [
+          { path: "README.md", match: "fuzzy" },
+          { path: "fe/README.md", repo: "fe", match: "fuzzy" },
+        ],
+      }),
+    );
+    const menu = await screen.findByTestId("file-suggestions");
+    expect(
+      within(menu)
+        .getAllByTestId("file-suggestion")
+        .map((item) => item.textContent),
+    ).toEqual(["@README.md", "@fe/README.md"]);
+    await user.keyboard("{ArrowDown}{Enter}");
+    expect(screen.getByTestId("composer-input")).toHaveProperty("value", "explain @fe/README.md ");
+    expect(client.callsTo("threads.create")).toHaveLength(0);
+    await user.keyboard("{Enter}");
+    expect(client.callsTo("threads.create").map((call) => call.params)).toEqual([
+      { workspace: { id: "w1" }, prompt: "explain @fe/README.md" },
+    ]);
+  });
+
   // spec: UI-023, UI-030, UI-064
   test("a failed first prompt selects the surviving thread and retries its full draft without creating another", async () => {
     const { client, host, user, flush } = setup();

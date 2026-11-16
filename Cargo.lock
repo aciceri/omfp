@@ -2910,6 +2910,7 @@ dependencies = [
  "omfp-daemon",
  "omfp-protocol",
  "png",
+ "rusqlite",
  "rustix",
  "serde_json",
  "tauri",

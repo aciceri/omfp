@@ -751,7 +751,7 @@ fn matrix_bmp(red: bool) -> Vec<u8> {
     bytes
 }
 
-// spec: TST-033, UI-115, UI-541, UI-542, UI-543, UI-544, UI-545, UI-546, UI-547, UI-548, UI-549, UI-551, UI-553, UI-560, UI-561, UI-562, UI-563, UI-567
+// spec: TST-033, UI-115, UI-250, UI-541, UI-542, UI-543, UI-544, UI-545, UI-546, UI-547, UI-548, UI-549, UI-551, UI-553, UI-560, UI-561, UI-562, UI-563, UI-567
 #[expect(
     clippy::too_many_lines,
     reason = "the fixture matrix shares one daemon and one persistent webview store"

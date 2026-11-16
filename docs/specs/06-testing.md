@@ -158,10 +158,11 @@ The Linux window process has an outer deadline so a blocked WebKit event loop fa
 
 The desktop viewer matrix opens and restores MP4/H.264, WebM, Ogg video, Matroska/APV, WAV, MP3, Ogg Vorbis, Opus,
 FLAC and M4A/AAC, a two-page PDF, PNG, JPEG, GIF, WebP and a large image, Markdown and MDX, CSV and TSV, and JSON, JSONC and
-YAML. Media must play or show UI-542; PDF text, zoom and page navigation, large-image zoom, pan and HEAD comparison,
-and Markdown relative images and links are exercised in the real desktop webview. Each restored tab is closed and
-removed from storage, then opened and closed again before the next file. macOS retains its temporary WebKit store across
-the launches and removes it afterwards.
+YAML, in WebKitGTK (`test-desktop`) and in WKWebView (`macos`, TST-092). Media must play or show UI-542; PDF text,
+zoom and page navigation, large-image zoom, pan and HEAD comparison, and Markdown relative images and links are
+exercised in the real desktop webview. Each restored tab is closed and removed from storage, then opened and closed
+again before the next file; every phase reads the state the previous window left in storage, so a write the window's
+exit loses (UI-250) fails it. macOS retains its temporary WebKit store across the launches and removes it afterwards.
 
 ## End-to-end scenarios (L5)
 

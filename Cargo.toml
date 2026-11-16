@@ -76,8 +76,9 @@ tauri-build = { version = "2.7", default-features = false }
 # GTK3 stack already builds (no zbus).
 gio = "0.18"
 # macOS desktop (M11): posts the window's notifications (UI-252) with Foundation's `NSUserNotificationCenter`,
-# registers the app icon (UI-222) with AppKit's `NSImage` and reads the system accent (UI-512) with `NSColor`; the
-# versions wry already builds, only the classes we call.
+# registers the app icon (UI-222) with AppKit's `NSImage`, reads the system accent (UI-512) with `NSColor` and finds
+# the window's WebKit storage under `NSHomeDirectory` (UI-250); the versions wry already builds, only the classes we
+# call.
 objc2 = { version = "0.6", default-features = false, features = ["std"] }
 objc2-app-kit = { version = "0.3.2", default-features = false, features = [
   "std",
@@ -89,6 +90,7 @@ objc2-app-kit = { version = "0.3.2", default-features = false, features = [
 objc2-foundation = { version = "0.3.2", default-features = false, features = [
   "std",
   "NSData",
+  "NSPathUtilities",
   "NSString",
   "NSUserNotification",
 ] }

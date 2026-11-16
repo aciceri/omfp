@@ -5,7 +5,8 @@
 
 use std::fmt::Write as _;
 use std::hash::{BuildHasher as _, Hasher as _, RandomState};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 #[cfg(target_os = "macos")]
 use std::ffi::OsString;
@@ -47,6 +48,79 @@ fn random_bytes() -> [u8; 16] {
     id[..8].copy_from_slice(&random());
     id[8..].copy_from_slice(&random());
     id
+}
+
+/// The app's bundle identifier (the embedded Info.plist's), the directory `WebKit` keeps its data stores under.
+const BUNDLE_ID: &str = "dev.omfp.desktop";
+
+/// How long the window's exit waits at most for `WebKit` to commit the page's `localStorage` (UI-250).
+#[cfg(target_os = "macos")]
+const STORAGE_COMMIT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// The `localStorage` databases of the data store `id` (UI-250) in the user's `library` (`~/Library`, whatever
+/// `HOME` says): `WebKit` keeps the store in `WebKit/<bundle id>/WebsiteDataStore/<id as a UUID>/`, one database per
+/// origin in `Origins/<top-level origin>/<origin>/LocalStorage/localstorage.sqlite3`.
+pub fn local_storage_databases(library: &Path, id: &[u8; 16]) -> Vec<PathBuf> {
+    let hex = id.iter().fold(String::new(), |mut hex, byte| {
+        let _ = write!(hex, "{byte:02x}");
+        hex
+    });
+    let uuid = format!(
+        "{}-{}-{}-{}-{}",
+        &hex[..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..]
+    );
+    let entries = |dir: &Path| {
+        std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .map(|entry| entry.path())
+            .collect::<Vec<_>>()
+    };
+    let origins = library
+        .join("WebKit")
+        .join(BUNDLE_ID)
+        .join("WebsiteDataStore")
+        .join(uuid)
+        .join("Origins");
+    entries(&origins)
+        .iter()
+        .flat_map(|top| entries(top))
+        .map(|origin| origin.join("LocalStorage/localstorage.sqlite3"))
+        .filter(|database| database.is_file())
+        .collect()
+}
+
+/// Waits until no transaction holds `database` for writing, at most `timeout` (UI-250). `WebKit`'s network process
+/// keeps the page's `localStorage` writes in a SQLite transaction that it commits 500 ms after the first one; the
+/// process ends with the app, so a write still pending then (a tab closed just before the window) was lost. Taking
+/// and releasing the write lock waits for that commit and changes nothing.
+pub fn wait_for_commit(database: &Path, timeout: Duration) -> rusqlite::Result<()> {
+    let connection = rusqlite::Connection::open_with_flags(
+        database,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE,
+    )?;
+    connection.busy_timeout(timeout)?;
+    connection.execute_batch("BEGIN IMMEDIATE; ROLLBACK;")
+}
+
+/// At the window's exit (UI-250): waits for `WebKit` to commit the `localStorage` of the data store `id`, which the
+/// app's end would otherwise cut off ([`wait_for_commit`]).
+#[cfg(target_os = "macos")]
+pub fn commit_local_storage(id: &[u8; 16]) {
+    let library = PathBuf::from(objc2_foundation::NSHomeDirectory().to_string()).join("Library");
+    for database in local_storage_databases(&library, id) {
+        if let Err(error) = wait_for_commit(&database, STORAGE_COMMIT_TIMEOUT) {
+            eprintln!(
+                "omfp desktop: the window's storage may miss its last changes ({}): {error}",
+                database.display()
+            );
+        }
+    }
 }
 
 /// The secret of a window's notifications (DMN-182): only its own [`notification_script`] knows it, so a frame of
@@ -446,6 +520,67 @@ mod tests {
             std::fs::read(first.join(STORE_ID)).unwrap(),
             replaced.to_vec()
         );
+    }
+
+    // spec: UI-250
+    #[test]
+    fn the_local_storage_databases_are_the_stores_per_origin() {
+        let library = tempfile::tempdir().unwrap();
+        let id = *b"\xe0\xc8\x6d\x81\x95\x36\x63\xb5\x94\x0c\x36\xf6\x23\x71\x52\x1f";
+        let store = library.path().join(
+            "WebKit/dev.omfp.desktop/WebsiteDataStore/e0c86d81-9536-63b5-940c-36f62371521f/Origins",
+        );
+        let daemon = store.join("top/daemon/LocalStorage");
+        let frame = store.join("top/frame/LocalStorage");
+        std::fs::create_dir_all(&daemon).unwrap();
+        std::fs::create_dir_all(&frame).unwrap();
+        std::fs::create_dir_all(store.join("top/no-storage")).unwrap();
+        std::fs::write(daemon.join("localstorage.sqlite3"), b"").unwrap();
+        std::fs::write(frame.join("localstorage.sqlite3"), b"").unwrap();
+        std::fs::write(frame.join("localstorage.sqlite3-wal"), b"").unwrap();
+        let mut databases = local_storage_databases(library.path(), &id);
+        databases.sort();
+        assert_eq!(
+            databases,
+            [
+                daemon.join("localstorage.sqlite3"),
+                frame.join("localstorage.sqlite3")
+            ]
+        );
+        // Another store's databases are not the window's.
+        assert_eq!(
+            local_storage_databases(library.path(), &[0; 16]),
+            Vec::<PathBuf>::new()
+        );
+    }
+
+    // spec: UI-250
+    #[test]
+    fn the_exit_waits_for_the_pending_local_storage_transaction() {
+        let dir = tempfile::tempdir().unwrap();
+        let database = dir.path().join("localstorage.sqlite3");
+        // WebKit's network process: a write in a transaction it has not committed yet.
+        let webkit = rusqlite::Connection::open(&database).unwrap();
+        webkit
+            .execute_batch(
+                "PRAGMA journal_mode = WAL; CREATE TABLE ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB);",
+            )
+            .unwrap();
+        webkit
+            .execute_batch("BEGIN; INSERT INTO ItemTable VALUES ('omfp.openFiles', '{}');")
+            .unwrap();
+        assert!(wait_for_commit(&database, Duration::from_millis(50)).is_err());
+        webkit.execute_batch("COMMIT;").unwrap();
+        wait_for_commit(&database, Duration::from_millis(50)).unwrap();
+        // The wait leaves the committed data alone.
+        let value: String = webkit
+            .query_row(
+                "SELECT value FROM ItemTable WHERE key = 'omfp.openFiles'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(value, "{}");
     }
 
     // spec: UI-252, DMN-182

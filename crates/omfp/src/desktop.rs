@@ -478,8 +478,10 @@ fn open_window(
     // WKWebView has no web notifications: the daemon's page gets a `Notification` whose notifications the window posts
     // to the system's notification center (UI-252).
     #[cfg(target_os = "macos")]
+    let store = macos::data_store_identifier(webview_data)?;
+    #[cfg(target_os = "macos")]
     let builder = builder
-        .data_store_identifier(macos::data_store_identifier(webview_data)?)
+        .data_store_identifier(store)
         .initialization_script(macos::notification_script(&origin, &nonce));
     // UI-512: the system accent the `accent` theme derives from, which the page cannot read itself.
     #[cfg(target_os = "macos")]
@@ -497,7 +499,15 @@ fn open_window(
             std::env::var("OMFP_SMOKE_WAIT").ok(),
         );
     }
-    Ok(app.run_return(|_, _| {}))
+    Ok(app.run_return(move |_, event| {
+        // UI-250: WKWebView's storage outlives the window only once WebKit has committed it.
+        #[cfg(target_os = "macos")]
+        if matches!(event, tauri::RunEvent::Exit) {
+            macos::commit_local_storage(&store);
+        }
+        #[cfg(not(target_os = "macos"))]
+        let _ = event;
+    }))
 }
 
 /// Whether a navigation of the window's page or of one of its frames loads (DMN-182): the daemon's own pages, documents

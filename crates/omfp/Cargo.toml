@@ -29,6 +29,7 @@ desktop = [
   "dep:objc2-app-kit",
   "dep:objc2-foundation",
   "dep:png",
+  "dep:rusqlite",
 ]
 
 [dependencies]
@@ -48,12 +49,14 @@ tokio-tungstenite.workspace = true
 gio = { workspace = true, optional = true }
 
 # macOS (M11, S-15): the menu bar item through Tauri's tray (tray-icon, AppKit's NSStatusItem); the page's
-# notifications through Foundation's user notification center (UI-252); the app icon through AppKit (UI-222).
+# notifications through Foundation's user notification center (UI-252); the app icon through AppKit (UI-222); the wait
+# for WebKit's `localStorage` commit at exit through SQLite (UI-250, the daemon's rusqlite).
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri = { workspace = true, optional = true, features = ["tray-icon"] }
 objc2 = { workspace = true, optional = true }
 objc2-app-kit = { workspace = true, optional = true }
 objc2-foundation = { workspace = true, optional = true }
+rusqlite = { workspace = true, optional = true }
 
 [build-dependencies]
 png = { workspace = true, optional = true }
@@ -61,6 +64,7 @@ tauri-build = { workspace = true, optional = true }
 
 [dev-dependencies]
 rustix.workspace = true
+rusqlite.workspace = true
 tempfile.workspace = true
 
 [lints]

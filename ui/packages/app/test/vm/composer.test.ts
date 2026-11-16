@@ -15,6 +15,7 @@ import {
   keyAction,
   type Modifiers,
   queueKeys,
+  reasoningPreview,
   restoreCleared,
   restoreDraft,
   restoredTexts,
@@ -49,7 +50,7 @@ describe("composer", () => {
       },
       tools: [],
     };
-    expect(activityOf(thinking)).toEqual({ key: "thinking/live/0", kind: "thinking" });
+    expect(activityOf(thinking)).toEqual({ key: "thinking/live/0", kind: "thinking", preview: "Considering" });
 
     const tool = {
       ...thinking,
@@ -75,6 +76,52 @@ describe("composer", () => {
     });
     expect(activityOf({ ...thinking, streaming: null })).toEqual({ key: "working", kind: "working" });
     expect(activityOf(settled)).toBeUndefined();
+  });
+
+  // spec: UI-693
+  test("live thinking previews its latest readable line as plain text, or falls back without text", () => {
+    const streamed = (blocks: { type: "thinking"; thinking?: string }[]) => ({
+      ...fixture("text_reply"),
+      settled: false,
+      streaming: { message_id: "live", message: { role: "assistant" as const, content: blocks } },
+      tools: [],
+    });
+    expect(
+      activityOf(streamed([{ type: "thinking", thinking: "**Assessing Slack unread activity options**" }])),
+    ).toEqual({ key: "thinking/live/0", kind: "thinking", preview: "Assessing Slack unread activity options" });
+    // Later deltas replace the preview with the latest line; the key (and so the elapsed time) stays.
+    expect(
+      activityOf(
+        streamed([{ type: "thinking", thinking: "**Assessing Slack unread activity options**\n\nThe user wants the" }]),
+      ),
+    ).toEqual({ key: "thinking/live/0", kind: "thinking", preview: "The user wants the" });
+    // The latest thinking block wins over an earlier one.
+    expect(
+      activityOf(
+        streamed([
+          { type: "thinking", thinking: "First" },
+          { type: "thinking", thinking: "Second" },
+        ]),
+      ),
+    ).toEqual({ key: "thinking/live/1", kind: "thinking", preview: "Second" });
+    // No displayable text: the generic fallback, without a preview.
+    expect(activityOf(streamed([{ type: "thinking" }]))).toEqual({ key: "thinking/live/0", kind: "thinking" });
+    expect(activityOf(streamed([{ type: "thinking", thinking: " \n**\n  " }]))).toEqual({
+      key: "thinking/live/0",
+      kind: "thinking",
+    });
+  });
+
+  // spec: UI-693
+  test("the reasoning preview drops Markdown syntax, collapses whitespace and is bounded", () => {
+    expect(reasoningPreview("## Planning   the\tfix\n\n")).toBe("Planning the fix");
+    expect(reasoningPreview("intro\n> - *Check* `cargo` [docs](https://x.y) and __bold__")).toBe(
+      "Check cargo docs and bold",
+    );
+    expect(reasoningPreview("1. Read snake_case_names ~~not~~ _now_")).toBe("Read snake_case_names not now");
+    expect(reasoningPreview("")).toBeUndefined();
+    const long = reasoningPreview(`**${"word ".repeat(100)}**`);
+    expect([long?.length, long?.endsWith("word…")]).toEqual([200, true]);
   });
 
   // spec: UI-061

@@ -24,13 +24,14 @@ export function isBusy(state: ThreadState): boolean {
 }
 /** The compact activity shown over a busy thread's composer (UI-693). */
 export type ThreadActivity =
-  | { readonly key: string; readonly kind: "thinking" }
+  | { readonly key: string; readonly kind: "thinking"; readonly preview?: string }
   | { readonly key: string; readonly kind: "tool"; readonly name: string; readonly intent?: string }
   | { readonly key: "working"; readonly kind: "working" };
 
 /**
- * The most specific live activity known for a busy thread: an executing tool, then its streamed thinking block,
- * otherwise generic work. Settled history has no live activity (UI-693).
+ * The most specific live activity known for a busy thread: an executing tool, then its streamed thinking block (with
+ * a plain-text preview of its latest line when it has one), otherwise generic work. Settled history has no live
+ * activity (UI-693).
  */
 export function activityOf(state: ThreadState): ThreadActivity | undefined {
   if (state.settled) {
@@ -54,12 +55,51 @@ export function activityOf(state: ThreadState): ThreadActivity | undefined {
   const content = streaming?.message.content;
   if (streaming !== null && content !== undefined) {
     for (let index = content.length - 1; index >= 0; index -= 1) {
-      if (content[index]?.type === "thinking") {
-        return { key: `thinking/${streaming.message_id}/${index}`, kind: "thinking" };
+      const block = content[index];
+      if (block?.type === "thinking") {
+        const preview = reasoningPreview(block.thinking ?? "");
+        return {
+          key: `thinking/${streaming.message_id}/${index}`,
+          kind: "thinking",
+          ...(preview === undefined ? {} : { preview }),
+        };
       }
     }
   }
   return { key: "working", kind: "working" };
+}
+
+/** Longest reasoning preview kept; the activity row ellipsizes it further to its width (UI-693). */
+const PREVIEW_MAX = 200;
+
+/**
+ * The latest line of streamed reasoning as one line of plain text: Markdown heading, quote and list markers,
+ * emphasis, code and link syntax dropped, whitespace collapsed, bounded to {@link PREVIEW_MAX} characters. Only the
+ * tail of the text is scanned, so a long block costs no more than its last lines. `undefined` when nothing readable
+ * remains (UI-693).
+ */
+export function reasoningPreview(thinking: string): string | undefined {
+  let end = thinking.length;
+  while (end > 0) {
+    const start = thinking.lastIndexOf("\n", end - 1) + 1;
+    const line = plainLine(thinking.slice(start, end));
+    if (line !== "") {
+      return line.length > PREVIEW_MAX ? `${line.slice(0, PREVIEW_MAX - 1).trimEnd()}…` : line;
+    }
+    end = start - 1;
+  }
+  return undefined;
+}
+
+/** One Markdown line without its syntax, cheaply: no full parse, only the markers a reasoning summary uses. */
+function plainLine(line: string): string {
+  return line
+    .replace(/^\s*(?:#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)*/, "")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/[*`~]+/g, "")
+    .replace(/(^|[^\p{L}\p{N}_])_+|_+(?=[^\p{L}\p{N}_]|$)/gu, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**

@@ -109,7 +109,7 @@ export function ComposerWidget(_props: WidgetProps) {
   const activity = activityOf(state);
   const activityLabel =
     activity?.kind === "thinking"
-      ? text.activity.thinking
+      ? (activity.preview ?? text.activity.thinking)
       : activity?.kind === "tool"
         ? (activity.intent ?? text.activity.tool(activity.name))
         : activity?.kind === "working"

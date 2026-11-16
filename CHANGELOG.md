@@ -15,8 +15,9 @@ Initial release, planned as 0.1.0.
   Multiple windows and devices share one daemon.
 - Workspaces containing repositories, symlinks and git worktrees; reorder workspaces and threads with drag-and-drop
   or keyboard controls, and fork a conversation into a new thread from a message.
-- Streaming conversations with thinking blocks, tool cards and images from tool results; steer a running agent,
-  queue follow-ups, answer approvals and prompts, and see session and subagent costs separately.
+- Streaming conversations with thinking blocks (the latest reasoning line previewed above the composer), tool cards
+  and images from tool results; steer a running agent, queue follow-ups, answer approvals and prompts, and see
+  session and subagent costs separately.
 - Provider login from the app, a first-run welcome screen and live voice conversations through oh-my-pi.
 - Customizable React widgets, live-reloaded layouts and init files, a reusable widget library, background jobs and
   subagent controls. Agents can drive the interface through the daemon protocol or its MCP server.

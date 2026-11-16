@@ -1,7 +1,7 @@
 /** L4: `omfp:composer` (queue chips and composer) over recorded fixtures. */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import type { ThreadEvent } from "@omfp/core";
+import type { JsonObject, ThreadEvent } from "@omfp/core";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createKeyHandler } from "../../../src/keymap/handler.ts";
@@ -143,6 +143,47 @@ describe("composer", () => {
     expect(screen.getAllByTestId("abort").length).toBe(1);
     await userEvent.click(within(activity).getByTestId("abort"));
     expect(client.callsTo("thread.abort").map((call) => call.params)).toEqual([{ threadId: THREAD }]);
+  });
+
+  // spec: UI-693
+  test("streamed reasoning previews its latest line as plain text above the composer until a tool or settling", () => {
+    const update = (assistantMessageEvent: JsonObject): ThreadEvent => ({
+      kind: "omp",
+      frame: { type: "message_update", messageId: "live", message: { role: "assistant" }, assistantMessageEvent },
+    });
+    const { client, flush, host } = renderThread(<ComposerWidget />, [
+      { kind: "omp", frame: { type: "agent_start" } },
+      { kind: "omp", frame: { type: "message_start", messageId: "live", message: { role: "assistant", content: [] } } },
+      update({ type: "thinking_start", contentIndex: 0, block: { type: "thinking", thinking: "" } }),
+    ]);
+    const label = () => screen.getByTestId("activity-label").textContent;
+    const kind = () => screen.getByTestId("composer-activity").dataset.kind;
+    expect([kind(), label()]).toEqual(["thinking", "Thinking…"]);
+    client.threadEvents(THREAD, update({ type: "thinking_delta", contentIndex: 0, delta: "**Assessing Slack" }));
+    flush();
+    expect(label()).toBe("Assessing Slack");
+    client.threadEvents(
+      THREAD,
+      update({
+        type: "thinking_delta",
+        contentIndex: 0,
+        delta: " unread activity options**\n\nThe user wants `unread`",
+      }),
+    );
+    flush();
+    expect(label()).toBe("The user wants unread");
+    // The row is no live region: deltas are not announced.
+    expect(screen.getByTestId("composer-activity").closest("[aria-live], [role='status'], [role='log']")).toBeNull();
+    client.threadEvents(THREAD, {
+      kind: "omp",
+      frame: { type: "tool_execution_start", toolCallId: "c1", toolName: "read", args: {}, intent: "Reading notes" },
+    });
+    flush();
+    expect([kind(), label()]).toEqual(["tool", "Reading notes"]);
+    client.threadEvents(THREAD, { kind: "omp", frame: { type: "session_settled" } });
+    flush();
+    expect(screen.queryByTestId("composer-activity")).toBeNull();
+    expect(host.announcer.getSnapshot().message).not.toContain("Assessing");
   });
 
   // spec: UI-060

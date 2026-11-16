@@ -10,8 +10,10 @@
  *   The other rules are about `ci.yml` only.
  * - TST-072: the Nix store comes from the `omfp` Cachix cache, which only pushes to master fill; the cargo cache is
  *   saved on master only, by the jobs with a target cache; a job without one (the mutation gate's) restores the cache
- *   of a job that saves one; the dev-shell action reports the cargo cache in the job summary; every recipe job hands
- *   the dev-shell action the Cachix token.
+ *   of a job that saves one; the git checkouts are one cache of their own, keyed on Cargo.lock's git sources, filled
+ *   and saved on master by the `dev-shell` job alone, restored by every Rust job and linked into CARGO_HOME after
+ *   rust-cache; the dev-shell action reports the cargo cache in the job summary; every recipe job hands the dev-shell
+ *   action the Cachix token.
  * - TST-073: the web bundle is built once: every job running the e2e or desktop tests needs the `build-web` job and
  *   serves its artifact through `OMFP_WEB_BUNDLE`.
  * - TST-075: before installing Nix, the dev-shell action pools the runner's disk into a Btrfs /nix with
@@ -30,6 +32,7 @@
 import { $ } from "bun";
 
 export interface Step {
+  id?: string;
   uses?: string;
   run?: string;
   if?: string;
@@ -84,6 +87,9 @@ const RUN = /^nix develop -c just ([\w-]+)$/;
 /** The GitHub expression `${{ inner }}`. */
 const expression = (inner: string) => `\${{ ${inner} }}`;
 const ON_MASTER = "github.ref == 'refs/heads/master'";
+const SHELL_JOB = "dev-shell";
+/** The shared cache of the cargo git checkouts (TST-072), the same path on every runner. */
+const CARGO_GIT = "/var/tmp/cargo-git";
 const REQUIRED_GATE = "required";
 const REQUIRED_JOBS = ["check", "test-ts", "test-contract", "test-e2e", "test-desktop", "package", "cov"];
 const REQUIRED_RUN = `jq -e 'all(.[]; .result == "success")' <<<"$RESULTS"`;
@@ -182,7 +188,8 @@ const setupStep = (setup: Action, action: string) =>
   setup.runs.steps.find((step) => step.uses?.startsWith(`${action}@`));
 
 /** TST-072 */
-function checkCaches({ workflow, setup }: Inputs, ranBy: Map<string, string[]>, problems: string[]) {
+function checkCaches(inputs: Inputs, ranBy: Map<string, string[]>, problems: string[]) {
+  const { workflow, setup } = inputs;
   const cachix = setupStep(setup, "cachix/cachix-action");
   if (cachix?.with?.name !== "omfp") problems.push(`${SETUP} must use the omfp Cachix cache`);
   if (cachix?.with?.skipPush !== expression(`!(github.event_name == 'push' && ${ON_MASTER})`)) {
@@ -211,6 +218,7 @@ function checkCaches({ workflow, setup }: Inputs, ranBy: Map<string, string[]>, 
   if (!report.includes("steps.rust-cache.outputs.cache-hit") || !report.includes("$GITHUB_STEP_SUMMARY")) {
     problems.push(`${SETUP} must report the cargo cache's hit and sizes in the job summary`);
   }
+  checkCargoGit(inputs, problems);
   for (const [id, job] of Object.entries(workflow.jobs)) {
     if (id === REQUIRED_GATE) continue;
     const token = job.steps?.find((step) => step.uses === SETUP_USES)?.with?.["cachix-auth-token"];
@@ -225,6 +233,59 @@ function checkCaches({ workflow, setup }: Inputs, ranBy: Map<string, string[]>, 
         `job ${id} must not keep a cargo cache of its own (target-cache: "false"): cargo mutants builds in copies`,
       );
     }
+  }
+}
+
+/** TST-072: the git checkouts are one cache, which the per-job cargo caches leave out. */
+function checkCargoGit({ workflow, setup }: Inputs, problems: string[]) {
+  const steps = setup.runs.steps;
+  const key = expression("steps.cargo-git.outputs.key");
+  const keyStep = steps.find((step) => step.id === "cargo-git");
+  if (!/grep '\^source = "git\+' Cargo\.lock/.test(keyStep?.run ?? "")) {
+    problems.push(`${SETUP} must key the cargo git cache on Cargo.lock's git sources`);
+  }
+  const restore = steps.find((step) => step.uses?.startsWith("actions/cache/restore@"));
+  if (
+    restore?.id !== "cargo-git-cache" ||
+    restore.with?.path !== CARGO_GIT ||
+    restore.with?.key !== key ||
+    restore.if !== "inputs.rust == 'true' || inputs.fill-cargo-git == 'true'"
+  ) {
+    problems.push(`${SETUP} must restore the cargo git cache in every Rust job`);
+  }
+  const saves = steps.filter(
+    (step) => step.uses?.startsWith("actions/cache@") || step.uses?.startsWith("actions/cache/save@"),
+  );
+  const fillIf = `inputs.fill-cargo-git == 'true' && steps.cargo-git-cache.outputs.cache-hit != 'true' && ${ON_MASTER}`;
+  if (
+    saves.length !== 1 ||
+    saves[0]?.uses?.startsWith("actions/cache/save@") !== true ||
+    saves[0].with?.path !== CARGO_GIT ||
+    saves[0].with?.key !== key ||
+    saves[0].if !== fillIf
+  ) {
+    problems.push(`${SETUP} must save the cargo git cache on master only, from the job that fills it`);
+  }
+  const rustCache = steps.findIndex((step) => step.uses?.startsWith("Swatinem/rust-cache@"));
+  const linked = steps.some(
+    (step, index) =>
+      index > rustCache &&
+      step.if === "inputs.rust == 'true'" &&
+      /^git_dir="\$\{CARGO_HOME:-\$HOME\/\.cargo\}\/git"$/m.test(step.run ?? "") &&
+      (step.run ?? "").includes(`ln -sfn ${CARGO_GIT} "$git_dir"`),
+  );
+  if (rustCache === -1 || !linked) {
+    problems.push(
+      `${SETUP} must link CARGO_HOME/git to the cargo git cache after rust-cache, which then leaves it out`,
+    );
+  }
+  const fillers = Object.entries(workflow.jobs)
+    .filter(([, job]) =>
+      job.steps?.some((step) => step.uses === SETUP_USES && step.with?.["fill-cargo-git"] === "true"),
+    )
+    .map(([id]) => id);
+  if (fillers.length !== 1 || fillers[0] !== SHELL_JOB) {
+    problems.push(`job ${SHELL_JOB}, and no other, must fill the cargo git cache (fill-cargo-git: "true")`);
   }
 }
 
@@ -273,7 +334,6 @@ function checkDisk({ setup }: Inputs, problems: string[]) {
 
 /** TST-076 */
 function checkShellJob({ workflow, setup }: Inputs, problems: string[]) {
-  const SHELL_JOB = "dev-shell";
   const isLinux = (job: Job) => job["runs-on"]?.startsWith("ubuntu-") ?? false;
   const shellJob = workflow.jobs[SHELL_JOB];
   if (shellJob === undefined || !isLinux(shellJob) || (shellJob.steps ?? []).some((step) => step.run !== undefined)) {

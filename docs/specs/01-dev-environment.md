@@ -185,8 +185,8 @@ Its jobs run in parallel on `ubuntu-latest`, each `nix develop -c just <recipe>`
 
 Every recipe job starts with the local action `.github/actions/dev-shell`: `wimpysworld/nothing-but-nix` (TST-075: the
 runner's free disk, then what deleting its preinstalled SDKs, browsers and Docker frees, pooled into a compressed Btrfs
-`/nix`, where Nix also builds; the Rust jobs bind-mount `target/` from it and keep `CARGO_HOME` there, as the purge
-deletes `~/.cargo`), `cachix/install-nix-action` (with
+`/nix`, where Nix also builds; the Rust jobs bind-mount `target/` and the shared git checkouts `/var/tmp/cargo-git`
+from it and keep `CARGO_HOME` there, as the purge deletes `~/.cargo`), `cachix/install-nix-action` (with
 `accept-flake-config`), `cachix/cachix-action` on the `omfp` cache of ENV-034, `nix develop` once to build or fetch the
 shell; the jobs that compile Rust also restore `Swatinem/rust-cache` (the shell's toolchain is put on `PATH` for it).
 The aggregate `required` job has no build step and therefore needs none of that setup. Caching (TST-072):
@@ -197,9 +197,14 @@ The aggregate `required` job has no build step and therefore needs none of that 
   rerun. The `dev-shell` job builds the Linux dev shell before any other Linux job starts (TST-076), so a cold cache on
   `master` builds omp once, not once per job; `macos` builds its own. A pull request does not push, so there the other
   jobs fetch what master cached and build only what the pull request changed.
-- **Cargo**: registry, git checkouts and `target/` per job, keyed on `Cargo.lock`, the manifests, `rust-toolchain.toml`
-  and `rustc -vV`; saved on `master` only, restored by pull requests. `mutants` (`target-cache: "false"`) restores
-  `test-ts`'s cache and saves none (TST-072). Each Rust job's summary reports its cache: exact hit, sizes.
+- **Cargo**: registry and `target/` per job, keyed on `Cargo.lock`, the manifests, `rust-toolchain.toml` and `rustc
+  -vV` (prefix `v1-rust`); saved on `master` only, restored by pull requests. `mutants` (`target-cache: "false"`)
+  restores `test-ts`'s cache and saves none (TST-072). Each Rust job's summary reports its cache: exact hit, sizes.
+- **Cargo git checkouts** (omp-rpc's `oh-my-pi` repository, ~0.75 GB): one cache shared by every job and both runner
+  systems, `/var/tmp/cargo-git` (keyed on `Cargo.lock`'s git sources and `rust-toolchain.toml`), which
+  `$CARGO_HOME/git` links to, so the per-job caches store only the link. On `master` the `dev-shell` job fills and
+  saves it when it misses (`fill-cargo-git`), before the other jobs restore it; elsewhere a miss makes each job's cargo
+  clone it.
 - **Web bundle**: built once by `web`, shared as an artifact (7 days).
 
 Secrets and variables (repository settings → Secrets and variables → Actions):

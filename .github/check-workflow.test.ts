@@ -133,6 +133,98 @@ describe("check-workflow", () => {
     );
   });
 
+  // spec: TST-072
+  test("a cargo git cache not keyed on Cargo.lock's git sources fails", () => {
+    const problems = check(
+      withSetup((setup) => {
+        const key = setup.runs.steps.find((step) => step.id === "cargo-git");
+        if (key !== undefined)
+          key.run = 'echo "key=cargo-git-$(git hash-object rust-toolchain.toml)" >> "$GITHUB_OUTPUT"';
+      }),
+    );
+    expect(problems).toContain(
+      ".github/actions/dev-shell/action.yml must key the cargo git cache on Cargo.lock's git sources",
+    );
+  });
+
+  // spec: TST-072
+  test("a Rust job not restoring the cargo git cache fails", () => {
+    const problems = check(
+      withSetup((setup) => {
+        const restore = setup.runs.steps.find((step) => step.uses?.startsWith("actions/cache/restore@"));
+        if (restore !== undefined) restore.if = "inputs.fill-cargo-git == 'true'";
+      }),
+    );
+    expect(problems).toContain(
+      ".github/actions/dev-shell/action.yml must restore the cargo git cache in every Rust job",
+    );
+  });
+
+  // spec: TST-072
+  test("saving the cargo git cache off master or from every job fails", () => {
+    const problem =
+      ".github/actions/dev-shell/action.yml must save the cargo git cache on master only, from the job that fills it";
+    const offMaster = check(
+      withSetup((setup) => {
+        const save = setup.runs.steps.find((step) => step.uses?.startsWith("actions/cache/save@"));
+        if (save !== undefined)
+          save.if = "inputs.fill-cargo-git == 'true' && steps.cargo-git-cache.outputs.cache-hit != 'true'";
+      }),
+    );
+    const everyJob = check(
+      withSetup((setup) => {
+        const restore = setup.runs.steps.find((step) => step.uses?.startsWith("actions/cache/restore@"));
+        if (restore !== undefined) restore.uses = "actions/cache@v6";
+      }),
+    );
+    expect(offMaster).toContain(problem);
+    expect(everyJob).toContain(problem);
+  });
+
+  // spec: TST-072
+  test("the per-job cargo caches keeping the git checkouts fail", () => {
+    const problem =
+      ".github/actions/dev-shell/action.yml must link CARGO_HOME/git to the cargo git cache after rust-cache, which then leaves it out";
+    const unlinked = check(
+      withSetup((setup) => {
+        setup.runs.steps = setup.runs.steps.filter((step) => !step.run?.includes("ln -sfn"));
+      }),
+    );
+    const linkedBefore = check(
+      withSetup((setup) => {
+        const link = setup.runs.steps.findIndex((step) => step.run?.includes('"$git_dir"') === true);
+        const rustCache = setup.runs.steps.findIndex((step) => step.uses?.startsWith("Swatinem/rust-cache@"));
+        const [step] = setup.runs.steps.splice(link, 1);
+        if (step !== undefined) setup.runs.steps.splice(rustCache, 0, step);
+      }),
+    );
+    expect(unlinked).toContain(problem);
+    expect(linkedBefore).toContain(problem);
+  });
+
+  // spec: TST-072
+  test("filling the cargo git cache in another job than dev-shell fails", () => {
+    const problem = 'job dev-shell, and no other, must fill the cargo git cache (fill-cargo-git: "true")';
+    const setupOf = (workflow: Workflow, id: string) =>
+      workflow.jobs[id]?.steps?.find((step) => step.uses === "./.github/actions/dev-shell");
+    const moved = check(
+      withWorkflow((workflow) => {
+        const shell = setupOf(workflow, "dev-shell");
+        if (shell?.with !== undefined) delete shell.with["fill-cargo-git"];
+        const testTs = setupOf(workflow, "test-ts");
+        if (testTs?.with !== undefined) testTs.with["fill-cargo-git"] = "true";
+      }),
+    );
+    const twice = check(
+      withWorkflow((workflow) => {
+        const cov = setupOf(workflow, "cov");
+        if (cov?.with !== undefined) cov.with["fill-cargo-git"] = "true";
+      }),
+    );
+    expect(moved).toContain(problem);
+    expect(twice).toContain(problem);
+  });
+
   // spec: TST-118
   test("removing the required aggregate gate fails", () => {
     const problems = check(

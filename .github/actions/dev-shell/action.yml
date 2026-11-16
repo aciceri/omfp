@@ -1,7 +1,8 @@
 name: Dev shell
 description: >-
   The runner's disk pooled into a Btrfs /nix, Nix with the omfp Cachix cache (pushed to by pushes to master only), the
-  flake's dev shell, and for Rust jobs the cargo registry and target cache.
+  flake's dev shell, and for Rust jobs the cargo registry and target cache and the shared cache of the cargo git
+  checkouts.
 inputs:
   cachix-auth-token:
     description: The `CACHIX_AUTH_TOKEN` secret; empty (forks) reads the cache only.
@@ -14,10 +15,16 @@ inputs:
   target-cache:
     description: >-
       Whether a Rust job keeps a cargo cache of its own, target/ included ("true"/"false"). "false", for a job whose
-      builds never use target/ (cargo mutants builds in copies without it), restores the Cargo registry and git
-      checkouts from the test-ts job's cache and saves nothing.
+      builds never use target/ (cargo mutants builds in copies without it), restores the Cargo registry from the
+      test-ts job's cache and saves nothing.
     required: false
     default: "true"
+  fill-cargo-git:
+    description: >-
+      Whether this job fills the shared cache of the cargo git checkouts ("true"/"false"): on master, when the cache
+      misses, it fetches the git dependencies and saves them. Only the dev-shell job, which the other jobs wait for.
+    required: false
+    default: "false"
 runs:
   using: composite
   steps:
@@ -72,20 +79,77 @@ runs:
         cat "$RUNNER_TEMP/toolchain-bin" >> "$GITHUB_PATH"
         df -h / /nix
 
+    # TST-072: the git dependencies (omp-rpc's oh-my-pi repository: a ~0.7 GB git database and a ~0.1 GB checkout) are
+    # the same in every job, so one cache holds them instead of a copy in every job's cargo cache. It is keyed on
+    # Cargo.lock's git sources and rust-toolchain.toml (cargo names the directories after hashes of the URLs), filled
+    # and saved on master by the job passing `fill-cargo-git` (dev-shell, which every other job waits for) and
+    # restored by every Rust job; when it misses, cargo clones into it. actions/cache keys an entry on its path too
+    # (and takes no relative path out of the workspace), so /var/tmp/cargo-git, the same path on Linux and macOS, lets
+    # both share it; on Linux it is a bind mount from the Nix volume (TST-075).
+    - name: Key the cargo git cache
+      id: cargo-git
+      if: inputs.rust == 'true' || inputs.fill-cargo-git == 'true'
+      shell: bash
+      run: |
+        mkdir -p /var/tmp/cargo-git
+        if [ "$RUNNER_OS" = Linux ]; then
+          mkdir -p /var/tmp/nothing-but-nix/cargo-git
+          sudo mount --bind /var/tmp/nothing-but-nix/cargo-git /var/tmp/cargo-git
+        fi
+        sources=$(grep '^source = "git+' Cargo.lock | sort -u)
+        echo "key=cargo-git-$(printf '%s\n' "$sources" | cat - rust-toolchain.toml | git hash-object --stdin)" >> "$GITHUB_OUTPUT"
+
+    - uses: actions/cache/restore@v6
+      id: cargo-git-cache
+      if: inputs.rust == 'true' || inputs.fill-cargo-git == 'true'
+      with:
+        path: /var/tmp/cargo-git
+        key: ${{ steps.cargo-git.outputs.key }}
+        # The filling job only needs to know whether the cache exists.
+        lookup-only: ${{ inputs.fill-cargo-git }}
+
+    # Resolving the workspace again (--locked: Cargo.lock stays as it is) clones and checks out the git dependencies
+    # without downloading the registry's crates.
+    - name: Fetch the cargo git dependencies
+      if: inputs.fill-cargo-git == 'true' && steps.cargo-git-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/master'
+      shell: bash
+      run: |
+        mkdir -p "$RUNNER_TEMP/cargo-home"
+        ln -sfn /var/tmp/cargo-git "$RUNNER_TEMP/cargo-home/git"
+        CARGO_HOME="$RUNNER_TEMP/cargo-home" nix develop -c cargo update --workspace --locked
+
+    - uses: actions/cache/save@v6
+      if: inputs.fill-cargo-git == 'true' && steps.cargo-git-cache.outputs.cache-hit != 'true' && github.ref == 'refs/heads/master'
+      with:
+        path: /var/tmp/cargo-git
+        key: ${{ steps.cargo-git.outputs.key }}
+
     # TST-072: keyed on the job, Cargo.lock, the Cargo.toml files, rust-toolchain.toml and `rustc -vV`; pull requests
-    # restore master's cache without writing their own. Each job's cache also holds the registry and git checkouts
-    # (~0.9 GB, the oh-my-pi git database of omp-rpc most of it), so a job without a target/ cache borrows test-ts's
-    # (the same paths and key) instead of storing a copy of its own.
+    # restore master's cache without writing their own. Each job's cache holds the registry, so a job without a
+    # target/ cache borrows test-ts's (the same paths and key) instead of storing a copy of its own. The v1 prefix
+    # marks the caches without the git checkouts (the v0 ones hold them).
     - uses: Swatinem/rust-cache@v2
       id: rust-cache
       if: inputs.rust == 'true'
       with:
+        prefix-key: v1-rust
         shared-key: ${{ inputs.target-cache == 'false' && 'test-ts' || '' }}
         save-if: ${{ inputs.target-cache == 'true' && github.ref == 'refs/heads/master' }}
 
+    # $CARGO_HOME/git is a symlink to the shared checkouts; rust-cache stores the symlink alone (tar does not follow
+    # it), so the per-job caches leave the checkouts out. After rust-cache: its restore brings the same symlink.
+    - name: Link the cargo git cache into CARGO_HOME
+      if: inputs.rust == 'true'
+      shell: bash
+      run: |
+        git_dir="${CARGO_HOME:-$HOME/.cargo}/git"
+        mkdir -p "${git_dir%/*}"
+        [ -L "$git_dir" ] || rm -rf "$git_dir"
+        ln -sfn /var/tmp/cargo-git "$git_dir"
+
     # Cache telemetry in the job summary (and the log) when the job ends: whether rust-cache matched its key exactly,
-    # whether the job has a cache of its own, and the sizes of target/ and CARGO_HOME (what a save on master stores
-    # after rust-cache prunes them).
+    # whether the job has a cache of its own, the sizes of target/ and CARGO_HOME (what a save on master stores after
+    # rust-cache prunes them), and whether the shared git checkouts were restored, with their size.
     - name: Report the cargo cache
       if: inputs.rust == 'true'
       uses: srz-zumix/post-run-action@v3
@@ -94,7 +158,7 @@ runs:
           {
             echo "### Cargo cache: ${{ github.job }}"
             echo
-            echo "| exact hit | own cache | target/ | CARGO_HOME |"
-            echo "| --- | --- | --- | --- |"
-            echo "| ${{ steps.rust-cache.outputs.cache-hit || 'false' }} | ${{ inputs.target-cache }} | $(du -sh target/ 2>/dev/null | cut -f1) | $(du -sh "${CARGO_HOME:-$HOME/.cargo}" 2>/dev/null | cut -f1) |"
+            echo "| exact hit | own cache | target/ | CARGO_HOME | git checkouts hit | git checkouts |"
+            echo "| --- | --- | --- | --- | --- | --- |"
+            echo "| ${{ steps.rust-cache.outputs.cache-hit || 'false' }} | ${{ inputs.target-cache }} | $(du -sh target/ 2>/dev/null | cut -f1) | $(du -sh "${CARGO_HOME:-$HOME/.cargo}" 2>/dev/null | cut -f1) | ${{ steps.cargo-git-cache.outputs.cache-hit || 'false' }} | $(du -sh /var/tmp/cargo-git/ 2>/dev/null | cut -f1) |"
           } | tee -a "$GITHUB_STEP_SUMMARY"

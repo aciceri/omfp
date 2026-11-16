@@ -26,7 +26,8 @@ env:
 
 jobs:
   # TST-076: builds the Linux dev shell once (omp from source on a cold cache, ~26 min); its cachix daemon pushes it
-  # (on master), and every other Linux job waits for it instead of building it again in parallel.
+  # (on master), and every other Linux job waits for it instead of building it again in parallel. On master it also
+  # fills the shared cache of the cargo git checkouts when it misses (TST-072), before the Rust jobs restore it.
   dev-shell:
     name: dev shell
     runs-on: ubuntu-latest
@@ -37,6 +38,7 @@ jobs:
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
           rust: "false"
+          fill-cargo-git: "true"
 
   web:
     name: web bundle
@@ -169,7 +171,7 @@ jobs:
       - run: nix develop -c just package
 
   # cargo mutants builds in copies of the tree without target/, so the job borrows test-ts's cargo cache for the
-  # registry and git checkouts and stores none of its own (TST-072).
+  # registry and stores none of its own (TST-072).
   mutants:
     name: mutation gate (omfp-core, omfp-protocol)
     needs: dev-shell

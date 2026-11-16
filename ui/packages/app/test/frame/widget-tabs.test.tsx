@@ -82,9 +82,8 @@ function setup(
   if (options.events !== undefined) {
     test.client.thread("t1", options.events);
   }
-  if (options.views !== undefined) {
-    test.client.views("w1", options.views);
-  }
+  // The daemon always answers the views topic; without a manifest, the built-in view.
+  test.client.views("w1", options.views ?? {});
   test.flush();
   return { ...test, storage, user: userEvent.setup() };
 }
@@ -123,12 +122,15 @@ describe("revealed widgets as tabs of the main slot", () => {
     // Its instance is its reference: the same `useStored` state as a view node without `instance`.
     expect(within(screen.getByTestId("view")).getByTestId("stub-activity").textContent).toBe("omfp:activity");
     expect(screen.queryAllByTestId("floating-widget").length).toBe(0);
-    // The request is done; the tab is window-local, kept in localStorage, never written to views.json.
+    // The request is done; the tab is window-local, kept in localStorage (its selection per thread and view, UI-372),
+    // never written to views.json.
     expect(test.host.window.get(REVEAL_WIDGET)).toBeUndefined();
     expect(JSON.parse(test.storage.getItem("omfp.openFiles") ?? "{}").w1).toMatchObject({
       widgets: ["omfp:activity"],
-      active: widgetTabId("omfp:activity"),
     });
+    expect(JSON.parse(test.storage.getItem("omfp.tabChoices") ?? "{}").threads).toEqual([
+      { threadId: "t1", views: { default: { main: widgetTabId("omfp:activity") } } },
+    ]);
     expect(test.client.callsTo("views.set")).toEqual([]);
 
     // A file opened later goes with the files; revealing the widget again selects its one tab.

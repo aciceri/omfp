@@ -17,7 +17,9 @@ import {
   SELECTED_THREAD,
   SUCCESSES,
 } from "../../src/sdk/index.ts";
+import { TAB_CHOICES } from "../../src/sdk/keys.ts";
 import { openTab } from "../../src/vm/files.ts";
+import { chooseTab, chosenTab, NO_TAB_CHOICES } from "../../src/vm/tab-choices.ts";
 import { FileWidget } from "../../src/widgets/file/index.ts";
 import { mediaKind } from "../../src/widgets/file/media.tsx";
 import { repo, thread, workspace } from "../support/fixtures.ts";
@@ -508,6 +510,11 @@ describe("a path that does not exist", () => {
     const base = testHost(new FakeClient(), { filePoll: new ManualPoll().poll });
     base.host.window.set(SELECTED_THREAD, "t1");
     base.host.window.set(OPEN_FILES, { w1: openTab(NO_FILE_TABS, path, { line: 4 }) });
+    // Opened by `t1`, which selected its tab (UI-372).
+    base.host.window.set(
+      TAB_CHOICES,
+      chooseTab(NO_TAB_CHOICES, { kind: "thread", threadId: "t1" }, "default", "main", fileTabId(path)),
+    );
     base.client.answers.set("workspaces.find_file", () => ({ candidates, truncated: false }));
     const test = renderWithHost(<FileWidget path={path} line={4} />, base);
     test.client.connected();
@@ -537,7 +544,9 @@ describe("a path that does not exist", () => {
       { workspaceId: "w1", query: "theme.ts", threadId: "t1" },
     ]);
     expect(test.host.window.get(OPEN_FILES).w1?.tabs[0]?.line).toBe(4);
-    expect(test.host.window.get(OPEN_FILES).w1?.active).toBe(fileTabId("ui/src/theme.ts"));
+    expect(chosenTab(test.host.window.get(TAB_CHOICES), { kind: "thread", threadId: "t1" }, "default", "main")).toBe(
+      fileTabId("ui/src/theme.ts"),
+    );
     expect(test.host.window.get(FILE_PICKER)).toBeUndefined();
   });
 

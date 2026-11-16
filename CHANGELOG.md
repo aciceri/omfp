@@ -52,6 +52,9 @@ Initial release, planned as 0.1.0.
   changed mappings still apply with normal sequence-reset behavior.
 - The provider login picker no longer overlaps long provider names, ids and login status. Each row shows the name
   on its own line with the id and status under it, wraps long text and grows to fit, so its highlight covers it.
+- Switching threads now restores the destination thread's view and the tab it last selected in each tab group,
+  including chat, file and widget tabs, instead of carrying over the previous thread's selection. Open file and widget
+  tabs stay shared by the workspace; a remembered tab that was closed falls back to the group's first tab.
 
 ### Changed
 

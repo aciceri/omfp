@@ -2,6 +2,7 @@
 
 import type { ImageContent } from "@omfp/core";
 import type { RunInfo } from "@omfp/protocol";
+import { decodeTabChoices, NO_TAB_CHOICES, type TabChoices } from "../vm/tab-choices.ts";
 import { decodeViewChoices, NO_VIEW_CHOICES, type ViewChoices } from "../vm/view-choices.ts";
 import { type WindowKey, windowKey } from "./window-store.ts";
 
@@ -53,6 +54,33 @@ export const COLOR_SCHEME = windowKey<ColorScheme>("colorScheme", "system", (sto
  * carried over.
  */
 export const VIEW_CHOICES = windowKey<ViewChoices>("viewChoices", NO_VIEW_CHOICES, decodeViewChoices);
+
+/**
+ * The tab this window selected in each `tabs` container (UI-372): per thread (the draft thread's per workspace), per
+ * view and per container, the `main` slot's file and widget tabs included. Kept in `localStorage` like
+ * {@link VIEW_CHOICES}; read and change it through `useChosenTab`, `selectOpenedTab` and `closeOpened`.
+ */
+export const TAB_CHOICES = windowKey<TabChoices>("tabChoices", NO_TAB_CHOICES, decodeTabChoices);
+
+/** The view the frame renders now and the thread (none: the draft thread) it renders it for (UI-372); not `ready`
+ * while it is the built-in view standing in until the workspace's views arrive. */
+export interface ShownView {
+  readonly threadId: string | undefined;
+  readonly viewId: string;
+  readonly ready: boolean;
+}
+
+/** Where opening a file or a widget tab selects it (UI-372); `undefined` before the frame rendered a view. */
+export const SHOWN_VIEW = windowKey<ShownView | undefined>("shownView", undefined);
+
+/** An opened tab to select once the frame renders `threadId` (UI-372): a file opened right after a thread switch,
+ * before the frame knows the view that thread shows. */
+export interface PendingTab {
+  readonly threadId: string | undefined;
+  readonly tabId: string;
+}
+
+export const PENDING_TAB = windowKey<PendingTab | undefined>("pendingTab", undefined);
 
 /** A thread being started in a workspace (UI-023): shown while no thread is selected; the daemon thread is created
  * when its first message is sent. One per window. */

@@ -10,6 +10,7 @@ import { IconButton } from "@omfp/kit";
 import type { ViewsState } from "@omfp/protocol";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
+import { selectOpenedTab } from "../sdk/files.ts";
 import {
   floatingWidgetKey,
   movePanel,
@@ -22,6 +23,7 @@ import {
   useHost,
   useWindowState,
   useWorkspaces,
+  widgetTabId,
 } from "../sdk/index.ts";
 import { strings } from "../strings/index.ts";
 import { containsWidget, hasMainSlot } from "../view/layout.ts";
@@ -67,6 +69,7 @@ export interface RevealedWidgetProps extends FloatingWidgetsProps {
  * workspace as its `workspaceId` prop (UI-741).
  */
 export function RevealedWidget({ view, panels, workspaceId, views, registry }: RevealedWidgetProps): ReactNode {
+  const app = useHost();
   const [request, setRequest] = useWindowState(REVEAL_WIDGET);
   const [, setOpened] = useWindowState(OPEN_FILES);
   const workspaces = useWorkspaces();
@@ -79,7 +82,8 @@ export function RevealedWidget({ view, panels, workspaceId, views, registry }: R
       panels.some((panel) => containsWidget(panel.tree, names)));
   const tab = !held && other === undefined && workspaceId !== undefined && view !== undefined && hasMainSlot(view.tree);
   // Once the view's tabs showed it (their effects run first) or a tab of `main` opened it, the request is done: a later
-  // view without the widget must not float it.
+  // view without the widget must not float it. The tab opens for every thread of the workspace and is selected for the
+  // shown one only (UI-372).
   useEffect(() => {
     if (request === undefined) {
       return;
@@ -89,11 +93,12 @@ export function RevealedWidget({ view, panels, workspaceId, views, registry }: R
         ...all,
         [workspaceId]: openWidgetTab(all[workspaceId] ?? NO_FILE_TABS, request.reference),
       }));
+      selectOpenedTab(app, workspaceId, widgetTabId(request.reference));
       setRequest(undefined);
     } else if (held) {
       setRequest(undefined);
     }
-  }, [request, held, tab, workspaceId, setOpened, setRequest]);
+  }, [app, request, held, tab, workspaceId, setOpened, setRequest]);
   // Without a current workspace, the other workspace's panel floats in its own.
   const host = workspaceId ?? other;
   if (request === undefined || host === undefined || held || tab) {

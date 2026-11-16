@@ -17,15 +17,14 @@ export interface FileTab {
 
 /**
  * A workspace's opened tabs of the `main` slot in this window: its open files, then the widgets a reveal opened there
- * (UI-373, by reference), and the selected tab (`undefined`: the slot's own first tab).
+ * (UI-373, by reference). Which tab is selected is per thread and view (UI-372, `TAB_CHOICES`).
  */
 export interface FileTabs {
   readonly tabs: readonly FileTab[];
   readonly widgets: readonly string[];
-  readonly active: string | undefined;
 }
 
-export const NO_FILE_TABS: FileTabs = { tabs: [], widgets: [], active: undefined };
+export const NO_FILE_TABS: FileTabs = { tabs: [], widgets: [] };
 
 /** Every workspace's {@link FileTabs}, by workspace id (kept in `localStorage`, UI-115, UI-373). */
 export type OpenFiles = Readonly<Record<string, FileTabs>>;
@@ -53,38 +52,29 @@ export function openedTabIds(tabs: FileTabs): string[] {
   return [...tabs.tabs.map((tab) => fileTabId(tab.path)), ...tabs.widgets.map(widgetTabId)];
 }
 
-/** `tabs` with `path` open and selected: a new tab at the end, or the open one with the new `line` and `diff`. */
+/** `tabs` with `path` open: a new tab at the end, or the open one with the new `line` and `diff`. */
 export function openTab(tabs: FileTabs, path: string, options: OpenFileOptions = {}): FileTabs {
   const open = tabs.tabs.find((tab) => tab.path === path);
   const tab: FileTab = { path, line: options.line, diff: options.diff, seq: (open?.seq ?? 0) + 1 };
   return {
     ...tabs,
     tabs: open === undefined ? [...tabs.tabs, tab] : tabs.tabs.map((other) => (other === open ? tab : other)),
-    active: fileTabId(path),
   };
 }
 
-/** `tabs` with the widget `reference` open and selected (UI-373): a new tab after the others, or the open one. */
+/** `tabs` with the widget `reference` open (UI-373): a new tab after the others, or the open one. */
 export function openWidgetTab(tabs: FileTabs, reference: string): FileTabs {
-  const widgets = tabs.widgets.includes(reference) ? tabs.widgets : [...tabs.widgets, reference];
-  return { ...tabs, widgets, active: widgetTabId(reference) };
+  return tabs.widgets.includes(reference) ? tabs : { ...tabs, widgets: [...tabs.widgets, reference] };
 }
 
-/**
- * `tabs` without the opened tab `id` (a file's or a widget's); when it was selected, its neighbour in
- * {@link openedTabIds} order (the previous tab, else the next, else the slot's own first tab) is.
- */
+/** `tabs` without the opened tab `id` (a file's or a widget's); the same object when it is not open. */
 export function closeOpenedTab(tabs: FileTabs, id: string): FileTabs {
-  const ids = openedTabIds(tabs);
-  const index = ids.indexOf(id);
-  if (index < 0) {
+  if (!openedTabIds(tabs).includes(id)) {
     return tabs;
   }
-  const rest = ids.filter((_, at) => at !== index);
   return {
     tabs: tabs.tabs.filter((tab) => fileTabId(tab.path) !== id),
     widgets: tabs.widgets.filter((reference) => widgetTabId(reference) !== id),
-    active: tabs.active === id ? (rest[index - 1] ?? rest[index]) : tabs.active,
   };
 }
 
@@ -93,10 +83,18 @@ export function closeTab(tabs: FileTabs, path: string): FileTabs {
   return closeOpenedTab(tabs, fileTabId(path));
 }
 
+/** The tab selected once the opened tab `id` of `tabs`, selected, closes: its neighbour in {@link openedTabIds} order
+ * (the previous tab, else the next), else `undefined` (the slot's own first tab). */
+export function neighbourTab(tabs: FileTabs, id: string): string | undefined {
+  const ids = openedTabIds(tabs);
+  const index = ids.indexOf(id);
+  return index < 0 ? undefined : (ids[index - 1] ?? ids[index + 1]);
+}
+
 /**
- * `tabs` with the tab of `from` (a path that does not exist as given) showing `to` instead (DMN-092), selected and
- * keeping its `line` and `diff`; when `to` is already open, that tab takes them and `from`'s goes. Without a tab of
- * `from`, `to` opens as {@link openTab} does with `options`.
+ * `tabs` with the tab of `from` (a path that does not exist as given) showing `to` instead (DMN-092), keeping its
+ * `line` and `diff`; when `to` is already open, that tab takes them and `from`'s goes. Without a tab of `from`, `to`
+ * opens as {@link openTab} does with `options`.
  */
 export function retargetTab(tabs: FileTabs, from: string, to: string, options: OpenFileOptions = {}): FileTabs {
   const old = tabs.tabs.find((tab) => tab.path === from);
@@ -110,7 +108,6 @@ export function retargetTab(tabs: FileTabs, from: string, to: string, options: O
     tabs: tabs.tabs.flatMap((tab) =>
       tab === old ? (open === undefined ? [moved] : []) : tab === open ? [moved] : [tab],
     ),
-    active: fileTabId(to),
   };
 }
 
@@ -187,7 +184,7 @@ export function decodeOpenFiles(stored: unknown): OpenFiles | undefined {
     if (typeof value !== "object" || value === null) {
       continue;
     }
-    const { tabs, widgets, active } = value as { tabs?: unknown; widgets?: unknown; active?: unknown };
+    const { tabs, widgets } = value as { tabs?: unknown; widgets?: unknown };
     if (!Array.isArray(tabs)) {
       continue;
     }
@@ -204,11 +201,7 @@ export function decodeOpenFiles(stored: unknown): OpenFiles | undefined {
     const references = Array.isArray(widgets)
       ? widgets.filter((reference: unknown): reference is string => typeof reference === "string")
       : [];
-    out[workspaceId] = {
-      tabs: decoded,
-      widgets: [...new Set(references)],
-      active: typeof active === "string" ? active : undefined,
-    };
+    out[workspaceId] = { tabs: decoded, widgets: [...new Set(references)] };
   }
   return out;
 }

@@ -13,6 +13,7 @@ import {
   fileTabId,
   movePanel,
   NO_FILE_TABS,
+  neighbourTab,
   openedTabIds,
   openTab,
   openWidgetTab,
@@ -25,31 +26,32 @@ import {
 
 describe("file tabs", () => {
   // spec: UI-115
-  test("opening adds a selected tab at the end; opening it again selects it with the new line and diff", () => {
+  test("opening adds a tab at the end; opening it again gives it the new line and diff", () => {
     let tabs = openTab(NO_FILE_TABS, "fe/src/a.rs", { line: 3 });
     tabs = openTab(tabs, "fe/src/b.rs", { diff: true });
     expect(tabs.tabs.map((tab) => tab.path)).toEqual(["fe/src/a.rs", "fe/src/b.rs"]);
-    expect(tabs.active).toBe(fileTabId("fe/src/b.rs"));
     tabs = openTab(tabs, "fe/src/a.rs", { line: 9 });
     expect(tabs.tabs.map((tab) => tab.path)).toEqual(["fe/src/a.rs", "fe/src/b.rs"]);
     expect(tabs.tabs[0]).toEqual({ path: "fe/src/a.rs", line: 9, diff: undefined, seq: 2 });
-    expect(tabs.active).toBe(fileTabId("fe/src/a.rs"));
   });
 
-  // spec: UI-115
+  // spec: UI-115, UI-366
   test("closing the selected tab selects its neighbour, then the slot's own first tab", () => {
     let tabs: FileTabs = ["a", "b", "c"].reduce((open, path) => openTab(open, path), NO_FILE_TABS);
-    tabs = closeTab({ ...tabs, active: fileTabId("b") }, "b");
-    expect([tabs.tabs.map((tab) => tab.path), tabs.active]).toEqual([["a", "c"], fileTabId("a")]);
+    expect(neighbourTab(tabs, fileTabId("b"))).toBe(fileTabId("a"));
+    expect(neighbourTab(tabs, fileTabId("a"))).toBe(fileTabId("b"));
+    tabs = closeTab(tabs, "b");
+    expect(tabs.tabs.map((tab) => tab.path)).toEqual(["a", "c"]);
     tabs = closeTab(tabs, "c");
-    expect([tabs.tabs.map((tab) => tab.path), tabs.active]).toEqual([["a"], fileTabId("a")]);
+    expect(neighbourTab(tabs, fileTabId("a"))).toBeUndefined();
     tabs = closeTab(tabs, "a");
-    expect(tabs).toEqual({ tabs: [], widgets: [], active: undefined });
+    expect(tabs).toEqual({ tabs: [], widgets: [] });
     expect(closeTab(tabs, "gone")).toBe(tabs);
+    expect(neighbourTab(tabs, fileTabId("gone"))).toBeUndefined();
   });
 
   // spec: UI-373
-  test("widget tabs open once after the files, selected; closing one selects its neighbour among all opened tabs", () => {
+  test("widget tabs open once after the files; closing one selects its neighbour among all opened tabs", () => {
     let tabs = openWidgetTab(openTab(NO_FILE_TABS, "a.rs"), "omfp:activity");
     tabs = openTab(tabs, "b.rs");
     tabs = openWidgetTab(tabs, "omfp:todos");
@@ -59,15 +61,12 @@ describe("file tabs", () => {
       widgetTabId("omfp:activity"),
       widgetTabId("omfp:todos"),
     ]);
-    expect(tabs.active).toBe(widgetTabId("omfp:todos"));
-    tabs = openWidgetTab(tabs, "omfp:activity");
-    expect([tabs.widgets, tabs.active]).toEqual([["omfp:activity", "omfp:todos"], widgetTabId("omfp:activity")]);
+    expect(openWidgetTab(tabs, "omfp:activity")).toBe(tabs);
+    expect(neighbourTab(tabs, widgetTabId("omfp:activity"))).toBe(fileTabId("b.rs"));
     tabs = closeOpenedTab(tabs, widgetTabId("omfp:activity"));
-    expect([tabs.widgets, tabs.active]).toEqual([["omfp:todos"], fileTabId("b.rs")]);
-    tabs = closeTab(tabs, "b.rs");
-    expect(tabs.active).toBe(fileTabId("a.rs"));
-    tabs = closeOpenedTab({ ...tabs, active: fileTabId("a.rs") }, fileTabId("a.rs"));
-    expect(tabs).toEqual({ tabs: [], widgets: ["omfp:todos"], active: widgetTabId("omfp:todos") });
+    expect(tabs.widgets).toEqual(["omfp:todos"]);
+    tabs = closeTab(closeTab(tabs, "b.rs"), "a.rs");
+    expect(tabs).toEqual({ tabs: [], widgets: ["omfp:todos"] });
     // Files keep the widget tabs.
     expect(retargetTab(openTab(tabs, "x"), "x", "y").widgets).toEqual(["omfp:todos"]);
     expect(closeOpenedTab(tabs, widgetTabId("gone"))).toBe(tabs);
@@ -83,8 +82,9 @@ describe("file tabs", () => {
         w4: { tabs: [], widgets: ["omfp:activity", 3, "omfp:activity"], active: "widget:omfp:activity" },
       }),
     ).toEqual({
-      w1: { tabs: [{ path: "a.rs", line: 2, diff: true, seq: 0 }], widgets: [], active: "file:a.rs" },
-      w4: { tabs: [], widgets: ["omfp:activity"], active: "widget:omfp:activity" },
+      // The selection stored before it was per thread (UI-372) is not carried over.
+      w1: { tabs: [{ path: "a.rs", line: 2, diff: true, seq: 0 }], widgets: [] },
+      w4: { tabs: [], widgets: ["omfp:activity"] },
     });
     expect(decodeOpenFiles([])).toBeUndefined();
     expect(decodeOpenFiles("x")).toBeUndefined();
@@ -105,21 +105,18 @@ describe("a missing path's tab", () => {
     let tabs = openTab(NO_FILE_TABS, "a.rs");
     tabs = openTab(tabs, "theme.ts", { line: 7 });
     tabs = openTab(tabs, "z.rs");
-    tabs = { ...tabs, active: fileTabId("theme.ts") };
     const moved = retargetTab(tabs, "theme.ts", "ui/theme.ts");
     expect(moved.tabs.map((tab) => [tab.path, tab.line])).toEqual([
       ["a.rs", undefined],
       ["ui/theme.ts", 7],
       ["z.rs", undefined],
     ]);
-    expect(moved.active).toBe(fileTabId("ui/theme.ts"));
 
     const merged = retargetTab(tabs, "theme.ts", "z.rs");
     expect(merged.tabs.map((tab) => [tab.path, tab.line])).toEqual([
       ["a.rs", undefined],
       ["z.rs", 7],
     ]);
-    expect(merged.active).toBe(fileTabId("z.rs"));
 
     // Without a tab of the missing path (an `omfp:file` placed in the view), the file opens.
     expect(retargetTab(NO_FILE_TABS, "theme.ts", "ui/theme.ts", { diff: true }).tabs).toEqual([

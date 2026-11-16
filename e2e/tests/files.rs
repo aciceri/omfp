@@ -360,7 +360,7 @@ async fn file_tabs(journey: &Journey, css: &str) -> anyhow::Result<Vec<String>> 
         .collect())
 }
 
-// spec: E2E-13, E2E-35, UI-115, UI-117, UI-366, UI-401, DMN-092
+// spec: E2E-13, E2E-35, UI-115, UI-117, UI-366, UI-372, UI-401, DMN-092
 #[tokio::test(flavor = "multi_thread")]
 async fn bare_names_open_their_file_or_a_picker_and_files_float_as_tabs_without_main()
 -> anyhow::Result<()> {
@@ -437,24 +437,22 @@ async fn bare_names_open_their_file_or_a_picker_and_files_float_as_tabs_without_
         .await?,
         ["app/src/theme.ts", "app/web/config.ts"]
     );
+    // The thread selected a tab in the `main` view only: the plain view's panel shows its first file (UI-372).
+    until_editor_text(&journey, "export const theme = 1;\n").await?;
+    let tab =
+        |file: &str| format!("{panel} [data-testid=floating-file-tab][data-file=\"app/{file}\"]");
+    journey.click(&tab("web/config.ts")).await?;
     until_editor_text(&journey, "export const web = 1;\n").await?;
-    journey
-        .click(&format!(
-            "{panel} [data-testid=floating-file-tab][data-file=\"app/src/theme.ts\"]"
-        ))
-        .await?;
+    journey.click(&tab("src/theme.ts")).await?;
     until_editor_text(&journey, "export const theme = 1;\n").await?;
     // An unselected tab's own × closes it without selecting it (UI-366).
     journey
         .click(&format!(
-            "{panel} [data-testid=floating-file-tab][data-file=\"app/web/config.ts\"] [data-testid=file-tab-close]"
+            "{} [data-testid=file-tab-close]",
+            tab("web/config.ts")
         ))
         .await?;
-    journey
-        .gone(&format!(
-            "{panel} [data-testid=floating-file-tab][data-file=\"app/web/config.ts\"]"
-        ))
-        .await?;
+    journey.gone(&tab("web/config.ts")).await?;
     assert_eq!(
         file_tabs(
             &journey,

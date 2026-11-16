@@ -1200,6 +1200,8 @@ requirements = [
   "E2E-71",
   # Readline line-editing keys in the composer (#103)
   "UI-760",
+  # The selected tab of every tabs container remembered per thread and view (#101)
+  "UI-372",
 ]
 
 [M18]

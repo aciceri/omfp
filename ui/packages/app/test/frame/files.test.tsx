@@ -19,6 +19,7 @@ import {
 } from "../../src/sdk/index.ts";
 import type { WidgetRegistry } from "../../src/view/resolve.ts";
 import { fileTabId } from "../../src/vm/files.ts";
+import { chosenTab, decodeTabChoices, NO_TAB_CHOICES } from "../../src/vm/tab-choices.ts";
 import { FileWidget } from "../../src/widgets/file/index.ts";
 import { thread, workspace } from "../support/fixtures.ts";
 import { ManualTimers, renderWithHost, testHost } from "../support/host.tsx";
@@ -77,6 +78,12 @@ class MemoryStorage implements KeyValueStorage {
   }
 }
 
+/** The tab thread `t1` selected in the `main` slot (or the floating file panel) of `viewId`, as kept in `storage`. */
+function storedTab(storage: MemoryStorage, viewId: string): string | undefined {
+  const choices = decodeTabChoices(JSON.parse(storage.getItem("omfp.tabChoices") ?? "{}")) ?? NO_TAB_CHOICES;
+  return chosenTab(choices, { kind: "thread", threadId: "t1" }, viewId, "main");
+}
+
 function setup(views?: Partial<ViewsState>) {
   const storage = new MemoryStorage();
   const base = testHost(undefined, {
@@ -89,9 +96,8 @@ function setup(views?: Partial<ViewsState>) {
   test.client.connected();
   test.client.index({ workspaces: [workspace("w1")], threads: [thread("t1", "one", "w1")] });
   act(() => test.host.window.set(SELECTED_THREAD, "t1"));
-  if (views !== undefined) {
-    test.client.views("w1", views);
-  }
+  // The daemon always answers the views topic; without a manifest, the built-in view.
+  test.client.views("w1", views ?? {});
   test.flush();
   return { ...test, storage, user: userEvent.setup() };
 }
@@ -139,8 +145,8 @@ describe("file tabs in the main slot", () => {
       line: 9,
       jump: 2,
     });
-    // Window-local, kept in localStorage, never written to views.json.
-    expect(JSON.parse(test.storage.getItem("omfp.openFiles") ?? "{}").w1.active).toBe(fileTabId("fe/src/lib.rs"));
+    // Window-local, kept in localStorage per thread and view (UI-372), never written to views.json.
+    expect(storedTab(test.storage, "default")).toBe(fileTabId("fe/src/lib.rs"));
     expect(test.client.callsTo("views.set")).toEqual([]);
     // Each file tab has its own close mark: closing the selected one selects its neighbour.
     const closeOf = (file: string) =>
@@ -196,7 +202,7 @@ describe("file tabs in the main slot", () => {
     await test.user.click(tabElements()[0] as HTMLElement);
     expect(screen.getByTestId("stub-input")).toBeDefined();
     expect(test.host.window.get(OPEN_FILES).w1?.tabs.map((tab) => tab.path)).toEqual(["a.rs"]);
-    expect(test.host.window.get(OPEN_FILES).w1?.active).toBe("0.0.1.0");
+    expect(storedTab(test.storage, "default")).toBe("0.0.1.0");
   });
 
   // spec: UI-115, UI-366
@@ -221,7 +227,7 @@ describe("file tabs in the main slot", () => {
     // Selecting a tab shows its file; the selection is window-local like the main slot's.
     await test.user.click(within(panel).getAllByTestId("floating-file-tab")[0] as HTMLElement);
     expect(shownFile()).toMatchObject({ path: "fe/src/lib.rs" });
-    expect(test.host.window.get(OPEN_FILES).w1?.active).toBe(fileTabId("fe/src/lib.rs"));
+    expect(storedTab(test.storage, "plain")).toBe(fileTabId("fe/src/lib.rs"));
     // Closing the selected file by its own × selects its neighbour.
     const lib = within(panel).getAllByTestId("floating-file-tab")[0] as HTMLElement;
     await test.user.click(within(lib).getByTestId("file-tab-close"));
@@ -295,9 +301,7 @@ describe("unsaved edits of an open file", () => {
     test.client.connected();
     test.client.index({ workspaces: [workspace("w1")], threads: [thread("t1", "one", "w1")] });
     act(() => test.host.window.set(SELECTED_THREAD, "t1"));
-    if (views !== undefined) {
-      test.client.views("w1", views);
-    }
+    test.client.views("w1", views ?? {});
     test.flush();
     act(() => openFile(test.host, "fe/src/lib.rs"));
     const user = userEvent.setup();

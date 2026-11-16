@@ -5,12 +5,15 @@
  */
 
 import { INDEX_TOPIC } from "@omfp/protocol";
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect } from "react";
+import { MAIN_SLOT } from "../view/layout.ts";
+import { keepListedTabs } from "../vm/tab-choices.ts";
 import { activeView, adoptView, chooseView as choose, keepListed } from "../vm/view-choices.ts";
 import { currentWorkspaceId, useCurrentWorkspaceId } from "./actions.ts";
 import { useWindowState } from "./hooks.ts";
 import { type OmfpHost, useHost } from "./host.tsx";
-import { SELECTED_THREAD, VIEW_CHOICES } from "./keys.ts";
+import { PENDING_TAB, SELECTED_THREAD, SHOWN_VIEW, TAB_CHOICES, VIEW_CHOICES } from "./keys.ts";
+import { selectTab } from "./tab-choices.ts";
 
 /** The id among `viewIds` (the current workspace's views) this window shows for the selected thread (else the draft
  * thread): the thread's view, else the one last chosen in its workspace, else `undefined` (the default view). */
@@ -29,7 +32,8 @@ export function chooseView(host: OmfpHost, viewId: string): void {
 
 /**
  * Keeps {@link VIEW_CHOICES} up to date, for the frame: a thread shown for the first time takes the view last chosen
- * in its workspace, and the threads and workspaces the live index no longer lists (deleted) are dropped.
+ * in its workspace, and the threads and workspaces the live index no longer lists (deleted) are dropped, from
+ * {@link TAB_CHOICES} too (UI-372).
  */
 export function useViewChoicesUpkeep(): void {
   const host = useHost();
@@ -46,6 +50,10 @@ export function useViewChoicesUpkeep(): void {
       }
       const { threads, workspaces } = snapshot.index;
       host.window.set(VIEW_CHOICES, (choices) => keepListed(choices, threads, workspaces));
+      // A thread just created is selected, with its draft's tabs, before the index may list it.
+      const selectedThread = host.window.get(SELECTED_THREAD);
+      const kept = { has: (id: string) => id === selectedThread || threads.has(id) };
+      host.window.set(TAB_CHOICES, (choices) => keepListedTabs(choices, kept, workspaces));
     };
     prune();
     return host.frames.subscribe(() => {
@@ -54,4 +62,25 @@ export function useViewChoicesUpkeep(): void {
       }
     });
   }, [host]);
+}
+
+/**
+ * Publishes the view the frame renders, with the thread it renders it for, as {@link SHOWN_VIEW} (UI-372), before the
+ * passive effects of its widgets run; then, once `ready` (the workspace's views arrived, so the view is not the
+ * built-in one standing in while they load), selects the {@link PENDING_TAB} opened for that thread in it.
+ */
+export function useShownView(viewId: string | undefined, ready: boolean): void {
+  const host = useHost();
+  const [threadId] = useWindowState(SELECTED_THREAD);
+  const [pending] = useWindowState(PENDING_TAB);
+  useLayoutEffect(
+    () => host.window.set(SHOWN_VIEW, viewId === undefined ? undefined : { threadId, viewId, ready }),
+    [host, threadId, viewId, ready],
+  );
+  useLayoutEffect(() => {
+    if (ready && pending !== undefined && viewId !== undefined && pending.threadId === threadId) {
+      host.window.set(PENDING_TAB, undefined);
+      selectTab(host, viewId, MAIN_SLOT, pending.tabId);
+    }
+  }, [host, ready, pending, threadId, viewId]);
 }

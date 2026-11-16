@@ -8,6 +8,7 @@ import type { CloseJobs, RunInfo } from "@omfp/protocol";
 import { useMemo } from "react";
 import { strings } from "../strings/index.ts";
 import { expandPastes } from "../vm/paste.ts";
+import { adoptDraft, dropDraft } from "../vm/tab-choices.ts";
 import { displayTitle } from "../vm/threads.ts";
 import { messageEntryId } from "../vm/tree.ts";
 import { currentWorkspaceId as workspaceOf } from "../vm/workspaces.ts";
@@ -26,6 +27,7 @@ import {
   RENAMING_THREAD,
   SELECTED_THREAD,
   SUCCESSES,
+  TAB_CHOICES,
 } from "./keys.ts";
 
 export interface ThreadActions {
@@ -167,9 +169,14 @@ function forget(host: OmfpHost, threadId: string): void {
   window.reset(draftKey(threadId));
 }
 
+/** Drops the draft thread with its message and the tabs it selected (UI-372). */
 function discardDraft(host: OmfpHost): void {
+  const draft = host.window.get(DRAFT_THREAD);
   host.window.set(DRAFT_THREAD, undefined);
   host.window.reset(DRAFT_MESSAGE);
+  if (draft !== undefined) {
+    host.window.set(TAB_CHOICES, (choices) => dropDraft(choices, draft.workspaceId));
+  }
 }
 
 /** The runs a `conflict` of `threads.archive` or `threads.delete` lists (PRT-208); `undefined` for another failure. */
@@ -269,6 +276,8 @@ export function threadActions(host: OmfpHost): ThreadActions {
           prompt,
           ...(draft.model === undefined ? {} : { model: draft.model }),
         });
+        // The thread keeps the tabs its draft selected (UI-372).
+        window.set(TAB_CHOICES, (choices) => adoptDraft(choices, draft.workspaceId, thread.id));
         if (window.get(DRAFT_THREAD)?.workspaceId === draft.workspaceId) {
           discardDraft(host);
         }
@@ -280,6 +289,7 @@ export function threadActions(host: OmfpHost): ThreadActions {
           const threadId = isObject(details) ? details.threadId : undefined;
           if (typeof threadId === "string" && threadId.trim() !== "") {
             window.set(draftKey(threadId), message);
+            window.set(TAB_CHOICES, (choices) => adoptDraft(choices, draft.workspaceId, threadId));
             if (window.get(DRAFT_THREAD) === draft) {
               discardDraft(host);
             }

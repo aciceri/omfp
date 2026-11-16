@@ -807,6 +807,14 @@ workspace folder. `workspaces.read_file` and the raw file route now read any abs
 relative path still may not leave the folder. Design: reading reveals nothing an agent of the same token-protected
 daemon could not read (D-17); writes stay where the workspace's rescans, git status and conflict checks see them.
 
+Each thread remembers the tab selected in every `tabs` container of each view (#101, UI-372), as it already remembered
+its view (UI-367): switching threads restores the destination's chat, file or widget tab instead of carrying over the
+source's. The open file and widget tabs stay the workspace's (UI-115, UI-373); only the selection moved. Design: the
+selections live in one window key beside the views' (`TAB_CHOICES`, by thread, view and container: `main` or the
+container's layout path), read at render time, so a tab gone from the inventory or the view falls back to the first
+one without being forgotten; opening or revealing a tab selects it in the view the frame shows (`SHOWN_VIEW`), or,
+right after a thread switch the frame has not rendered yet, once it renders that thread's view (`PENDING_TAB`).
+
 ## M18 — Workspace jobs (done)
 
 Scope: jobs a workspace declares in `.omfp/jobs.json` (D-21, [02 — Declared jobs](02-daemon.md#declared-jobs-m18),

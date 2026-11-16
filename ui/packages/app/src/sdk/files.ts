@@ -11,25 +11,29 @@ import type { VimMode } from "@omfp/kit";
 import type { FileCandidate, FileContent } from "@omfp/protocol";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { strings } from "../strings/index.ts";
+import { MAIN_SLOT } from "../view/layout.ts";
 import {
   closeOpenedTab,
-  closeTab,
   decodeFloatingPanel,
   decodeOpenFiles,
   type FileTabs,
   FLOATING_PANEL_DEFAULT,
   type FloatingPanel,
+  fileTabId,
   NO_FILE_TABS,
+  neighbourTab,
   type OpenFileOptions,
   type OpenFiles,
   openTab,
   retargetTab,
 } from "../vm/files.ts";
+import { replaceTab } from "../vm/tab-choices.ts";
 import { currentWorkspaceId, errorMessage, reportError, useCurrentWorkspaceId } from "./actions.ts";
 import { useCall, useSnapshot, useWindowState, useWorkspace } from "./hooks.ts";
 import { type OmfpHost, useHost } from "./host.tsx";
-import { SELECTED_THREAD } from "./keys.ts";
+import { PENDING_TAB, SELECTED_THREAD, SHOWN_VIEW, TAB_CHOICES } from "./keys.ts";
 import { type ResultCache, resultKey } from "./results.ts";
+import { chosenTabOf, selectTab, useChosenTab } from "./tab-choices.ts";
 import { WidgetScope } from "./widget.ts";
 import { type WindowKey, windowKey } from "./window-store.ts";
 
@@ -94,6 +98,68 @@ export function openFile(host: OmfpHost, path: string, options: OpenFileOptions 
     ...files,
     [workspaceId]: openTab(files[workspaceId] ?? NO_FILE_TABS, path, options),
   }));
+  selectOpenedTab(host, workspaceId, fileTabId(path));
+}
+
+/** The view the frame renders for the selected thread; `undefined` while it renders another thread (a switch not
+ * rendered yet) or none, and, with `ready`, while it is the built-in view standing in until the workspace's views
+ * arrive. */
+function shownViewId(host: OmfpHost, ready: boolean): string | undefined {
+  const shown = host.window.get(SHOWN_VIEW);
+  return shown !== undefined && (shown.ready || !ready) && shown.threadId === host.window.get(SELECTED_THREAD)
+    ? shown.viewId
+    : undefined;
+}
+
+/**
+ * Selects the opened tab `tabId` of `workspaceId`'s `main` slot (a file's or a revealed widget's, UI-115, UI-373) in
+ * the view shown, for the selected thread only (else the draft thread, UI-372); right after a thread switch, or while
+ * the workspace's views load, once the frame renders that thread's own view ({@link PENDING_TAB}). Another
+ * workspace's tab selects nothing: no thread of it is shown.
+ */
+export function selectOpenedTab(host: OmfpHost, workspaceId: string, tabId: string): void {
+  if (workspaceId !== currentWorkspaceId(host)) {
+    return;
+  }
+  const viewId = shownViewId(host, true);
+  if (viewId === undefined) {
+    host.window.set(PENDING_TAB, { threadId: host.window.get(SELECTED_THREAD), tabId });
+  } else {
+    selectTab(host, viewId, MAIN_SLOT, tabId);
+  }
+}
+
+/**
+ * Closes the opened tab `tabId` of `workspaceId` (a file's or a revealed widget's): when the shown thread had it
+ * selected in `viewId` (the view, or floating panel, whose tab bar closed it; by default the view shown), its
+ * neighbour is (UI-366), and the other threads of the workspace that had it selected go back to their first tab
+ * (UI-372).
+ */
+export function closeOpened(
+  host: OmfpHost,
+  workspaceId: string,
+  tabId: string,
+  viewId: string | undefined = shownViewId(host, false),
+): void {
+  const tabs = host.window.get(OPEN_FILES)[workspaceId];
+  if (tabs === undefined || closeOpenedTab(tabs, tabId) === tabs) {
+    return;
+  }
+  const shown = workspaceId === currentWorkspaceId(host) ? viewId : undefined;
+  const selected = shown !== undefined && chosenTabOf(host, shown, MAIN_SLOT) === tabId;
+  host.window.set(OPEN_FILES, (files) => ({ ...files, [workspaceId]: closeOpenedTab(tabs, tabId) }));
+  host.window.set(TAB_CHOICES, (choices) =>
+    replaceTab(choices, workspaceId, threadsOf(host, workspaceId), tabId, undefined),
+  );
+  if (selected) {
+    selectTab(host, shown, MAIN_SLOT, neighbourTab(tabs, tabId));
+  }
+}
+
+/** Whether a thread is one of `workspaceId`'s, by the live index. */
+function threadsOf(host: OmfpHost, workspaceId: string): (threadId: string) => boolean {
+  const { threads } = host.frames.getSnapshot().index;
+  return (threadId) => threads.get(threadId)?.workspaceId === workspaceId;
 }
 
 /** `openFile(path, { line?, diff? })` for this window (AGT-027); an absolute path outside the workspace folder opens
@@ -138,7 +204,11 @@ export async function findMissingFile(
   return "choosing";
 }
 
-/** Opens `chosen` in place of the tab of `path` (UI-117), closing the picker. */
+/**
+ * Opens `chosen` in place of the tab of `path` (UI-117), closing the picker: the threads that selected `path`'s tab
+ * select `chosen`'s (UI-372), whichever thread is shown when the lookup answers. Without a tab of `path`, `chosen`
+ * opens as `openFile` opens it.
+ */
 export function chooseFile(
   host: OmfpHost,
   workspaceId: string,
@@ -147,10 +217,18 @@ export function chooseFile(
   options: OpenFileOptions = {},
 ): void {
   host.window.set(FILE_PICKER, undefined);
+  const tabbed = (host.window.get(OPEN_FILES)[workspaceId] ?? NO_FILE_TABS).tabs.some((tab) => tab.path === path);
   host.window.set(OPEN_FILES, (files) => ({
     ...files,
     [workspaceId]: retargetTab(files[workspaceId] ?? NO_FILE_TABS, path, chosen, options),
   }));
+  if (tabbed) {
+    host.window.set(TAB_CHOICES, (choices) =>
+      replaceTab(choices, workspaceId, threadsOf(host, workspaceId), fileTabId(path), fileTabId(chosen)),
+    );
+  } else {
+    selectOpenedTab(host, workspaceId, fileTabId(chosen));
+  }
 }
 
 /** Closes the picker without a choice: the opening is cancelled, so the tab of the missing `path` closes (UI-117). */
@@ -160,10 +238,7 @@ export function cancelFilePicker(host: OmfpHost): void {
     return;
   }
   host.window.set(FILE_PICKER, undefined);
-  host.window.set(OPEN_FILES, (files) => {
-    const tabs = files[picker.workspaceId];
-    return tabs === undefined ? files : { ...files, [picker.workspaceId]: closeTab(tabs, picker.path) };
-  });
+  closeOpened(host, picker.workspaceId, fileTabId(picker.path));
 }
 
 /**
@@ -206,10 +281,13 @@ export function useMissingFile(
   return outcome?.path === path ? outcome.found : "finding";
 }
 
-/** A workspace's opened tabs in this window, with what changes them. */
+/** A workspace's opened tabs in this window, with the one selected in the view shown and what changes them. */
 export interface FileTabsState extends FileTabs {
-  /** Selects a tab by id (a file's `fileTabId`, a widget's `widgetTabId`, a slot child's layout path); `undefined`:
-   * the slot's first tab. */
+  /** The tab the selected thread (else the draft thread) selected in the `main` slot (or the floating file panel) of
+   * the view shown (UI-372); `undefined`: the slot's first tab. */
+  readonly active: string | undefined;
+  /** Selects a tab by id (a file's `fileTabId`, a widget's `widgetTabId`, a slot child's layout path) for the
+   * selected thread in the view shown; `undefined`: the slot's first tab. */
   select(id: string | undefined): void;
   /** Closes the file `path`. */
   close(path: string): void;
@@ -218,28 +296,28 @@ export interface FileTabsState extends FileTabs {
 }
 
 export function useFileTabs(workspaceId: string | undefined): FileTabsState {
-  const [files, setFiles] = useWindowState(OPEN_FILES);
+  const host = useHost();
+  const [files] = useWindowState(OPEN_FILES);
+  const [shown] = useWindowState(SHOWN_VIEW);
+  const [active, select] = useChosenTab(shown?.viewId, MAIN_SLOT);
   const tabs = workspaceId === undefined ? NO_FILE_TABS : (files[workspaceId] ?? NO_FILE_TABS);
-  const update = useCallback(
-    (change: (tabs: FileTabs) => FileTabs) => {
-      if (workspaceId !== undefined) {
-        setFiles((all) => {
-          const previous = all[workspaceId] ?? NO_FILE_TABS;
-          const next = change(previous);
-          return next === previous ? all : { ...all, [workspaceId]: next };
-        });
-      }
-    },
-    [setFiles, workspaceId],
-  );
   return useMemo(
     () => ({
       ...tabs,
-      select: (id) => update((current) => (current.active === id ? current : { ...current, active: id })),
-      close: (path) => update((current) => closeTab(current, path)),
-      closeTab: (id) => update((current) => closeOpenedTab(current, id)),
+      active,
+      select,
+      close: (path) => {
+        if (workspaceId !== undefined) {
+          closeOpened(host, workspaceId, fileTabId(path));
+        }
+      },
+      closeTab: (id) => {
+        if (workspaceId !== undefined) {
+          closeOpened(host, workspaceId, id);
+        }
+      },
     }),
-    [tabs, update],
+    [host, tabs, active, select, workspaceId],
   );
 }
 

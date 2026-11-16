@@ -9,15 +9,18 @@
 import { Tab, TabList, TabPanel, Tabs } from "@omfp/kit";
 import type { ViewsState } from "@omfp/protocol";
 import { Fragment, memo, type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { closeOpened } from "../sdk/files.ts";
 import {
   type FileTabsState,
   fileName,
   fileTabId,
   REVEAL_WIDGET,
   useFileTabs,
+  useHost,
   useWindowState,
   widgetTabId,
 } from "../sdk/index.ts";
+import { useChosenTab } from "../sdk/tab-choices.ts";
 import { strings } from "../strings/index.ts";
 import { resizeSizes } from "./edit.ts";
 import {
@@ -258,12 +261,13 @@ function openedTabs(files: FileTabsState): OpenedTab[] {
 }
 
 /**
- * A `tabs` container: one tab per child, the selected one window-local. The one with `"id": "main"` (UI-115) also
- * holds this window's open files of the workspace and the widgets reveals opened there (UI-373), after its own
- * children; a middle click closes the opened tab under the pointer (UI-365), as browsers and editors do. One tab alone
- * needs no tab bar (AGT-010): the default view's `main` slot holds the chat alone until files open. Every tab stays
- * mounted, the ones not selected hidden with their effects paused, so they show again as they were (UI-400): a file
- * keeps its edit.
+ * A `tabs` container: one tab per child. The selected tab is remembered per thread (the draft thread's per workspace)
+ * and view (UI-372); one remembered that is gone (closed, removed from the view) gives way to the first tab. The one
+ * with `"id": "main"` (UI-115) also holds this window's open files of the workspace and the widgets reveals opened
+ * there (UI-373), after its own children; a middle click closes the opened tab under the pointer (UI-365), as browsers
+ * and editors do. One tab alone needs no tab bar (AGT-010): the default view's `main` slot holds the chat alone until
+ * files open. Every tab stays mounted, the ones not selected hidden with their effects paused, so they show again as
+ * they were (UI-400): a file keeps its edit.
  */
 function TabsNode({
   tree,
@@ -275,15 +279,20 @@ function TabsNode({
   scope: Scope;
 }): ReactNode {
   const main = tree.props.id === MAIN_SLOT;
+  const host = useHost();
   const files = useFileTabs(scope.workspaceId);
-  const [picked, setPicked] = useState<string | undefined>(undefined);
+  const [chosen, select] = useChosenTab(scope.viewId, main ? MAIN_SLOT : path);
+  // Closing an opened tab selects its neighbour here, in this view or floating panel (UI-366, UI-372).
+  const closeTab = (id: string) => {
+    if (scope.workspaceId !== undefined) {
+      closeOpened(host, scope.workspaceId, id, scope.viewId);
+    }
+  };
   const own = tree.children.map((child, index) => ({ child, id: `${path}.${index}` }));
   const opened = main ? openedTabs(files) : [];
-  const select = main ? files.select : setPicked;
   useRevealTab(own, select);
   const ids = [...own.map(({ id }) => id), ...opened.map(({ id }) => id)];
-  const active = main ? files.active : picked;
-  const selected = active !== undefined && ids.includes(active) ? active : ids[0];
+  const selected = chosen !== undefined && ids.includes(chosen) ? chosen : ids[0];
   const bar = useTabBar(selected);
   const slot = main ? MAIN_SLOT : undefined;
   const [only] = own;
@@ -305,7 +314,7 @@ function TabsNode({
       {...(selected === undefined ? {} : { selectedKey: selected })}
       onSelectionChange={(key) => select(String(key))}
     >
-      <div className="omfp-view__tabbar" ref={bar} {...(main ? openedTabBarHandlers(files.closeTab) : {})}>
+      <div className="omfp-view__tabbar" ref={bar} {...(main ? openedTabBarHandlers(closeTab) : {})}>
         <TabList aria-label={strings.shell.responsive.tabs(tree.kind, main ? MAIN_SLOT : path)}>
           {[
             ...own.map(({ child, id }) => (
@@ -320,7 +329,7 @@ function TabsNode({
                   title={tab.title}
                   tooltip={tab.tooltip}
                   kind={tab.kind}
-                  onClose={files.closeTab}
+                  onClose={closeTab}
                 />
               </Tab>
             )),

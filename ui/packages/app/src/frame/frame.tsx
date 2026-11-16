@@ -15,6 +15,7 @@ import { createKeyHandler } from "../keymap/handler.ts";
 import { type Binding, DEFAULT_BINDINGS } from "../keymap/keymap.ts";
 import { globalKeyTimers, type KeyTimers, WhichKeyState } from "../keymap/which-key.ts";
 import { KeymapError, useBindings } from "../keymap/workspace.tsx";
+import { useShownView } from "../sdk/active-view.ts";
 import {
   chooseView,
   EDITOR_MODE,
@@ -151,6 +152,9 @@ export function Frame({
       ? listed
       : (file.view ??
         (file.error !== undefined ? BUILTIN_VIEW : keptListed?.file === listed.file ? keptListed : undefined));
+  // Where opening a file or a widget tab selects it (UI-372); a tab opened right after a thread switch waits for the
+  // workspace's views, not the built-in view standing in while they load.
+  useShownView(view?.id, state !== undefined);
   const keeping = keepViews(
     kept,
     workspaceId,

@@ -807,6 +807,37 @@ workspace folder. `workspaces.read_file` and the raw file route now read any abs
 relative path still may not leave the folder. Design: reading reveals nothing an agent of the same token-protected
 daemon could not read (D-17); writes stay where the workspace's rescans, git status and conflict checks see them.
 
+## M18 — Workspace jobs (planned)
+
+Scope: jobs a workspace declares in `.omfp/jobs.json` (D-21, [02 — Declared jobs](02-daemon.md#declared-jobs-m18),
+DMN-320..DMN-336): one-shot jobs run by hand, jobs on a cron schedule, services kept running; each a shell command or a
+prompt to a new or reused thread. The daemon schedules and supervises them and keeps their runs in its store; an agent
+asked to "read my mail every morning" declares a `schedule` job with a `prompt`, one asked to watch something declares
+a `service`. The protocol ([03 — Declared jobs](03-protocol.md#declared-jobs-m18), PRT-200..PRT-210): the `jobs/<id>`
+topic, `jobs.list`, `jobs.runs`, `jobs.run`, `jobs.define`, `jobs.remove`, `jobs.enable`, the counts on the `index`
+topic, the choice to stop or keep a thread's transient runs when it is archived or deleted, threads made by a job. The
+window ([04 — Workspace jobs](04-ui.md#workspace-jobs-m18), UI-740..UI-749): counts by the workspace's name in the
+left column, `omfp:jobs`, `:job-run` and the other job commands, the dialog when closing a thread with its runs, init
+files' `omfp.jobs` and run events; omp's background `bash` runs called *background commands* so that *job* means only
+these. Agents and widgets: `useJobs` and the docs (AGT-090, AGT-091).
+
+Acceptance (to write as tests when the milestone starts): contract tests of the scheduler on a fake clock (a schedule
+due, missed and skipped while running; a service restarted with its backoff and not after a kill; a file edited, made
+invalid and removed while jobs run); a prompt job against the pinned omp and the fake LLM in a new and a reused thread;
+an E2E journey in headless Chromium — the counts by a workspace's name, `omfp:jobs` running a job and showing its
+output, archiving a thread whose agent started a transient run and choosing *Keep them running*.
+
+Design: the definitions live in the folder because they belong to the workspace like its views; the runs are daemon
+state, so a second daemon showing the folder starts from the file with no history. One run per job, a missed schedule
+skipped unless the job asks for one catch-up run, services restarted with a backoff and never after the user killed
+them. Events inside omfp (a thread finished, a file changed) as triggers are left for later: a watcher is a `service`
+that listens itself.
+
+Init files never declare jobs: they run in each open window (none open, nothing runs; two open, two of everything),
+while a job must run once, whether or not a window is open. They are the window's glue with jobs — a key or command
+that runs one, a view or panel showing them, a notice when a run fails — and nothing more: a listener's side effect
+runs once per open window, so chaining jobs (B after A) belongs to the daemon's triggers (later), not to `on`.
+
 ## Reusable terminal sessions
 
 M17 adds daemon-owned PTY sessions and the copyable `omfp:terminal` widget (#80, TRM-100..106, E2E-71). This is a

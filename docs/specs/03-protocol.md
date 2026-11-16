@@ -54,8 +54,9 @@ sequenceDiagram
 
 Topics: `index` (workspaces with their discovered repositories, threads with their summaries, and the user's theme),
 `thread/<id>` (one thread), `workspace/<id>` (git status of each repository of one workspace), `views/<id>` (the views
-manifest, widget folders and widget state of one workspace, PRT-040), `job/<id>` (one job's output, PRT-041), and
-`terminal/<id>` (one daemon-owned PTY session, TRM-100).
+manifest, widget folders and widget state of one workspace, PRT-040), `job/<id>` (one job's output, PRT-041),
+`jobs/<id>` (the declared jobs of one workspace and their runs, PRT-200) and `terminal/<id>` (one daemon-owned PTY
+session, TRM-100).
 
 The `index` state is `{ workspaces, threads, theme, settings, init, models }`; its events are
 `workspace_upserted` / `workspace_removed`, `thread_upserted` / `thread_removed`,
@@ -131,7 +132,7 @@ previous settings stay). A thread summary carries `title` (`""` until the first 
 | `threads.create` | Required `workspace`: `{ id }` \| `{ new: { name?, link? } }`; an explicit `new: {}` names the new folder after the title, else the first message. `prompt?` (first message), `model?`, `thinkingLevel?`, `approvalMode?`: `always-ask` \| `always-ask-cached` \| `write` \| `yolo` (default `yolo`, DMN-074, DMN-210), `title?` (scripts and agents; otherwise generated, DMN-073) | thread; missing `workspace` is `bad_request` with both choices and creates nothing; when omp cannot start for `prompt`, nothing is created and the error carries `details.stderrTail` (DMN-211, DMN-212) |
 | `threads.update` | `threadId`, `title?` (a `set` title, DMN-073), `approvalMode?` (as for `threads.create`; from the next start of the thread's omp) | thread |
 | `threads.reorder` | `threadId`, `workspaceId?`, `beforeId?` | `{}`; the thread goes just before `beforeId`, or last, in `workspaceId` (another one moves it there and restarts its omp, DMN-283) or its own (PRT-171, DMN-282) |
-| `threads.archive` / `.unarchive` / `.delete` | `threadId` | `{}`; archive stops the thread's omp process and sets `archivedAt`, unarchive clears it, delete removes the thread's records and directory (workspaces are never removed implicitly) |
+| `threads.archive` / `.unarchive` / `.delete` | `threadId`, `jobs?` (`kill` \| `keep`, archive and delete only, PRT-208) | `{}`; archive stops the thread's omp process and sets `archivedAt`, unarchive clears it, delete removes the thread's records and directory (workspaces are never removed implicitly); `conflict` without `jobs` while runs its agent started still run (PRT-208) |
 | `threads.search` | `query` | `{ results: [{ threadId, snippet }] }`: threads whose conversation text contains `query`, most recently updated first (DMN-076) |
 | `threads.fork` | `threadId`, `entryId?` (a message entry of `thread.tree`) | the new thread, in the source's workspace, its omp resumed on a copy of the conversation through the entry (PRT-180, DMN-300) |
 | `threads.list` | `workspaceId?`, `includeArchived?` | `{ threads }`: thread summaries, as on `index` (PRT-090) |
@@ -175,7 +176,13 @@ previous settings stay). A thread summary carries `title` (`""` until the first 
 | `windows.run` | `windowId?`, `workspaceId?`, `command`, `args?` | `{ windowId, command }`: the window ran the command (PRT-124) |
 | `windows.check_widget` | `windowId?`, `workspaceId`, `widget` | `{ windowId, report, settled }`: the widget rendered out of sight in the window (PRT-124) |
 | `windows.answer` | `requestId`, `answer` | `{}`; a window's answer to a `window_request` frame, on the connection it came on (PRT-124) |
-| `jobs.kill` | `jobId` | `{}` (DMN-081) |
+| `jobs.kill` | `jobId` | `{}` (DMN-081); a run of a declared job too: a prompt run's turn is aborted (DMN-328), a service stays stopped (DMN-326) |
+| `jobs.list` | `workspaceId` | `JobsState`: the workspace's declared jobs, as on `jobs/<id>` (PRT-202) |
+| `jobs.runs` | `workspaceId`, `job`, `before?`, `limit?` | `{ runs, more }`: the job's stored runs, newest first (PRT-203) |
+| `jobs.run` | `workspaceId`, `job` | the started `RunInfo` (PRT-204); `conflict` while it runs or when disabled |
+| `jobs.define` | `workspaceId`, `name`, `job`, `replace?` | the `JobView` once `.omfp/jobs.json` holds it (PRT-205) |
+| `jobs.remove` | `workspaceId`, `name` | `{}` once `.omfp/jobs.json` no longer holds it (PRT-206) |
+| `jobs.enable` | `workspaceId`, `name`, `enabled` | the `JobView` once `.omfp/jobs.json` says so (PRT-207) |
 | `activity.list` | `threadId?`, `before?`, `after?`, `limit?` | `{ entries: [{ seq, at, threadId, client, method, params, error }], more }`: the activity log, newest first (PRT-086) |
 | `prompts.history` | `threadId?`, `workspaceId?`, `query?`, `limit?` | `{ prompts: [{ text, threadId, workspaceId, at }] }`: the user's prompts, the thread's first, then its workspace's, then the others (PRT-127) |
 | `workspaces.mcp_servers` | `workspaceId` | `McpServers`: the MCP servers configured for the workspace, unchecked (PRT-110) |
@@ -300,6 +307,39 @@ the tool definitions and the system prompt).
 | PRT-082 | `views.unmount { workspaceId, id }` → `Unmounted { views, removedViews, panel }` (AGT-063): the ids of the views it changed and of those it removed, and whether it removed the panel `id`; written and published like PRT-080. |
 | PRT-083 | `widgets.save { name, workspaceId?, widget?, code?, replace? }` → `WidgetSaved { name, reference }` (AGT-064): `workspaceId` is required with `widget`; `bad_request` for a bad name or both or neither of `widget` and `code`, `not_found` for a missing widget, `conflict` for an existing component without `replace`. |
 | PRT-084 | `widgets.library {}` → `WidgetLibrary { components: [{ name, reference, entry, files, version, description }] }` (AGT-065), by name; `entry` is `null` for a folder without one. |
+
+## Declared jobs (M18)
+
+The jobs a workspace declares in `.omfp/jobs.json` and their runs (DMN-320..DMN-336). A *job* is the definition, a
+*run* one execution; a run's id is a job id (`job/<id>`, `jobs.kill`). What `jobs.start` starts is a *transient run*,
+of no job (DMN-080).
+
+```jsonc
+// jobs/<workspaceId> state
+{ "jobs": [{
+    "name": "mail",
+    "job": { "trigger": "schedule", "schedule": "0 8 * * 1-5", "missed": "skip", "enabled": true,
+             "prompt": { "text": "Read my unread mail…", "thread": "reuse" } },
+    "status": "idle", "run": null, "nextAt": 1795330800000,
+    "lastRun": { "id": "01K…", "workspaceId": "01K…", "job": "mail", "trigger": "schedule", "startedBy": null,
+                 "threadId": "01K…", "startedAt": 1795244400000, "endedAt": 1795244461000, "status": "succeeded",
+                 "reason": null, "exitCode": null, "signal": null } }],
+  "error": null }
+```
+
+| ID | Requirement |
+| --- | --- |
+| PRT-200 | **`jobs/<workspaceId>`** (DMN-322): the state is `JobsState { jobs: JobView[], error: string \| null }` — the jobs of the last valid `jobs.json` by name, and why the current file is refused (`null` when valid or absent; DMN-321). A `JobView` is `{ name, job, status, run, lastRun, nextAt }`: `job` the definition with its defaults filled in (`trigger`, `missed`, `restart`, `enabled`, `prompt.thread`); `status` `disabled`, `idle`, `running`, `waiting` (a service between restarts, DMN-326) or `stopped` (a service killed through the protocol, or one that ended under `on-failure` without failing); `run` the running `RunInfo` or `null`; `lastRun` the newest finished run that was not `skipped`, or `null`; `nextAt` (Unix ms) the next time of a schedule or a waiting service's restart, else `null`. Its events: `jobs_set { jobs, error }` (the file was applied or refused: replaces both), `job_updated { job }` (replaces the job of that name), and `run_started { run }` / `run_ended { run }`, which change nothing (the matching `job_updated` does) and tell clients a run started or ended, `skipped` ones included. Subscribing to an unknown workspace is `not_found`; one without a file has `jobs: []`. |
+| PRT-201 | **`RunInfo`** MUST be `{ id, workspaceId, job, trigger, startedBy, threadId, command, startedAt, endedAt, status, reason, exitCode, signal }` as the store keeps it (DMN-330): `job` `null` for a transient run, `trigger` `manual`, `schedule`, `missed`, `service` or, for a transient run, `start`; `startedBy` a provenance's `createdBy` (PRT-093) or `null` for the scheduler and the supervisor; `threadId` a prompt run's thread; `command` the command a command run ran (its output is `job/<id>`), `null` for a prompt run, so a client knows each run's action even after its job changed; `endedAt`, `exitCode`, `signal` and `reason` `null` until known. |
+| PRT-202 | `jobs.list { workspaceId }` (permission `Read`) MUST answer the workspace's `JobsState` as `jobs/<id>` holds it, for clients without a subscription (an agent's `omfp_call`); an unknown workspace is `not_found`. |
+| PRT-203 | `jobs.runs { workspaceId, job, before?, limit? }` (permission `Read`) MUST answer `{ runs: RunInfo[], more }`: the runs the store keeps of that job (DMN-330), newest first, `skipped` ones included, only those started before the run `before` when given; `limit` defaults to 20 and is capped at 50. A job no longer declared still answers its kept runs; a workspace or job with none answers `runs: []`. |
+| PRT-204 | `jobs.run { workspaceId, job }` (permission `Drive`) MUST start a run of a declared job (trigger `manual`, `startedBy` the caller's provenance) and answer its `RunInfo` once it started (a prompt run: once omp admitted the prompt, DMN-328); a stopped or waiting service starts at once with its backoff reset (DMN-326). `not_found` for an unknown job; `conflict` for a disabled job, a job whose run still runs (DMN-324) or a `reuse` thread that is busy; a prompt run whose thread cannot start fails with `thread_failed` (`details.stderrTail`, DMN-212) and is stored `failed`; a command run whose shell cannot start (its `cwd` missing) is answered as its `RunInfo`, already `failed` with the reason. |
+| PRT-205 | `jobs.define { workspaceId, name, job, replace? }` (permission `Manage`) MUST write the job into `.omfp/jobs.json` (DMN-332) and answer its `JobView` once applied and published on `jobs/<id>`: `bad_request` for a name or definition breaking DMN-320 (the first rule, as `<JSON path>: <reason>`) or a current file that is invalid (naming its error); `conflict` for an existing name without `replace: true`. |
+| PRT-206 | `jobs.remove { workspaceId, name }` (permission `Manage`) MUST remove the job from `.omfp/jobs.json` (DMN-332) and answer `{}` once torn down (DMN-322) and published; `not_found` for an unknown name, `bad_request` for an invalid current file. Its stored runs stay readable with `jobs.runs` until the workspace is removed. |
+| PRT-207 | `jobs.enable { workspaceId, name, enabled }` (permission `Manage`) MUST set the job's `enabled` in `.omfp/jobs.json` (DMN-332: `true` removes the key, the default) and answer its `JobView` once applied; `not_found` and `bad_request` as PRT-206. |
+| PRT-208 | **Closing a thread with its runs**: `threads.archive` and `threads.delete` take `jobs?: "kill" \| "keep"`. While transient runs the thread's agent started still run (DMN-162's `started_by`), a call without `jobs` MUST change nothing and answer `conflict` with `details: { runs: RunInfo[] }`; `kill` kills them as `jobs.kill` does before archiving or deleting, `keep` leaves them running (DMN-333). Runs of declared jobs never count (DMN-329). `thread.stop` takes no `jobs`: the idle reaper stops threads too (DMN-034); `cascade: true` kills them as before (AGT-071). |
+| PRT-209 | **Threads a job made**: a thread a prompt run created (DMN-328) MUST carry `createdBy: { kind: "job", job }` (PRT-093 gains the kind), `job` the job's name in the thread's workspace; it belongs to no spawned tree (AGT-070). |
+| PRT-210 | **Counts in the index**: `Workspace` MUST carry `jobs?: JobCounts { total, manual, schedule, service, running, failing, error }` — how many jobs the last valid file declares by trigger, how many run now, how many enabled jobs' `lastRun` failed, and whether the current file is refused — absent when the workspace declares no job and its file is not refused; a change publishes `workspace_upserted` (DMN-335). |
 
 ## No omp terminal handoff
 

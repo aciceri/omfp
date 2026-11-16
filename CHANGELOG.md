@@ -55,6 +55,9 @@ Initial release, planned as 0.1.0.
 - Switching threads now restores the destination thread's view and the tab it last selected in each tab group,
   including chat, file and widget tabs, instead of carrying over the previous thread's selection. Open file and widget
   tabs stay shared by the workspace; a remembered tab that was closed falls back to the group's first tab.
+- Adding or removing a repository in a workspace no longer posts the daemon's `Added …` / `Workspace directories:`
+  output into every running thread of that workspace, nor counts as thread activity. Directory commands you type
+  yourself still show their output.
 
 ### Changed
 

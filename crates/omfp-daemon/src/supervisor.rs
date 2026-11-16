@@ -45,6 +45,7 @@ mod mcp;
 mod models;
 mod naming;
 mod restart;
+mod roots;
 
 pub use login::{AuthOmp, LOGIN_MODEL};
 pub use restart::Restart;
@@ -57,6 +58,11 @@ pub const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 
 /// Lines of `omp.log` reported with a crash (DMN-035).
 const STDERR_TAIL_LINES: usize = 20;
+
+/// How long the `command_output` of a local command the daemon sent itself (`/mcp test`, a root sync's `/add-dir`)
+/// may trail omp's answer to the prompt: omp writes the output first, so it is only in transit through the event pump
+/// (DMN-029, DMN-191).
+const OUTPUT_WAIT: Duration = Duration::from_secs(10);
 
 /// A message for omp's queues while the agent works (`thread.steer`, `thread.follow_up`, DMN-226).
 #[derive(Debug, Clone)]
@@ -330,10 +336,14 @@ struct Actor {
     levels: broadcast::Sender<LiveLevelsEvent>,
     /// The id of the last prompt omp admitted with agent work, until the next process starts (DMN-152).
     last_prompt: Mutex<Option<String>>,
-    /// Serializes the daemon's own local commands (`/mcp test`), whose `command_output` frames carry no id (DMN-191).
+    /// Serializes the daemon's own local commands (`/mcp test`, root sync), whose `command_output` frames carry no id
+    /// (DMN-029, DMN-191).
     local_commands: tokio::sync::Mutex<()>,
     /// The daemon's `/mcp test` in flight: its `command_output` goes here, not into the transcript (DMN-200).
     mcp_check: Mutex<Option<mcp::PendingCheck>>,
+    /// The daemon's root sync command (`/add-dir`, `/remove-dir`) in flight: its `command_output` goes here, not into
+    /// the transcript (DMN-029).
+    root_sync: Mutex<Option<roots::PendingRoot>>,
     /// The workspace folder the running omp read its MCP configs from and their fingerprint then (DMN-201).
     mcp_configs: Mutex<Option<(PathBuf, crate::omp_mcp::ConfigFingerprint)>>,
     /// The restart the daemon owes the thread's omp, and why (DMN-203, DMN-204, DMN-228).
@@ -370,6 +380,7 @@ impl Actor {
             last_prompt: Mutex::new(None),
             local_commands: tokio::sync::Mutex::new(()),
             mcp_check: Mutex::new(None),
+            root_sync: Mutex::new(None),
             mcp_configs: Mutex::new(None),
             restart: Mutex::new(restart::DueRestart::default()),
             prompting: tokio::sync::RwLock::new(()),
@@ -947,7 +958,8 @@ impl Supervisor {
     }
 
     /// Sends `/add-dir` for `desired` roots not `recorded` and `/remove-dir` for recorded ones no longer desired,
-    /// then records `desired`.
+    /// then records `desired`. Housekeeping, not the thread's doing: it is no activity of the thread and its output
+    /// stays out of the transcript (DMN-029).
     async fn apply_roots(
         &self,
         actor: &Actor,
@@ -958,25 +970,17 @@ impl Supervisor {
         let added = desired
             .iter()
             .filter(|root| !recorded.contains(root))
-            .map(|root| format!("/add-dir {}", root.display()));
+            .map(|root| roots::RootCommand::Add(root.clone()));
         let removed = recorded
             .iter()
             .filter(|root| !desired.contains(root))
-            .map(|root| format!("/remove-dir {}", root.display()));
-        let commands: Vec<String> = added.chain(removed).collect();
+            .map(|root| roots::RootCommand::Remove(root.clone()));
+        let commands: Vec<roots::RootCommand> = added.chain(removed).collect();
         if !commands.is_empty() {
-            blocking(move || {
-                for message in commands {
-                    process.prompt(PromptCommand {
-                        message,
-                        images: None,
-                        streaming_behavior: None,
-                    })?;
-                }
-                Ok::<_, omp_rpc::Error>(())
-            })
-            .await??;
-            actor.touch();
+            let _one_at_a_time = actor.local_commands.lock().await;
+            for command in commands {
+                Self::root_command(actor, &process, command).await?;
+            }
         }
         let threads = Arc::clone(&self.inner.threads);
         let thread_id = actor.id.clone();
@@ -1085,8 +1089,10 @@ impl Supervisor {
             frame: RpcNotification::CommandOutput(output),
         } = &event
         {
-            // The daemon's own check answers the daemon, not the user (DMN-200).
-            if Self::take_check_output(actor, &output.text) {
+            // The daemon's own root sync and checks answer the daemon, not the user (DMN-029, DMN-200).
+            if Self::take_root_output(actor, &output.text)
+                || Self::take_check_output(actor, &output.text)
+            {
                 return;
             }
             if let Some(reason) = crate::omp_mcp::restart_reason(&output.text) {

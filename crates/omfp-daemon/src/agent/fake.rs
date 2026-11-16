@@ -335,7 +335,8 @@ impl FakeLauncher {
     }
 
     /// Answers every later local prompt `message` (a slash command, e.g. `/mcp test fs`) with `command_output` frames
-    /// of `texts`, sent before the prompt's answer as omp does.
+    /// of `texts`, sent before the prompt's answer as omp does. Unscripted, `/add-dir` and `/remove-dir` answer with
+    /// omp's one line and other local commands with nothing.
     pub fn local_output(&self, message: &str, texts: &[&str]) {
         lock(&self.script).outputs.insert(
             message.to_owned(),
@@ -544,6 +545,18 @@ impl Drop for FakeAgent {
     }
 }
 
+/// omp's `command_output` for an unscripted local command: `/add-dir` and `/remove-dir` always answer with one
+/// (DMN-029), other commands with none.
+fn default_output(message: &str) -> Vec<String> {
+    if let Some(path) = message.strip_prefix("/add-dir ") {
+        vec![format!("Added {path}.")]
+    } else if let Some(path) = message.strip_prefix("/remove-dir ") {
+        vec![format!("Removed {path}.")]
+    } else {
+        Vec::new()
+    }
+}
+
 impl AgentProcess for FakeAgent {
     fn prompt(&self, command: PromptCommand) -> Result<PromptAdmission, omp_rpc::Error> {
         let process = &self.0;
@@ -561,7 +574,7 @@ impl AgentProcess for FakeAgent {
                 .outputs
                 .get(message.as_str())
                 .cloned()
-                .unwrap_or_default();
+                .unwrap_or_else(|| default_output(&message));
             process.emit(
                 texts
                     .into_iter()

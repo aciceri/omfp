@@ -89,8 +89,13 @@ impl Harness {
 
     /// The local commands (`/add-dir`, `/remove-dir`) the thread's first process got.
     fn local_commands(&self) -> Vec<String> {
+        self.local_commands_of(0)
+    }
+
+    /// The local commands the `index`th process got.
+    fn local_commands_of(&self, index: usize) -> Vec<String> {
         self.launcher
-            .process(0)
+            .process(index)
             .calls()
             .into_iter()
             .filter_map(|call| match call {
@@ -814,6 +819,101 @@ async fn root_sync_adds_new_repositories_and_removes_gone_ones() {
         "nothing more once in sync"
     );
     assert_eq!(h.threads.roots(&id).unwrap(), Vec::<PathBuf>::new());
+}
+
+// spec: DMN-029, DMN-200
+#[tokio::test]
+async fn a_root_sync_is_neither_in_the_transcript_nor_activity_and_the_users_add_dir_shows() {
+    let h = harness(|_| {});
+    let first = h.thread();
+    let (ws, folder) = workspace_of(&h, &first);
+    let second = h
+        .threads
+        .create(NewThread::new("t", ws.clone()))
+        .unwrap()
+        .id;
+    let ids = [first, second];
+    for id in &ids {
+        h.supervisor.start(id).await.unwrap();
+    }
+    let link = folder.join("app");
+    std::os::unix::fs::symlink(h.external_repo("app"), &link).unwrap();
+    h.workspaces.rescan(&ws).unwrap();
+    let mut changes = h.supervisor.subscribe_changes();
+    let mut before = Vec::new();
+    for id in &ids {
+        let actor = h.supervisor.lookup(id).unwrap();
+        before.push((h.log(id).await.position().seq, *lock(&actor.last_activity)));
+    }
+
+    for id in &ids {
+        h.supervisor.sync_roots(id).await.unwrap();
+    }
+
+    for (index, id) in ids.iter().enumerate() {
+        assert_eq!(
+            h.local_commands_of(index),
+            [format!("/add-dir {}", link.display())]
+        );
+        let actor = h.supervisor.lookup(id).unwrap();
+        let after = (h.log(id).await.position().seq, *lock(&actor.last_activity));
+        assert_eq!(after, before[index], "no event and no activity");
+    }
+    assert!(
+        matches!(
+            changes.try_recv(),
+            Err(broadcast::error::TryRecvError::Empty)
+        ),
+        "nothing for the index: the thread's updatedAt stays"
+    );
+    let elsewhere = h.external_repo("elsewhere");
+    let typed = format!("/add-dir {}", elsewhere.display());
+    h.supervisor.prompt(&ids[1], prompt(&typed)).await.unwrap();
+    h.wait(&ids[1], "the output of /add-dir", |state| {
+        !state.notices.is_empty()
+    })
+    .await;
+    let log = h.log(&ids[1]).await;
+    assert_eq!(
+        log.with_state(command_outputs),
+        [format!("Added {}.", elsewhere.display())],
+        "the root sync's output never lands, the user's does"
+    );
+    assert_eq!(
+        h.log(&ids[0]).await.with_state(command_outputs),
+        Vec::<String>::new()
+    );
+}
+
+// spec: DMN-029, DMN-202
+#[tokio::test]
+async fn another_commands_output_during_a_root_sync_reaches_the_log_and_its_reload() {
+    let h = harness(|_| {});
+    let id = h.thread();
+    let (ws, folder) = workspace_of(&h, &id);
+    h.supervisor.start(&id).await.unwrap();
+    let link = folder.join("app");
+    std::os::unix::fs::symlink(h.external_repo("app"), &link).unwrap();
+    h.workspaces.rescan(&ws).unwrap();
+    let reauthorized = "✓ Reauthorized \"gh\" (user config). Credentials apply on the next connection; restart the \
+                        session if the server stays disconnected.";
+    let added = format!(
+        "Added {}.\nWorkspace directories:\n  {} (working directory)\n  {}",
+        link.display(),
+        folder.display(),
+        link.display()
+    );
+    // A background `/mcp reauth` ends while the root command is in flight.
+    h.launcher.local_output(
+        &format!("/add-dir {}", link.display()),
+        &[reauthorized, &added],
+    );
+
+    h.supervisor.sync_roots(&id).await.unwrap();
+    h.launched(&id, 2).await;
+
+    let log = h.log(&id).await;
+    assert_eq!(log.with_state(command_outputs), [reauthorized]);
 }
 
 // spec: DMN-029

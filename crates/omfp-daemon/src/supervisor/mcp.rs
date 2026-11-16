@@ -7,7 +7,6 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
 
 use omfp_protocol::{McpServer, McpServers, RestartReason};
 use omp_rpc::PromptCommand;
@@ -15,7 +14,7 @@ use tokio::sync::oneshot;
 use tracing::{info, warn};
 
 use super::restart::Restart;
-use super::{Actor, Result, Supervisor, SupervisorError, blocking, lock};
+use super::{Actor, OUTPUT_WAIT, Result, Supervisor, SupervisorError, blocking, lock};
 use crate::omp_mcp::{self, Check, Homes};
 
 /// The daemon's `/mcp test` of server `name` waiting for its `command_output` (DMN-200).
@@ -23,10 +22,6 @@ pub(super) struct PendingCheck {
     name: String,
     answer: oneshot::Sender<Check>,
 }
-
-/// How long the check's `command_output` may trail omp's answer to the prompt: omp writes the output first, so it is
-/// only in transit through the event pump (DMN-191).
-const OUTPUT_WAIT: Duration = Duration::from_secs(10);
 
 impl Supervisor {
     fn homes(&self) -> Homes {

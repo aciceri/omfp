@@ -279,7 +279,8 @@ function Repos({ row }: { row: WorkspaceRow }): ReactNode {
 }
 
 /** One control adds a link or a clone (UI-025): a kind switch, the kind's field, one submit. Enter in a field submits
- * too; the fields clear once the repository is added. */
+ * too; once the repository is added its field clears, unless something else was typed there meanwhile: the daemon
+ * publishes the new repository before it answers (DMN-023), so the next one may already be typed. */
 function AddRepository({ workspaceId }: { workspaceId: string }): ReactNode {
   const call = useCall();
   const attempt = useAttempt();
@@ -295,8 +296,8 @@ function AddRepository({ workspaceId }: { workspaceId: string }): ReactNode {
     }
     void attempt(() => call("workspaces.add_repo", { workspaceId, source: chosen })).then((ok) => {
       if (ok) {
-        setPath("");
-        setUrl("");
+        setPath((current) => (current === typedPath ? "" : current));
+        setUrl((current) => (current === url ? "" : current));
       }
     });
   };

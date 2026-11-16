@@ -717,6 +717,22 @@ impl Journey {
         .await
     }
 
+    /// Waits until the Workspace widget's pending `workspaces.add_repo` answered: its path field is empty again
+    /// (UI-025). The new repository shows earlier, since the daemon publishes the rescan before it syncs the threads'
+    /// roots and answers (DMN-023, DMN-029), so typing the next path before this would append to the last one.
+    pub async fn add_repo_answered(&self) -> anyhow::Result<()> {
+        self.until("the add repository field to clear", async |page| {
+            let value = page
+                .eval(
+                    "return document.querySelector('[data-testid=add-repo-path]').value;",
+                    Vec::new(),
+                )
+                .await?;
+            Ok((value.as_str() == Some("")).then_some(()))
+        })
+        .await
+    }
+
     /// Waits until thread `id` shows in the chat and its composer is ready.
     pub async fn opened(&self, id: &str) -> anyhow::Result<()> {
         let chat = format!("[data-testid=thread][data-thread-id=\"{id}\"]");

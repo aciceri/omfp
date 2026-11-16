@@ -506,7 +506,9 @@ async fn link(journey: &Journey, path: &str) -> anyhow::Result<String> {
         .type_into("[data-testid=add-repo-path]", path)
         .await?;
     journey.click("[data-testid=add-repo-submit]").await?;
-    new_entry(journey, css, &before).await
+    let name = new_entry(journey, css, &before).await?;
+    journey.add_repo_answered().await?;
+    Ok(name)
 }
 
 /// Waits until an entry matching `css` not named in `before` shows in the Workspace widget; returns its name.
@@ -557,6 +559,7 @@ async fn link_two_by_completion(
             .await?;
         journey.click("[data-testid=add-repo-submit]").await?;
         new_entry(journey, links, &before).await?;
+        journey.add_repo_answered().await?;
     }
     journey
         .until(

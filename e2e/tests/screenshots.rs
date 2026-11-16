@@ -300,6 +300,7 @@ async fn the_workspace_panel_path_completion_a_pending_approval_and_an_ask_quest
                     .then_some(()))
             })
             .await?;
+        journey.add_repo_answered().await?;
     }
     journey.fits("[data-widget=\"omfp:workspace\"]").await?;
     journey.screenshot("g-workspace-linked").await?;

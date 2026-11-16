@@ -62,6 +62,8 @@ Initial release, planned as 0.1.0.
   logging in to that provider) open with their conversation readable instead of only failing. The header says the
   saved model is unavailable and offers the usable models and Log in; picking one resumes the same conversation with
   it. omfp never switches the model or provider on its own.
+- A folder or URL typed into the Workspace panel's add-repository field while the previous add is still finishing
+  is no longer wiped when that add completes; the field clears only if it still holds what was added.
 
 ### Changed
 

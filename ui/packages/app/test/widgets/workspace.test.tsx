@@ -9,7 +9,7 @@ import userEvent from "@testing-library/user-event";
 import { DRAFT_THREAD, ERRORS, type OmfpHost, SELECTED_THREAD, SUCCESSES } from "../../src/sdk/index.ts";
 import { WorkspaceWidget } from "../../src/widgets/workspace/index.ts";
 import { repo, thread, workspace } from "../support/fixtures.ts";
-import { renderWithHost, testHost } from "../support/host.tsx";
+import { type CallRecord, renderWithHost, testHost } from "../support/host.tsx";
 
 afterEach(cleanup);
 
@@ -57,6 +57,13 @@ function row(name: string): HTMLElement {
 
 function pathInput(): HTMLInputElement {
   return screen.getByTestId("add-repo-path") as HTMLInputElement;
+}
+
+/** Answers `call` with success inside an awaited `act`, which settles the widget's promise chain and its render. */
+async function answer(call: CallRecord | undefined): Promise<void> {
+  await act(async () => {
+    call?.resolve({});
+  });
 }
 
 describe("omfp:workspace", () => {
@@ -214,6 +221,25 @@ describe("omfp:workspace", () => {
       { workspaceId: "w1", source: { kind: "link", path: "/src/fe" } },
     ]);
     await waitFor(() => expect(pathInput().value).toBe(""));
+  });
+
+  // spec: UI-025
+  test("a folder typed while an add is pending survives that add's answer and is added next", async () => {
+    const { client, user } = setup();
+    client.answers.delete("workspaces.add_repo");
+    await user.type(pathInput(), "/tmp/a");
+    await user.click(screen.getByTestId("add-repo-submit"));
+    await user.clear(pathInput());
+    await user.type(pathInput(), "/tmp/b");
+    await answer(client.callsTo("workspaces.add_repo")[0]);
+    expect(pathInput().value).toBe("/tmp/b");
+    await user.click(screen.getByTestId("add-repo-submit"));
+    expect(client.callsTo("workspaces.add_repo").map((call) => call.params)).toEqual([
+      { workspaceId: "w1", source: { kind: "link", path: "/tmp/a" } },
+      { workspaceId: "w1", source: { kind: "link", path: "/tmp/b" } },
+    ]);
+    await answer(client.callsTo("workspaces.add_repo")[1]);
+    expect(pathInput().value).toBe("");
   });
 
   // spec: UI-025

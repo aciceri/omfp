@@ -121,6 +121,13 @@ export {
   threadJob,
 } from "../vm/jobs.ts";
 export {
+  type FieldState,
+  LINE_EDIT_COMMANDS,
+  type LineEdit,
+  type LineEditCommand,
+  lineEdit,
+} from "../vm/line-edit.ts";
+export {
   type LivePanelView,
   type LiveSupport,
   type LocalLive,

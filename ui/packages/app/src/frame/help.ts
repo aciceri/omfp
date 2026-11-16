@@ -59,6 +59,7 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   "composer.focus": composer.focus,
   "composer.interrupt": composer.interruptCommand,
   "composer.restore": composer.restoreCommand,
+  ...composer.lineKeys,
   "focus.leave": composer.leave,
   "thread.abort": composer.abortCommand,
   "cmdline.open": commandTitles.cmdline,

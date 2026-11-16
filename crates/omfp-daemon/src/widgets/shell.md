@@ -140,9 +140,20 @@ queue a follow-up for after the turn instead. Alt-Enter adds a line. A paste of 
 characters becomes a chip (`Pasted text #1 · 120 lines`) and a `[Paste #1, +120 lines]` token, expanded when the
 message is sent; `Ctrl-Shift-v` (`Cmd-Shift-v` on macOS) pastes it as plain text instead. `Up` with the caret on the
 composer's first line recalls the prompts you sent (this thread's first, then its workspace's, then every other, newest
-first within each); `Down` on the last line goes back and, past the newest, restores what you had typed. Keys are
-rebindable: the daemon's `[keymap]` config, the workspace's `.omfp/keymap.json`, then the init files' `bind` (each
-layer wins over the ones before it).
+first within each); `Down` on the last line goes back and, past the newest, restores what you had typed.
+
+The composer also takes readline's line-editing keys in insert mode (commands `composer.*`): `Ctrl-a` / `Ctrl-e`
+start / end of the line, `Ctrl-b` / `Ctrl-f` a character back / forward, `Alt-b` / `Alt-f` a word back / forward,
+`Ctrl-p` / `Ctrl-n` the previous / next line (on the first / last line the prompt history, like `Up` / `Down`),
+`Ctrl-d` / `Ctrl-h` delete the character after / before the caret, `Ctrl-k` / `Ctrl-u` kill to the end / start of
+the line, `Ctrl-w` or `Alt-Backspace` / `Alt-d` kill the previous / next word, `Ctrl-y` yanks the last killed text
+(a buffer of the window, not the clipboard), `Ctrl-t` swaps the characters around the caret. `Ctrl-Shift-a` (or the
+context menu) selects the whole draft. The same keys run on macOS instead of its native ones. In a browser tab the
+browser keeps `Ctrl-w`, `Ctrl-n` and `Ctrl-t` (close tab, new window, new tab) and never passes them to the page:
+use `Alt-Backspace` and `Down` there, or the desktop window, where they work.
+
+Keys are rebindable: the daemon's `[keymap]` config, the workspace's `.omfp/keymap.json`, then the init files' `bind`
+(each layer wins over the ones before it).
 
 ## Logging in
 

@@ -39,13 +39,16 @@ afterEach(() => {
 });
 
 describe("keymap", () => {
-  // spec: UI-095
+  // spec: UI-095, UI-760
   test("key presses become tokens with modifiers; printable keys keep their character", () => {
     expect(keyToken(key("j"))).toBe("j");
     expect(keyToken(key("G", { shiftKey: true }))).toBe("G");
     expect(keyToken(key(":", { shiftKey: true }))).toBe(":");
     expect(keyToken(key("d", { ctrlKey: true }))).toBe("Ctrl-d");
-    expect(keyToken(key("D", { ctrlKey: true, shiftKey: true }))).toBe("Ctrl-d");
+    // Caps Lock leaves a Ctrl chord as it is; Shift makes another one (`Ctrl-Shift-a` selects all, UI-760).
+    expect(keyToken(key("D", { ctrlKey: true }))).toBe("Ctrl-d");
+    expect(keyToken(key("A", { ctrlKey: true, shiftKey: true }))).toBe("Ctrl-Shift-a");
+    expect(keyToken(key("1", { ctrlKey: true, shiftKey: true }))).toBe("Ctrl-1");
     expect(keyToken(key(" "))).toBe("Space");
     expect(keyToken(key("Escape"))).toBe("Esc");
     expect(keyToken(key("Tab", { shiftKey: true }))).toBe("Shift-Tab");

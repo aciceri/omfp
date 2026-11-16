@@ -720,3 +720,168 @@ describe("prompt history", () => {
     expect(client.callsTo("prompts.history").length).toBe(2);
   });
 });
+
+describe("readline keys", () => {
+  /** The field's text with `|` at the caret, `[` `]` around a selection. */
+  const shown = () => {
+    const { value, selectionStart: start, selectionEnd: end } = input();
+    return start === end
+      ? `${value.slice(0, start)}|${value.slice(start)}`
+      : `${value.slice(0, start)}[${value.slice(start, end)}]${value.slice(end)}`;
+  };
+  const caret = (at: number) => act(() => input().setSelectionRange(at, at));
+  const ctrl = (key: string) => press(key, { ctrlKey: true });
+  const alt = (key: string) => press(key, { altKey: true });
+
+  async function typed(text: string) {
+    const clock = new ManualClock(0);
+    const rendered = renderThread(<ComposerWidget />, fixtureEvents("text_reply"), clock);
+    installKeymap(rendered.host, clock);
+    await userEvent.click(input());
+    await userEvent.keyboard(text);
+    return rendered;
+  }
+
+  // spec: UI-760
+  test("each key moves the caret or edits the draft, in the thread's composer", async () => {
+    const { host } = await typed("hello big world{Alt>}{Enter}{/Alt}second line");
+    caret(8);
+    ctrl("a");
+    expect(shown()).toBe("|hello big world\nsecond line");
+    ctrl("e");
+    expect(shown()).toBe("hello big world|\nsecond line");
+    ctrl("b");
+    expect(input().selectionStart).toBe("hello big world".length - 1);
+    ctrl("f");
+    expect(shown()).toBe("hello big world|\nsecond line");
+    alt("b");
+    expect(shown()).toBe("hello big |world\nsecond line");
+    alt("f");
+    expect(shown()).toBe("hello big world|\nsecond line");
+    ctrl("n");
+    expect(shown()).toBe("hello big world\nsecond line|");
+    ctrl("p");
+    // The column stays: 11 characters into the first line.
+    expect(shown()).toBe("hello big w|orld\nsecond line");
+    caret(6);
+    ctrl("d");
+    expect(shown()).toBe("hello |ig world\nsecond line");
+    ctrl("h");
+    expect(shown()).toBe("hello|ig world\nsecond line");
+    ctrl("t");
+    expect(shown()).toBe("hellio|g world\nsecond line");
+    // Every edit is the draft's (UI-064).
+    expect(host.window.get(draftKey(THREAD)).text).toBe("helliog world\nsecond line");
+    ctrl("A");
+    expect(shown()).toBe("|helliog world\nsecond line");
+    press("A", { ctrlKey: true, shiftKey: true });
+    expect(shown()).toBe("[helliog world\nsecond line]");
+  });
+
+  // spec: UI-760
+  test("kills go to the kill buffer and Ctrl-y yanks them; a selection is what goes or is replaced", async () => {
+    const { host } = await typed("alpha beta gamma");
+    alt("Backspace");
+    expect(shown()).toBe("alpha beta |");
+    ctrl("a");
+    ctrl("y");
+    expect(shown()).toBe("gamma|alpha beta ");
+    alt("d");
+    expect(shown()).toBe("gamma| beta ");
+    ctrl("e");
+    ctrl("y");
+    expect(shown()).toBe("gamma beta alpha|");
+    caret(5);
+    ctrl("k");
+    expect(shown()).toBe("gamma|");
+    ctrl("u");
+    expect(shown()).toBe("|");
+    ctrl("y");
+    expect(shown()).toBe("gamma|");
+    act(() => input().setSelectionRange(1, 4));
+    ctrl("y");
+    expect(shown()).toBe("ggamma|a");
+    act(() => input().setSelectionRange(0, 3));
+    ctrl("w");
+    expect(shown()).toBe("|mmaa");
+    ctrl("y");
+    expect(shown()).toBe("gga|mmaa");
+    expect(host.window.get(draftKey(THREAD)).text).toBe("ggammaa");
+  });
+
+  // spec: UI-760, UI-358
+  test("editing keys keep paste chips: a kill beside a token leaves it, a kill over it removes the paste", async () => {
+    await typed("see ");
+    paste(lines(11));
+    await userEvent.keyboard(" now");
+    alt("Backspace");
+    expect(input().value).toBe("see [Paste #1, +11 lines] ");
+    expect(chipLabels()).toEqual(["Pasted text #1 · 11 lines"]);
+    // A killed token takes its text along: the yank brings the text back, never an orphaned token.
+    ctrl("u");
+    expect(input().value).toBe("");
+    expect(chipLabels()).toEqual([]);
+    ctrl("y");
+    expect(input().value).toBe(`see ${lines(11)} `);
+  });
+
+  // spec: UI-760
+  test("with two composers mounted the keys edit the focused one", async () => {
+    const clock = new ManualClock(0);
+    const { host } = renderThread(
+      <>
+        <ComposerWidget />
+        <ComposerWidget />
+      </>,
+      fixtureEvents("text_reply"),
+      clock,
+    );
+    installKeymap(host, clock);
+    const first = screen.getAllByTestId("composer-input")[0] as HTMLTextAreaElement;
+    await userEvent.click(first);
+    await userEvent.keyboard("abc");
+    ctrl("a");
+    expect(first.selectionStart).toBe(0);
+    ctrl("d");
+    expect(first.value).toBe("bc");
+  });
+
+  // spec: UI-760, UI-361, UI-362
+  test("Ctrl-p on the first line and Ctrl-n on the last walk the prompt history like Up and Down", async () => {
+    const { client } = await typed("draft{Alt>}{Enter}{/Alt}two");
+    ctrl("p");
+    expect(shown()).toBe("dra|ft\ntwo");
+    expect(client.callsTo("prompts.history")).toHaveLength(0);
+    ctrl("p");
+    expect(client.callsTo("prompts.history")).toHaveLength(1);
+    await act(async () =>
+      client.callsTo("prompts.history")[0]?.resolve({
+        prompts: [{ text: "older", threadId: THREAD, workspaceId: "w", at: 1 }],
+      }),
+    );
+    expect(input().value).toBe("older");
+    ctrl("n");
+    expect(input().value).toBe("draft\ntwo");
+  });
+
+  // spec: UI-760, UI-060
+  test("while the `/` suggestions are open Ctrl-p does not walk the history", async () => {
+    const { client } = await typed("/secu");
+    await screen.findByTestId("slash-suggestions");
+    ctrl("p");
+    expect(client.callsTo("prompts.history")).toHaveLength(0);
+    expect(input().value).toBe("/secu");
+  });
+
+  // spec: UI-760, UI-095
+  test("insert-mode Ctrl-c and Esc keep their commands; the keys do nothing outside the composer", async () => {
+    await typed("abc");
+    ctrl("c");
+    expect(input().value).toBe("");
+    await userEvent.keyboard("abc");
+    press("Escape");
+    expect(document.activeElement === input()).toBe(false);
+    ctrl("a");
+    expect(input().value).toBe("abc");
+  });
+});

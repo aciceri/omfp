@@ -4,6 +4,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { CallError } from "@omfp/client";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { createKeyHandler } from "../../src/keymap/handler.ts";
+import { DEFAULT_BINDINGS } from "../../src/keymap/keymap.ts";
 import { DRAFT_MESSAGE, DRAFT_THREAD, draftKey, ERRORS, SELECTED_THREAD, threadActions } from "../../src/sdk/index.ts";
 import { ChatWidget } from "../../src/widgets/chat/index.ts";
 import { HeaderWidget } from "../../src/widgets/header/index.ts";
@@ -190,6 +192,36 @@ describe("draft thread", () => {
       ]);
     } finally {
       pointer.restore();
+    }
+  });
+});
+
+describe("draft thread readline keys", () => {
+  // spec: UI-760
+  test("the draft's composer takes the same keys, editing its own message; no history at its ends", async () => {
+    const { host, user, client } = setup();
+    const handler = createKeyHandler({ bindings: DEFAULT_BINDINGS, commands: host.commands, now: () => 0 });
+    document.addEventListener("keydown", handler);
+    try {
+      const field = screen.getByTestId("composer-input") as HTMLTextAreaElement;
+      await waitFor(() => expect(document.activeElement === field).toBe(true));
+      await user.keyboard("fix the bug");
+      const ctrl = (key: string) => act(() => void fireEvent.keyDown(field, { key, ctrlKey: true }));
+      ctrl("a");
+      expect(field.selectionStart).toBe(0);
+      ctrl("k");
+      expect(field.value).toBe("");
+      expect(host.window.get(DRAFT_MESSAGE).text).toBe("");
+      ctrl("y");
+      expect(field.value).toBe("fix the bug");
+      expect(host.window.get(DRAFT_MESSAGE).text).toBe("fix the bug");
+      ctrl("p");
+      expect(field.selectionStart).toBe(0);
+      ctrl("n");
+      expect(field.selectionStart).toBe(11);
+      expect(client.callsTo("prompts.history")).toHaveLength(0);
+    } finally {
+      document.removeEventListener("keydown", handler);
     }
   });
 });

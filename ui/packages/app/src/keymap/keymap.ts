@@ -97,6 +97,26 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { mode: "insert", keys: "Alt-a", command: "thread.nextAttention" },
   { mode: "normal", keys: "Alt-n", command: "thread.new" },
   { mode: "insert", keys: "Alt-n", command: "thread.new" },
+  // readline's line editing in the composer (UI-760); `Ctrl-Shift-a` keeps select-all. A browser tab never gets
+  // `Ctrl-w`, `Ctrl-n`, `Ctrl-t`: `Alt-Backspace` kills a word there too.
+  { mode: "insert", keys: "Ctrl-a", command: "composer.lineStart" },
+  { mode: "insert", keys: "Ctrl-e", command: "composer.lineEnd" },
+  { mode: "insert", keys: "Ctrl-b", command: "composer.charBack" },
+  { mode: "insert", keys: "Ctrl-f", command: "composer.charForward" },
+  { mode: "insert", keys: "Alt-b", command: "composer.wordBack" },
+  { mode: "insert", keys: "Alt-f", command: "composer.wordForward" },
+  { mode: "insert", keys: "Ctrl-p", command: "composer.linePrev" },
+  { mode: "insert", keys: "Ctrl-n", command: "composer.lineNext" },
+  { mode: "insert", keys: "Ctrl-d", command: "composer.deleteForward" },
+  { mode: "insert", keys: "Ctrl-h", command: "composer.deleteBack" },
+  { mode: "insert", keys: "Ctrl-k", command: "composer.killLineEnd" },
+  { mode: "insert", keys: "Ctrl-u", command: "composer.killLineStart" },
+  { mode: "insert", keys: "Ctrl-w", command: "composer.killWordBack" },
+  { mode: "insert", keys: "Alt-Backspace", command: "composer.killWordBack" },
+  { mode: "insert", keys: "Alt-d", command: "composer.killWordForward" },
+  { mode: "insert", keys: "Ctrl-y", command: "composer.yank" },
+  { mode: "insert", keys: "Ctrl-t", command: "composer.transpose" },
+  { mode: "insert", keys: "Ctrl-Shift-a", command: "composer.selectAll" },
 ];
 
 /** How long a started sequence waits for its next key. */
@@ -140,9 +160,11 @@ export function keyToken(event: KeyInput): string | undefined {
   const name = NAMED[key] ?? key;
   const printable = [...name].length === 1;
   const prefix = `${event.ctrlKey ? "Ctrl-" : ""}${event.altKey ? "Alt-" : ""}${event.metaKey ? "Meta-" : ""}`;
-  // Ctrl/Alt chords on letters are written in lower case (`Ctrl-d`), whatever Shift or Caps Lock did to the key.
+  // Ctrl/Alt chords on letters are written in lower case (`Ctrl-d`), whatever Caps Lock did to the key; Shift counts
+  // on Ctrl chords only (`Ctrl-Shift-a`, UI-760), so macOS's Option-Shift letters stay the Alt chord (UI-021).
   const base = printable && prefix !== "" ? name.toLowerCase() : name;
-  return `${prefix}${!printable && event.shiftKey ? "Shift-" : ""}${base}`;
+  const shifted = event.shiftKey && (!printable || (event.ctrlKey && base !== base.toUpperCase()));
+  return `${prefix}${shifted ? "Shift-" : ""}${base}`;
 }
 
 /** What one key press did. */

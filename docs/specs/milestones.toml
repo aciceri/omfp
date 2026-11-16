@@ -1193,6 +1193,8 @@ requirements = [
   "TRM-105",
   "TRM-106",
   "E2E-71",
+  # Readline line-editing keys in the composer (#103)
+  "UI-760",
 ]
 
 [M18]

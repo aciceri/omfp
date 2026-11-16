@@ -83,6 +83,7 @@ import {
 } from "react";
 import { Attachments } from "./attachments.tsx";
 import { usePromptHistory } from "./history.ts";
+import { useLineKeys } from "./line-keys.ts";
 import { LiveVoicePanel, MicButton } from "./live.tsx";
 import { PasteChips, usePastes } from "./pastes.tsx";
 import { testId, type WidgetProps } from "./props.ts";
@@ -170,6 +171,7 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
   };
   useFocusCommands(inputRef, leave);
   const pastes = usePastes(message, setMessage, inputRef);
+  useLineKeys(inputRef, pastes.onChange, message.pastes);
   const onKeyDownCapture = (event: KeyboardEvent<HTMLElement>) => {
     if (event.target !== inputRef.current || event.nativeEvent.isComposing) {
       return;
@@ -592,6 +594,17 @@ export const Composer = memo(function Composer({
 
   const pastes = usePastes(draft, setDraft, inputRef);
   const history = usePromptHistory(threadId, draft, setDraft, inputRef);
+  const typed = (value: string) => {
+    pastes.onChange(value);
+    // Typing ends a history walk; the recalled text stays as the draft (UI-362).
+    history.end();
+    setDismissed(false);
+    // Typing ends a `Ctrl-C` sequence: the next press clears what was typed rather than aborting (UI-063).
+    lastInterrupt.current = undefined;
+    setInterruptHint(false);
+  };
+  // `Ctrl-p` / `Ctrl-n` walk the prompt history at the first / last line, unless the suggestions are open (UI-760).
+  useLineKeys(inputRef, typed, draft.pastes, (direction) => !open && history.step(direction));
   // Captured before React Aria's Autocomplete: while no suggestion list is open the text area keeps its own keys
   // (arrows move the caret), and the composer's bindings apply. Chords other than the send ones (Ctrl-C, Alt-a, …)
   // go on to the keymap (UI-095).
@@ -671,18 +684,7 @@ export const Composer = memo(function Composer({
       <KitComposer mode={insert ? "insert" : "normal"}>
         {draft.images.length > 0 && <Attachments draft={draft} setDraft={setDraft} />}
         {draft.pastes.length > 0 && <PasteChips draft={draft} setDraft={setDraft} inputRef={inputRef} />}
-        <Autocomplete
-          inputValue={draft.text}
-          onInputChange={(value) => {
-            pastes.onChange(value);
-            // Typing ends a history walk; the recalled text stays as the draft (UI-362).
-            history.end();
-            setDismissed(false);
-            // Typing ends a `Ctrl-C` sequence: the next press clears what was typed rather than aborting (UI-063).
-            lastInterrupt.current = undefined;
-            setInterruptHint(false);
-          }}
-        >
+        <Autocomplete inputValue={draft.text} onInputChange={typed}>
           <ComposerTextArea
             touch={touch}
             keys="Enter Control+Enter Meta+Enter Shift+Enter Control+Q Alt+Enter Escape Tab"

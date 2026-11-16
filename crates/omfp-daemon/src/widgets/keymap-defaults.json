@@ -239,6 +239,96 @@
       "mode": "insert",
       "keys": "Alt-n",
       "command": "thread.new"
+    },
+    {
+      "mode": "insert",
+      "keys": "Ctrl-a",
+      "command": "composer.lineStart"
+    },
+    {
+      "mode": "insert",
+      "keys": "Ctrl-e",
+      "command": "composer.lineEnd"
+    },
+    {
+      "mode": "insert",
+      "keys": "Ctrl-b",
+      "command": "composer.charBack"
+    },
+    {
+      "mode": "insert",
+      "keys": "Ctrl-f",
+      "command": "composer.charForward"
+    },
+    {
+      "mode": "insert",
+      "keys": "Alt-b",
+      "command": "composer.wordBack"
+    },
+    {
+      "mode": "insert",
+      "keys": "Alt-f",
+      "command": "composer.wordForward"
+    },
+    {
+      "mode": "insert",
+      "keys": "Ctrl-p",
+      "command": "composer.linePrev"
+    },
+    {
+      "mode": "insert",
+      "keys": "Ctrl-n",
+      "command": "composer.lineNext"
+    },
+    {
+      "mode": "insert",
+      "keys": "Ctrl-d",
+      "command": "composer.deleteForward"
+    },
+    {
+      "mode": "insert",
+      "keys": "Ctrl-h",
+      "command": "composer.deleteBack"
+    },
+    {
+      "mode": "insert",
+      "keys": "Ctrl-k",
+      "command": "composer.killLineEnd"
+    },
+    {
+      "mode": "insert",
+      "keys": "Ctrl-u",
+      "command": "composer.killLineStart"
+    },
+    {
+      "mode": "insert",
+      "keys": "Ctrl-w",
+      "command": "composer.killWordBack"
+    },
+    {
+      "mode": "insert",
+      "keys": "Alt-Backspace",
+      "command": "composer.killWordBack"
+    },
+    {
+      "mode": "insert",
+      "keys": "Alt-d",
+      "command": "composer.killWordForward"
+    },
+    {
+      "mode": "insert",
+      "keys": "Ctrl-y",
+      "command": "composer.yank"
+    },
+    {
+      "mode": "insert",
+      "keys": "Ctrl-t",
+      "command": "composer.transpose"
+    },
+    {
+      "mode": "insert",
+      "keys": "Ctrl-Shift-a",
+      "command": "composer.selectAll"
     }
   ],
   "commands": [
@@ -262,6 +352,30 @@
       "aliases": []
     },
     {
+      "id": "composer.charBack",
+      "title": "Move back one character",
+      "aliases": [],
+      "scope": "composer"
+    },
+    {
+      "id": "composer.charForward",
+      "title": "Move forward one character",
+      "aliases": [],
+      "scope": "composer"
+    },
+    {
+      "id": "composer.deleteBack",
+      "title": "Delete the character before the caret",
+      "aliases": [],
+      "scope": "composer"
+    },
+    {
+      "id": "composer.deleteForward",
+      "title": "Delete the character after the caret",
+      "aliases": [],
+      "scope": "composer"
+    },
+    {
       "id": "composer.focus",
       "title": "Focus the composer",
       "aliases": []
@@ -273,9 +387,87 @@
       "scope": "composer"
     },
     {
+      "id": "composer.killLineEnd",
+      "title": "Kill to the end of the line",
+      "aliases": [],
+      "scope": "composer"
+    },
+    {
+      "id": "composer.killLineStart",
+      "title": "Kill to the start of the line",
+      "aliases": [],
+      "scope": "composer"
+    },
+    {
+      "id": "composer.killWordBack",
+      "title": "Kill the previous word",
+      "aliases": [],
+      "scope": "composer"
+    },
+    {
+      "id": "composer.killWordForward",
+      "title": "Kill the next word",
+      "aliases": [],
+      "scope": "composer"
+    },
+    {
+      "id": "composer.lineEnd",
+      "title": "Move to the end of the line",
+      "aliases": [],
+      "scope": "composer"
+    },
+    {
+      "id": "composer.lineNext",
+      "title": "Move to the next line, or the next prompt on the last line",
+      "aliases": [],
+      "scope": "composer"
+    },
+    {
+      "id": "composer.linePrev",
+      "title": "Move to the previous line, or the previous prompt on the first line",
+      "aliases": [],
+      "scope": "composer"
+    },
+    {
+      "id": "composer.lineStart",
+      "title": "Move to the start of the line",
+      "aliases": [],
+      "scope": "composer"
+    },
+    {
       "id": "composer.restore",
       "title": "Restore this thread's last Ctrl-C-cleared draft, including images and pastes (normal-mode u)",
       "aliases": []
+    },
+    {
+      "id": "composer.selectAll",
+      "title": "Select the whole draft",
+      "aliases": [],
+      "scope": "composer"
+    },
+    {
+      "id": "composer.transpose",
+      "title": "Swap the characters around the caret",
+      "aliases": [],
+      "scope": "composer"
+    },
+    {
+      "id": "composer.wordBack",
+      "title": "Move back one word",
+      "aliases": [],
+      "scope": "composer"
+    },
+    {
+      "id": "composer.wordForward",
+      "title": "Move forward one word",
+      "aliases": [],
+      "scope": "composer"
+    },
+    {
+      "id": "composer.yank",
+      "title": "Yank the last killed text",
+      "aliases": [],
+      "scope": "composer"
     },
     {
       "id": "density.set",

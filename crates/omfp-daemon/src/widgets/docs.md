@@ -64,8 +64,12 @@ server's preview — in a sandboxed frame under a toolbar with the URL, Reload a
 with `omfp_ui_update { id: "preview", props: { url } }`. The page cannot navigate the window; its new windows open in the
 browser. Sites that refuse framing (`X-Frame-Options`, CSP `frame-ancestors`: GitHub, Linear, Google) stay blank, and
 the frame says so when nothing loaded in 10 s: reach them through their API in a widget of your own),
-`omfp:terminal` (`{ command?, cwd?, cols?, rows?, key? }`: an interactive CLI on a daemon-owned PTY; default command
-`${SHELL:-sh}`; its session survives widget remounts while the daemon runs).
+`omfp:terminal` (`{ command?, shell?, cwd?, cols?, rows?, key? }`: an interactive CLI on a daemon-owned PTY, run by
+`sh -c` in the workspace folder or the workspace-relative `cwd`. Without props it starts the daemon's `$SHELL` (`sh`
+when unset). `shell` picks another shell: a program name or path and its arguments, separated by spaces and each
+passed literally (`"zsh"`, `"/run/current-system/sw/bin/fish"`, `"bash -l"`), as in
+`omfp_ui_mount { id: "shell", widget: "omfp:terminal", props: { shell: "zsh" } }`. `command` runs any other command
+line, e.g. `"lazygit"`, and wins over `shell`. Its session survives widget remounts while the daemon runs).
 Files opened by the user open as tabs after the children of the `tabs` container with `"id": "main"`, never
 written to `views.json`. Keep the main slot, `["tabs", {"id": "main"}, …"omfp:chat"]`, in every view: the files the
 user opens become its tabs (without it they float in a panel). `:widget add` and `omfp_ui_mount` put side tabs in the

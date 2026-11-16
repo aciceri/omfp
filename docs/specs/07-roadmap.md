@@ -840,7 +840,8 @@ runs once per open window, so chaining jobs (B after A) belongs to the daemon's 
 
 ## Reusable terminal sessions
 
-M17 adds daemon-owned PTY sessions and the copyable `omfp:terminal` widget (#80, TRM-100..106, E2E-71). This is a
+M17 adds daemon-owned PTY sessions and the copyable `omfp:terminal` widget (#80, TRM-100..106, E2E-71); its default
+command execs the daemon's `$SHELL`, and a `shell` prop picks another (#96, TRM-107). This is a
 general command surface for interactive CLIs, reusable and inspectable by agents; it does not take over an omp session.
 
 The earlier omp terminal handoff remains removed (D-06, PRT-135): the user did not rely on TUI-only commands, so its

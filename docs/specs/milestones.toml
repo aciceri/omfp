@@ -1192,6 +1192,8 @@ requirements = [
   "TRM-104",
   "TRM-105",
   "TRM-106",
+  # The terminal widget's default `$SHELL` and its `shell` prop (#96)
+  "TRM-107",
   "E2E-71",
 ]
 

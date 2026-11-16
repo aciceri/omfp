@@ -7,6 +7,8 @@ on:
   push:
     branches: [master]
   pull_request:
+  # TST-092: what the `ci/macos` label of a pull request starts (ci-macos-label.yml), the `macos` job included.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,6 +16,7 @@ permissions:
 # One run per branch at a time. On a pull request a new push cancels the run it supersedes. On master a running run
 # always finishes (it may be the only one testing a CI change, and it fills the caches); of the pushes that arrive
 # meanwhile GitHub keeps only the newest pending, and as master is linear that run tests every change before it too.
+# A run by hand (the `ci/macos` label's, on the pull request's branch) has the branch's group, not the pull request's.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -128,11 +131,12 @@ jobs:
       - run: nix develop -c just test-desktop
 
   # TST-092: the macOS desktop (WKWebView, the menu bar item; TST-090, TST-091) and the darwin packages (ENV-041) on
-  # GitHub's arm64 macOS runner, whose GUI session is logged in. On pushes to master only: macOS minutes cost ten
-  # Linux minutes; its cachix daemon pushes the darwin closure (omp built from source) for the next run and for Macs.
+  # GitHub's arm64 macOS runner, whose GUI session is logged in. On pushes to master, by hand and on pull requests
+  # labeled `ci/macos` only: macOS minutes cost ten Linux minutes; its cachix daemon pushes the darwin closure (omp
+  # built from source) for the next run and for Macs. Advisory: `required CI` does not wait for it.
   macos:
     name: macOS desktop and packages
-    if: github.event_name == 'push'
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci/macos')
     needs: web
     runs-on: macos-15
     timeout-minutes: 120

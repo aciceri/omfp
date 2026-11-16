@@ -1,6 +1,6 @@
 // Run by `just check-workflow` from the repository root (`bun test ./.github`).
 import { describe, expect, test } from "bun:test";
-import { check, type Inputs, read, type Workflow } from "./check-workflow.ts";
+import { check, type Inputs, MACOS_LABEL, read, WORKFLOW, type Workflow } from "./check-workflow.ts";
 
 const repository = await read(process.env.JUST ?? "just");
 
@@ -9,6 +9,13 @@ function withWorkflow(edit: (workflow: Workflow) => void): Inputs {
   const workflow = structuredClone(repository.workflow);
   edit(workflow);
   return { ...repository, workflow };
+}
+
+/** The repository's inputs with `ci-macos-label.yml` changed by `edit` (on a copy). */
+function withMacosLabel(edit: (workflow: Workflow) => void): Inputs {
+  const macosLabel = structuredClone(repository.macosLabel);
+  edit(macosLabel);
+  return { ...repository, macosLabel };
 }
 
 describe("check-workflow", () => {
@@ -117,5 +124,45 @@ describe("check-workflow", () => {
       }),
     );
     expect(problems).toContain("job required must be named `required CI`");
+  });
+
+  // spec: TST-092
+  test("the macOS job runs on pull requests only with the ci/macos label", () => {
+    const problems = check(
+      withWorkflow((workflow) => {
+        const macos = workflow.jobs.macos;
+        if (macos !== undefined) delete macos.if;
+      }),
+    );
+    expect(problems).toContain(
+      "one job on a macOS runner must run test-desktop and package on pushes to master, by hand and on pull requests labeled ci/macos only",
+    );
+  });
+
+  // spec: TST-092
+  test("CI runs by hand, as the ci/macos label starts it", () => {
+    const problems = check(
+      withWorkflow((workflow) => {
+        delete workflow.on?.workflow_dispatch;
+      }),
+    );
+    expect(problems).toContain(`${WORKFLOW} must run by hand (workflow_dispatch) for the ci/macos label`);
+  });
+
+  // spec: TST-092
+  test("only the ci/macos label starts CI on a pull request's branch", () => {
+    const message = `${MACOS_LABEL} must run ${WORKFLOW} on the branch of a pull request labeled ci/macos, and only then`;
+    const anyLabel = check(
+      withMacosLabel((workflow) => {
+        for (const job of Object.values(workflow.jobs)) delete job.if;
+      }),
+    );
+    expect(anyLabel).toContain(message);
+    const everyPush = check(
+      withMacosLabel((workflow) => {
+        workflow.on = { pull_request: null };
+      }),
+    );
+    expect(everyPush).toContain(message);
   });
 });

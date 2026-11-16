@@ -18,7 +18,9 @@
  * - TST-076: the `dev-shell` job runs no recipe and every other Linux recipe job needs it; CARGO_HOME lives on the Nix volume.
  * - TST-118: one aggregate `required CI` job waits for every blocking job even after failures or skips, while the
  *   full mutation gate remains visible but non-blocking.
- * - TST-092: one job on a macOS runner runs `just test-desktop` and `just package` on pushes to master only.
+ * - TST-092: one job on a macOS runner runs `just test-desktop` and `just package` on pushes to master, by hand and on
+ *   pull requests labeled `ci/macos` only; `ci.yml` runs by hand, and `ci-macos-label.yml` runs it on the branch of a
+ *   pull request that gets that label (and only that one).
  * - ENV-060: `release.yml` runs on `v*` tags and by hand; its jobs build the packages in the dev shell (`just
  *   package-linux` and `just package-flatpak` on Linux, `just package-macos` on macOS); only its job that runs on tags
  *   alone may write the repository's contents, the workflow reads them.
@@ -42,7 +44,11 @@ export interface Job {
   steps?: Step[];
 }
 export interface Workflow {
-  on?: { push?: { branches?: string[]; tags?: string[] }; pull_request?: unknown; workflow_dispatch?: unknown };
+  on?: {
+    push?: { branches?: string[]; tags?: string[] };
+    pull_request?: { types?: string[] } | null;
+    workflow_dispatch?: unknown;
+  };
   permissions?: Record<string, string>;
   jobs: Record<string, Job>;
 }
@@ -55,7 +61,7 @@ export interface Recipes {
 }
 /**
  * What the check reads: `ci.yml`, the dev-shell action, the justfile's recipes and the ones `just ci` runs (its
- * `ci_recipes`), `release.yml` and every workflow.
+ * `ci_recipes`), `release.yml`, `ci-macos-label.yml` and every workflow.
  */
 export interface Inputs {
   workflow: Workflow;
@@ -63,12 +69,14 @@ export interface Inputs {
   recipes: Recipes["recipes"];
   ci: string[];
   release: Workflow;
+  macosLabel: Workflow;
   workflows: Workflow[];
 }
 
 export const WORKFLOW = ".github/workflows/ci.yml";
 export const SETUP = ".github/actions/dev-shell/action.yml";
 export const RELEASE = ".github/workflows/release.yml";
+export const MACOS_LABEL = ".github/workflows/ci-macos-label.yml";
 const SETUP_USES = "./.github/actions/dev-shell";
 const RUN = /^nix develop -c just ([\w-]+)$/;
 /** The GitHub expression `${{ inner }}`. */
@@ -258,15 +266,41 @@ function checkShellJob({ workflow, setup }: Inputs, problems: string[]) {
 }
 
 /** TST-092 */
-function checkMacos({ workflow }: Inputs, problems: string[]) {
+function checkMacos({ workflow, macosLabel }: Inputs, problems: string[]) {
   const MACOS_RECIPES = ["test-desktop", "package"];
+  const MACOS_IF =
+    "github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci/macos')";
+  const LABEL_IF =
+    "github.event.label.name == 'ci/macos' && github.event.pull_request.head.repo.full_name == github.repository";
+  const DISPATCH = 'gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH"';
   const macos = Object.values(workflow.jobs).filter((job) => /^macos-\d+$/.test(job["runs-on"] ?? ""));
-  const pushOnly = macos.some((job) => {
+  const labeled = macos.some((job) => {
     const ran = (job.steps ?? []).map(recipeOf);
-    return job.if === "github.event_name == 'push'" && MACOS_RECIPES.every((recipe) => ran.includes(recipe));
+    return job.if === MACOS_IF && MACOS_RECIPES.every((recipe) => ran.includes(recipe));
   });
-  if (!pushOnly) {
-    problems.push(`one job on a macOS runner must run ${MACOS_RECIPES.join(" and ")} on pushes to master only`);
+  if (!labeled) {
+    problems.push(
+      `one job on a macOS runner must run ${MACOS_RECIPES.join(" and ")} on pushes to master, by hand and on pull requests labeled ci/macos only`,
+    );
+  }
+  if (!workflow.on || !("workflow_dispatch" in workflow.on)) {
+    problems.push(`${WORKFLOW} must run by hand (workflow_dispatch) for the ci/macos label`);
+  }
+  const triggers = Object.keys(macosLabel.on ?? {});
+  const types = macosLabel.on?.pull_request?.types ?? [];
+  const dispatches = Object.values(macosLabel.jobs).some(
+    (job) =>
+      job.if === LABEL_IF &&
+      job.permissions?.actions === "write" &&
+      (job.steps ?? []).some(
+        (step) =>
+          step.run?.trim() === DISPATCH &&
+          step.env?.BRANCH === expression("github.event.pull_request.head.ref") &&
+          step.env.GH_TOKEN === expression("github.token"),
+      ),
+  );
+  if (triggers.join() !== "pull_request" || types.join() !== "labeled" || !dispatches) {
+    problems.push(`${MACOS_LABEL} must run ${WORKFLOW} on the branch of a pull request labeled ci/macos, and only then`);
   }
 }
 
@@ -324,6 +358,7 @@ export async function read(just: string): Promise<Inputs> {
     recipes: ((await $`${just} --dump --dump-format json`.json()) as Recipes).recipes,
     ci: (await $`${just} --evaluate ci_recipes`.text()).trim().split(/\s+/),
     release: await yaml<Workflow>(RELEASE),
+    macosLabel: await yaml<Workflow>(MACOS_LABEL),
     workflows: await Promise.all(paths.map((path) => yaml<Workflow>(path))),
   };
 }

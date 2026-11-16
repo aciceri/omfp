@@ -1014,6 +1014,7 @@ async fn start_daemon(
             omp_version: omfp_core::OMP_VERSION.to_owned(),
             omp_env: Vec::new(),
             warnings: Vec::new(),
+            clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
         }
     } else {
         let mut ports = Ports::resolve(&config)?;

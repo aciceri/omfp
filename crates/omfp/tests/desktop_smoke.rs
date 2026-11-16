@@ -614,6 +614,7 @@ export default function init(omfp) {
             omp_version: omfp_core::OMP_VERSION.into(),
             omp_env: Vec::new(),
             warnings: Vec::new(),
+            clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
         },
     )
     .await
@@ -801,6 +802,7 @@ async fn desktop_file_viewers_open_restore_and_close() {
             omp_version: omfp_core::OMP_VERSION.into(),
             omp_env: Vec::new(),
             warnings: Vec::new(),
+            clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
         },
     )
     .await

@@ -27,7 +27,7 @@ use super::convert::{self, bad_request, internal, workspace_error};
 use crate::config_file::{ConfigFile, DaemonOptions, write_back};
 use crate::event_log::EventLog;
 use crate::jobs::Jobs;
-use crate::jobs::declared::{Declared, SystemClock};
+use crate::jobs::declared::{Clock, Declared};
 use crate::paths::replace_file;
 use crate::store::{Store, StoreError, new_id, now_ms};
 use crate::supervisor::Supervisor;
@@ -157,13 +157,15 @@ pub(super) async fn blocking<T: Send + 'static>(
 
 impl Services {
     /// The services over the daemon's stores; every workspace is scanned first (DMN-023) and gets the default
-    /// `views.json` when its folder has none (DMN-088). The supervisor's threads get the widget host tools.
+    /// `views.json` when its folder has none (DMN-088). The supervisor's threads get the widget host tools; declared
+    /// jobs follow `clock`.
     pub async fn new(
         store: Arc<Store>,
         threads: Arc<Threads>,
         workspaces: Arc<Workspaces>,
         supervisor: Supervisor,
         widgets: Arc<Widgets>,
+        clock: Arc<dyn Clock>,
     ) -> Result<Self, ErrorBody> {
         let jobs = Jobs::default();
         let declared = Declared::new(
@@ -171,7 +173,7 @@ impl Services {
             jobs.clone(),
             supervisor.clone(),
             Arc::clone(&threads),
-            Arc::new(SystemClock),
+            clock,
             jiff::tz::TimeZone::system(),
         );
         let services = Self {

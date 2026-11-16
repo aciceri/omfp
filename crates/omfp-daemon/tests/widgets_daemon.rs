@@ -41,6 +41,7 @@ async fn start(data: &Path, static_dir: Option<&Path>) -> DaemonHandle {
         omp_version: omfp_core::OMP_VERSION.into(),
         omp_env: Vec::new(),
         warnings: Vec::new(),
+        clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
     };
     start_with(config, ports).await.unwrap()
 }

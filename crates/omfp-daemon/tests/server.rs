@@ -53,6 +53,7 @@ fn ports(launcher: &FakeLauncher, git: &Arc<FakeGit>) -> Ports {
         omp_version: omfp_core::OMP_VERSION.into(),
         omp_env: Vec::new(),
         warnings: vec!["running anyway (--allow-omp-mismatch)".into()],
+        clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
     }
 }
 

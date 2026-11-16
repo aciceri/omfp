@@ -164,9 +164,16 @@ mod tests {
             data,
             SupervisorConfig::new("omp"),
         );
-        Services::new(store, threads, workspaces, supervisor, widgets)
-            .await
-            .unwrap()
+        Services::new(
+            store,
+            threads,
+            workspaces,
+            supervisor,
+            widgets,
+            Arc::new(crate::jobs::declared::SystemClock),
+        )
+        .await
+        .unwrap()
     }
 
     fn owner() -> Principal {

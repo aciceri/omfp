@@ -42,6 +42,7 @@ async fn daemon() -> TestDaemon {
         omp_version: omfp_core::OMP_VERSION.into(),
         omp_env: Vec::new(),
         warnings: Vec::new(),
+        clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
     };
     let handle = start_with(Config::from_cli(cli, None, None).unwrap(), ports)
         .await

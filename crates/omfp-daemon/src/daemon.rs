@@ -21,7 +21,7 @@ use crate::config::{Cli, Config, default_config_file, web_bundle};
 use crate::conventions;
 use crate::git::{Git, GitCli};
 use crate::jobs::Jobs;
-use crate::jobs::declared::Declared;
+use crate::jobs::declared::{Clock, Declared, SystemClock};
 use crate::omp_binary;
 use crate::paths::{
     DataDir, create_private_dir, make_private_file, private_file_options, replace_file,
@@ -49,6 +49,8 @@ pub struct Ports {
     pub omp_env: Vec<(OsString, Option<OsString>)>,
     /// Startup warnings shown to clients (DMN-001).
     pub warnings: Vec<String>,
+    /// The time declared jobs' schedules and service backoffs follow (DMN-323, DMN-326).
+    pub clock: Arc<dyn Clock>,
 }
 
 impl std::fmt::Debug for Ports {
@@ -64,7 +66,7 @@ impl std::fmt::Debug for Ports {
 
 impl Ports {
     /// The real ports: omp resolved as `--omp-bin`, bundled, then `PATH` (DMN-006) and version-checked (DMN-001);
-    /// git on `PATH`.
+    /// git on `PATH`; the host's clock.
     pub fn resolve(config: &Config) -> anyhow::Result<Self> {
         let exe_dir = std::env::current_exe()
             .ok()
@@ -95,6 +97,7 @@ impl Ports {
             omp_version: version,
             omp_env,
             warnings: warning.into_iter().collect(),
+            clock: Arc::new(SystemClock),
         })
     }
 }
@@ -378,9 +381,16 @@ pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHa
             ..SupervisorConfig::new(ports.omp_program)
         },
     );
-    let services = Services::new(store, threads, workspaces, supervisor.clone(), widgets)
-        .await
-        .map_err(|error| anyhow::anyhow!(error.message))?;
+    let services = Services::new(
+        store,
+        threads,
+        workspaces,
+        supervisor.clone(),
+        widgets,
+        ports.clock,
+    )
+    .await
+    .map_err(|error| anyhow::anyhow!(error.message))?;
     let jobs = services.jobs.clone();
     let declared = services.declared.clone();
     let (threads_list, follow_threads) = services.spawn_thread_list();

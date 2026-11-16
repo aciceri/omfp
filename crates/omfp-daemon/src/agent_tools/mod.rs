@@ -167,9 +167,16 @@ pub(super) mod tests {
                 data,
                 SupervisorConfig::new("omp"),
             );
-            let services = Services::new(store, threads, workspaces, supervisor, widgets)
-                .await
-                .unwrap();
+            let services = Services::new(
+                store,
+                threads,
+                workspaces,
+                supervisor,
+                widgets,
+                Arc::new(crate::jobs::declared::SystemClock),
+            )
+            .await
+            .unwrap();
             let workspace = services
                 .workspaces
                 .create(NewWorkspace::new())

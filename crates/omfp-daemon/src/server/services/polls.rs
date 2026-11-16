@@ -175,9 +175,16 @@ mod tests {
             data,
             SupervisorConfig::new("omp"),
         );
-        let services = Services::new(store, threads, workspaces, supervisor, widgets)
-            .await
-            .unwrap();
+        let services = Services::new(
+            store,
+            threads,
+            workspaces,
+            supervisor,
+            widgets,
+            Arc::new(crate::jobs::declared::SystemClock),
+        )
+        .await
+        .unwrap();
         Harness {
             dir,
             services,

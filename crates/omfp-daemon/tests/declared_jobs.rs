@@ -46,6 +46,7 @@ async fn start(dir: TempDir) -> TestDaemon {
         omp_version: omfp_core::OMP_VERSION.into(),
         omp_env: Vec::new(),
         warnings: Vec::new(),
+        clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
     };
     let handle = start_with(config(dir.path()), ports).await.unwrap();
     TestDaemon {

@@ -32,6 +32,7 @@ async fn mcp_config_prints_the_entry_of_the_local_daemon() {
         omp_version: omfp_core::OMP_VERSION.into(),
         omp_env: Vec::new(),
         warnings: Vec::new(),
+        clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
     };
     let daemon = start_with(Config::from_cli(cli, None, None).unwrap(), ports)
         .await

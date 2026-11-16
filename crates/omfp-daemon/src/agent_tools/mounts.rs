@@ -414,9 +414,16 @@ mod tests {
             SupervisorConfig::new("omp"),
         );
         let view = workspaces.create(NewWorkspace::new()).unwrap();
-        let services = Services::new(store, threads, workspaces, supervisor, widgets)
-            .await
-            .unwrap();
+        let services = Services::new(
+            store,
+            threads,
+            workspaces,
+            supervisor,
+            widgets,
+            Arc::new(crate::jobs::declared::SystemClock),
+        )
+        .await
+        .unwrap();
         Harness {
             _dir: dir,
             context: ToolContext {

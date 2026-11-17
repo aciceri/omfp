@@ -1253,6 +1253,11 @@ requirements = [
   "UI-917",
   "UI-918",
   "UI-919",
+  # The agent's browser tabs from its eval calls (#143)
+  "UI-870",
+  "UI-871",
+  "UI-872",
+  "UI-873",
 ]
 
 [M18]

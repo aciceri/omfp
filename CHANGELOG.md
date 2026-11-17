@@ -40,6 +40,10 @@ The version's section is also the source of the GitHub release notes.
   actions list the files they changed, which open against `HEAD`; hover shows its documentation. `ast_grep` shows each
   match's code, highlighted, with a link to its line; an `ast_edit` preview shows its diff per file. Language servers
   come from the daemon's environment: a card says so when oh-my-pi finds none for a file.
+- A **Browser** widget (`:widget add omfp:browser`) lists the tabs the agent drove with oh-my-pi's browser in the
+  selected thread: each tab's name, the address it last opened, its last action and the latest screenshot it took,
+  which opens at full size. It shows what the agent's browser calls reported, not the live page: oh-my-pi offers no
+  live view or way to take over its browser to a client.
 
 ### Changed
 

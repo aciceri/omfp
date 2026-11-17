@@ -69,7 +69,10 @@ the frame says so when nothing loaded in 10 s: reach them through their API in a
 when unset). `shell` picks another shell: a program name or path and its arguments, separated by spaces and each
 passed literally (`"zsh"`, `"/run/current-system/sw/bin/fish"`, `"bash -l"`), as in
 `omfp_ui_mount { id: "shell", widget: "omfp:terminal", props: { shell: "zsh" } }`. `command` runs any other command
-line, e.g. `"lazygit"`, and wins over `shell`. Its session survives widget remounts while the daemon runs).
+line, e.g. `"lazygit"`, and wins over `shell`. Its session survives widget remounts while the daemon runs),
+`omfp:browser` (the browser tabs the selected thread's agent drove with omp's browser in its eval cells: name, the
+address of its last `open` or `goto`, its last action as omp describes it, closed or not, and the latest screenshot its
+calls produced, opening at full size; read from the eval calls' results, since omp exposes no live page over RPC).
 Files opened by the user open as tabs after the children of the `tabs` container with `"id": "main"`, never
 written to `views.json`. Keep the main slot, `["tabs", {"id": "main"}, …"omfp:chat"]`, in every view: the files the
 user opens become its tabs (without it they float in a panel). `:widget add` and `omfp_ui_mount` put side tabs in the

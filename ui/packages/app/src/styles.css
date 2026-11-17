@@ -1340,6 +1340,52 @@
     color: var(--omfp-primary);
   }
 
+  /* omfp:browser (UI-870..UI-872): a note, then a border box per tab (UI-187): its address and last action on one
+   * line each, cut with an ellipsis, then its latest screenshot as a 10rem thumbnail that opens at full size. */
+  .omfp-browser {
+    display: flex;
+    flex-direction: column;
+    gap: var(--omfp-s3);
+    padding: var(--omfp-s2) var(--omfp-s3) var(--omfp-s3);
+    font-family: var(--omfp-font-code);
+  }
+
+  .omfp-browser__note,
+  .omfp-browser__meta {
+    margin: 0;
+    font-size: var(--omfp-fs-2xs);
+    color: var(--omfp-on-surface-variant);
+  }
+
+  .omfp-browser__url,
+  .omfp-browser__action {
+    display: block;
+    margin: 0 0 var(--omfp-s1);
+    overflow: hidden;
+    font-size: var(--omfp-fs-sm);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .omfp-button.omfp-browser__thumb {
+    block-size: 10rem;
+    min-inline-size: 6rem;
+    max-inline-size: 100%;
+    margin-block-start: var(--omfp-s1);
+    padding: var(--omfp-s1);
+    border-color: var(--omfp-rule);
+    border-radius: var(--omfp-r-card);
+    background: var(--omfp-ctl-bg);
+    cursor: zoom-in;
+  }
+
+  .omfp-browser__img {
+    display: block;
+    max-inline-size: 100%;
+    max-block-size: 100%;
+    object-fit: contain;
+  }
+
   /* omfp:tree (UI-083): one row per conversation entry, indented per branch (`--depth`), the branch the transcript
    * shows in on-surface and the others muted, the leaf marked; actions show on hover and focus. */
   .omfp-tree {

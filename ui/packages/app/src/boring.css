@@ -43,12 +43,21 @@
       .omfp-mcp,
       .omfp-changes,
       .omfp-workspace,
+      .omfp-browser,
       .omfp-workspace__kind-options .omfp-radio
     ) {
     font-family: var(--omfp-font-ui);
   }
 
-  :root[data-skin="boring"] :is(.omfp-jobs__action, .omfp-jobs__output, .omfp-mcp__command, .omfp-mcp__path) {
+  :root[data-skin="boring"]
+    :is(
+      .omfp-jobs__action,
+      .omfp-jobs__output,
+      .omfp-mcp__command,
+      .omfp-mcp__path,
+      .omfp-browser__url,
+      .omfp-browser__action code
+    ) {
     font-family: var(--omfp-font-code);
   }
 

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { BUILTINS } from "../../builtins.ts";
 import { BUILTIN_WIDGETS } from "../../src/view/registry.ts";
 import background from "../../src/widgets/background/index.ts";
+import browser from "../../src/widgets/browser/index.ts";
 import changes from "../../src/widgets/changes/index.ts";
 import * as chat from "../../src/widgets/chat/index.ts";
 import file from "../../src/widgets/file/index.ts";
@@ -40,7 +41,7 @@ function valueImports(folder: string): { file: string; path: string }[] {
 }
 
 describe("copyable built-ins", () => {
-  // spec: AGT-021, AGT-012, UI-082, UI-083, UI-273, UI-290, UI-679, UI-749
+  // spec: AGT-021, AGT-012, UI-082, UI-083, UI-273, UI-290, UI-679, UI-749, UI-873
   test("value imports come only from react, omfp/sdk, omfp/kit and the widget's own folder", () => {
     const imports = COPYABLE.flatMap(valueImports);
     expect(imports.length).toBeGreaterThan(0);
@@ -61,7 +62,7 @@ describe("copyable built-ins", () => {
     expect(typeof workspace).toBe("function");
     expect(typeof changes).toBe("function");
     expect(typeof file).toBe("function");
-    for (const widget of [background, todos, tree, mcp, web, jobs]) {
+    for (const widget of [background, todos, tree, mcp, web, jobs, browser]) {
       expect(typeof widget).toBe("function");
     }
   });

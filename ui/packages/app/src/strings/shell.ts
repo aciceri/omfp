@@ -383,6 +383,20 @@ export const shell = {
       },
     },
   },
+  /** `omfp:browser` (UI-870..UI-873). */
+  browser: {
+    label: "Browser tabs",
+    noThread: "No thread selected",
+    none: "No browser tabs",
+    noneHint: "The tabs the agent opens with omp's browser in its eval cells show here.",
+    note: "What the agent's browser calls reported, not the live page.",
+    closed: "closed",
+    noUrl: "No address yet",
+    lastAction: "Last action",
+    noScreenshot: "No screenshot yet",
+    screenshot: (name: string) => `Latest screenshot of tab ${name}`,
+    openScreenshot: (name: string) => `Open the latest screenshot of tab ${name} at full size`,
+  },
   /** `omfp:todos` (UI-082). */
   todos: {
     label: "Todos",
@@ -651,6 +665,7 @@ export const shell = {
       "omfp:mcp": "MCP servers",
       "omfp:terminal": "Terminal",
       "omfp:web": "Web",
+      "omfp:browser": "Browser",
     } as Readonly<Record<string, string>>,
   },
   /** The narrow and mobile frame (UI-200..UI-205). */

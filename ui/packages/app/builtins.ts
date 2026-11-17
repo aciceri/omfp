@@ -17,4 +17,5 @@ export const BUILTINS: readonly { name: string; folder: string; part?: { file: s
   { name: "composer", folder: "chat", part: { file: "composer.tsx", exportName: "ComposerWidget" } },
   { name: "terminal", folder: "terminal" },
   { name: "jobs", folder: "jobs" },
+  { name: "browser", folder: "browser" },
 ];

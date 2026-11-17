@@ -888,6 +888,22 @@ for the user's messages and plain replies, plain chevrons and box titles, a ring
 possible without component variants, Crush's decorative glyphs moved from the kit's markup into its stylesheet
 (UI-796); Crush looks the same. Widgets built from kit components follow the skin; a widget's own styles do not.
 
+## The agent's browser tabs
+
+M17 adds `omfp:browser` (#143, UI-870..873), a built-in widget outside the default view listing the tabs the agent
+drove with omp's browser. Spike (omp 18.22.0 source): the browser is no longer a tool but an eval prelude
+(`browser.open`, `tab.click`, …) whose calls run inside the eval kernel; what reaches an RPC host is only the `eval`
+result — per cell, a status event `{ op: "browser", detail }` with omp's one-line description of each successful call
+(`open main https://…`, `main.click("#go")`, `close all`), failures as `{ op, error }` without the tab, and the call's
+images, screenshots marked `detail: "original"` but not tied to a tab. No browser event stream, no CDP endpoint of the
+managed Chromium (the open's printed line names one only for a browser omp attached to), no RPC to take over or hand
+back; the address a click or a redirect leads to is reported nowhere. So the widget shows each tab's address (last
+`open` or `goto`), its last action and the latest screenshot only an unambiguous call credits to it, and says it is not
+the live page. omp's `/browser visible` only makes its tabs open a window on omp's own host (the daemon's machine, not
+the user's window): not offered.
+No recorded fixture: omp's Chromium cannot be downloaded or reached behind the contract tests' `DenyProxy`, so the
+tests build the eval results omp's sources describe.
+
 ## Later (noted, not scheduled)
 
 - Helix-style modal editing in the composer (UI-095 keeps a keymap with modes, so it fits later).

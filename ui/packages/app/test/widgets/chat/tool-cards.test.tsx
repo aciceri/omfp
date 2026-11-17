@@ -8,16 +8,18 @@ import { replay } from "@omfp/core";
 import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { type ReactNode, useState } from "react";
-import { type OmfpHost, OPEN_FILES, SELECTED_THREAD } from "../../../src/sdk/index.ts";
+import { type OmfpHost, OPEN_FILES, SELECTED_THREAD, strings } from "../../../src/sdk/index.ts";
 import { type CardStatus, type ToolCard, toolCard } from "../../../src/vm/tool.ts";
 import type { MessageView } from "../../../src/vm/transcript.ts";
 import { MessageRow, ToolCardView } from "../../../src/widgets/chat/message.tsx";
 import { type Clock, ClockContext } from "../../../src/widgets/chat/state.ts";
-import { card, cards, streaming } from "../../support/cards.ts";
+import { card, cards, lspCard, streaming } from "../../support/cards.ts";
 import { repo, thread, workspace } from "../../support/fixtures.ts";
 import { renderWithHost, testHost } from "../../support/host.tsx";
 import { fixtureEvents, isFrame } from "./fixtures.ts";
 import { ManualClock } from "./harness.tsx";
+
+const text = strings.chat.tool;
 
 afterEach(cleanup);
 
@@ -371,6 +373,148 @@ describe("search cards", () => {
     expect(byTestId(show(card("search_tool_calls", "call_glob_2")), "tool-error").textContent).toBe(
       "Path not found: missing",
     );
+  });
+});
+
+describe("code-intelligence cards", () => {
+  /** The files the last shown card opened. */
+  const opened = () => shownHost?.window.get(OPEN_FILES).w1?.tabs.map(({ path, line, diff }) => ({ path, line, diff }));
+
+  // spec: UI-915, UI-916, UI-051
+  test("ast_grep: named after the device's tool; each match's line opens the file there, its code highlighted", async () => {
+    const element = await open(card("code_intel_tool_calls", "call_ast_grep_1"));
+    expect([element.dataset.tool, byTestId(element, "tool-subject").textContent]).toEqual([
+      "ast_grep",
+      "pub fn $NAME($$$ARGS) -> $RET { $$$BODY }",
+    ]);
+    expect(byTestId(element, "tool-total").textContent).toBe("2 matches in 1 file");
+    expect(texts(element, "tool-match-line")).toEqual(["3", "7"]);
+    const code = within(element).getAllByTestId("tool-match-code");
+    expect(code.map((block) => [block.dataset.lang, block.textContent])).toEqual([
+      ["rust", "pub fn add(left: u64, right: u64) -> u64 {\n    left + right\n}"],
+      ["rust", 'pub fn greet(name: &str) -> String {\n    format!("Hello, {name}!")\n}'],
+    ]);
+    expect(texts(element, "tool-match-captures")[0]).toBe(
+      "ARGS=[left: u64, ,, right: u64], BODY=[left + right], NAME=add, RET=u64",
+    );
+    await userEvent.click(within(element).getAllByTestId("tool-match-line")[1] as HTMLElement);
+    expect(opened()).toEqual([{ path: "src/lib.rs", line: 7, diff: undefined }]);
+  });
+
+  // spec: UI-916, UI-052
+  test("ast_grep: a missing folder fails with omp's message", () => {
+    expect(byTestId(show(card("code_intel_tool_calls", "call_ast_grep_2")), "tool-error").textContent).toBe(
+      "Path not found: missing",
+    );
+  });
+
+  // spec: UI-917, UI-051
+  test("ast_edit: the preview's diff per file; resolving it lists the files, which open against HEAD", async () => {
+    const preview = await open(card("code_intel_tool_calls", "call_ast_edit_1"));
+    expect(byTestId(preview, "tool-preview").textContent).toBe(text.preview);
+    expect(byTestId(preview, "tool-total").textContent).toBe("1 replacement in 1 file");
+    const diff = byTestId(preview, "tool-diff");
+    expect(diff.textContent).toContain("left + right");
+    expect(diff.textContent).toContain("left.saturating_add(right)");
+    cleanup();
+    const resolved = await open(card("code_intel_tool_calls", "call_resolve_1"));
+    expect(byTestId(resolved, "tool-subject").textContent).toBe("AST Edit: 1 replacement in 1 file");
+    expect(texts(resolved, "tool-file")).toEqual(["src/lib.rs1 replacement"]);
+    await userEvent.click(within(byTestId(resolved, "tool-file")).getByTestId("path-link"));
+    expect(opened()).toEqual([{ path: "src/lib.rs", line: undefined, diff: true }]);
+  });
+
+  // spec: UI-918, UI-051
+  test("lsp without a server: omp's note and where omp looks for language servers", async () => {
+    const element = await open(card("code_intel_tool_calls", "call_lsp_1"));
+    expect(element.dataset.tool).toBe("lsp");
+    expect(texts(element, "lsp-note")).toEqual(["notes.txt: No language server found"]);
+    expect(byTestId(element, "lsp-environment").textContent).toBe(text.serverEnvironment);
+  });
+
+  // spec: UI-918, UI-116
+  test("lsp diagnostics: severity, location opening the file at its line, message and source", async () => {
+    const answer = "1 error(s):\n# src/\n## lib.rs\n  4:5 [error] [rustc] mismatched types (E0308)";
+    const element = await open(lspCard({ action: "diagnostics", file: "src/lib.rs" }, answer));
+    const [row] = within(element).getAllByTestId("lsp-diagnostic");
+    expect(row?.dataset.severity).toBe("error");
+    expect(row?.textContent).toBe("errorsrc/lib.rs:4:5mismatched typesrustc · E0308");
+    await userEvent.click(byTestId(element, "lsp-location"));
+    expect(opened()).toEqual([{ path: "src/lib.rs", line: 4, diff: undefined }]);
+    cleanup();
+    expect(
+      byTestId(await open(lspCard({ action: "diagnostics", file: "src/lib.rs" }, "OK")), "lsp-clean").textContent,
+    ).toBe(text.noIssues);
+  });
+
+  // spec: UI-918
+  test("lsp diagnostics: no 'No issues' while a file was not checked; the unchecked file is named", async () => {
+    const answer = "✓ src/a.ts: no issues\n⚠ src/b.ts: no diagnostics report yet from tsserver; retry once it finishes";
+    const element = await open(lspCard({ action: "diagnostics", file: "src/*.ts" }, answer));
+    expect(within(element).queryByTestId("lsp-clean")).toBeNull();
+    expect(texts(element, "lsp-note")).toEqual([
+      "src/b.ts: no diagnostics report yet from tsserver; retry once it finishes",
+    ]);
+  });
+
+  // spec: UI-918, UI-052
+  test("lsp: a failed call shows omp's error, not an answer", () => {
+    const element = show(
+      lspCard({ action: "hover", file: "src/lib.rs", line: 4 }, "LSP error: request timed out", false),
+    );
+    expect(element.dataset.status).toBe("failed");
+    expect(byTestId(element, "tool-error").textContent).toBe("LSP error: request timed out");
+    expect(within(element).queryByTestId("tool-result")).toBeNull();
+  });
+
+  // spec: UI-919, UI-116
+  test("lsp references: the file and line in the head, each location with its source, opening at its line", async () => {
+    const answer = "Found 1 reference(s):\n  src/main.rs:2:9\n    2:     add(1, 2)";
+    const element = await open(lspCard({ action: "references", file: "src/lib.rs", line: 3, symbol: "add" }, answer));
+    expect([element.dataset.omfpPath, element.dataset.omfpLine]).toEqual(["src/lib.rs", "3"]);
+    expect(byTestId(element, "lsp-context").textContent).toBe("    add(1, 2)");
+    await userEvent.click(byTestId(element, "lsp-location"));
+    expect(opened()).toEqual([{ path: "src/main.rs", line: 2, diff: undefined }]);
+  });
+
+  // spec: UI-919, UI-116
+  test("lsp rename: the files it changed open against HEAD; a deleted file does not", async () => {
+    const answer = "Applied rename:\n  Applied 2 edit(s) to src/lib.rs\n  Deleted src/old.rs";
+    const element = await open(lspCard({ action: "rename", file: "src/lib.rs", line: 3, new_name: "sum" }, answer));
+    expect(texts(element, "tool-file")).toEqual(["src/lib.rs2 edits", "src/old.rsdeleted"]);
+    const [changed, deleted] = within(element).getAllByTestId("tool-file");
+    expect(deleted !== undefined && within(deleted).queryByTestId("path-link")).toBeNull();
+    await userEvent.click(within(changed as HTMLElement).getByTestId("path-link"));
+    expect(opened()).toEqual([{ path: "src/lib.rs", line: undefined, diff: true }]);
+  });
+
+  // spec: UI-919
+  test("lsp symbols open at their lines; hover is Markdown; code actions are listed", async () => {
+    const symbols = await open(
+      lspCard({ action: "symbols", file: "src/lib.rs" }, "Symbols in src/lib.rs:\nƒ add @ line 3"),
+    );
+    await userEvent.click(byTestId(symbols, "lsp-symbol-line"));
+    expect(opened()).toEqual([{ path: "src/lib.rs", line: 3, diff: undefined }]);
+    cleanup();
+    const workspace = await open(
+      lspCard(
+        { action: "symbols", file: "*", query: "add" },
+        'Found 1 symbol(s) matching "add":\n  ƒ add (Calc) @ src/main.rs:3:8',
+      ),
+    );
+    expect(texts(workspace, "lsp-symbol")).toEqual(["add (Calc)src/main.rs:3"]);
+    await userEvent.click(byTestId(workspace, "lsp-symbol-line"));
+    expect(opened()).toEqual([{ path: "src/main.rs", line: 3, diff: undefined }]);
+    cleanup();
+    const hover = await open(
+      lspCard({ action: "hover", file: "src/lib.rs", line: 3 }, "```rust\nfn add()\n```\n\nAdds."),
+    );
+    expect(byTestId(hover, "lsp-hover").querySelector("p")?.textContent).toBe("Adds.");
+    cleanup();
+    const actions = await open(
+      lspCard({ action: "code_actions", file: "src/lib.rs", line: 3 }, "1 code action(s):\n  0: [quickfix] Use u32"),
+    );
+    expect(texts(actions, "lsp-action")).toEqual(["0quickfixUse u32"]);
   });
 });
 

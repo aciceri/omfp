@@ -1,7 +1,7 @@
 /** The tool cards of recorded fixtures (UI-051): after the whole fixture, or just before a call's end (streaming). */
 
-import type { ThreadState } from "@omfp/core";
-import type { ToolCard } from "../../src/vm/tool.ts";
+import type { JsonObject, ThreadState, ToolRun } from "@omfp/core";
+import { type ToolCard, toolCard } from "../../src/vm/tool.ts";
 import { items, rowContent } from "../../src/vm/transcript.ts";
 import { type FixtureName, fixture, fixtureUntil, isToolEnd } from "../widgets/chat/fixtures.ts";
 
@@ -33,4 +33,34 @@ export function card(name: FixtureName, id: string): ToolCard {
 /** The card of call `id` just before its `tool_execution_end`. */
 export function streaming(name: FixtureName, id: string): ToolCard {
   return find(fixtureUntil(name, isToolEnd(id)), id, `before its end in ${name}`);
+}
+
+/**
+ * The card of an `lsp` call built by hand in omp 18.22.0's shape (`lsp/tool.ts`, `tools/xdev.ts`): a `write` of the
+ * arguments to `xd://lsp` whose result's text is the answer and whose `details.xdev` echo the arguments and carry the
+ * tool's own details (`{ action, serverName, success }`). Recorded fixtures need a language server; these do not.
+ */
+export function lspCard(args: JsonObject, answer: string, success = true): ToolCard {
+  const run: ToolRun = {
+    tool_call_id: "call_lsp",
+    tool_name: "write",
+    args: { path: "xd://lsp", content: JSON.stringify(args) },
+    intent: null,
+    status: "succeeded",
+    partial_result: null,
+    preview: null,
+    result: {
+      content: [{ type: "text", text: answer }],
+      details: {
+        xdev: {
+          tool: "lsp",
+          mode: "execute",
+          args,
+          inner: { action: args.action ?? null, serverName: "rust-analyzer", success, request: args },
+        },
+      },
+    },
+    background: null,
+  };
+  return toolCard("call_lsp", undefined, run, undefined, undefined);
 }

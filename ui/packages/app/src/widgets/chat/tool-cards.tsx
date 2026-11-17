@@ -1,12 +1,29 @@
 /**
  * The bodies of the specialized tool cards (UI-050): what `toolView` read from a call, rendered per tool. Failed calls
- * show omp's error first (UI-052); code is highlighted when its language is known (UI-090).
+ * show omp's error first (UI-052); code is highlighted when its language is known (UI-090); the code-intelligence
+ * tools' paths open their files at their lines (UI-916..UI-919).
  */
 
-import { Badge, BoxRule, Button, Code, Dialog, Diff, PathLink, TodoList } from "omfp/kit";
 import {
+  Badge,
+  BoxRule,
+  Button,
+  Code,
+  Dialog,
+  Diff,
+  languageOfPath,
+  Markdown,
+  PathLink,
+  TodoList,
+  type Tone,
+} from "omfp/kit";
+import {
+  type AstMatch,
   ansiRuns,
   type CardImage,
+  type Diagnostic,
+  type EditedFile,
+  type LspResult,
   type OpenFileOptions,
   repoPath,
   type SubagentRun,
@@ -62,7 +79,15 @@ function FilePath({ path, open }: { path: string; open?: OpenFileOptions | undef
   );
 }
 
-/** Where a card's path opens (UI-116): `read` at its first line, `edit` and `write` against `HEAD`. */
+/** A path a call names that is one file: not the workspace (`*`) nor a glob. */
+function oneFile(path: string | undefined): path is string {
+  return path !== undefined && path !== "*" && !/[*?[{]/.test(path);
+}
+
+/**
+ * Where a card's path opens (UI-116): `read` at its first line, `edit` and `write` against `HEAD`, an `lsp` call's file
+ * at its line.
+ */
 export function fileTarget(view: ToolView): { path: string; open: OpenFileOptions } | undefined {
   switch (view.kind) {
     case "read":
@@ -71,6 +96,8 @@ export function fileTarget(view: ToolView): { path: string; open: OpenFileOption
       return { path: view.path, open: { diff: true } };
     case "edit":
       return view.path === undefined ? undefined : { path: view.path, open: { diff: true } };
+    case "lsp":
+      return oneFile(view.file) ? { path: view.file, open: { line: view.line } } : undefined;
     default:
       return undefined;
   }
@@ -90,11 +117,35 @@ export function ToolSubject({ view }: { view: ToolView }): ReactNode {
     case "search":
     case "web_search":
       return <Subject>{view.query}</Subject>;
+    case "ast_edit":
+      return <Subject>{view.pattern}</Subject>;
+    case "resolve":
+      return <Subject>{view.label ?? view.action}</Subject>;
+    case "lsp":
+      return <LspSubject view={view} />;
     case "task":
       return <Subject>{view.agents.map((agent) => agent.name).join(", ")}</Subject>;
     default:
       return null;
   }
+}
+
+/** An `lsp` call's subject: its action, then its file (opening at its line) or `*`, its line and its symbol. */
+function LspSubject({ view }: { view: Extract<ToolView, { kind: "lsp" }> }): ReactNode {
+  const target = fileTarget(view);
+  return (
+    <span className="omfp-tool-card__target">
+      <Subject>{view.action}</Subject>
+      {view.file !== undefined && (
+        <>
+          &nbsp;
+          {target === undefined ? <Subject>{view.file}</Subject> : <FilePath path={target.path} open={target.open} />}
+          {view.line !== undefined && <span className="omfp-tool-card__selector">:{view.line}</span>}
+        </>
+      )}
+      {view.symbol !== undefined && <span className="omfp-tool-card__selector">&nbsp;({view.symbol})</span>}
+    </span>
+  );
 }
 
 function Subject({ children }: { children: ReactNode }): ReactNode {
@@ -259,15 +310,71 @@ export function ToolBody({ card }: { card: ToolCard }): ReactNode {
               <ul className="omfp-tool-card__files">
                 {view.files.map((file) => (
                   <li key={file.path} data-testid="tool-file">
-                    <PathLink reference={{ path: file.path, line: undefined }} onOpen={(ref) => openFile(ref.path)}>
-                      <FilePath path={file.path} />
-                    </PathLink>
-                    {file.count !== undefined && <Badge>{file.count}</Badge>}
+                    <div className="omfp-tool-card__file">
+                      <PathLink reference={{ path: file.path, line: undefined }} onOpen={(ref) => openFile(ref.path)}>
+                        <FilePath path={file.path} />
+                      </PathLink>
+                      {file.count !== undefined && <Badge>{file.count}</Badge>}
+                    </div>
+                    {file.matches.length > 0 && <Matches path={file.path} matches={file.matches} />}
                   </li>
                 ))}
               </ul>
             ))}
           {view.truncated && <p className="omfp-tool-card__meta">{text.truncated}</p>}
+        </div>
+      );
+    case "ast_edit":
+      return (
+        <div className="omfp-tool-card__section">
+          <ToolError card={card} />
+          <p className="omfp-tool-card__meta">
+            {view.total !== undefined && <span data-testid="tool-total">{view.total}</span>}
+            {card.status === "succeeded" && !view.applied && <span data-testid="tool-preview">{text.preview}</span>}
+          </p>
+          {card.status === "succeeded" && view.files.length === 0 && (
+            <p className="omfp-tool-card__meta">{text.noMatch}</p>
+          )}
+          <ul className="omfp-tool-card__files">
+            {view.files.map((file) => (
+              <li key={file.path} data-testid="tool-file">
+                <div className="omfp-tool-card__file">
+                  <PathLink
+                    reference={{ path: file.path, line: file.diff[0]?.oldLine ?? file.diff[0]?.newLine }}
+                    onOpen={(ref) => openFile(ref.path, { line: ref.line })}
+                  >
+                    <FilePath path={file.path} />
+                  </PathLink>
+                  {file.count !== undefined && <Badge>{file.count}</Badge>}
+                </div>
+                {file.diff.length > 0 && (
+                  <Diff lines={file.diff} language={languageOfPath(file.path)} data-testid="tool-diff" />
+                )}
+              </li>
+            ))}
+          </ul>
+          {view.truncated && <p className="omfp-tool-card__meta">{text.truncated}</p>}
+        </div>
+      );
+    case "resolve":
+      return (
+        <div className="omfp-tool-card__section">
+          <ToolError card={card} />
+          {view.action === "discard" && <p className="omfp-tool-card__meta">{text.discarded}</p>}
+          {view.reason !== undefined && <p className="omfp-tool-card__task">{view.reason}</p>}
+          <ChangedFiles files={view.files} />
+        </div>
+      );
+    case "lsp":
+      return (
+        <div className="omfp-tool-card__section">
+          <ToolError card={card} />
+          {card.status !== "failed" && view.result !== undefined && <LspAnswer result={view.result} />}
+          {view.noServer && (
+            <p className="omfp-tool-card__meta" data-testid="lsp-environment">
+              {text.serverEnvironment}
+            </p>
+          )}
         </div>
       );
     case "todo":
@@ -340,6 +447,242 @@ export function ToolBody({ card }: { card: ToolCard }): ReactNode {
           )}
         </>
       );
+  }
+}
+
+/**
+ * An `ast_grep` file's matches (UI-916): each match's first line opens the file there, its code is highlighted in the
+ * file's language, its metavariable captures under it.
+ */
+function Matches({ path, matches }: { path: string; matches: readonly AstMatch[] }): ReactNode {
+  const openFile = useOpenFile();
+  const language = languageOfPath(path);
+  return (
+    <ol className="omfp-tool-card__matches">
+      {matches.map((match, index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: a result's matches never move
+        <li key={index} data-testid="tool-match">
+          <PathLink
+            reference={{ path, line: match.line }}
+            onOpen={(ref) => openFile(ref.path, { line: ref.line })}
+            data-testid="tool-match-line"
+          >
+            {match.line}
+          </PathLink>
+          <Code code={match.code} block language={language} data-testid="tool-match-code" />
+          {match.captures !== undefined && (
+            <p className="omfp-tool-card__meta omfp-tool-card__captures" data-testid="tool-match-captures">
+              {match.captures}
+            </p>
+          )}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+/** `path:line:col`, opening the file at the line (UI-116). */
+function Location({ path, line, column }: { path: string; line: number; column?: number | undefined }): ReactNode {
+  const openFile = useOpenFile();
+  return (
+    <PathLink
+      reference={{ path, line }}
+      onOpen={(ref) => openFile(ref.path, { line: ref.line })}
+      data-testid="lsp-location"
+    >
+      <FilePath path={path} />
+      <span className="omfp-tool-card__selector">
+        :{line}
+        {column !== undefined && `:${column}`}
+      </span>
+    </PathLink>
+  );
+}
+
+/** Files a workspace edit or an applied rewrite changed, each opening against `HEAD` (UI-917, UI-919). */
+function ChangedFiles({ files }: { files: readonly EditedFile[] }): ReactNode {
+  const openFile = useOpenFile();
+  if (files.length === 0) {
+    return null;
+  }
+  return (
+    <ul className="omfp-tool-card__files">
+      {files.map((file) => (
+        <li key={file.path} data-testid="tool-file">
+          <div className="omfp-tool-card__file">
+            {file.removed ? (
+              <FilePath path={file.path} />
+            ) : (
+              <PathLink
+                reference={{ path: file.path, line: undefined }}
+                diff
+                onOpen={(ref) => openFile(ref.path, { diff: true })}
+              >
+                <FilePath path={file.path} />
+              </PathLink>
+            )}
+            <span className="omfp-tool-card__meta">{file.note}</span>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** omp's status lines of an `lsp` answer. */
+function Notes({ notes }: { notes: readonly string[] }): ReactNode {
+  return notes.map((note, index) => (
+    // biome-ignore lint/suspicious/noArrayIndexKey: an answer's notes never move
+    <p key={index} className="omfp-tool-card__meta" data-testid="lsp-note">
+      {note}
+    </p>
+  ));
+}
+
+/** The badge tone of a diagnostic's severity. */
+const SEVERITY_TONE: Readonly<Record<string, Tone>> = {
+  error: "error",
+  warning: "warning",
+  info: "primary",
+  hint: "default",
+};
+
+function DiagnosticRow({ diagnostic }: { diagnostic: Diagnostic }): ReactNode {
+  const facts = [diagnostic.source, diagnostic.code].filter((fact) => fact !== undefined);
+  return (
+    <li data-testid="lsp-diagnostic" data-severity={diagnostic.severity}>
+      <Badge tone={SEVERITY_TONE[diagnostic.severity] ?? "default"}>{diagnostic.severity}</Badge>
+      <Location path={diagnostic.path} line={diagnostic.line} column={diagnostic.column} />
+      <span className="omfp-tool-card__message">{diagnostic.message}</span>
+      {facts.length > 0 && <span className="omfp-tool-card__meta">{facts.join(" · ")}</span>}
+    </li>
+  );
+}
+
+/**
+ * An `lsp` answer (UI-918, UI-919): diagnostics with their severity and location, locations with their source,
+ * symbols at their lines, the files an edit changed, the code actions offered, hover documentation as Markdown, else
+ * omp's text.
+ */
+function LspAnswer({ result }: { result: LspResult }): ReactNode {
+  const openFile = useOpenFile();
+  switch (result.type) {
+    case "diagnostics":
+      return (
+        <>
+          {result.diagnostics.length > 0 && (
+            <ul className="omfp-tool-card__diagnostics">
+              {result.diagnostics.map((diagnostic, index) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: an answer's diagnostics never move
+                <DiagnosticRow key={index} diagnostic={diagnostic} />
+              ))}
+            </ul>
+          )}
+          {result.clean && (
+            <p className="omfp-tool-card__meta" data-testid="lsp-clean">
+              {text.noIssues}
+            </p>
+          )}
+          <Notes notes={result.notes} />
+        </>
+      );
+    case "locations":
+      return (
+        <>
+          <p className="omfp-tool-card__meta" data-testid="tool-total">
+            {result.title}
+          </p>
+          <ul className="omfp-tool-card__locations">
+            {result.locations.map((location) => (
+              <li key={`${location.path}:${location.line}:${location.column}`} data-testid="lsp-location-item">
+                <Location path={location.path} line={location.line} column={location.column} />
+                {location.context.length > 0 && (
+                  <Code
+                    code={location.context.map((line) => line.text).join("\n")}
+                    block
+                    language={languageOfPath(location.path)}
+                    data-testid="lsp-context"
+                  />
+                )}
+              </li>
+            ))}
+          </ul>
+          <Notes notes={result.notes} />
+        </>
+      );
+    case "symbols":
+      return (
+        <>
+          <p className="omfp-tool-card__meta" data-testid="tool-total">
+            {result.title}
+          </p>
+          <ul className="omfp-tool-card__symbols">
+            {result.symbols.map((symbol, index) => (
+              <li
+                // biome-ignore lint/suspicious/noArrayIndexKey: an answer's symbols never move
+                key={index}
+                data-testid="lsp-symbol"
+                style={{ paddingInlineStart: `${symbol.depth}rem` }}
+              >
+                <span className="omfp-tool-card__symbol">{symbol.name}</span>
+                {symbol.path !== undefined && (
+                  <PathLink
+                    reference={{ path: symbol.path, line: symbol.line }}
+                    onOpen={(ref) => openFile(ref.path, { line: ref.line })}
+                    data-testid="lsp-symbol-line"
+                  >
+                    {result.workspace && <FilePath path={symbol.path} />}:{symbol.line}
+                  </PathLink>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      );
+    case "edits":
+      return (
+        <>
+          <p className="omfp-tool-card__meta">
+            <span data-testid="tool-total">{result.title}</span>
+            {!result.applied && <span>{text.notApplied}</span>}
+          </p>
+          <ChangedFiles files={result.files} />
+          {result.commands.length > 0 && (
+            <>
+              <h3>{text.commands}</h3>
+              <ul className="omfp-tool-card__files">
+                {result.commands.map((command) => (
+                  <li key={command} data-testid="lsp-command">
+                    <Code code={command} />
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          <Notes notes={result.notes} />
+        </>
+      );
+    case "actions":
+      return (
+        <>
+          <p className="omfp-tool-card__meta" data-testid="tool-total">
+            {result.title}
+          </p>
+          <ol className="omfp-tool-card__actions">
+            {result.actions.map((action) => (
+              <li key={action.index} data-testid="lsp-action">
+                <span className="omfp-tool-card__meta">{action.index}</span>
+                <Badge>{action.kind}</Badge>
+                <span>{action.title}</span>
+              </li>
+            ))}
+          </ol>
+        </>
+      );
+    case "hover":
+      return <Markdown text={result.markdown} data-testid="lsp-hover" />;
+    case "text":
+      return <Code code={result.text} block data-testid="tool-result" />;
   }
 }
 

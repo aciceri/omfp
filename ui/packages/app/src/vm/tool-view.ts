@@ -1,15 +1,18 @@
 /**
  * Specialized tool cards (UI-050, UI-051): what each card shows, read from the argument and result shapes recorded
  * from the pinned omp (`fixtures/threads/<omp>/*tool_call*.jsonl`, `crates/omfp-daemon/tests/contract_tool_cards.rs`).
- * Tools without a recorded shape keep the fallback card (`generic`).
+ * Tools without a recorded shape keep the fallback card (`generic`). omp's discoverable tools run as `xd://` devices
+ * (a `write` of their JSON arguments to `xd://<tool>`): `deviceCall` turns such a call back into one of the tool
+ * (UI-915).
  */
 
-import type { BackgroundJob, JobState, JsonValue } from "@omfp/core";
+import type { BackgroundJob, JobState } from "@omfp/core";
 import type { DiffLine } from "@omfp/kit";
 import { languageOfPath } from "@omfp/kit";
 import type { Workspace } from "@omfp/protocol";
 import { isObject as isRecord } from "../sdk/json.ts";
 import { strings } from "../strings/index.ts";
+import { type AstMatch, astEditDiffs, astMatches, type EditedFile, type LspResult, lspResult } from "./code-intel.ts";
 
 const text = strings.chat.tool;
 
@@ -93,11 +96,45 @@ export type ToolView =
       readonly query: string;
       /** Where it searched (`grep`'s path, the folder of a `glob`). */
       readonly scope: string | undefined;
-      /** Matching files with their match counts when known. */
-      readonly files: readonly { readonly path: string; readonly count: number | undefined }[] | undefined;
+      /** Matching files with their match counts when known, and an `ast_grep`'s matches (UI-916). */
+      readonly files: readonly SearchFile[] | undefined;
       /** `2 matches in 1 file`. */
       readonly total: string | undefined;
       readonly truncated: boolean;
+    }
+  | {
+      readonly kind: "ast_edit";
+      /** The first rewrite's pattern, ` (+N more)` when there are several. */
+      readonly pattern: string;
+      /** The files the rewrite changes, each with its changed code as diff lines (UI-917). */
+      readonly files: readonly AstEditFile[];
+      /** `1 replacement in 1 file`. */
+      readonly total: string | undefined;
+      /** omp stages an `ast_edit` as a preview until the agent resolves it (`xd://resolve`). */
+      readonly applied: boolean;
+      readonly truncated: boolean;
+    }
+  | {
+      readonly kind: "resolve";
+      /** `apply` or `discard`, omp's word for what the agent did with the staged preview. */
+      readonly action: string;
+      /** What was staged (`AST Edit: 1 replacement in 1 file`). */
+      readonly label: string | undefined;
+      readonly reason: string | undefined;
+      /** The files an applied preview changed (UI-917). */
+      readonly files: readonly EditedFile[];
+    }
+  | {
+      readonly kind: "lsp";
+      readonly action: string;
+      /** The file it asked about (`*` for the workspace), the line and the symbol there. */
+      readonly file: string | undefined;
+      readonly line: number | undefined;
+      readonly symbol: string | undefined;
+      /** The answer once it came (UI-918, UI-919). */
+      readonly result: LspResult | undefined;
+      /** omp found no language server for the file or action: it starts them from the daemon's environment. */
+      readonly noServer: boolean;
     }
   | { readonly kind: "todo"; readonly op: string; readonly phases: readonly TodoPhase[] }
   | {
@@ -115,6 +152,21 @@ export type ToolView =
 export interface TodoPhase {
   readonly name: string;
   readonly tasks: readonly TodoTask[];
+}
+
+/** A file of a search result. */
+export interface SearchFile {
+  readonly path: string;
+  readonly count: number | undefined;
+  /** An `ast_grep`'s matches in the file; none for `grep` and `glob`, whose details list files only. */
+  readonly matches: readonly AstMatch[];
+}
+
+/** A file an `ast_edit` rewrites: its replacement count and the changed code. */
+export interface AstEditFile {
+  readonly path: string;
+  readonly count: number | undefined;
+  readonly diff: readonly DiffLine[];
 }
 
 /** An image of a tool result (`{ type: "image", data, mimeType }`): base64 `data` of type `mime`. */
@@ -170,7 +222,8 @@ export function toolOutput(value: unknown): ToolOutput | undefined {
 
 /**
  * Why a call that omp did not flag `isError` still failed: `web_search` reports engine failures in `details.error`,
- * a `read` of a URL that could not be fetched has `details.method` `failed`.
+ * a `read` of a URL that could not be fetched has `details.method` `failed`, an `lsp` call that failed has
+ * `details.success` `false` and says why in its text (UI-918).
  */
 export function quietFailure(name: string, output: ToolOutput | undefined): string | undefined {
   if (output === undefined) {
@@ -184,7 +237,68 @@ export function quietFailure(name: string, output: ToolOutput | undefined): stri
     const notes = list(details.notes).flatMap((note) => (typeof note === "string" ? [note] : []));
     return notes.join("\n") || text.fetchFailed;
   }
+  if (name === "lsp" && details.success === false) {
+    return output.text ?? text.failed;
+  }
   return undefined;
+}
+
+/** A call of an omp tool mounted as an `xd://` device: the tool, its own arguments and its own result. */
+export interface DeviceCall {
+  readonly name: string;
+  /** The validated arguments omp echoes in `details.xdev.args`, else the written JSON; `undefined` while partial. */
+  readonly args: Readonly<Record<string, unknown>> | undefined;
+  /** The result with the tool's own details (`details.xdev.inner`). */
+  readonly output: ToolOutput | undefined;
+}
+
+/** `xd://<tool>`: a device's URL (`xd://<tool>/<topic>` is a doc topic, read only). */
+const DEVICE_URL = /^xd:\/\/([\w.-]+)$/;
+/** The `path` of a `write` whose arguments the model is still writing. */
+const PARTIAL_PATH = /"path"\s*:\s*"(xd:\/\/[^"]*)"/;
+
+/**
+ * The tool call a `write` to `xd://<tool>` runs (UI-915): omp 18.22.0 mounts its discoverable tools (`lsp`, `ast_grep`,
+ * `ast_edit`, MCP tools, …) as devices while `tools.xdev` is on (its default), and the model writes their JSON
+ * arguments as the content; `undefined` for any other call. `partial` is the argument text the model is writing.
+ */
+export function deviceCall(
+  name: string,
+  args: unknown,
+  partial: string | undefined,
+  output: ToolOutput | undefined,
+): DeviceCall | undefined {
+  if (name !== "write") {
+    return undefined;
+  }
+  // While the model writes them, the call's arguments are `{}` beside the partial text: the path is in the text.
+  const path =
+    (isRecord(args) ? str(args.path) : undefined) ??
+    (partial === undefined ? undefined : PARTIAL_PATH.exec(partial)?.[1]);
+  const device = path === undefined ? undefined : DEVICE_URL.exec(path)?.[1];
+  if (device === undefined) {
+    return undefined;
+  }
+  const xdev = isRecord(output?.details.xdev) ? output.details.xdev : undefined;
+  const echoed = isRecord(xdev?.args) ? xdev.args : undefined;
+  return {
+    name: device,
+    args: echoed ?? writtenArguments(isRecord(args) ? str(args.content) : undefined),
+    output: output === undefined ? undefined : { ...output, details: isRecord(xdev?.inner) ? xdev.inner : {} },
+  };
+}
+
+/** A device write's content as its JSON arguments object, if it is one. */
+function writtenArguments(content: string | undefined): Readonly<Record<string, unknown>> | undefined {
+  if (content === undefined) {
+    return undefined;
+  }
+  try {
+    const parsed: unknown = JSON.parse(content);
+    return isRecord(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** `path:50-80` (omp's selector syntax) split into the path and its selector. */
@@ -241,6 +355,9 @@ const SHOWN_ARGUMENTS: Readonly<Record<string, readonly string[]>> = {
   write: ["path", "content"],
   grep: ["pattern"],
   glob: ["path"],
+  ast_grep: ["pat"],
+  ast_edit: ["ops"],
+  lsp: ["action", "file", "line", "symbol"],
   web_search: ["query"],
   ask: ["html"],
 };
@@ -263,7 +380,7 @@ function plural(count: number, one: string, many: string): string {
  */
 export function toolView(
   name: string,
-  args: JsonValue | undefined,
+  args: unknown,
   output: ToolOutput | undefined,
   succeeded: boolean,
   job: BackgroundJob | null = null,
@@ -337,22 +454,31 @@ export function toolView(
       return { kind: "write", path, content: str(input.content), language: languageOfPath(path) };
     }
     case "grep":
-    case "glob": {
+    case "glob":
+    case "ast_grep": {
       const fileMatches = records(details.fileMatches);
+      const single = fileMatches.length === 1 ? str(fileMatches[0]?.path) : undefined;
+      const found =
+        name === "ast_grep"
+          ? astMatches(str(details.displayContent) ?? output?.text ?? "", single)
+          : new Map<string, AstMatch[]>();
       const files =
         fileMatches.length > 0
-          ? fileMatches.map((file) => ({ path: str(file.path) ?? "", count: num(file.count) }))
+          ? fileMatches.map((file) => {
+              const path = str(file.path) ?? "";
+              return { path, count: num(file.count), matches: found.get(path) ?? [] };
+            })
           : Array.isArray(details.files)
             ? list(details.files).flatMap((file) =>
-                typeof file === "string" ? [{ path: file, count: undefined }] : [],
+                typeof file === "string" ? [{ path: file, count: undefined, matches: [] }] : [],
               )
             : undefined;
       const matches = num(details.matchCount);
       const fileCount = num(details.fileCount) ?? files?.length;
       return {
         kind: "search",
-        query: str(name === "grep" ? input.pattern : input.path) ?? "",
-        scope: name === "grep" ? str(input.path) : str(details.scopePath),
+        query: str(name === "grep" ? input.pattern : name === "ast_grep" ? input.pat : input.path) ?? "",
+        scope: name === "glob" ? str(details.scopePath) : str(input.path),
         files,
         total:
           fileCount === undefined
@@ -360,7 +486,62 @@ export function toolView(
             : matches === undefined
               ? plural(fileCount, "file", "files")
               : `${plural(matches, "match", "matches")} in ${plural(fileCount, "file", "files")}`,
-        truncated: details.truncated === true,
+        truncated: details.truncated === true || details.limitReached === true,
+      };
+    }
+    case "ast_edit": {
+      const ops = records(input.ops);
+      const first = str(ops[0]?.pat) ?? "";
+      const replacements = records(details.fileReplacements);
+      const single = replacements.length === 1 ? str(replacements[0]?.path) : undefined;
+      const diffs = astEditDiffs(str(details.displayContent) ?? "", single);
+      const total = num(details.totalReplacements);
+      const files = replacements.map((file) => {
+        const path = str(file.path) ?? "";
+        return { path, count: num(file.count), diff: diffs.get(path) ?? [] };
+      });
+      const touched = num(details.filesTouched) ?? files.length;
+      return {
+        kind: "ast_edit",
+        pattern: ops.length > 1 ? text.morePatterns(first, ops.length - 1) : first,
+        files,
+        total:
+          total === undefined
+            ? undefined
+            : `${plural(total, "replacement", "replacements")} in ${plural(touched, "file", "files")}`,
+        applied: details.applied === true,
+        truncated: details.limitReached === true,
+      };
+    }
+    case "resolve": {
+      const action = str(details.action) ?? "";
+      const source = isRecord(details.sourceResultDetails) ? details.sourceResultDetails : {};
+      return {
+        kind: "resolve",
+        action,
+        label: str(details.label),
+        reason: str(details.reason) ?? str(input.reason),
+        files:
+          action === "apply"
+            ? records(source.fileReplacements).map((file) => ({
+                path: str(file.path) ?? "",
+                note: plural(num(file.count) ?? 0, "replacement", "replacements"),
+                removed: false,
+              }))
+            : [],
+      };
+    }
+    case "lsp": {
+      const action = str(input.action) ?? str(details.action) ?? "";
+      const answer = output?.text;
+      return {
+        kind: "lsp",
+        action,
+        file: str(input.file),
+        line: num(input.line),
+        symbol: str(input.symbol),
+        result: answer === undefined ? undefined : lspResult(action, answer),
+        noServer: answer?.includes("No language server found") === true,
       };
     }
     case "todo":

@@ -7,7 +7,15 @@
 import type { JobState, JsonValue, ToolCall, ToolResultMessage, ToolRun, UserContent } from "@omfp/core";
 import { isObject } from "../sdk/json.ts";
 import { strings } from "../strings/index.ts";
-import { quietFailure, type ResultImage, shownArguments, type ToolView, toolOutput, toolView } from "./tool-view.ts";
+import {
+  deviceCall,
+  quietFailure,
+  type ResultImage,
+  shownArguments,
+  type ToolView,
+  toolOutput,
+  toolView,
+} from "./tool-view.ts";
 
 /** Longest argument summary. */
 const SUMMARY_CHARS = 96;
@@ -66,7 +74,7 @@ export function expandedByDefault(card: ToolCard): boolean {
 /**
  * The card of one tool call. `call` is the assistant's tool-call block (absent when only the run is known), `run` the
  * execution tracked by the reducer, `result` the transcript's tool result message, `calledAt` the calling message's
- * completion timestamp.
+ * completion timestamp. A `write` to an `xd://` device is the card of the device's tool (UI-915).
  */
 export function toolCard(
   toolCallId: string,
@@ -75,18 +83,22 @@ export function toolCard(
   result: ToolResultMessage | undefined,
   calledAt: number | undefined,
 ): ToolCard {
-  const name = call?.name ?? run?.tool_name ?? result?.toolName ?? strings.chat.tool.fallbackName;
+  const called = call?.name ?? run?.tool_name ?? result?.toolName ?? strings.chat.tool.fallbackName;
   const partial = call?.partialArgs;
   // omp's own copy of the arguments (defaults filled in, its `i` intent field split off) once the run started.
-  const args: JsonValue | undefined = run?.args ?? call?.arguments ?? undefined;
+  const written: JsonValue | undefined = run?.args ?? call?.arguments ?? undefined;
   const intent = call?.intent ?? run?.intent ?? undefined;
   const finishedAt = result?.timestamp;
   const value = run?.result ?? run?.partial_result ?? null;
-  const output = toolOutput(value ?? result);
+  const returned = toolOutput(value ?? result);
+  const device = deviceCall(called, written, partial, returned);
+  const name = device?.name ?? called;
+  const args: unknown = device === undefined ? written : device.args;
+  const output = device === undefined ? returned : device.output;
   const job = run?.background ?? null;
   // A background job's state is the card's (UI-270): the call itself ended when the job started.
   const status =
-    job === null ? statusOf(partial !== undefined && args === undefined, run, result) : JOB_STATUS[job.state];
+    job === null ? statusOf(partial !== undefined && written === undefined, run, result) : JOB_STATUS[job.state];
   const summary = summaryOf(name, intent, args, partial);
   return {
     toolCallId,
@@ -105,7 +117,7 @@ export function toolCard(
 }
 
 /** The first argument of {@link SUBJECT_KEYS} that is a string, on one line. */
-function subjectOf(args: JsonValue | undefined): string | undefined {
+function subjectOf(args: unknown): string | undefined {
   if (!isObject(args)) {
     return undefined;
   }
@@ -133,12 +145,7 @@ const JOB_STATUS: Readonly<Record<JobState, CardStatus>> = {
  * The header's one-line summary: the intent, else the arguments the card does not show elsewhere (`shownArguments`),
  * else, while the model writes the arguments of a tool without a specialized subject, their partial text.
  */
-function summaryOf(
-  name: string,
-  intent: string | undefined,
-  args: JsonValue | undefined,
-  partial: string | undefined,
-): string {
+function summaryOf(name: string, intent: string | undefined, args: unknown, partial: string | undefined): string {
   if (intent !== undefined) {
     return oneLine(intent, SUMMARY_CHARS);
   }

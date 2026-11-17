@@ -391,9 +391,11 @@
   }
 
   /* Code in a section is flat, like the kit's code right in a card's body: the card's border and labelled rules
-     frame it (UI-187). */
+     frame it (UI-187); so are an `ast_grep` match's and an `lsp` location's source (UI-916, UI-919). */
   .omfp-tool-card__section > .omfp-code--block,
-  .omfp-tool-card__preview > .omfp-code--block {
+  .omfp-tool-card__preview > .omfp-code--block,
+  .omfp-tool-card__matches .omfp-code--block,
+  .omfp-tool-card__locations .omfp-code--block {
     padding: var(--omfp-s1) 0;
     border: 0;
     border-radius: 0;
@@ -444,7 +446,12 @@
 
   .omfp-tool-card__files,
   .omfp-tool-card__links,
-  .omfp-tool-card__agents {
+  .omfp-tool-card__agents,
+  .omfp-tool-card__matches,
+  .omfp-tool-card__diagnostics,
+  .omfp-tool-card__locations,
+  .omfp-tool-card__symbols,
+  .omfp-tool-card__actions {
     display: flex;
     flex-direction: column;
     gap: var(--omfp-s1);
@@ -453,10 +460,44 @@
     list-style: none;
   }
 
-  .omfp-tool-card__files li {
+  /* A file: its row (path, count or note), then an `ast_grep`'s matches or an `ast_edit`'s diff (UI-916, UI-917). */
+  .omfp-tool-card__files li,
+  .omfp-tool-card__locations li {
     display: flex;
+    flex-direction: column;
+    gap: var(--omfp-s1);
+  }
+
+  .omfp-tool-card__file,
+  .omfp-tool-card__diagnostics li,
+  .omfp-tool-card__symbols li,
+  .omfp-tool-card__actions li {
+    display: flex;
+    flex-wrap: wrap;
     gap: var(--omfp-s2);
     align-items: center;
+  }
+
+  /* An `ast_grep` match: its line (opening the file there) beside its highlighted code, the captures under it. */
+  .omfp-tool-card__matches {
+    padding-inline-start: var(--omfp-s3);
+  }
+
+  .omfp-tool-card__matches li {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: var(--omfp-s2);
+    align-items: baseline;
+  }
+
+  .omfp-tool-card__captures {
+    grid-column: 2;
+  }
+
+  .omfp-tool-card__message {
+    min-inline-size: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
   }
 
   .omfp-tool-card__links li {

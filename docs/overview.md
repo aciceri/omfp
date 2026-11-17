@@ -9,8 +9,8 @@ build widgets for the UI itself, and you can talk to it with live voice.
 
 - Threads grouped by workspace folder; omp gets every repository of the folder as a root, with its `AGENTS.md`.
 - Transcript with streaming Markdown, thinking blocks and tool cards for `bash`, `read`, `edit`/`write`, `grep`,
-  `glob`, `todo`, `web_search`, `task` and more; approvals and `ask` forms answered in place; queued follow-ups and
-  steering.
+  `glob`, `ast_grep`/`ast_edit`, `lsp`, `todo`, `web_search`, `task` and more; approvals and `ask` forms answered in
+  place; queued follow-ups and steering.
 - Views as layout trees in `.omfp/views.json` (or TSX views and init files), written by the agent, with `:widget add`
   in the window; widgets are React components the
   agent writes and checks without a browser (`omfp/sdk`), next to built-ins for changes and diffs, files (CodeMirror
@@ -53,6 +53,17 @@ This covers every daemon-owned omp, including login, model discovery, title gene
 `HOME`, cwd and repository roots are unchanged; explicit API keys in the daemon's environment still work. This is
 user-profile isolation, not a filesystem sandbox: agent tools still have the user's normal file access. Home-based
 MCP imports from other tools (such as Claude Code and Cursor) keep their existing discovery paths.
+
+## Language servers and code intelligence
+
+omp's LSP integration is on by default (`lsp.enabled`): the agent asks language servers for diagnostics,
+definitions, references, symbols, hover, renames and code actions, and omfp shows their answers as cards whose paths
+open the file at the line. omp starts the servers itself, **from the daemon's environment**: a server must be on the
+`PATH` of the process that started `omfp daemon` (the desktop app's background daemon, a service unit, the shell you
+ran it from), not merely on your dev shell's. When omp finds none for a file, the card says so. The structural search
+and rewrite tools `ast_grep` and `ast_edit` are off by default in omp; turn them on in the profile's
+`agent/config.yml` (`astGrep: { enabled: true }`, `astEdit: { enabled: true }`). omp offers these tools as `xd://`
+devices; omfp shows their calls as cards of the tools themselves.
 
 ## Agents outside omfp (MCP)
 

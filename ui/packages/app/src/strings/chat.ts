@@ -93,6 +93,19 @@ export const chat = {
     noLinks: "No results",
     tools: (count: number) => `${count} ${count === 1 ? "tool call" : "tool calls"}`,
     context: "Context",
+    failed: "The call failed.",
+    /** An `ast_edit` with several rewrites: the first one's pattern and how many more (UI-917). */
+    morePatterns: (first: string, more: number) => `${first} (+${more} more)`,
+    /** A staged `ast_edit` (UI-917). */
+    preview: "Preview: not applied until the agent resolves it",
+    discarded: "Discarded",
+    /** An `lsp` diagnostics answer without any (UI-918). */
+    noIssues: "No issues",
+    /** Where omp looks for language servers (UI-918). */
+    serverEnvironment:
+      "omp starts language servers from the omfp daemon's environment (its PATH), not from your shell: install the server where the daemon runs.",
+    commands: "Commands run",
+    notApplied: "Preview: nothing was changed",
   },
   duration: {
     ms: (ms: number) => `${ms.toFixed(0)} ms`,

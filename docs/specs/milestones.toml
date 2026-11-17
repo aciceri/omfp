@@ -1247,6 +1247,12 @@ requirements = [
   "UI-912",
   "UI-913",
   "DMN-910",
+  # Readable cards for the code-intelligence tools: xd:// devices, ast_grep, ast_edit, lsp (#145)
+  "UI-915",
+  "UI-916",
+  "UI-917",
+  "UI-918",
+  "UI-919",
 ]
 
 [M18]

@@ -24,6 +24,16 @@ export {
   changesSections,
   changesView,
 } from "../vm/changes.ts";
+export type {
+  AstMatch,
+  CodeActionItem,
+  CodeLocation,
+  CodeSymbol,
+  Diagnostic,
+  EditedFile,
+  LspResult,
+  SourceLine,
+} from "../vm/code-intel.ts";
 export {
   activityOf,
   alternative,
@@ -215,8 +225,10 @@ export {
 export { type GoalView, type TodoPhaseView, type TodoRow, type TodosView, todosView } from "../vm/todos.ts";
 export { type CardImage, expandedByDefault, formatDuration, type ToolCard } from "../vm/tool.ts";
 export {
+  type AstEditFile,
   type RepoPath,
   repoPath,
+  type SearchFile,
   type SubagentRun,
   type TodoPhase,
   type TodoTask,

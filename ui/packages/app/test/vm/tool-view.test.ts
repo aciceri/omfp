@@ -5,9 +5,10 @@
 
 import { describe, expect, test } from "bun:test";
 import { replay } from "@omfp/core";
+import { astMatches } from "../../src/vm/code-intel.ts";
 import { expandedByDefault, type ToolCard } from "../../src/vm/tool.ts";
-import { ompDiffLines, repoPath, type ToolView, toolView } from "../../src/vm/tool-view.ts";
-import { card, cards, streaming } from "../support/cards.ts";
+import { deviceCall, ompDiffLines, quietFailure, repoPath, type ToolView, toolView } from "../../src/vm/tool-view.ts";
+import { card, cards, lspCard, streaming } from "../support/cards.ts";
 import { repo, workspace } from "../support/fixtures.ts";
 import { fixtureEvents, isFrame } from "../widgets/chat/fixtures.ts";
 
@@ -190,7 +191,7 @@ describe("search cards", () => {
     });
     // glob streams the files it found.
     expect(view(streaming("search_tool_calls", "call_glob_1"), "search").files).toEqual([
-      { path: "src/lib.rs", count: undefined },
+      { path: "src/lib.rs", count: undefined, matches: [] },
     ]);
   });
 
@@ -214,6 +215,401 @@ describe("search cards", () => {
       const failed = card("search_tool_calls", id);
       expect([failed.status, failed.result]).toEqual(["failed", "Path not found: missing"]);
     }
+  });
+});
+
+describe("xd:// device calls", () => {
+  // spec: UI-915, UI-051
+  test("a write to xd://<tool> is a call of that tool, with its own arguments and result details", () => {
+    const running = streaming("code_intel_tool_calls", "call_ast_grep_1");
+    expect([running.name, running.status, running.summary]).toEqual(["ast_grep", "running", "Finding the functions"]);
+    expect(JSON.parse(running.args)).toEqual({ pat: "pub fn $NAME($$$ARGS) -> $RET { $$$BODY }", path: "src" });
+    expect(view(running, "search")).toMatchObject({ query: "pub fn $NAME($$$ARGS) -> $RET { $$$BODY }", scope: "src" });
+    const lsp = card("code_intel_tool_calls", "call_lsp_1");
+    expect([lsp.name, view(lsp, "lsp").file]).toEqual(["lsp", "notes.txt"]);
+  });
+
+  // spec: UI-915
+  test("while the model writes the arguments the device is known from the path; other writes stay writes", () => {
+    const partial = '{"path":"xd://lsp","content":"{\\"action\\":\\"dia';
+    expect(deviceCall("write", undefined, partial, undefined)).toEqual({
+      name: "lsp",
+      args: undefined,
+      output: undefined,
+    });
+    expect(deviceCall("write", { path: "notes.md", content: "{}" }, undefined, undefined)).toBeUndefined();
+    expect(deviceCall("write", { path: "xd://lsp/actions", content: "{}" }, undefined, undefined)).toBeUndefined();
+    expect(deviceCall("read", { path: "xd://lsp" }, undefined, undefined)).toBeUndefined();
+    // A device without a specialized card (an MCP tool) keeps the fallback card, with its own arguments.
+    const mcp = deviceCall(
+      "write",
+      { path: "xd://mcp__docs_search", content: '{"q":"tool cards"}' },
+      undefined,
+      undefined,
+    );
+    expect(mcp).toEqual({ name: "mcp__docs_search", args: { q: "tool cards" }, output: undefined });
+    expect(toolView("mcp__docs_search", mcp?.args, undefined, false).kind).toBe("generic");
+  });
+
+  // spec: UI-915, UI-051
+  test("recorded: while streaming, the call's arguments are `{}` beside the partial text, and the path names the device", () => {
+    const events = fixtureEvents("code_intel_tool_calls");
+    const end = events.findIndex(isFrame("message_update", "toolcall_end"));
+    const [composing] = cards(replay(events.slice(0, end)));
+    expect([composing?.toolCallId, composing?.name, composing?.view.kind]).toEqual([
+      "call_ast_grep_1",
+      "ast_grep",
+      "search",
+    ]);
+    expect(deviceCall("write", {}, '{"content":"{}","path":"xd://lsp"', undefined)?.name).toBe("lsp");
+  });
+});
+
+describe("ast_grep card", () => {
+  // spec: UI-916, UI-051
+  test("success: each file's matches with their first line, code and captures", () => {
+    expect(view(card("code_intel_tool_calls", "call_ast_grep_1"), "search")).toEqual({
+      kind: "search",
+      query: "pub fn $NAME($$$ARGS) -> $RET { $$$BODY }",
+      scope: "src",
+      files: [
+        {
+          path: "src/lib.rs",
+          count: 2,
+          matches: [
+            {
+              line: 3,
+              code: "pub fn add(left: u64, right: u64) -> u64 {\n    left + right\n}",
+              captures: "ARGS=[left: u64, ,, right: u64], BODY=[left + right], NAME=add, RET=u64",
+            },
+            {
+              line: 7,
+              code: 'pub fn greet(name: &str) -> String {\n    format!("Hello, {name}!")\n}',
+              captures: 'ARGS=[name: &str], BODY=[format!("Hello, {name}!")], NAME=greet, RET=String',
+            },
+          ],
+        },
+      ],
+      total: "2 matches in 1 file",
+      truncated: false,
+    });
+  });
+
+  // spec: UI-916
+  test("grouped output: folders nest, tags and notes leave the path, a lone file has no header", () => {
+    const display = "# src/\n## a.ts#1A2B\n*3│x()\n\n## lib/\n### b.ts\n*9│y(\n 10│)\n  meta: A=1";
+    expect(Object.fromEntries(astMatches(display, undefined))).toEqual({
+      "src/a.ts": [{ line: 3, code: "x()", captures: undefined }],
+      "src/lib/b.ts": [{ line: 9, code: "y(\n)", captures: "A=1" }],
+    });
+    expect(Object.fromEntries(astMatches("*4:z", "src/c.ts"))).toEqual({
+      "src/c.ts": [{ line: 4, code: "z", captures: undefined }],
+    });
+  });
+
+  // spec: UI-916, UI-052
+  test("error: a missing folder fails with omp's message", () => {
+    const failed = card("code_intel_tool_calls", "call_ast_grep_2");
+    expect([failed.name, failed.status, failed.result]).toEqual(["ast_grep", "failed", "Path not found: missing"]);
+  });
+});
+
+describe("ast_edit and resolve cards", () => {
+  // spec: UI-917, UI-051
+  test("the preview: each file's replacements as a diff, not applied yet", () => {
+    expect(view(card("code_intel_tool_calls", "call_ast_edit_1"), "ast_edit")).toEqual({
+      kind: "ast_edit",
+      pattern: "left + right",
+      files: [
+        {
+          path: "src/lib.rs",
+          count: 1,
+          diff: [
+            { kind: "del", text: "left + right", oldLine: 4 },
+            { kind: "add", text: "left.saturating_add(right)", newLine: 4 },
+          ],
+        },
+      ],
+      total: "1 replacement in 1 file",
+      applied: false,
+      truncated: false,
+    });
+  });
+
+  // spec: UI-917, UI-051
+  test("resolving it: what was applied and the files it changed", () => {
+    const resolved = card("code_intel_tool_calls", "call_resolve_1");
+    expect(resolved.name).toBe("resolve");
+    expect(view(resolved, "resolve")).toEqual({
+      kind: "resolve",
+      action: "apply",
+      label: "AST Edit: 1 replacement in 1 file",
+      reason: "Saturating is safer.",
+      files: [{ path: "src/lib.rs", note: "1 replacement", removed: false }],
+    });
+  });
+});
+
+describe("lsp card", () => {
+  // spec: UI-918, UI-051
+  test("recorded: no language server for the file, with the hint about the daemon's environment", () => {
+    const found = card("code_intel_tool_calls", "call_lsp_1");
+    expect(found.status).toBe("succeeded");
+    expect(view(found, "lsp")).toEqual({
+      kind: "lsp",
+      action: "diagnostics",
+      file: "notes.txt",
+      line: undefined,
+      symbol: undefined,
+      result: { type: "diagnostics", diagnostics: [], notes: ["notes.txt: No language server found"], clean: false },
+      noServer: true,
+    });
+  });
+
+  const lib = { path: "src/lib.rs", line: 4, column: 5 };
+
+  // spec: UI-918
+  test("diagnostics of one file: each with its severity, location, source and code", () => {
+    const answer = [
+      "1 error(s), 1 warning(s):",
+      "# src/",
+      "## lib.rs",
+      "  4:5 [error] [rustc] mismatched types (E0308)",
+      "  9:9 [warning] unused variable: `x`",
+    ].join("\n");
+    expect(view(lspCard({ action: "diagnostics", file: "src/lib.rs" }, answer), "lsp").result).toEqual({
+      type: "diagnostics",
+      diagnostics: [
+        { ...lib, severity: "error", source: "rustc", code: "E0308", message: "mismatched types" },
+        {
+          path: "src/lib.rs",
+          line: 9,
+          column: 9,
+          severity: "warning",
+          source: undefined,
+          code: undefined,
+          message: "unused variable: `x`",
+        },
+      ],
+      notes: [],
+      clean: false,
+    });
+    expect(view(lspCard({ action: "diagnostics", file: "src/lib.rs" }, "OK"), "lsp").result).toEqual({
+      type: "diagnostics",
+      diagnostics: [],
+      notes: [],
+      clean: true,
+    });
+  });
+
+  // spec: UI-918
+  test("diagnostics of several files: their status rows become notes, their counts are dropped", () => {
+    const answer = [
+      "✘ src/a.ts: 1 error(s)",
+      "# src/a.ts",
+      "  3:7 [error] [ts] Cannot find name 'x'. (2304)",
+      "✓ src/b.ts: no issues",
+      "⚠ src/c.ts: no diagnostics report yet from tsserver; query the file alone for a longer wait",
+    ].join("\n");
+    expect(view(lspCard({ action: "diagnostics", file: "src/*.ts" }, answer), "lsp").result).toEqual({
+      type: "diagnostics",
+      diagnostics: [
+        {
+          path: "src/a.ts",
+          line: 3,
+          column: 7,
+          severity: "error",
+          source: "ts",
+          code: "2304",
+          message: "Cannot find name 'x'.",
+        },
+      ],
+      notes: ["src/c.ts: no diagnostics report yet from tsserver; query the file alone for a longer wait"],
+      clean: false,
+    });
+  });
+
+  // spec: UI-918
+  test("no issues only when every file was checked: a pending, failed or serverless file keeps it incomplete", () => {
+    const diagnosticsOf = (answer: string) =>
+      view(lspCard({ action: "diagnostics", file: "src/*.ts" }, answer), "lsp").result;
+    expect(diagnosticsOf("✓ src/a.ts: no issues\n✓ src/b.ts: no issues")).toEqual({
+      type: "diagnostics",
+      diagnostics: [],
+      notes: [],
+      clean: true,
+    });
+    for (const unchecked of [
+      "⚠ src/b.ts: no diagnostics report yet from tsserver; query the file alone for a longer wait",
+      "✘ src/b.ts: all language servers failed (tsserver)",
+      "✘ src/b.ts: No language server found",
+    ]) {
+      expect(diagnosticsOf(`✓ src/a.ts: no issues\n${unchecked}`)).toEqual({
+        type: "diagnostics",
+        diagnostics: [],
+        notes: [unchecked.slice(2)],
+        clean: false,
+      });
+    }
+  });
+
+  // spec: UI-918, UI-052
+  test("a failed call (details.success false) is a failed card with omp's text", () => {
+    const failed = lspCard({ action: "hover", file: "src/lib.rs", line: 4 }, "LSP error: request timed out", false);
+    expect([failed.status, failed.result]).toEqual(["failed", "LSP error: request timed out"]);
+    expect(quietFailure("lsp", { text: "fine", images: [], details: { success: true } })).toBeUndefined();
+  });
+
+  // spec: UI-919
+  test("definitions and references: locations with their source; the ones past the context limit too", () => {
+    const answer = [
+      "Found 2 reference(s):",
+      "  src/lib.rs:4:5",
+      "    3: pub fn add(left: u64, right: u64) -> u64 {",
+      "    4:     left + right",
+      "  ... 1 additional reference(s) shown without context",
+      "  src/main.rs:2:9",
+    ].join("\n");
+    const found = view(lspCard({ action: "references", file: "src/lib.rs", line: 4, symbol: "left" }, answer), "lsp");
+    expect([found.file, found.line, found.symbol]).toEqual(["src/lib.rs", 4, "left"]);
+    expect(found.result).toEqual({
+      type: "locations",
+      title: "Found 2 reference(s)",
+      locations: [
+        {
+          ...lib,
+          context: [
+            { line: 3, text: "pub fn add(left: u64, right: u64) -> u64 {" },
+            { line: 4, text: "    left + right" },
+          ],
+        },
+        { path: "src/main.rs", line: 2, column: 9, context: [] },
+      ],
+      notes: ["... 1 additional reference(s) shown without context"],
+    });
+    expect(
+      view(lspCard({ action: "definition", file: "src/lib.rs", line: 4 }, "No definition found"), "lsp").result,
+    ).toEqual({
+      type: "text",
+      text: "No definition found",
+    });
+  });
+
+  // spec: UI-919
+  test("symbols of a file and of the workspace, at their lines", () => {
+    const file = view(
+      lspCard(
+        { action: "symbols", file: "src/lib.rs" },
+        "Symbols in src/lib.rs:\n◆ Calc @ line 1\n  ƒ add(left, right) @ line 3",
+      ),
+      "lsp",
+    );
+    expect(file.result).toEqual({
+      type: "symbols",
+      title: "Symbols in src/lib.rs",
+      workspace: false,
+      symbols: [
+        { depth: 0, name: "Calc", path: "src/lib.rs", line: 1 },
+        { depth: 1, name: "add(left, right)", path: "src/lib.rs", line: 3 },
+      ],
+    });
+    const workspace = view(
+      lspCard(
+        { action: "symbols", file: "*", query: "add" },
+        'Found 1 symbol(s) matching "add":\n  ƒ add (Calc) @ src/lib.rs:3:8',
+      ),
+      "lsp",
+    );
+    expect(workspace.result).toEqual({
+      type: "symbols",
+      title: 'Found 1 symbol(s) matching "add"',
+      workspace: true,
+      symbols: [{ depth: 0, name: "add (Calc)", path: "src/lib.rs", line: 3 }],
+    });
+  });
+
+  // spec: UI-919
+  test("renames and applied code actions: the files they changed and the commands they ran", () => {
+    const applied = "Applied rename:\n  Applied 2 edit(s) to src/lib.rs\n  Applied 1 edit(s) to src/main.rs";
+    expect(
+      view(lspCard({ action: "rename", file: "src/lib.rs", line: 3, new_name: "sum" }, applied), "lsp").result,
+    ).toEqual({
+      type: "edits",
+      title: "Applied rename",
+      applied: true,
+      files: [
+        { path: "src/lib.rs", note: "2 edits", removed: false },
+        { path: "src/main.rs", note: "1 edits", removed: false },
+      ],
+      commands: [],
+      notes: [],
+    });
+    const preview = "Rename preview:\n  src/lib.rs: 2 edits\n  RENAME: src/old.rs ❯ src/new.rs\n  DELETE: src/gone.rs";
+    expect(
+      view(lspCard({ action: "rename", file: "src/lib.rs", line: 3, new_name: "sum", apply: false }, preview), "lsp")
+        .result,
+    ).toEqual({
+      type: "edits",
+      title: "Rename preview",
+      applied: false,
+      files: [
+        { path: "src/lib.rs", note: "2 edits", removed: false },
+        { path: "src/new.rs", note: "renamed from src/old.rs", removed: false },
+        { path: "src/gone.rs", note: "deleted", removed: true },
+      ],
+      commands: [],
+      notes: [],
+    });
+    const action =
+      'Applied "Add import":\n  Workspace edit:\n    Applied 1 edit(s) to src/a.ts\n  Executed command(s):\n    _typescript.applyFix';
+    expect(
+      view(lspCard({ action: "code_actions", file: "src/a.ts", line: 1, query: "0", apply: true }, action), "lsp")
+        .result,
+    ).toEqual({
+      type: "edits",
+      title: 'Applied "Add import"',
+      applied: true,
+      files: [{ path: "src/a.ts", note: "1 edits", removed: false }],
+      commands: ["_typescript.applyFix"],
+      notes: [],
+    });
+  });
+
+  // spec: UI-919
+  test("renamed files keep paths with spaces, split at omp's separator (→ applied, the theme's cursor in a preview)", () => {
+    const filesOf = (answer: string) => {
+      const result = view(lspCard({ action: "rename_file", file: "a b.ts", new_name: "c d.ts" }, answer), "lsp").result;
+      return result?.type === "edits" ? result.files : [];
+    };
+    const renamed = [{ path: "src/c d.ts", note: "renamed from src/a b.ts", removed: false }];
+    expect(filesOf("Renamed 1 file → src/c d.ts\n  Renamed src/a b.ts → src/c d.ts")).toEqual(renamed);
+    expect(filesOf("Applied rename:\n  Renamed src/a b.ts → src/c d.ts")).toEqual(renamed);
+    for (const cursor of ["❯", "\uf054", ">"]) {
+      expect(filesOf(`Rename preview:\n  RENAME: src/a b.ts ${cursor} src/c d.ts`)).toEqual(renamed);
+    }
+  });
+
+  // spec: UI-919
+  test("code actions offered, hover as Markdown, anything else as text", () => {
+    const offered =
+      "2 code action(s):\n  0: [quickfix] Add import (preferred)\n  1: [source.organizeImports] Organize imports";
+    expect(view(lspCard({ action: "code_actions", file: "src/a.ts", line: 1 }, offered), "lsp").result).toEqual({
+      type: "actions",
+      title: "2 code action(s)",
+      actions: [
+        { index: 0, kind: "quickfix", title: "Add import (preferred)" },
+        { index: 1, kind: "source.organizeImports", title: "Organize imports" },
+      ],
+    });
+    const hover = "```rust\nfn add(left: u64, right: u64) -> u64\n```\n\nAdds.";
+    expect(view(lspCard({ action: "hover", file: "src/lib.rs", line: 3 }, hover), "lsp").result).toEqual({
+      type: "hover",
+      markdown: hover,
+    });
+    expect(view(lspCard({ action: "status" }, "rust-analyzer: ready"), "lsp").result).toEqual({
+      type: "text",
+      text: "rust-analyzer: ready",
+    });
   });
 });
 

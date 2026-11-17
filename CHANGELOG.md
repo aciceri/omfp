@@ -33,6 +33,13 @@ The version's section is also the source of the GitHub release notes.
   transcript shows the compaction as a notice; a toast says how big the context was. It is refused while the thread
   works. `:compact soft|remote|snapcompact [focus]` picks oh-my-pi's method for that once, and `/compact` in the
   composer runs `:compact`. The header's `⋯` offers it too, with a field for the focus.
+- Readable cards for oh-my-pi's code-intelligence tools. Calls of the tools oh-my-pi offers as `xd://` devices
+  (language servers, `ast_grep`, `ast_edit`, MCP tools) show as cards of those tools instead of a `write` to an
+  `xd://` path. `lsp` diagnostics list each problem with its severity and a `path:line` that opens the file there;
+  definitions and references list their locations with the source; symbols open at their lines; renames and code
+  actions list the files they changed, which open against `HEAD`; hover shows its documentation. `ast_grep` shows each
+  match's code, highlighted, with a link to its line; an `ast_edit` preview shows its diff per file. Language servers
+  come from the daemon's environment: a card says so when oh-my-pi finds none for a file.
 
 ### Changed
 

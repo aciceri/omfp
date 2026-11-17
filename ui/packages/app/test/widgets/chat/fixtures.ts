@@ -20,6 +20,7 @@ export type FixtureName =
   | "edit_tool_calls"
   | "write_tool_calls"
   | "search_tool_calls"
+  | "code_intel_tool_calls"
   | "todo_tool_calls"
   | "web_tool_calls"
   | "task_tool_call"

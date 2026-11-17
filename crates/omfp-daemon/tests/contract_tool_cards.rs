@@ -334,6 +334,142 @@ async fn search_tool_calls() {
     finish(&harness, &recorder, "search_tool_calls");
 }
 
+/// A `write` of the JSON arguments `args` to the `xd://<device>` URL: how omp 18.22.0 runs its discoverable tools
+/// (`lsp`, `ast_grep`, `ast_edit`) while `tools.xdev` (on by default) mounts them as devices.
+fn device_call(id: &str, device: &str, args: &Value, intent: &str) -> Step {
+    call(
+        id,
+        "write",
+        json!({ "path": format!("xd://{device}"), "content": args.to_string(), "i": intent }),
+    )
+}
+
+// spec: TST-012, UI-051
+#[tokio::test(flavor = "multi_thread")]
+async fn code_intel_tool_calls() {
+    let harness = Harness::new(vec![
+        device_call(
+            "call_ast_grep_1",
+            "ast_grep",
+            &json!({ "pat": "pub fn $NAME($$$ARGS) -> $RET { $$$BODY }", "path": "src" }),
+            "Finding the functions",
+        ),
+        device_call(
+            "call_ast_grep_2",
+            "ast_grep",
+            &json!({ "pat": "pub fn $NAME($$$ARGS)", "path": "missing" }),
+            "Searching a missing folder",
+        ),
+        device_call(
+            "call_lsp_1",
+            "lsp",
+            &json!({ "action": "diagnostics", "file": "notes.txt" }),
+            "Checking the notes",
+        ),
+        device_call(
+            "call_ast_edit_1",
+            "ast_edit",
+            &json!({ "ops": [{ "pat": "left + right", "out": "left.saturating_add(right)" }], "paths": ["src"] }),
+            "Saturating the addition",
+        ),
+        // An `ast_edit` is a preview pending until the agent resolves it; every other tool is refused meanwhile.
+        call(
+            "call_resolve_1",
+            "write",
+            json!({ "path": "xd://resolve", "content": "Saturating is safer.", "i": "Applying the rewrite" }),
+        ),
+        Step::reply(Reply::text("Two functions; the addition saturates now.")),
+    ])
+    .await;
+    // omfp's profile turns the AST tools on; omp offers them as `xd://` devices (`tools.xdev`).
+    harness
+        .env
+        .configure(
+            &[],
+            "astGrep:\n  enabled: true\nastEdit:\n  enabled: true\n",
+        )
+        .unwrap();
+    workspace_with(
+        &harness,
+        &[
+            ("src/lib.rs", LIB_RS),
+            ("notes.txt", "no language server reads this\n"),
+        ],
+    );
+
+    let recorder = run(&harness, "find the functions").await;
+    let events = recorder.events();
+
+    assert_ast_grep(&events);
+    let diagnostics = ended(&events, "call_lsp_1", false);
+    assert_eq!(
+        diagnostics["details"]["xdev"]["inner"]["action"], "diagnostics",
+        "{diagnostics:#}"
+    );
+    assert!(
+        text(&diagnostics).ends_with("notes.txt: No language server found"),
+        "{diagnostics:#}"
+    );
+    let preview = ended(&events, "call_ast_edit_1", false);
+    let inner = &preview["details"]["xdev"]["inner"];
+    assert_eq!(
+        (&inner["totalReplacements"], &inner["applied"]),
+        (&json!(1), &json!(false)),
+        "{preview:#}"
+    );
+    assert!(
+        inner["displayContent"]
+            .as_str()
+            .unwrap()
+            .contains("left.saturating_add(right)"),
+        "{preview:#}"
+    );
+    let applied = ended(&events, "call_resolve_1", false);
+    assert!(
+        text(&applied).contains("Applied 1 replacement in 1 file."),
+        "{applied:#}"
+    );
+    assert!(
+        std::fs::read_to_string(harness.workspace().join("src/lib.rs"))
+            .unwrap()
+            .contains("left.saturating_add(right)")
+    );
+    finish(&harness, &recorder, "code_intel_tool_calls");
+}
+
+/// The `ast_grep` device calls of [`code_intel_tool_calls`]: `details.xdev` echoes the device and its arguments and
+/// carries the tool's own details (`inner`).
+fn assert_ast_grep(events: &[ThreadEvent]) {
+    let found = ended(events, "call_ast_grep_1", false);
+    let xdev = &found["details"]["xdev"];
+    assert_eq!(
+        (&xdev["tool"], &xdev["mode"]),
+        (&json!("ast_grep"), &json!("execute")),
+        "{found:#}"
+    );
+    assert_eq!(
+        xdev["args"]["pat"],
+        "pub fn $NAME($$$ARGS) -> $RET { $$$BODY }"
+    );
+    assert_eq!(xdev["inner"]["matchCount"], 2, "{found:#}");
+    assert_eq!(
+        xdev["inner"]["fileMatches"],
+        json!([{ "path": "src/lib.rs", "count": 2 }])
+    );
+    assert!(
+        xdev["inner"]["displayContent"]
+            .as_str()
+            .unwrap()
+            .contains("pub fn add(left: u64, right: u64) -> u64 {"),
+        "{found:#}"
+    );
+    let missing = ended(events, "call_ast_grep_2", true);
+    assert_eq!(
+        missing["details"]["xdev"]["tool"], "ast_grep",
+        "{missing:#}"
+    );
+}
+
 // spec: TST-012, UI-051
 #[tokio::test(flavor = "multi_thread")]
 async fn bash_tool_error() {

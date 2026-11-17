@@ -256,6 +256,13 @@ tag, the `omp-rpc` git tag in `Cargo.toml`, `omfp_core::OMP_VERSION` and the rel
   `fetch` tool: `read` fetches URLs). `edit` takes hashline input whose `[path#TAG]` needs a prior `read`.
   `web_search` failures and URL reads that fail (HTTP 404) end with `isError: false`; `task` runs subagents in the
   background unless `async.enabled: false`; open `todo` items make omp prompt the model again.
+- Discoverable tools (`lsp`, `ast_grep`, `ast_edit`, MCP tools, …) are `xd://` devices while `tools.xdev` is on (the
+  default): the model calls them as `write { path: "xd://<tool>", content: "<JSON args>" }` and the result's
+  `details.xdev` is `{ tool, mode, args, tier, inner }` (`inner`: the tool's own details). An `ast_edit` is a staged
+  preview: until the agent writes a reason to `xd://resolve` (or `xd://reject`) every other tool call is refused.
+  `lsp` answers in its text only (`details`: `{ action, serverName, success, request }`; `success: false` with
+  `isError: false` on failure); omp's LSP startup status (`lsp:startup`) reaches the TUI only, never RPC. Servers come
+  from omp's `PATH`, i.e. the daemon's environment.
 - omp-rpc's client is blocking and closes the omp process group on drop; command default timeout is 30 s.
 - omp and omp-rpc disagree on number types: omp sends `auto_retry_start.delayMs` as a fractional, jittered backoff
   (`406.547…`) but omp-rpc types it `i64`, so the client reports the frame `Undecodable`. `omp::thread_event` rounds

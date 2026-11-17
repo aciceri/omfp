@@ -128,8 +128,8 @@ export type BtwParams = {
 
 /**
  * A colour theme of the UI (UI-510, PRT-143): an official palette mapped onto the Material 3 roles in light and dark,
- * one derived from the system accent colour where the web view exposes it (`accent`, UI-512), or the user theme
- * (`matugen`, DMN-075).
+ * one of omfp's calm palettes for the boring skin (UI-794), one derived from the system accent colour where the web
+ * view exposes it (`accent`, UI-512), or the user theme (`matugen`, DMN-075).
  */
 export type BuiltinTheme =
   /** omfp's own palette, cyan to indigo (UI-139; default). */
@@ -146,6 +146,14 @@ export type BuiltinTheme =
   | "solarized"
   /** Rosé Pine: Dawn in light, the main variant in dark. */
   | "rose-pine"
+  /** Cool neutral grays with a restrained indigo accent (inspired by Linear). */
+  | "graphite"
+  /** Warm off-white or warm charcoal with a muted blue accent (inspired by Notion). */
+  | "paper"
+  /** Ivory or warm dark with a terracotta accent (inspired by claude.ai). */
+  | "clay"
+  /** GitHub's Primer light and dark (MIT-licensed primitives). */
+  | "primer"
   /** Follows the system accent colour (macOS); elsewhere Synth. */
   | "accent"
   /** The user theme (DMN-075: `theme.set`, the theme file matugen writes) over Synth; Synth without one. */

@@ -112,7 +112,7 @@ describe("help panel", () => {
     expect(rows("commands", "window.theme")).toEqual([
       [
         ":theme",
-        "system | light | dark | synth | catppuccin | gruvbox | tokyo-night | nord | solarized | rose-pine | accent | matugen",
+        "system | light | dark | synth | catppuccin | gruvbox | tokyo-night | nord | solarized | rose-pine | graphite | paper | clay | primer | accent | matugen",
         "Colour scheme (system, light, dark) and theme (synth, catppuccin, gruvbox, …; matugen: the user theme file, Synth without one)",
       ],
     ]);

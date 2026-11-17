@@ -44,6 +44,11 @@ The version's section is also the source of the GitHub release notes.
   selected thread: each tab's name, the address it last opened, its last action and the latest screenshot it took,
   which opens at full size. It shows what the agent's browser calls reported, not the live page: oh-my-pi offers no
   live view or way to take over its browser to a client.
+- Four calm built-in themes that suit the boring skin (and work with Crush too): `graphite` (cool neutral grays, a
+  restrained indigo accent, inspired by Linear), `paper` (warm off-white or warm charcoal, a muted blue accent,
+  inspired by Notion), `clay` (ivory or warm dark, a terracotta accent, inspired by claude.ai) and `primer` (GitHub's
+  Primer light and dark). Choose one with `:theme graphite`, `:set theme=paper` or `theme = "clay"` under `[ui]`; the
+  `/kit` picker shows them all.
 
 ### Changed
 

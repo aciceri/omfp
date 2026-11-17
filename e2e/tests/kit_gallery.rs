@@ -1,12 +1,12 @@
 //! The `/kit` gallery (UI-173, UI-174, UI-514, UI-797) at motion `none`, 17 px, compact, in light and dark for every
-//! built-in theme (UI-510: Synth, the six palettes, and `accent` from macOS's blue, yellow and graphite accents,
-//! UI-512), `matugen` with the matugen fixture theme as the user theme, and the Dux Solarized preset (whose tertiary and
-//! secondary sit on the surface at 1.14:1 until the contrast guard, UI-196, moves them), in both skins (UI-794: Crush
-//! and boring): every text role, status color and gradient stop the page measures reaches WCAG AA, the guard
-//! overrides nothing but in the Dux preset, and elsewhere the item focus (UI-132) stays visible: its bar at 3:1, its
-//! tint apart from the other states. Full-page shots land in the run's screenshot directory (`e2e::screenshot_dir`)
-//! as `omfp-kit-<theme>-<scheme>.png` (Crush) and `omfp-kit-boring-<theme>-<scheme>.png` for a look by eye; nothing
-//! compares them.
+//! built-in theme (UI-510: Synth, the six palettes, the four calm ones, and `accent` from macOS's blue, yellow and
+//! graphite accents, UI-512), `matugen` with the matugen fixture theme as the user theme, and the Dux Solarized preset
+//! (whose tertiary and secondary sit on the surface at 1.14:1 until the contrast guard, UI-196, moves them), in both
+//! skins (UI-794: Crush and boring): every text role, status color and gradient stop the page measures reaches WCAG
+//! AA, the guard overrides nothing but in the Dux preset, and elsewhere the item focus (UI-132) stays visible: its bar
+//! at 3:1, its tint apart from the other states. The picker's themes are all among them. Full-page shots land in the
+//! run's screenshot directory (`e2e::screenshot_dir`) as `omfp-kit-<theme>-<scheme>.png` (Crush) and
+//! `omfp-kit-boring-<theme>-<scheme>.png` for a look by eye; nothing compares them.
 
 use anyhow::{Context, bail};
 use e2e::Journey;
@@ -15,8 +15,9 @@ use serde_json::json;
 /// The page width of every shot (CSS px, device scale 1).
 const WIDTH: u32 = 1400;
 
-/// The gallery's themes: the shot's name and the query that picks it (`accent` from four of macOS's accents).
-const THEMES: [(&str, &str); 13] = [
+/// The gallery's themes: the shot's name and the query that picks it (`accent` from four of macOS's accents). Every
+/// theme of the gallery's picker must be here.
+const THEMES: [(&str, &str); 17] = [
     ("synth", "theme=synth"),
     ("catppuccin", "theme=catppuccin"),
     ("gruvbox", "theme=gruvbox"),
@@ -24,6 +25,10 @@ const THEMES: [(&str, &str); 13] = [
     ("nord", "theme=nord"),
     ("solarized", "theme=solarized"),
     ("rose-pine", "theme=rose-pine"),
+    ("graphite", "theme=graphite"),
+    ("paper", "theme=paper"),
+    ("clay", "theme=clay"),
+    ("primer", "theme=primer"),
     ("accent", "theme=accent"),
     ("accent-yellow", "theme=accent&accent=%23ffc600"),
     ("accent-graphite", "theme=accent&accent=%238c8c8c"),
@@ -114,6 +119,28 @@ async fn focus_measures(journey: &Journey) -> anyhow::Result<Vec<(bool, String)>
 #[tokio::test(flavor = "multi_thread")]
 async fn the_kit_gallery_text_reaches_aa_in_every_theme_and_skin() -> anyhow::Result<()> {
     let journey = Journey::start(Vec::new()).await?;
+    // The picker links every theme of the gallery (UI-514), then the schemes and the skins: each one is tested here.
+    open(&journey, "theme=synth", "light", "crush").await?;
+    let picked: Vec<String> = serde_json::from_value(
+        journey
+            .eval(
+                "return [...document.querySelectorAll('[data-testid=theme-pick]')].map((link) => link.textContent);",
+                Vec::new(),
+            )
+            .await?,
+    )?;
+    let untested: Vec<&String> = picked
+        .iter()
+        .filter(|name| {
+            !SCHEMES.contains(&name.as_str())
+                && !SKINS.iter().any(|(skin, _)| skin == name)
+                && !THEMES.iter().any(|(theme, _)| theme == name)
+        })
+        .collect();
+    anyhow::ensure!(
+        untested.is_empty(),
+        "the picker's themes {untested:?} are not tested"
+    );
     let mut problems = Vec::new();
     for (skin, prefix) in SKINS {
         for (theme, query) in THEMES {

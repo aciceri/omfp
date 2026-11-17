@@ -721,7 +721,7 @@ export const shell = {
       "Usage: :set <key>=<value> (density, font_size, motion, notifications, show_xdev_notices, theme, skin, fonts.prose|ui|code, keymap[.<mode>].<keys>)",
     unknownKey: (key: string) => `Unknown setting: ${key}`,
     themeUsage:
-      "Usage: :theme [system|light|dark] [<theme>] (synth, catppuccin, gruvbox, tokyo-night, nord, solarized, rose-pine, accent, matugen: the user theme file, Synth without one)",
+      "Usage: :theme [system|light|dark] [<theme>] (synth, catppuccin, gruvbox, tokyo-night, nord, solarized, rose-pine, graphite, paper, clay, primer, accent, matugen: the user theme file, Synth without one)",
     unknownTheme: (word: string) => `Unknown colour scheme or theme: ${word}`,
     invalidValue: (key: string, value: string) => `Invalid value for ${key}: ${value === "" ? "(empty)" : value}`,
     error: (message: string) => `The config file is invalid, the previous settings stay: ${message}`,

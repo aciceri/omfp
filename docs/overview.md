@@ -143,8 +143,8 @@ density = "normal"             # compact | normal
 font_size = 17                 # px, 10–28
 motion = "full"                # full | reduced | none
 notifications = "background"   # background | always | never
-theme = "synth"                # synth | catppuccin | gruvbox | tokyo-night | nord | solarized | rose-pine | accent
-                               # | matugen (the user theme below)
+theme = "synth"                # synth | catppuccin | gruvbox | tokyo-night | nord | solarized | rose-pine | graphite
+                               # | paper | clay | primer | accent | matugen (the user theme below)
 show_xdev_notices = false      # informational MCP mount/unmount rows in the transcript
 skin = "crush"                 # crush | boring: the calm, neutral look (`:set skin=boring`), with any theme
 

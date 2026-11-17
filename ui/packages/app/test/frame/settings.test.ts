@@ -61,6 +61,7 @@ describe(":set", () => {
     expect(parseSet("theme=rose-pine")).toEqual({ ok: true, patch: { ui: { theme: "rose-pine" } } });
     expect(parseSet("theme = synth")).toEqual({ ok: true, patch: { ui: { theme: "synth" } } });
     expect(parseSet("theme=matugen")).toEqual({ ok: true, patch: { ui: { theme: "matugen" } } });
+    expect(parseSet("theme=primer")).toEqual({ ok: true, patch: { ui: { theme: "primer" } } });
     expect(parseSet("theme=dracula")).toEqual({ ok: false, error: "Invalid value for theme: dracula" });
     expect(SET_KEYS.filter((key) => key.startsWith("theme="))).toEqual([
       "theme=synth",
@@ -70,6 +71,10 @@ describe(":set", () => {
       "theme=nord",
       "theme=solarized",
       "theme=rose-pine",
+      "theme=graphite",
+      "theme=paper",
+      "theme=clay",
+      "theme=primer",
       "theme=accent",
       "theme=matugen",
     ]);
@@ -82,6 +87,7 @@ describe(":set", () => {
     expect(parseTheme(["tokyo-night", "light"])).toEqual({ ok: true, scheme: "light", theme: "tokyo-night" });
     expect(parseTheme(["system", "accent"])).toEqual({ ok: true, scheme: "system", theme: "accent" });
     expect(parseTheme(["matugen", "dark"])).toEqual({ ok: true, scheme: "dark", theme: "matugen" });
+    expect(parseTheme(["dark", "graphite"])).toEqual({ ok: true, scheme: "dark", theme: "graphite" });
     expect(parseTheme(["dracula"])).toEqual({ ok: false, error: "Unknown colour scheme or theme: dracula" });
     expect(parseTheme([])).toEqual({ ok: false, error: expect.stringContaining("Usage: :theme") });
     expect(parseTheme(["dark", "light"])).toEqual({ ok: false, error: expect.stringContaining("Usage: :theme") });
@@ -97,6 +103,10 @@ describe(":set", () => {
       "nord",
       "solarized",
       "rose-pine",
+      "graphite",
+      "paper",
+      "clay",
+      "primer",
       "accent",
       "matugen",
     ]);
@@ -109,6 +119,10 @@ describe(":set", () => {
       "nord",
       "solarized",
       "rose-pine",
+      "graphite",
+      "paper",
+      "clay",
+      "primer",
       "accent",
       "matugen",
     ]);

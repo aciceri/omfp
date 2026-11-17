@@ -15,8 +15,8 @@
 //! font_size = 17                # root font size in px, 10..=28
 //! motion = "full"               # full | reduced | none
 //! notifications = "background"  # background | always | never
-//! theme = "catppuccin"          # synth | catppuccin | gruvbox | tokyo-night | nord | solarized | rose-pine | accent
-//!                               # | matugen (the user theme, theme.css)
+//! theme = "catppuccin"          # synth | catppuccin | gruvbox | tokyo-night | nord | solarized | rose-pine | graphite
+//!                               # | paper | clay | primer | accent | matugen (the user theme, theme.css)
 //! show_xdev_notices = false     # show informational MCP mount/unmount notices in the transcript
 //! skin = "crush"                # crush | boring
 //!
@@ -360,6 +360,10 @@ fn theme_name(theme: BuiltinTheme) -> &'static str {
         BuiltinTheme::Nord => "nord",
         BuiltinTheme::Solarized => "solarized",
         BuiltinTheme::RosePine => "rose-pine",
+        BuiltinTheme::Graphite => "graphite",
+        BuiltinTheme::Paper => "paper",
+        BuiltinTheme::Clay => "clay",
+        BuiltinTheme::Primer => "primer",
         BuiltinTheme::Accent => "accent",
         BuiltinTheme::Matugen => "matugen",
     }
@@ -538,6 +542,32 @@ prose = "Literata, serif"
         let mut expected = ConfigFile::parse(FILE).unwrap();
         expected.ui.theme = Some(BuiltinTheme::Matugen);
         assert_eq!(ConfigFile::parse(&text).unwrap(), expected);
+    }
+
+    // spec: DMN-238, UI-510
+    #[test]
+    fn the_calm_palettes_are_themes_read_and_written_back() {
+        for (theme, name) in [
+            (BuiltinTheme::Graphite, "graphite"),
+            (BuiltinTheme::Paper, "paper"),
+            (BuiltinTheme::Clay, "clay"),
+            (BuiltinTheme::Primer, "primer"),
+        ] {
+            let parsed = ConfigFile::parse(&format!("[ui]\ntheme = \"{name}\"")).unwrap();
+            assert_eq!(parsed.ui.theme, Some(theme));
+            let text = write_back(
+                FILE,
+                &SetSettingsParams {
+                    ui: Some(UiSettings {
+                        theme: Some(theme),
+                        ..UiSettings::default()
+                    }),
+                    keymap: None,
+                },
+            )
+            .unwrap();
+            assert!(text.contains(&format!("theme = \"{name}\"\n")), "{text}");
+        }
     }
 
     // spec: DMN-009

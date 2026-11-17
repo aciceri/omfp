@@ -2047,6 +2047,10 @@ fn built_in_themes_are_named_in_kebab_case_and_unknown_names_are_refused() {
         (BuiltinTheme::Nord, "nord"),
         (BuiltinTheme::Solarized, "solarized"),
         (BuiltinTheme::RosePine, "rose-pine"),
+        (BuiltinTheme::Graphite, "graphite"),
+        (BuiltinTheme::Paper, "paper"),
+        (BuiltinTheme::Clay, "clay"),
+        (BuiltinTheme::Primer, "primer"),
         (BuiltinTheme::Accent, "accent"),
         (BuiltinTheme::Matugen, "matugen"),
     ];

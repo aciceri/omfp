@@ -190,6 +190,10 @@ describe("commands sheet", () => {
       "theme nord",
       "theme solarized",
       "theme rose-pine",
+      "theme graphite",
+      "theme paper",
+      "theme clay",
+      "theme primer",
       "theme accent",
       "theme matugen",
     ]);

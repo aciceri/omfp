@@ -863,8 +863,9 @@ async fn until_primary(journey: &Journey, whose: &str, primary: &str) -> anyhow:
         .await
 }
 
-/// The built-in themes with their official background in light and dark (`--omfp-surface`, UI-511).
-const THEME_SURFACES: [(&str, &str, &str); 7] = [
+/// The built-in themes with their official background in light and dark (`--omfp-surface`, UI-511), as the bundle's
+/// minified CSS spells them (`#fff` for white).
+const THEME_SURFACES: [(&str, &str, &str); 11] = [
     ("synth", "#faf8ff", "#12131a"),
     ("catppuccin", "#eff1f5", "#1e1e2e"),
     ("gruvbox", "#fbf1c7", "#282828"),
@@ -872,6 +873,10 @@ const THEME_SURFACES: [(&str, &str, &str); 7] = [
     ("nord", "#eceff4", "#2e3440"),
     ("solarized", "#fdf6e3", "#002b36"),
     ("rose-pine", "#faf4ed", "#191724"),
+    ("graphite", "#fcfcfd", "#17181b"),
+    ("paper", "#fbfbfa", "#1f1e1c"),
+    ("clay", "#faf9f5", "#262624"),
+    ("primer", "#fff", "#0d1117"),
 ];
 
 // spec: E2E-44, UI-510, UI-511, UI-512, UI-513, DMN-239, DMN-240

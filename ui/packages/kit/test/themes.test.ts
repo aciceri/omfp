@@ -4,8 +4,19 @@ import { join } from "node:path";
 import { findRule, KIT_SRC, parseCss } from "./support/css.ts";
 import { COLOR_TOKENS, prop, STATUS_TOKENS } from "./support/tokens.ts";
 
-/** The built-in themes besides Synth (UI-510): the six palettes, then the system accent's. */
-const PALETTES = ["catppuccin", "gruvbox", "tokyo-night", "nord", "solarized", "rose-pine"];
+/** The built-in themes besides Synth (UI-510): the six palettes and the four calm ones, then the system accent's. */
+const PALETTES = [
+  "catppuccin",
+  "gruvbox",
+  "tokyo-night",
+  "nord",
+  "solarized",
+  "rose-pine",
+  "graphite",
+  "paper",
+  "clay",
+  "primer",
+];
 const LAYER = "@layer omfp-tokens";
 const DARK_MEDIA = "@media (prefers-color-scheme: dark)";
 const rules = parseCss(readFileSync(join(KIT_SRC, "themes.css"), "utf8"));

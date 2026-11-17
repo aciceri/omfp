@@ -18,8 +18,8 @@ export const DENSITIES: readonly Density[] = ["compact", "normal"];
 export const MOTIONS: readonly Motion[] = ["full", "reduced", "none"];
 const NOTIFICATIONS: readonly NotificationMode[] = ["background", "always", "never"];
 /**
- * The themes (UI-510): Synth (the default), the six palettes, the system accent's and `matugen`, the user theme
- * (DMN-075) over Synth.
+ * The themes (UI-510): Synth (the default), the six palettes, the four calm ones for the boring skin, the system
+ * accent's and `matugen`, the user theme (DMN-075) over Synth.
  */
 export const THEMES: readonly BuiltinTheme[] = [
   "synth",
@@ -29,6 +29,10 @@ export const THEMES: readonly BuiltinTheme[] = [
   "nord",
   "solarized",
   "rose-pine",
+  "graphite",
+  "paper",
+  "clay",
+  "primer",
   "accent",
   "matugen",
 ];

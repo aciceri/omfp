@@ -84,8 +84,13 @@ impl RpcError {
         Self::new(StatusCode::OK, code::INVALID_PARAMS, message)
     }
 
+    /// A request the server refuses: answered `400`.
+    fn bad_request(code: i64, message: impl Into<String>) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, code, message)
+    }
+
     fn header_mismatch(message: impl Into<String>) -> Self {
-        Self::new(StatusCode::BAD_REQUEST, code::HEADER_MISMATCH, message)
+        Self::bad_request(code::HEADER_MISMATCH, message)
     }
 
     fn body(&self, id: &Value) -> Value {
@@ -197,12 +202,8 @@ pub(crate) async fn post(State(state): State<Arc<AppState>>, request: Request) -
     let message: Value = match serde_json::from_slice(&bytes) {
         Ok(message) => message,
         Err(error) => {
-            return RpcError::new(
-                StatusCode::BAD_REQUEST,
-                code::PARSE_ERROR,
-                format!("not JSON: {error}"),
-            )
-            .response(&Value::Null);
+            return RpcError::bad_request(code::PARSE_ERROR, format!("not JSON: {error}"))
+                .response(&Value::Null);
         }
     };
     let request = match JsonRpc::parse(message) {
@@ -238,8 +239,7 @@ pub(crate) async fn delete(State(state): State<Arc<AppState>>, headers: HeaderMa
         return refused;
     }
     let Some(id) = header_str(&headers, SESSION_HEADER) else {
-        return RpcError::new(
-            StatusCode::BAD_REQUEST,
+        return RpcError::bad_request(
             code::INVALID_REQUEST,
             "DELETE ends a session: send its Mcp-Session-Id",
         )
@@ -303,8 +303,7 @@ impl JsonRpc {
     /// One JSON-RPC 2.0 request or notification; a batch, a response or anything else is `-32600` (DMN-155).
     fn parse(message: Value) -> Result<Self, RpcError> {
         let invalid = |why: &str| {
-            RpcError::new(
-                StatusCode::BAD_REQUEST,
+            RpcError::bad_request(
                 code::INVALID_REQUEST,
                 format!("invalid JSON-RPC request: {why}"),
             )
@@ -372,8 +371,7 @@ fn legacy(state: &AppState, headers: &HeaderMap, session: &str) -> Result<(Era, 
         && version != CURRENT
         && !LEGACY.contains(&version)
     {
-        return Err(RpcError::new(
-            StatusCode::BAD_REQUEST,
+        return Err(RpcError::bad_request(
             code::INVALID_REQUEST,
             format!(
                 "unsupported MCP-Protocol-Version `{version}`; supported: {}",
@@ -395,8 +393,7 @@ fn modern(headers: &HeaderMap, request: &JsonRpc) -> Result<String, RpcError> {
         .and_then(Value::as_str)
     else {
         if header_str(headers, VERSION_HEADER).is_none_or(|version| LEGACY.contains(&version)) {
-            return Err(RpcError::new(
-                StatusCode::BAD_REQUEST,
+            return Err(RpcError::bad_request(
                 code::INVALID_REQUEST,
                 format!(
                     "no Mcp-Session-Id: send `initialize` first, or use protocol version {CURRENT} with \
@@ -404,24 +401,21 @@ fn modern(headers: &HeaderMap, request: &JsonRpc) -> Result<String, RpcError> {
                 ),
             ));
         }
-        return Err(RpcError::new(
-            StatusCode::BAD_REQUEST,
+        return Err(RpcError::bad_request(
             code::INVALID_PARAMS,
             "missing `_meta[\"io.modelcontextprotocol/protocolVersion\"]`",
         ));
     };
     if version != CURRENT {
         if LEGACY.contains(&version) {
-            return Err(RpcError::new(
-                StatusCode::BAD_REQUEST,
+            return Err(RpcError::bad_request(
                 code::INVALID_REQUEST,
                 format!(
                     "protocol version {version} needs a session: send `initialize` first, then its Mcp-Session-Id"
                 ),
             ));
         }
-        let mut error = RpcError::new(
-            StatusCode::BAD_REQUEST,
+        let mut error = RpcError::bad_request(
             code::UNSUPPORTED_PROTOCOL_VERSION,
             "Unsupported protocol version",
         );
@@ -432,14 +426,14 @@ fn modern(headers: &HeaderMap, request: &JsonRpc) -> Result<String, RpcError> {
         .meta("io.modelcontextprotocol/clientCapabilities")
         .is_some_and(Value::is_object)
     {
-        return Err(RpcError::new(
-            StatusCode::BAD_REQUEST,
+        return Err(RpcError::bad_request(
             code::INVALID_PARAMS,
             "missing `_meta[\"io.modelcontextprotocol/clientCapabilities\"]`",
         ));
     }
-    expect_header(headers, "MCP-Protocol-Version", VERSION_HEADER, version)?;
-    expect_header(headers, "Mcp-Method", METHOD_HEADER, &request.method)?;
+    let header = |name| header_str(headers, name);
+    expect_header("MCP-Protocol-Version", header(VERSION_HEADER), version)?;
+    expect_header("Mcp-Method", header(METHOD_HEADER), &request.method)?;
     let name_field = match request.method.as_str() {
         "tools/call" | "prompts/get" => Some("name"),
         "resources/read" => Some("uri"),
@@ -451,43 +445,33 @@ fn modern(headers: &HeaderMap, request: &JsonRpc) -> Result<String, RpcError> {
             .get(field)
             .and_then(Value::as_str)
             .unwrap_or_default();
-        let presented = header_str(headers, NAME_HEADER).map(decode_header);
-        match presented {
-            Some(Some(presented)) if presented == name => {}
-            Some(Some(presented)) => {
-                return Err(RpcError::header_mismatch(format!(
-                    "Header mismatch: Mcp-Name header value '{presented}' does not match body value '{name}'"
-                )));
-            }
+        let presented = match header(NAME_HEADER).map(decode_header) {
             Some(None) => {
                 return Err(RpcError::header_mismatch(
                     "Header mismatch: Mcp-Name is not valid `=?base64?…?=`",
                 ));
             }
-            None => {
-                return Err(RpcError::header_mismatch(
-                    "Header mismatch: missing Mcp-Name",
-                ));
-            }
-        }
+            presented => presented.flatten(),
+        };
+        expect_header("Mcp-Name", presented.as_deref(), name)?;
     }
-    Ok(request
-        .meta("io.modelcontextprotocol/clientInfo")
-        .and_then(|info| info.get("name"))
+    Ok(client_name(
+        request.meta("io.modelcontextprotocol/clientInfo"),
+    ))
+}
+
+/// The client `info` (`clientInfo`) names, else [`UNNAMED_CLIENT`] (AGT-051).
+fn client_name(info: Option<&Value>) -> String {
+    info.and_then(|info| info.get("name"))
         .and_then(Value::as_str)
         .filter(|name| !name.trim().is_empty())
         .unwrap_or(UNNAMED_CLIENT)
-        .to_owned())
+        .to_owned()
 }
 
-/// `HeaderMismatch` unless header `name` is exactly `expected`.
-fn expect_header(
-    headers: &HeaderMap,
-    label: &str,
-    name: &str,
-    expected: &str,
-) -> Result<(), RpcError> {
-    match header_str(headers, name) {
+/// `HeaderMismatch` unless header `label` was `presented` as exactly `expected`.
+fn expect_header(label: &str, presented: Option<&str>, expected: &str) -> Result<(), RpcError> {
+    match presented {
         Some(value) if value == expected => Ok(()),
         Some(value) => Err(RpcError::header_mismatch(format!(
             "Header mismatch: {label} header value '{value}' does not match body value '{expected}'"

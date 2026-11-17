@@ -5,7 +5,7 @@ use axum::http::StatusCode;
 use omp_rpc::HostUriResultContentType;
 use serde_json::{Map, Value, json};
 
-use super::{Era, LEGACY, RpcError, UNNAMED_CLIENT, code, supported};
+use super::{Era, LEGACY, RpcError, client_name, code, supported};
 use crate::agent_tools::catalog::{self, METHODS_URL};
 use crate::agent_tools::{ToolContext, ToolFuture, registry};
 use crate::server::{Principal, Services};
@@ -14,8 +14,17 @@ use crate::widgets::{self, BUILTIN_URL, DOCS_URL, SCHEMA_URL, keymap, shell};
 /// How long the lists, `server/discover` and `resources/read` stay fresh: they change only with the daemon (DMN-156).
 const TTL_MS: u64 = 3_600_000;
 
+/// A resource or a URI template: its URI, name, title, description and MIME type.
+type Described = (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+);
+
 /// The URI templates (AGT-052): one method's schemas, one built-in widget's folder.
-const TEMPLATES: [(&str, &str, &str, &str, &str); 2] = [
+const TEMPLATES: [Described; 2] = [
     (
         "omfp://protocol/methods/{name}",
         "omfp-protocol-method",
@@ -41,14 +50,8 @@ pub(super) const INSTRUCTIONS: &str = "omfp runs omp agent threads in workspace 
     writing a widget and check it with `omfp_widget_check`; omfp://docs indexes the docs.";
 
 /// The resources (AGT-052): the method catalogue, then the static docs and schemas threads read as host URIs
-/// (DMN-062, DMN-198); `uri`, name, title, description and MIME type.
-fn resources() -> [(
-    &'static str,
-    &'static str,
-    &'static str,
-    &'static str,
-    &'static str,
-); 9] {
+/// (DMN-062, DMN-198).
+fn resources() -> [Described; 9] {
     [
         (
             METHODS_URL,
@@ -165,13 +168,7 @@ pub(crate) fn initialize(params: &Map<String, Value>) -> (Value, String) {
         .copied()
         .find(|version| Some(*version) == requested)
         .unwrap_or(LEGACY[0]);
-    let client = params
-        .get("clientInfo")
-        .and_then(|info| info.get("name"))
-        .and_then(Value::as_str)
-        .filter(|name| !name.trim().is_empty())
-        .unwrap_or(UNNAMED_CLIENT)
-        .to_owned();
+    let client = client_name(params.get("clientInfo"));
     let result = json!({
         "protocolVersion": version,
         "capabilities": capabilities(),
@@ -203,23 +200,11 @@ pub(crate) fn call(
         "tools/list" => value(json!({ "tools": tools() }), true),
         "tools/call" => tool_call(services, principal, era, params).map(Reply::Tool),
         "resources/list" => value(
-            json!({ "resources": resources().map(|(uri, name, title, description, mime)| json!({
-                "uri": uri,
-                "name": name,
-                "title": title,
-                "description": description,
-                "mimeType": mime,
-            })) }),
+            json!({ "resources": resources().map(|resource| listed("uri", resource)) }),
             true,
         ),
         "resources/templates/list" => value(
-            json!({ "resourceTemplates": TEMPLATES.map(|(template, name, title, description, mime)| json!({
-                "uriTemplate": template,
-                "name": name,
-                "title": title,
-                "description": description,
-                "mimeType": mime,
-            })) }),
+            json!({ "resourceTemplates": TEMPLATES.map(|template| listed("uriTemplate", template)) }),
             true,
         ),
         "resources/read" => value(read(services, &params)?, true),
@@ -232,6 +217,17 @@ pub(crate) fn call(
             format!("Method not found: `{method}`"),
         )),
     }
+}
+
+/// A resource or a template as listed (AGT-052), its URI under `uri_key`.
+fn listed(uri_key: &str, (uri, name, title, description, mime): Described) -> Value {
+    json!({
+        uri_key: uri,
+        "name": name,
+        "title": title,
+        "description": description,
+        "mimeType": mime,
+    })
 }
 
 /// The registry's tools as MCP tools (AGT-050), in registry order.

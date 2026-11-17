@@ -13,7 +13,7 @@ mod widget_tools;
 mod windows;
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use omfp_protocol::{
@@ -149,6 +149,15 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// `not_found` for `entity` `id`, which the index does not show.
+fn not_found(entity: &'static str, id: &str) -> ErrorBody {
+    StoreError::NotFound {
+        entity,
+        id: id.to_owned(),
+    }
+    .into()
+}
+
 /// Runs blocking work (the store, the file system) off the async workers; a panicked task is an internal error.
 pub(super) async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, ErrorBody> + Send + 'static,
@@ -262,17 +271,17 @@ impl Services {
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 };
                 let threads = Arc::clone(&services.threads);
-                let workspace = blocking(move || {
-                    threads
-                        .get(&thread_id)
-                        .map(|thread| thread.workspace_id)
-                        .map_err(convert::thread_error)
-                })
+                let result = async {
+                    let workspace_id = blocking(move || {
+                        threads
+                            .get(&thread_id)
+                            .map(|thread| thread.workspace_id)
+                            .map_err(convert::thread_error)
+                    })
+                    .await?;
+                    services.full_scan(&workspace_id).await
+                }
                 .await;
-                let result = match workspace {
-                    Ok(workspace_id) => services.full_scan(&workspace_id).await,
-                    Err(error) => Err(error),
-                };
                 if let Err(error) = result {
                     warn!(error = %error.message, "rescan after a tool run failed");
                 }
@@ -444,18 +453,10 @@ impl Services {
 
     /// Reads the theme file now (startup) and then follows its changes (DMN-075).
     pub async fn watch_theme_file(&self, path: PathBuf) -> Result<JoinHandle<()>, ErrorBody> {
-        let (file, change) = Self::first_read(path.clone()).await?;
-        if let Some(css) = change {
-            self.apply_theme_file(&path, css).await;
-        }
-        let services = self.clone();
-        Ok(Self::follow(file, move |css| {
-            let (services, path) = (services.clone(), path.clone());
-            async move { services.apply_theme_file(&path, css).await }
-        }))
+        self.watch_file(path, Self::apply_theme_file).await
     }
 
-    async fn apply_theme_file(&self, path: &Path, css: Option<String>) {
+    async fn apply_theme_file(self, path: PathBuf, css: Option<String>) {
         info!(path = %path.display(), "theme file changed");
         if let Err(error) = self.set_theme(css).await {
             warn!(error = %error.message, "cannot apply the theme file");
@@ -466,18 +467,10 @@ impl Services {
     /// as `init_changed` on the `index` topic (DMN-185).
     pub async fn watch_init_file(&self, path: PathBuf) -> Result<JoinHandle<()>, ErrorBody> {
         *lock(&self.init_file) = Some(path.clone());
-        let (file, change) = Self::first_read(path.clone()).await?;
-        if let Some(text) = change {
-            self.apply_init_file(&path, text).await;
-        }
-        let services = self.clone();
-        Ok(Self::follow(file, move |text| {
-            let (services, path) = (services.clone(), path.clone());
-            async move { services.apply_init_file(&path, text).await }
-        }))
+        self.watch_file(path, Self::apply_init_file).await
     }
 
-    async fn apply_init_file(&self, path: &Path, text: Option<String>) {
+    async fn apply_init_file(self, path: PathBuf, text: Option<String>) {
         info!(path = %path.display(), "init file changed");
         let init = text.map(|text| crate::widgets::init::version(text.as_bytes()));
         // Held like a refresh, so the event never interleaves with a refresh's.
@@ -503,17 +496,33 @@ impl Services {
         .await
     }
 
-    /// Polls `file` and hands every change to `apply`, until the returned task is aborted.
-    fn follow<F: Future<Output = ()> + Send>(
+    /// Reads `path` now (startup) and then hands every change of it to `apply`.
+    async fn watch_file<F: Future<Output = ()> + Send + 'static>(
+        &self,
+        path: PathBuf,
+        apply: fn(Self, PathBuf, Option<String>) -> F,
+    ) -> Result<JoinHandle<()>, ErrorBody> {
+        let (file, change) = Self::first_read(path.clone()).await?;
+        if let Some(text) = change {
+            apply(self.clone(), path.clone(), text).await;
+        }
+        Ok(self.follow(file, path, apply))
+    }
+
+    /// Polls `file`, read from `path`, and hands every change to `apply`, until the returned task is aborted.
+    fn follow<F: Future<Output = ()> + Send + 'static>(
+        &self,
         file: WatchedFile,
-        apply: impl Fn(Option<String>) -> F + Send + 'static,
+        path: PathBuf,
+        apply: fn(Self, PathBuf, Option<String>) -> F,
     ) -> JoinHandle<()> {
+        let services = self.clone();
         let (sender, mut changes) = mpsc::unbounded_channel();
         let watcher = AbortOnDrop(watch::watch(file, watch::POLL, sender));
         tokio::spawn(async move {
             let _watcher = watcher;
             while let Some(change) = changes.recv().await {
-                apply(change).await;
+                apply(services.clone(), path.clone(), change).await;
             }
         })
     }
@@ -543,16 +552,12 @@ impl Services {
             state.settings = parsed.settings();
         }
         self.refresh_index().await?;
-        let services = self.clone();
-        Ok(Self::follow(file, move |text| {
-            let (services, path) = (services.clone(), path.clone());
-            async move { services.reload_config_file(&path, text).await }
-        }))
+        Ok(self.follow(file, path, Self::reload_config_file))
     }
 
     /// A change of the config file: `[ui]` / `[keymap]` apply now, `[daemon]` at the next start; an invalid file keeps
     /// the previous settings and reports why in `Settings.error` (DMN-009).
-    async fn reload_config_file(&self, path: &Path, text: Option<String>) {
+    async fn reload_config_file(self, path: PathBuf, text: Option<String>) {
         let parsed = text.map_or_else(
             || Ok(ConfigFile::default()),
             |text| ConfigFile::parse(&text).map_err(|error| format!("{}: {error}", path.display())),
@@ -620,12 +625,7 @@ impl Services {
         self.refresh_index().await?;
         self.index
             .with_state(|index| index.threads.iter().find(|thread| thread.id == id).cloned())
-            .ok_or_else(|| {
-                ErrorBody::from(StoreError::NotFound {
-                    entity: "thread",
-                    id: id.to_owned(),
-                })
-            })
+            .ok_or_else(|| not_found("thread", id))
     }
 
     /// The workspace as published on the `index` topic.
@@ -633,12 +633,7 @@ impl Services {
         self.refresh_index().await?;
         self.index
             .with_state(|index| index.workspaces.iter().find(|ws| ws.id == id).cloned())
-            .ok_or_else(|| {
-                ErrorBody::from(StoreError::NotFound {
-                    entity: "workspace",
-                    id: id.to_owned(),
-                })
-            })
+            .ok_or_else(|| not_found("workspace", id))
     }
 
     /// The log of `workspace/<id>`, its status refreshed.
@@ -648,10 +643,7 @@ impl Services {
     }
 
     fn workspace_log_entry(&self, id: &str) -> Arc<WorkspaceLog> {
-        let mut logs = self
-            .workspace_logs
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
+        let mut logs = lock(&self.workspace_logs);
         Arc::clone(logs.entry(id.to_owned()).or_insert_with(|| {
             Arc::new(EventLog::new(
                 new_id(),

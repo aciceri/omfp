@@ -2,16 +2,17 @@
 //! version (DMN-185), `.omfp/views/` version (DMN-186), widget folders and widget state, refreshed on every rescan and
 //! poll round, plus the methods that change them (DMN-083, DMN-086, DMN-087).
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::sync::{Arc, PoisonError};
+use std::sync::Arc;
 
 use omfp_protocol::{
     CopyWidgetParams, ErrorBody, ErrorCode, SetViewsParams, SetWidgetStateParams, ViewsEvent,
-    ViewsState, WidgetCopied, WorkspaceBinding,
+    ViewsState, WidgetCopied,
 };
 use tracing::warn;
 
-use super::{LIVE_BUFFER, Services, blocking};
+use super::{LIVE_BUFFER, Services, blocking, lock};
 use crate::event_log::EventLog;
 use crate::paths::replace_file;
 use crate::server::convert::{bad_request, internal};
@@ -70,16 +71,60 @@ fn workspace_path(store: &Store, id: &str) -> Result<PathBuf, ErrorBody> {
     Ok(store.workspace(id)?.path)
 }
 
-/// The keymap the topic carries for `read` (DMN-121): the file's bindings (none without a file), or `last` with the
-/// error of an invalid file.
-fn workspace_keymap(
-    read: Result<Option<Vec<WorkspaceBinding>>, String>,
-    last: &[WorkspaceBinding],
-) -> (Vec<WorkspaceBinding>, Option<String>) {
-    match read {
+/// The state of `views/<id>` as the workspace's files are now, without the widget state: its manifest, keymap (none
+/// from an invalid file, DMN-121), init file version, `.omfp/views/` version and widget folders.
+fn read_views(store: &Store, widgets: &Widgets, id: &str) -> Result<ViewsState, ErrorBody> {
+    let path = workspace_path(store, id)?;
+    let (manifest, error) = Widgets::manifest(&path);
+    let (keymap, keymap_error) = match keymap::read(&keymap::path(&path)) {
         Ok(bindings) => (bindings.unwrap_or_default(), None),
-        Err(error) => (last.to_vec(), Some(error)),
+        Err(error) => (Vec::new(), Some(error)),
+    };
+    Ok(ViewsState {
+        manifest,
+        error,
+        widgets: widgets.widgets(&path),
+        stored: BTreeMap::new(),
+        keymap,
+        keymap_error,
+        init: init::read_version(&init::workspace_init(&path)),
+        view_files: view_files_version(&path),
+    })
+}
+
+/// The events turning `state` into `fresh`, the files read again; an invalid keymap file keeps the last bindings
+/// (DMN-121).
+fn changes(state: &ViewsState, mut fresh: ViewsState) -> Vec<ViewsEvent> {
+    if fresh.keymap_error.is_some() {
+        fresh.keymap.clone_from(&state.keymap);
     }
+    let mut events = Vec::new();
+    if state.manifest != fresh.manifest || state.error != fresh.error {
+        events.push(ViewsEvent::ViewsManifest {
+            manifest: fresh.manifest,
+            error: fresh.error,
+        });
+    }
+    if state.keymap != fresh.keymap || state.keymap_error != fresh.keymap_error {
+        events.push(ViewsEvent::ViewsKeymap {
+            keymap: fresh.keymap,
+            error: fresh.keymap_error,
+        });
+    }
+    if state.init != fresh.init {
+        events.push(ViewsEvent::ViewsInit { init: fresh.init });
+    }
+    if state.view_files != fresh.view_files {
+        events.push(ViewsEvent::ViewsFiles {
+            view_files: fresh.view_files,
+        });
+    }
+    if state.widgets != fresh.widgets {
+        events.push(ViewsEvent::ViewsWidgets {
+            widgets: fresh.widgets,
+        });
+    }
+    events
 }
 
 pub(super) fn copy_error(error: CopyError) -> ErrorBody {
@@ -106,19 +151,9 @@ impl Services {
             id.to_owned(),
         );
         let state = blocking(move || {
-            let path = workspace_path(&store, &workspace_id)?;
-            let (manifest, error) = Widgets::manifest(&path);
-            let (keymap, keymap_error) = workspace_keymap(keymap::read(&keymap::path(&path)), &[]);
-            Ok(ViewsState {
-                manifest,
-                error,
-                widgets: widgets.widgets(&path),
-                stored: store.widget_state(&workspace_id)?,
-                keymap,
-                keymap_error,
-                init: init::read_version(&init::workspace_init(&path)),
-                view_files: view_files_version(&path),
-            })
+            let mut state = read_views(&store, &widgets, &workspace_id)?;
+            state.stored = store.widget_state(&workspace_id)?;
+            Ok(state)
         })
         .await?;
         let log = Arc::new(EventLog::new(
@@ -128,19 +163,12 @@ impl Services {
             VIEWS_CAPACITY,
             LIVE_BUFFER,
         ));
-        self.views_logs
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(id.to_owned(), Arc::clone(&log));
+        lock(&self.views_logs).insert(id.to_owned(), Arc::clone(&log));
         Ok(log)
     }
 
     fn views_log_entry(&self, id: &str) -> Option<Arc<ViewsLog>> {
-        self.views_logs
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(id)
-            .cloned()
+        lock(&self.views_logs).get(id).cloned()
     }
 
     /// The position of `views/<id>` when a window follows it (DMN-063).
@@ -159,10 +187,7 @@ impl Services {
         match self.refresh_views_locked(id, &log).await {
             Ok(()) => {}
             Err(error) if error.code == ErrorCode::NotFound => {
-                self.views_logs
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .remove(id);
+                lock(&self.views_logs).remove(id);
             }
             Err(error) => warn!(workspace = %id, error = %error.message, "cannot read the views"),
         }
@@ -175,51 +200,9 @@ impl Services {
             Arc::clone(&self.widgets),
             id.to_owned(),
         );
-        let (manifest, error, keymap_read, init, view_files, widgets) = blocking(move || {
-            let path = workspace_path(&store, &workspace_id)?;
-            let (manifest, error) = Widgets::manifest(&path);
-            let keymap_read = keymap::read(&keymap::path(&path));
-            let init = init::read_version(&init::workspace_init(&path));
-            let view_files = view_files_version(&path);
-            Ok((
-                manifest,
-                error,
-                keymap_read,
-                init,
-                view_files,
-                widgets.widgets(&path),
-            ))
-        })
-        .await?;
-        let (keymap, keymap_error) =
-            log.with_state(|state| workspace_keymap(keymap_read, &state.keymap));
-        let (manifest_changed, keymap_changed, init_changed, view_files_changed, widgets_changed) =
-            log.with_state(|state| {
-                (
-                    state.manifest != manifest || state.error != error,
-                    state.keymap != keymap || state.keymap_error != keymap_error,
-                    state.init != init,
-                    state.view_files != view_files,
-                    state.widgets != widgets,
-                )
-            });
-        if manifest_changed {
-            log.push(ViewsEvent::ViewsManifest { manifest, error });
-        }
-        if keymap_changed {
-            log.push(ViewsEvent::ViewsKeymap {
-                keymap,
-                error: keymap_error,
-            });
-        }
-        if init_changed {
-            log.push(ViewsEvent::ViewsInit { init });
-        }
-        if view_files_changed {
-            log.push(ViewsEvent::ViewsFiles { view_files });
-        }
-        if widgets_changed {
-            log.push(ViewsEvent::ViewsWidgets { widgets });
+        let fresh = blocking(move || read_views(&store, &widgets, &workspace_id)).await?;
+        for event in log.with_state(|state| changes(state, fresh)) {
+            log.push(event);
         }
         Ok(())
     }
@@ -268,26 +251,25 @@ impl Services {
         // Held while storing, so a topic created meanwhile reads the value or gets the event, never neither.
         let _serial = self.views_refresh.lock().await;
         let store = Arc::clone(&self.store);
+        let stored = params.clone();
+        blocking(move || {
+            store.workspace(&stored.workspace_id)?;
+            store
+                .set_widget_state(
+                    &stored.workspace_id,
+                    &stored.instance,
+                    &stored.key,
+                    &stored.value,
+                )
+                .map_err(ErrorBody::from)
+        })
+        .await?;
         let SetWidgetStateParams {
             workspace_id,
             instance,
             key,
             value,
         } = params;
-        let stored = (
-            workspace_id.clone(),
-            instance.clone(),
-            key.clone(),
-            value.clone(),
-        );
-        blocking(move || {
-            let (workspace_id, instance, key, value) = stored;
-            store.workspace(&workspace_id)?;
-            store
-                .set_widget_state(&workspace_id, &instance, &key, &value)
-                .map_err(ErrorBody::from)
-        })
-        .await?;
         if let Some(log) = self.views_log_entry(&workspace_id) {
             log.push(ViewsEvent::WidgetStored {
                 instance,

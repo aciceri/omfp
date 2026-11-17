@@ -9,10 +9,10 @@ use axum::extract::ws::{CloseFrame, Message, WebSocket};
 use futures::{SinkExt, StreamExt};
 use omfp_core::LiveOwner;
 use omfp_protocol::{
-    BashParams, BtwParams, Call, ErrorBody, ErrorCode, EventFrame, HelloResult, LiveConnectParams,
-    LiveConnected, LiveStarted, MessageParams, PromptParams, Request, RespondParams, Response,
-    ServerFrame, SubscribeParams, SubscribeResult, ThreadRef, Topic, TopicEvent, TransientEvent,
-    decode_request,
+    BashParams, BtwParams, Call, Empty, ErrorBody, ErrorCode, EventFrame, HelloResult,
+    LiveConnectParams, LiveConnected, LiveStarted, MessageParams, PromptParams, Request,
+    RespondParams, Response, ServerFrame, SubscribeParams, SubscribeResult, ThreadRef, Topic,
+    TopicEvent, TransientEvent, decode_request,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -24,7 +24,7 @@ use super::auth::{Principal, authorize};
 use super::convert::{bad_request, internal, supervisor_error};
 use super::dispatch::dispatch;
 use super::{AppState, OUTBOUND_QUEUE, SUPPORTED_PROTOCOLS};
-use crate::event_log::{Position, Sequenced, Start, Subscription};
+use crate::event_log::{EventLog, Position, Sequenced, Start, Subscription};
 use crate::supervisor::{WatchGuard, WorkspaceWatchGuard};
 
 /// Close code for a connection that did not authenticate (PRT-001), or not within [`HELLO_TIMEOUT`] (DMN-184).
@@ -244,7 +244,7 @@ impl Connection {
                     Some(Ok(Message::Text(text))) => self.on_text(&text).await,
                     Some(Ok(Message::Binary(_))) => {
                         let error = bad_request("binary frames are not part of the protocol");
-                        send(&self.out, Outbound::response(String::new(), Err(error))).await;
+                        self.respond(String::new(), Err(error)).await;
                     }
                     Some(Ok(Message::Ping(_) | Message::Pong(_))) => {}
                     Some(Ok(Message::Close(_)) | Err(_)) | None => break,
@@ -266,124 +266,115 @@ impl Connection {
         }
     }
 
+    /// Queues the response to request `id`.
+    async fn respond(&self, id: String, result: Result<Value, ErrorBody>) {
+        send(&self.out, Outbound::response(id, result)).await;
+    }
+
+    /// Answers request `id` with `result` from a task of its own: requests run concurrently, responses may arrive out
+    /// of order (PRT-010).
+    fn respond_later(
+        &self,
+        id: String,
+        result: impl Future<Output = Result<Value, ErrorBody>> + Send + 'static,
+    ) {
+        let out = self.out.clone();
+        tokio::spawn(async move { send(&out, Outbound::response(id, result.await)).await });
+    }
+
+    /// The owner of the live sessions this connection starts: closing it stops them (DMN-103).
+    fn live_owner(&self) -> LiveOwner {
+        LiveOwner {
+            client: self.principal.client().to_owned(),
+            connection: self.number,
+        }
+    }
+
     async fn on_text(&mut self, text: &str) {
         let Request { id, call } = match decode_request(text) {
             Ok(request) => request,
             Err(error) => {
                 let id = error.id.clone().unwrap_or_default();
-                send(
-                    &self.out,
-                    Outbound::response(id, Err(error.to_error_body())),
-                )
-                .await;
+                self.respond(id, Err(error.to_error_body())).await;
                 return;
             }
         };
         if let Err(error) = authorize(&self.principal, call.method()) {
-            send(&self.out, Outbound::response(id, Err(error))).await;
+            self.respond(id, Err(error)).await;
             return;
         }
+        let services = &self.app.services;
         if let Some(thread_id) = driven_thread(&call) {
-            self.app.services.supervisor.used(thread_id, self.number);
+            services.supervisor.used(thread_id, self.number);
         }
         match call {
             Call::SystemHello(_) => {
                 let error = bad_request("system.hello was already sent on this connection");
-                send(&self.out, Outbound::response(id, Err(error))).await;
+                self.respond(id, Err(error)).await;
             }
             Call::Subscribe(params) => self.subscribe(id, params).await,
             Call::Unsubscribe(params) => {
                 // Dropping the subscription stops its forwarder before the response is queued, so no event of the
                 // topic follows it (PRT-024).
                 self.subscriptions.remove(&params.topic);
-                let result = to_value(&omfp_protocol::Empty {});
-                send(&self.out, Outbound::response(id, result)).await;
+                self.respond(id, to_value(&Empty {})).await;
             }
             Call::WidgetsReport(params) => {
                 // Kept per connection: a window replaces its own report (PRT-043).
-                self.app
-                    .services
-                    .report_widgets(self.number, self.principal.client(), params);
-                let result = to_value(&omfp_protocol::Empty {});
-                send(&self.out, Outbound::response(id, result)).await;
+                services.report_widgets(self.number, self.principal.client(), params);
+                self.respond(id, to_value(&Empty {})).await;
             }
             Call::WindowsAnswer(params) => {
                 // Only the window a request went to answers it (PRT-124).
-                let result = self
-                    .app
-                    .services
+                let result = services
                     .answer_window(self.number, params)
-                    .and_then(|()| to_value(&omfp_protocol::Empty {}));
-                send(&self.out, Outbound::response(id, result)).await;
+                    .and_then(|()| to_value(&Empty {}));
+                self.respond(id, result).await;
             }
             Call::ThreadLiveConnect(params) => {
-                // The connection owns the session: closing it stops the session (DMN-103).
-                let owner = LiveOwner {
-                    client: self.principal.client().to_owned(),
-                    connection: self.number,
-                };
-                let supervisor = self.app.services.supervisor.clone();
-                let out = self.out.clone();
-                tokio::spawn(async move {
-                    let result = supervisor
+                let (supervisor, owner) = (services.supervisor.clone(), self.live_owner());
+                self.respond_later(id, async move {
+                    let answer = supervisor
                         .live_connect(&params.thread_id, owner, params.sdp_offer)
                         .await
-                        .map_err(supervisor_error)
-                        .and_then(|answer| {
-                            to_value(&LiveConnected {
-                                sdp_answer: answer.sdp_answer,
-                                voice: answer.voice,
-                            })
-                        });
-                    send(&out, Outbound::response(id, result)).await;
+                        .map_err(supervisor_error)?;
+                    to_value(&LiveConnected {
+                        sdp_answer: answer.sdp_answer,
+                        voice: answer.voice,
+                    })
                 });
             }
             Call::ThreadLiveStart(ThreadRef { thread_id }) => {
                 // Owned like a `live_connect` session (DMN-109, DMN-103).
-                let owner = LiveOwner {
-                    client: self.principal.client().to_owned(),
-                    connection: self.number,
-                };
-                let supervisor = self.app.services.supervisor.clone();
-                let out = self.out.clone();
-                tokio::spawn(async move {
-                    let result = supervisor
+                let (supervisor, owner) = (services.supervisor.clone(), self.live_owner());
+                self.respond_later(id, async move {
+                    let voice = supervisor
                         .live_start(&thread_id, owner)
                         .await
-                        .map_err(supervisor_error)
-                        .and_then(|voice| to_value(&LiveStarted { voice }));
-                    send(&out, Outbound::response(id, result)).await;
+                        .map_err(supervisor_error)?;
+                    to_value(&LiveStarted { voice })
                 });
             }
-            Call::AuthLogin(params) => self.log_in(id, params.provider_id),
-            call => {
-                // Requests run concurrently; responses may arrive out of order (PRT-010).
-                let services = self.app.services.clone();
-                let principal = self.principal.clone();
-                let out = self.out.clone();
-                tokio::spawn(async move {
-                    let result = dispatch(&services, &principal, call).await;
-                    send(&out, Outbound::response(id, result)).await;
+            Call::AuthLogin(params) => {
+                // The login's flow goes to this window (DMN-221).
+                let (services, number) = (services.clone(), self.number);
+                self.respond_later(id, async move {
+                    let logged_in = services
+                        .auth_login(Some(number), params.provider_id)
+                        .await?;
+                    to_value(&logged_in)
                 });
+            }
+            call => {
+                let (services, principal) = (services.clone(), self.principal.clone());
+                self.respond_later(
+                    id,
+                    async move { dispatch(&services, &principal, call).await },
+                );
             }
         }
     }
 
-    /// `auth.login` of this window's user: the flow goes to this window (DMN-221).
-    fn log_in(&self, id: String, provider_id: String) {
-        let services = self.app.services.clone();
-        let number = self.number;
-        let out = self.out.clone();
-        tokio::spawn(async move {
-            let result = services
-                .auth_login(Some(number), provider_id)
-                .await
-                .and_then(|logged_in| to_value(&logged_in));
-            send(&out, Outbound::response(id, result)).await;
-        });
-    }
-
-    #[allow(clippy::too_many_lines)] // One arm per topic.
     async fn subscribe(&mut self, id: String, params: SubscribeParams) {
         let SubscribeParams { topic, since } = params;
         let since = since.map(|position| Position {
@@ -393,186 +384,114 @@ impl Connection {
         // A new subscription replaces the previous one of the topic.
         self.subscriptions.remove(&topic);
         self.generation += 1;
-        let generation = self.generation;
-        let services = &self.app.services;
-        let mut transient = None;
-        let started = match &topic {
-            Topic::Index => {
-                let subscription = services.index.subscribe(since.as_ref());
-                Ok((
-                    self.start(
-                        id,
-                        topic.clone(),
-                        since,
-                        subscription,
-                        TopicEvent::Index,
-                        generation,
-                    )
-                    .await,
-                    None,
-                ))
+        match self.open(&id, &topic, since).await {
+            Ok(subscribed) => {
+                self.subscriptions.insert(topic, subscribed);
             }
-            Topic::Thread(thread_id) => {
-                let watched = async {
-                    let log = services.supervisor.thread_log(thread_id).await?;
-                    let levels = services.supervisor.live_levels(thread_id).await?;
-                    let guard = services.supervisor.watch(thread_id, self.number).await?;
-                    Ok((log, levels, guard))
-                }
-                .await
-                .map_err(supervisor_error);
-                match watched {
-                    Ok((log, levels, guard)) => {
-                        let subscription = log.subscribe(since.as_ref());
-                        let task = self
-                            .start(
-                                id.clone(),
-                                topic.clone(),
-                                since,
-                                subscription,
-                                TopicEvent::Thread,
-                                generation,
-                            )
-                            .await;
-                        transient = Some(tokio::spawn(forward_levels(
-                            topic.clone(),
-                            levels,
-                            self.out.clone(),
-                        )));
-                        Ok((task, Some(Watch::Thread { _guard: guard })))
-                    }
-                    Err(error) => Err((id, error)),
-                }
-            }
-            Topic::Workspace(workspace_id) => match services.workspace_log(workspace_id).await {
-                Ok(log) => {
-                    let guard = services.supervisor.watch_workspace(workspace_id);
-                    let subscription = log.subscribe(since.as_ref());
-                    let task = self
-                        .start(
-                            id.clone(),
-                            topic.clone(),
-                            since,
-                            subscription,
-                            TopicEvent::Workspace,
-                            generation,
-                        )
-                        .await;
-                    Ok((task, Some(Watch::Workspace { _guard: guard })))
-                }
-                Err(error) => Err((id, error)),
-            },
-            Topic::Views(workspace_id) => match services.views_log(workspace_id).await {
-                Ok(log) => {
-                    // Watched like `workspace/<id>`: the polls read its views every round (DMN-082).
-                    let guard = services.supervisor.watch_workspace(workspace_id);
-                    let subscription = log.subscribe(since.as_ref());
-                    let task = self
-                        .start(
-                            id.clone(),
-                            topic.clone(),
-                            since,
-                            subscription,
-                            TopicEvent::Views,
-                            generation,
-                        )
-                        .await;
-                    Ok((task, Some(Watch::Workspace { _guard: guard })))
-                }
-                Err(error) => Err((id, error)),
-            },
-            Topic::Job(job_id) => {
-                // A run of a declared job the engine no longer holds serves what the store kept (DMN-330).
-                let log = match services.jobs.log(job_id) {
-                    Ok(log) => Ok(log),
-                    Err(error) => services.declared.stored_log(job_id).await.ok_or(error),
-                };
-                match log {
-                    Ok(log) => {
-                        let subscription = log.subscribe(since.as_ref());
-                        let task = self
-                            .start(
-                                id,
-                                topic.clone(),
-                                since,
-                                subscription,
-                                TopicEvent::Job,
-                                generation,
-                            )
-                            .await;
-                        Ok((task, None))
-                    }
-                    Err(error) => Err((id, error.into())),
-                }
-            }
-            Topic::Terminal(terminal_id) => match services.terminals.log(terminal_id, None) {
-                Ok(log) => {
-                    let subscription = log.subscribe(since.as_ref());
-                    let task = self
-                        .start(
-                            id,
-                            topic.clone(),
-                            since,
-                            subscription,
-                            TopicEvent::Terminal,
-                            generation,
-                        )
-                        .await;
-                    Ok((task, None))
-                }
-                Err(error) => Err((id, error.into())),
-            },
-            Topic::Jobs(workspace_id) => match services.declared.log(workspace_id).await {
-                Ok(log) => {
-                    // Watched like `views/<id>`: the polls read its jobs file every round (DMN-322).
-                    let guard = services.supervisor.watch_workspace(workspace_id);
-                    let subscription = log.subscribe(since.as_ref());
-                    let task = self
-                        .start(
-                            id.clone(),
-                            topic.clone(),
-                            since,
-                            subscription,
-                            TopicEvent::Jobs,
-                            generation,
-                        )
-                        .await;
-                    Ok((task, Some(Watch::Workspace { _guard: guard })))
-                }
-                Err(error) => Err((id, error)),
-            },
-        };
-        match started {
-            Ok((task, watch)) => {
-                self.subscriptions.insert(
-                    topic,
-                    Subscribed {
-                        generation,
-                        task,
-                        transient,
-                        _watch: watch,
-                    },
-                );
-            }
-            Err((id, error)) => send(&self.out, Outbound::response(id, Err(error))).await,
+            Err(error) => self.respond(id, Err(error)).await,
         }
     }
 
-    /// Answers the subscribe request, then forwards the replayed and live events in a task.
+    /// Subscribes to `topic` as subscription [`Connection::generation`], answering request `id` with where it starts,
+    /// and keeps its thread or workspace watched (PRT-025, DMN-023); an error when the topic cannot be followed.
+    async fn open(
+        &self,
+        id: &str,
+        topic: &Topic,
+        since: Option<Position>,
+    ) -> Result<Subscribed, ErrorBody> {
+        let services = &self.app.services;
+        let watch_workspace = |workspace_id: &str| {
+            Some(Watch::Workspace {
+                _guard: services.supervisor.watch_workspace(workspace_id),
+            })
+        };
+        let mut transient = None;
+        let (task, watch) = match topic {
+            Topic::Index => {
+                let index = &services.index;
+                let task = self.start(id, topic, since, index, TopicEvent::Index).await;
+                (task, None)
+            }
+            Topic::Thread(thread_id) => {
+                let (log, levels, guard) = async {
+                    let supervisor = &services.supervisor;
+                    let log = supervisor.thread_log(thread_id).await?;
+                    let levels = supervisor.live_levels(thread_id).await?;
+                    Ok((log, levels, supervisor.watch(thread_id, self.number).await?))
+                }
+                .await
+                .map_err(supervisor_error)?;
+                let task = self.start(id, topic, since, &log, TopicEvent::Thread).await;
+                transient = Some(tokio::spawn(forward_levels(
+                    topic.clone(),
+                    levels,
+                    self.out.clone(),
+                )));
+                (task, Some(Watch::Thread { _guard: guard }))
+            }
+            Topic::Workspace(workspace_id) => {
+                let log = services.workspace_log(workspace_id).await?;
+                let watch = watch_workspace(workspace_id);
+                let task = self
+                    .start(id, topic, since, &log, TopicEvent::Workspace)
+                    .await;
+                (task, watch)
+            }
+            Topic::Views(workspace_id) => {
+                let log = services.views_log(workspace_id).await?;
+                // Watched like `workspace/<id>`: the polls read its views every round (DMN-082).
+                let watch = watch_workspace(workspace_id);
+                let task = self.start(id, topic, since, &log, TopicEvent::Views).await;
+                (task, watch)
+            }
+            Topic::Job(job_id) => {
+                // A run of a declared job the engine no longer holds serves what the store kept (DMN-330).
+                let log = match services.jobs.log(job_id) {
+                    Ok(log) => log,
+                    Err(error) => services.declared.stored_log(job_id).await.ok_or(error)?,
+                };
+                let task = self.start(id, topic, since, &log, TopicEvent::Job).await;
+                (task, None)
+            }
+            Topic::Terminal(terminal_id) => {
+                let log = services.terminals.log(terminal_id, None)?;
+                let task = self
+                    .start(id, topic, since, &log, TopicEvent::Terminal)
+                    .await;
+                (task, None)
+            }
+            Topic::Jobs(workspace_id) => {
+                let log = services.declared.log(workspace_id).await?;
+                // Watched like `views/<id>`: the polls read its jobs file every round (DMN-322).
+                let watch = watch_workspace(workspace_id);
+                let task = self.start(id, topic, since, &log, TopicEvent::Jobs).await;
+                (task, watch)
+            }
+        };
+        Ok(Subscribed {
+            generation: self.generation,
+            task,
+            transient,
+            _watch: watch,
+        })
+    }
+
+    /// Answers subscribe request `id` with where `log` starts after `since`, then forwards the replayed and live events
+    /// in a task.
     async fn start<E, S>(
         &self,
-        id: String,
-        topic: Topic,
+        id: &str,
+        topic: &Topic,
         since: Option<Position>,
-        subscription: Subscription<E, S>,
+        log: &EventLog<E, S>,
         event: fn(E) -> TopicEvent,
-        generation: u64,
     ) -> JoinHandle<()>
     where
         E: Clone + Send + Sync + 'static,
-        S: Serialize,
+        S: Clone + Serialize,
     {
-        let Subscription { start, live } = subscription;
+        let Subscription { start, live } = log.subscribe(since.as_ref());
         let (result, replay) = match start {
             Start::Replay(events) => {
                 let position = since.unwrap_or(Position {
@@ -594,7 +513,8 @@ impl Connection {
                 (result.and_then(|result| to_value(&result)), Vec::new())
             }
         };
-        send(&self.out, Outbound::response(id, result)).await;
+        self.respond(id.to_owned(), result).await;
+        let (topic, generation) = (topic.clone(), self.generation);
         let out = self.out.clone();
         let dropped = self.dropped.clone();
         tokio::spawn(async move {

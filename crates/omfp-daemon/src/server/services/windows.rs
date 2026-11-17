@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use omfp_protocol::{
@@ -19,7 +19,7 @@ use omfp_protocol::{
 use tokio::sync::{mpsc, oneshot, watch};
 
 use super::super::connection::Outbound;
-use super::{Services, blocking};
+use super::{Services, blocking, lock};
 use crate::server::convert::bad_request;
 use crate::widgets::folders;
 
@@ -107,6 +107,11 @@ pub(super) struct Window {
 }
 
 impl Window {
+    /// Whether its latest report is about `workspace`; any window is when `workspace` is `None`.
+    fn shows(&self, workspace: Option<&str>) -> bool {
+        workspace.is_none_or(|workspace| self.report.workspace_id.as_deref() == Some(workspace))
+    }
+
     /// What it reports besides its widgets; empty from a client that does not report it.
     fn state(&self) -> WindowReport {
         self.report.window.clone().unwrap_or_default()
@@ -180,10 +185,6 @@ pub(crate) struct Windows {
     pub(super) changed: watch::Sender<u64>,
 }
 
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
 /// Forgets a request when its caller stops waiting (an answer, a timeout, a cancelled tool).
 struct PendingGuard<'a> {
     windows: &'a Windows,
@@ -198,6 +199,22 @@ impl Drop for PendingGuard<'_> {
 
 fn not_found(message: impl Into<String>) -> ErrorBody {
     ErrorBody::new(ErrorCode::NotFound, message)
+}
+
+/// Queues `request`, request `id`, on `link`, the outbound queue of `connection`'s window.
+fn send(
+    link: &mpsc::Sender<Outbound>,
+    connection: u64,
+    id: String,
+    request: WindowRequest,
+) -> Result<(), ErrorBody> {
+    let frame = Outbound::frame(&ServerFrame::WindowRequest { id, request })
+        .ok_or_else(|| bad_request("cannot encode the window request"))?;
+    link.try_send(frame).map_err(|_| {
+        conflict(format!(
+            "omfp window {connection} is busy or closing; try again"
+        ))
+    })
 }
 
 fn conflict(message: impl Into<String>) -> ErrorBody {
@@ -269,7 +286,7 @@ impl Windows {
     pub(super) fn showing(&self, workspace: &str) -> Vec<Window> {
         lock(&self.reports)
             .values()
-            .filter(|window| window.report.workspace_id.as_deref() == Some(workspace))
+            .filter(|window| window.shows(Some(workspace)))
             .cloned()
             .collect()
     }
@@ -298,11 +315,7 @@ impl Windows {
         let none = windows.is_empty();
         windows
             .into_iter()
-            .find(|window| {
-                workspace.is_none_or(|workspace| {
-                    window.report.workspace_id.as_deref() == Some(workspace)
-                })
-            })
+            .find(|window| window.shows(workspace))
             .ok_or_else(|| match workspace {
                 Some(workspace) if !none => not_found(format!(
                     "no omfp window shows workspace {workspace}; windows.list names the open ones and what they show"
@@ -330,6 +343,11 @@ impl Windows {
             .ok_or_else(|| not_found(format!("omfp window {connection} is closed")))
     }
 
+    /// A new request's id.
+    fn request_id(&self) -> String {
+        format!("w{}", self.requests.fetch_add(1, Ordering::Relaxed))
+    }
+
     /// Sends `request` to the window of `connection` (`client` names it in errors) and waits at most `timeout` for its
     /// answer; the window need not have reported (DMN-206, DMN-221).
     pub(super) async fn request_to(
@@ -340,7 +358,7 @@ impl Windows {
         timeout: Duration,
     ) -> Result<WindowAnswer, ErrorBody> {
         let link = self.link_of(connection)?;
-        let id = format!("w{}", self.requests.fetch_add(1, Ordering::Relaxed));
+        let id = self.request_id();
         let (reply, answer) = oneshot::channel();
         lock(&self.pending).insert(
             id.clone(),
@@ -353,13 +371,7 @@ impl Windows {
             windows: self,
             id: id.clone(),
         };
-        let frame = Outbound::frame(&ServerFrame::WindowRequest { id, request })
-            .ok_or_else(|| bad_request("cannot encode the window request"))?;
-        link.try_send(frame).map_err(|_| {
-            conflict(format!(
-                "omfp window {connection} is busy or closing; try again"
-            ))
-        })?;
+        send(&link, connection, id, request)?;
         match tokio::time::timeout(timeout, answer).await {
             Ok(Ok(answer)) => Ok(answer),
             Ok(Err(_)) => Err(not_found(format!(
@@ -375,15 +387,12 @@ impl Windows {
     /// Sends `request`, a notice the window does not answer (`login_url`, `login_progress`), to the window of
     /// `connection` (DMN-221).
     pub(super) fn notify(&self, connection: u64, request: WindowRequest) -> Result<(), ErrorBody> {
-        let link = self.link_of(connection)?;
-        let id = format!("w{}", self.requests.fetch_add(1, Ordering::Relaxed));
-        let frame = Outbound::frame(&ServerFrame::WindowRequest { id, request })
-            .ok_or_else(|| bad_request("cannot encode the window request"))?;
-        link.try_send(frame).map_err(|_| {
-            conflict(format!(
-                "omfp window {connection} is busy or closing; try again"
-            ))
-        })
+        send(
+            &self.link_of(connection)?,
+            connection,
+            self.request_id(),
+            request,
+        )
     }
 
     /// The connection of the most recently focused window (DMN-221); `None` when no window reported.
@@ -458,10 +467,7 @@ impl Services {
                 .windows
                 .by_focus()
                 .iter()
-                .filter(|window| {
-                    params.workspace_id.is_none()
-                        || window.report.workspace_id == params.workspace_id
-                })
+                .filter(|window| window.shows(params.workspace_id.as_deref()))
                 .map(Window::summary)
                 .collect(),
         })
@@ -479,9 +485,7 @@ impl Services {
         self.windows
             .by_focus()
             .iter()
-            .filter(|window| {
-                workspace_id.is_none_or(|id| window.report.workspace_id.as_deref() == Some(id))
-            })
+            .filter(|window| window.shows(workspace_id))
             .map(Window::full)
             .collect()
     }
@@ -577,7 +581,7 @@ impl Services {
         version: Option<String>,
     ) -> Result<WidgetChecked, ErrorBody> {
         let window = self.windows.pick(window_id, Some(workspace_id))?;
-        if window.report.workspace_id.as_deref() != Some(workspace_id) {
+        if !window.shows(Some(workspace_id)) {
             return Err(conflict(format!(
                 "omfp window {} shows another workspace: it can render only the widgets of the workspace it shows",
                 window.id

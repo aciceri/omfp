@@ -103,16 +103,15 @@ fn respond_head(bytes: Vec<u8>, relative: &Path, headers: &HeaderMap) -> Respons
     } else {
         ([(header::CONTENT_TYPE, content_type)], bytes).into_response()
     };
-    let out = response.headers_mut();
-    insert(out, header::ETAG, &tag);
-    out.insert(header::ACCEPT_RANGES, HeaderValue::from_static("none"));
-    shared_headers(out);
+    shared_headers(response.headers_mut(), &tag, "none");
     response
 }
 
-/// The headers of every file response (DMN-254).
-fn shared_headers(out: &mut HeaderMap) {
+/// The headers of every file response (DMN-254), with its strong validator `tag` and whether it serves `ranges`.
+fn shared_headers(out: &mut HeaderMap, tag: &str, ranges: &'static str) {
+    insert(out, header::ETAG, tag);
     for (name, value) in [
+        (header::ACCEPT_RANGES, ranges),
         // Revalidated on every use, with the validators the response carries.
         (header::CACHE_CONTROL, "private, no-cache"),
         (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
@@ -174,12 +173,10 @@ fn respond(opened: Opened, headers: &HeaderMap) -> Response {
         }
     };
     let out = response.headers_mut();
-    insert(out, header::ETAG, &tag);
     if let Some(date) = &last_modified {
         insert(out, header::LAST_MODIFIED, date);
     }
-    out.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
-    shared_headers(out);
+    shared_headers(out, &tag, "bytes");
     response
 }
 

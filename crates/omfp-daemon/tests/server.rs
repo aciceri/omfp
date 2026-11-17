@@ -1239,6 +1239,66 @@ async fn http_get(daemon: &TestDaemon, path: &str) -> String {
     response
 }
 
+/// The opening tag of `<html>` in the body of `GET path`, after checking it is HTML that is never cached.
+async fn index_html_tag(daemon: &TestDaemon, path: &str) -> String {
+    let response = http_get(daemon, path).await;
+    let (head, body) = response.split_once("\r\n\r\n").unwrap();
+    let head = head.to_lowercase();
+    assert!(head.starts_with("http/1.1 200"), "{response}");
+    assert!(head.contains("content-type: text/html"), "{head}");
+    assert!(head.contains("cache-control: no-store"), "{head}");
+    let start = body.find("<html").unwrap();
+    let end = start + body[start..].find('>').unwrap();
+    body[start..=end].to_owned()
+}
+
+// spec: DMN-008, UI-091, UI-510, UI-794
+#[tokio::test(flavor = "multi_thread")]
+async fn index_html_carries_the_configured_theme_skin_density_motion_and_font_size() {
+    let site = tempfile::tempdir().unwrap();
+    std::fs::write(
+        site.path().join("index.html"),
+        "<!doctype html>\n<html lang=\"en\">\n<head></head>\n<body></body>\n</html>\n",
+    )
+    .unwrap();
+    let daemon = daemon(&["--static-dir", site.path().to_str().unwrap()]).await;
+    let mut client = daemon.client("omfp/web").await;
+    assert_eq!(
+        index_html_tag(&daemon, "/").await,
+        "<html lang=\"en\">",
+        "the defaults need no attribute"
+    );
+
+    client
+        .ok(
+            "settings.set",
+            json!({ "ui": { "theme": "graphite", "skin": "boring", "density": "normal", "motion": "reduced", "fontSize": 20 } }),
+        )
+        .await;
+    let tag = "<html data-theme=\"graphite\" data-skin=\"boring\" data-density=\"normal\" \
+               data-motion=\"reduced\" style=\"font-size:20px\" lang=\"en\">";
+    assert_eq!(index_html_tag(&daemon, "/").await, tag);
+    assert_eq!(index_html_tag(&daemon, "/index.html").await, tag);
+    assert_eq!(index_html_tag(&daemon, "/threads/x").await, tag);
+    // The gallery picks its own appearance from its query (UI-173).
+    assert_eq!(index_html_tag(&daemon, "/kit").await, "<html lang=\"en\">");
+    assert_eq!(index_html_tag(&daemon, "/kit/").await, "<html lang=\"en\">");
+
+    // `matugen` is Synth under the user theme, `accent` Synth without the host's accent: the stylesheet's default
+    // until the window knows better.
+    for theme in ["matugen", "accent"] {
+        client
+            .ok("settings.set", json!({ "ui": { "theme": theme } }))
+            .await;
+        assert_eq!(
+            index_html_tag(&daemon, "/").await,
+            "<html data-skin=\"boring\" data-density=\"normal\" data-motion=\"reduced\" \
+             style=\"font-size:20px\" lang=\"en\">",
+            "{theme}"
+        );
+    }
+}
+
 /// The body of `GET /theme.css`, after checking its headers.
 async fn theme_css(daemon: &TestDaemon) -> String {
     let response = http_get(daemon, "/theme.css").await;

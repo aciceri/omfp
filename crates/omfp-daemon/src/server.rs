@@ -13,6 +13,7 @@ mod prompts;
 mod raw_files;
 mod services;
 
+use std::fmt::Write as _;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
@@ -22,7 +23,7 @@ use axum::extract::{self, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use omfp_protocol::BuiltinTheme;
+use omfp_protocol::{BuiltinTheme, UiSettings};
 use subtle::ConstantTimeEq;
 use tokio::sync::{Semaphore, watch};
 
@@ -210,7 +211,8 @@ async fn upgrade(
         .on_upgrade(move |socket| connection::serve(socket, state, permit))
 }
 
-/// Serves `--static-dir`; unknown paths get `index.html` so the UI can route them.
+/// Serves `--static-dir`; unknown paths get `index.html` so the UI can route them. `index.html` carries the daemon's
+/// appearance on `<html>` (`html_with_appearance`) and is never cached, so a reload shows the current one.
 async fn static_file(State(state): State<Arc<AppState>>, request: Request) -> Response {
     let Some(root) = state.static_dir.clone() else {
         return StatusCode::NOT_FOUND.into_response();
@@ -218,21 +220,89 @@ async fn static_file(State(state): State<Arc<AppState>>, request: Request) -> Re
     let Some(relative) = safe_relative(request.uri().path()) else {
         return StatusCode::NOT_FOUND.into_response();
     };
+    // The `/kit` gallery takes its whole appearance from its query (UI-173).
+    let gallery = matches!(request.uri().path(), "/kit" | "/kit/");
     let read = tokio::task::spawn_blocking(move || {
+        let index = root.join("index.html");
         let path = root.join(&relative);
-        let path = if path.is_file() {
-            path
+        if path.is_file() && path != index {
+            return std::fs::read(&path).map(|bytes| (bytes, content_type(&path), false));
+        }
+        let bytes = std::fs::read(&index)?;
+        let bytes = if gallery {
+            bytes
         } else {
-            root.join("index.html")
+            html_with_appearance(bytes, &state.services.settings().ui)
         };
-        std::fs::read(&path).map(|bytes| (bytes, content_type(&path)))
+        Ok((bytes, content_type(&index), true))
     })
     .await;
     match read {
-        Ok(Ok((bytes, content_type))) => {
+        Ok(Ok((bytes, content_type, false))) => {
             ([(header::CONTENT_TYPE, content_type)], bytes).into_response()
         }
+        Ok(Ok((bytes, content_type, true))) => (
+            [
+                (header::CONTENT_TYPE, content_type),
+                (header::CACHE_CONTROL, "no-store"),
+            ],
+            bytes,
+        )
+            .into_response(),
         _ => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+/// `html` with the daemon's `[ui]` theme, skin, density, motion and font size on its `<html>` tag, as the window puts
+/// them (UI-091, UI-510, UI-794), so the first paint already shows them instead of the defaults until the window's
+/// first `index` snapshot. Only set values are added: an absent one is the stylesheets' default. `matugen` (Synth under
+/// the user theme, which `/theme.css` brings) and `accent` (Synth unless the host gives a system accent, UI-512) add no
+/// theme, Synth being the stylesheets' default. Without an `<html` tag, `html` is unchanged.
+fn html_with_appearance(html: Vec<u8>, ui: &UiSettings) -> Vec<u8> {
+    const TAG: &[u8] = b"<html";
+    let theme = ui
+        .theme
+        .filter(|theme| !matches!(theme, BuiltinTheme::Matugen | BuiltinTheme::Accent));
+    let mut attributes = String::new();
+    for (name, value) in [
+        ("data-theme", theme.and_then(setting_name)),
+        ("data-skin", ui.skin.and_then(setting_name)),
+        ("data-density", ui.density.and_then(setting_name)),
+        ("data-motion", ui.motion.and_then(setting_name)),
+    ] {
+        if let Some(value) = value {
+            let _ = write!(attributes, " {name}=\"{value}\"");
+        }
+    }
+    if let Some(size) = ui.font_size {
+        let _ = write!(attributes, " style=\"font-size:{size}px\"");
+    }
+    if attributes.is_empty() {
+        return html;
+    }
+    let Some(at) = html
+        .windows(TAG.len())
+        .position(|window| window == TAG)
+        .map(|at| at + TAG.len())
+        .filter(|&at| {
+            html.get(at)
+                .is_some_and(|&next| next == b'>' || next.is_ascii_whitespace())
+        })
+    else {
+        return html;
+    };
+    let mut with = Vec::with_capacity(html.len() + attributes.len());
+    with.extend_from_slice(&html[..at]);
+    with.extend_from_slice(attributes.as_bytes());
+    with.extend_from_slice(&html[at..]);
+    with
+}
+
+/// The protocol's name of a setting's value (`tokyo-night`, `boring`, …): a string for every `[ui]` enum.
+fn setting_name(value: impl serde::Serialize) -> Option<String> {
+    match serde_json::to_value(value) {
+        Ok(serde_json::Value::String(name)) => Some(name),
+        _ => None,
     }
 }
 

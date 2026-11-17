@@ -11,6 +11,8 @@ The version's section is also the source of the GitHub release notes.
 
 - With `skin = boring`, the key hint in buttons (`enter` in Send) is readable again: it takes the button's own text
   color instead of a muted gray that nearly vanished on the dark Send button, and with `theme = matugen`.
+- A window no longer flashes the default Synth palette and Crush skin for a moment while it loads: the daemon serves
+  the page with the configured `[ui]` theme, skin, density, motion and font size already applied.
 
 ## 0.3.0 — 2026-11-17
 

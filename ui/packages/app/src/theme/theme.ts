@@ -8,7 +8,10 @@
  * `data-density` (the daemon's `[ui] density`) picks compact or normal spacing; `data-motion` is the effective motion level, the daemon's `[ui] motion` capped at `none` while the system asks for reduced motion, so stylesheets and
  * script effects read one attribute; `[ui] font_size` is `<html>`'s inline `font-size` (so every rem-based token
  * scales); `[ui.fonts]` set `--omfp-font-prose|ui|code` inline on `<html>`, which beats any stylesheet, user theme
- * included. The user theme is the daemon's (global, `theme.get`/`theme.set`) and shows only while `[ui] theme` is
+ * included. The daemon serves `index.html` with the theme, skin, density, motion and font size already on `<html>`,
+ * so the first paint shows them; the window keeps those until its first `index` snapshot gives the settings (before,
+ * they are only the defaults), then follows the settings. The user theme is the daemon's (global,
+ * `theme.get`/`theme.set`) and shows only while `[ui] theme` is
  * `matugen`: the page loads it first through `<link rel="stylesheet" href="/theme.css" data-omfp-theme>` (so it applies
  * before the socket connects; the daemon serves it empty under any other theme, DMN-075), then once the `index` topic is live `<style data-omfp-theme>` replaces that link in the
  * same place, holding the user theme while the theme is `matugen` and nothing otherwise, and follows both
@@ -25,7 +28,7 @@ import {
   type Motion,
   type Skin,
 } from "@omfp/protocol";
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import {
   COLOR_SCHEME,
   type ColorScheme,
@@ -80,11 +83,16 @@ export function effectiveTheme(root: HTMLElement, theme: BuiltinTheme): BuiltinT
   return accent !== "" && CSS.supports("color", RELATIVE_COLOR) ? theme : DEFAULT_THEME;
 }
 
-export function applyAppearance(
-  root: HTMLElement,
-  { scheme, theme, skin, density, fontSize, motion, fonts }: Appearance,
-): void {
+export function applyAppearance(root: HTMLElement, { scheme, ...settings }: Appearance): void {
   root.dataset.colorScheme = scheme;
+  applySettings(root, settings);
+}
+
+/** The daemon's part of {@link applyAppearance}: everything but the window's colour scheme. */
+function applySettings(
+  root: HTMLElement,
+  { theme, skin, density, fontSize, motion, fonts }: Omit<Appearance, "scheme">,
+): void {
   root.dataset.theme = effectiveTheme(root, theme);
   root.dataset.skin = skin;
   root.dataset.density = density;
@@ -139,25 +147,45 @@ function useSystemReducedMotion(): boolean {
   );
 }
 
+/** Whether the `index` topic is live: its snapshot has arrived and the settings are the daemon's. */
+function useIndexLive(): boolean {
+  return useSnapshot((snapshot) =>
+    snapshot.topics.some((topic) => topic.topic === INDEX_TOPIC && topic.sync.kind === "live"),
+  );
+}
+
 /**
- * Keeps `<html>`'s colour scheme (window state), built-in theme, skin, density, motion, font size and fonts (daemon settings)
- * current, and
- * the contrast guard (UI-196) on it.
+ * Keeps `<html>`'s colour scheme (window state), built-in theme, skin, density, motion, font size and fonts (daemon
+ * settings) current, and the contrast guard (UI-196) on it. The daemon settings apply from the window's first `index`
+ * snapshot on: until then they are only the defaults, and `<html>` keeps what the daemon served it with (UI-091),
+ * except that the system's reduced motion caps the motion at `none` at once (UI-145).
  */
 export function useAppearance(root: HTMLElement = document.documentElement): void {
   const [scheme] = useWindowState(COLOR_SCHEME);
   const { ui } = useSettings();
   const systemReduced = useSystemReducedMotion();
+  const live = useIndexLive();
+  // Once known, the settings stay known: a reconnection keeps the last ones until the new snapshot.
+  const [known, setKnown] = useState(live);
+  if (live && !known) {
+    setKnown(true);
+  }
   const theme = ui.theme ?? DEFAULT_THEME;
   const skin = ui.skin ?? DEFAULT_SKIN;
   const density = ui.density ?? DEFAULT_DENSITY;
   const fontSize = ui.fontSize ?? DEFAULT_FONT_SIZE;
   const motion = systemReduced ? "none" : (ui.motion ?? DEFAULT_MOTION);
   const { fonts } = ui;
-  useEffect(
-    () => applyAppearance(root, { scheme, theme, skin, density, fontSize, motion, fonts }),
-    [root, scheme, theme, skin, density, fontSize, motion, fonts],
-  );
+  useEffect(() => {
+    root.dataset.colorScheme = scheme;
+  }, [root, scheme]);
+  useEffect(() => {
+    if (known) {
+      applySettings(root, { theme, skin, density, fontSize, motion, fonts });
+    } else if (systemReduced) {
+      root.dataset.motion = "none";
+    }
+  }, [known, systemReduced, root, theme, skin, density, fontSize, motion, fonts]);
   useEffect(() => installContrastGuard(root.ownerDocument, root), [root]);
 }
 
@@ -166,9 +194,7 @@ export function useAppearance(root: HTMLElement = document.documentElement): voi
  * every change after: of the user theme (`theme_changed`) and of the theme (`settings_changed`).
  */
 export function useUserTheme(): void {
-  const live = useSnapshot((snapshot) =>
-    snapshot.topics.some((topic) => topic.topic === INDEX_TOPIC && topic.sync.kind === "live"),
-  );
+  const live = useIndexLive();
   const theme = useSettings().ui.theme ?? DEFAULT_THEME;
   const stored = useSnapshot((snapshot) => snapshot.index.theme.css);
   const css = userTheme(theme, stored);

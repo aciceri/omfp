@@ -86,3 +86,50 @@ async fn a_command_line_opened_before_the_index_keeps_the_focus() -> anyhow::Res
     journey.scheme("light").await?;
     journey.finish("the window while its index loads").await
 }
+
+// spec: UI-091, UI-510, UI-794
+#[tokio::test(flavor = "multi_thread")]
+async fn the_page_shows_the_daemons_theme_and_skin_before_its_index() -> anyhow::Result<()> {
+    let journey = Journey::start_fake(FakeLauncher::new()).await?;
+    let mut connection = journey.connect().await?;
+    connection
+        .call::<omfp_protocol::method::SettingsSet>(omfp_protocol::SetSettingsParams {
+            ui: Some(omfp_protocol::UiSettings {
+                theme: Some(omfp_protocol::BuiltinTheme::Graphite),
+                skin: Some(omfp_protocol::Skin::Boring),
+                ..omfp_protocol::UiSettings::default()
+            }),
+            keymap: None,
+        })
+        .await?;
+    connection.close().await?;
+    journey
+        .driver
+        .cdp()
+        .send_raw(
+            "Page.addScriptToEvaluateOnNewDocument",
+            json!({ "source": HOLD_INDEX }),
+        )
+        .await?;
+    journey.driver.refresh().await?;
+
+    // Connected without its index, the window already shows the daemon's theme and skin, served on `<html>`.
+    journey.element("[data-testid=view]").await?;
+    journey.gone("[data-testid=connection-banner]").await?;
+    let appearance = async || -> anyhow::Result<_> {
+        Ok((
+            journey.attr("html", "data-theme").await?,
+            journey.attr("html", "data-skin").await?,
+        ))
+    };
+    let expected = (Some("graphite".to_owned()), Some("boring".to_owned()));
+    assert_eq!(appearance().await?, expected);
+
+    // The index brings the same settings: nothing changes.
+    journey.eval("releaseIndex();", Vec::new()).await?;
+    journey
+        .gone("[data-testid=sidebar][aria-busy=true]")
+        .await?;
+    assert_eq!(appearance().await?, expected);
+    journey.finish("the served theme before the index").await
+}

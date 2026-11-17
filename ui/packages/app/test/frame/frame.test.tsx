@@ -39,6 +39,7 @@ afterEach(() => {
   delete document.documentElement.dataset.density;
   delete document.documentElement.dataset.motion;
   delete document.documentElement.dataset.skin;
+  delete document.documentElement.dataset.theme;
   document.documentElement.removeAttribute("style");
 });
 
@@ -440,6 +441,28 @@ describe("frame", () => {
     client.indexEvents({ kind: "settings_changed", settings: { ui: {}, keymap: [], error: null } });
     flush();
     expect(document.documentElement.dataset.skin).toBe("crush");
+  });
+
+  // spec: UI-091, UI-510, UI-794
+  test("`<html>` keeps the appearance the page loaded with until the first `index` snapshot gives the settings", () => {
+    const root = document.documentElement;
+    Object.assign(root.dataset, { theme: "graphite", skin: "boring", density: "normal", motion: "reduced" });
+    root.style.fontSize = "20px";
+    const { client, flush } = setup({}, false);
+    client.connected();
+    flush();
+    const appearance = () => [
+      root.dataset.colorScheme,
+      root.dataset.theme,
+      root.dataset.skin,
+      root.dataset.density,
+      root.dataset.motion,
+      root.style.fontSize,
+    ];
+    expect(appearance()).toEqual(["system", "graphite", "boring", "normal", "reduced", "20px"]);
+    client.index({ settings: { ui: { theme: "nord" }, keymap: [], error: null } });
+    flush();
+    expect(appearance()).toEqual(["system", "nord", "crush", "compact", "full", "17px"]);
   });
 
   // spec: UI-526, UI-527
@@ -900,6 +923,24 @@ describe("daemon settings", () => {
       expect(root.dataset.motion).toBe("none");
       act(() => system.set(false));
       expect(root.dataset.motion).toBe("reduced");
+    } finally {
+      window.matchMedia = original;
+    }
+  });
+
+  // spec: UI-145, UI-091
+  test("prefers-reduced-motion caps the motion the page loaded with before the first `index` snapshot", () => {
+    const original = window.matchMedia;
+    const system = new SystemMotion();
+    system.set(true);
+    window.matchMedia = system.matchMedia;
+    try {
+      const root = document.documentElement;
+      root.dataset.motion = "full";
+      const { client, flush } = setup({}, false);
+      client.connected();
+      flush();
+      expect(root.dataset.motion).toBe("none");
     } finally {
       window.matchMedia = original;
     }

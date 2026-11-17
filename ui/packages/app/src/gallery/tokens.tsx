@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AA, type Adjustment, type ContrastPair, contrastRatio } from "../theme/contrast.ts";
 import { cssColorReader } from "../theme/guard.ts";
 import { type FocusMeasure, FocusTable, measureFocus } from "./focus.tsx";
+import { type KeyHintMeasure, KeyHints, measureKeyHints } from "./key-hints.tsx";
 import { LogoSheet } from "./logo.tsx";
 import { Label, LEVELS, Line, Section } from "./parts.tsx";
 
@@ -226,11 +227,13 @@ function GuardTable({ adjustments }: { adjustments: readonly Adjustment[] }) {
 export function TokenSheet({ guard, onMeasured }: { guard: readonly Adjustment[]; onMeasured: () => void }) {
   const [pairs, setPairs] = useState<readonly ContrastPair[] | undefined>();
   const [focus, setFocus] = useState<readonly FocusMeasure[]>([]);
+  const [keyHints, setKeyHints] = useState<readonly KeyHintMeasure[]>([]);
   const measured = useRef(onMeasured);
   measured.current = onMeasured;
   useLayoutEffect(() => {
     setPairs(measure());
     setFocus(measureFocus());
+    setKeyHints(measureKeyHints(document));
   }, []);
   useEffect(() => {
     if (pairs !== undefined) {
@@ -315,6 +318,7 @@ export function TokenSheet({ guard, onMeasured }: { guard: readonly Adjustment[]
         </table>
       </Section>
       <FocusTable measures={focus} />
+      <KeyHints measures={keyHints} />
       <GuardTable adjustments={guard} />
     </>
   );

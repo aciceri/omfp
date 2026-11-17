@@ -60,6 +60,12 @@
     border-color: var(--omfp-rule);
   }
 
+  /* Inside a button the chip keeps the button's own text color, whatever the variant (UI-148). */
+  :root[data-skin="boring"] .omfp-button .omfp-kbd {
+    color: inherit;
+    border-color: color-mix(in oklab, currentColor 40%, transparent);
+  }
+
   /* Commands and their arguments read as interface text: a command palette, not a terminal. */
   :root[data-skin="boring"]
     :is(.omfp-cmd, .omfp-cmdmenu__command, .omfp-whichkey__args, .omfp-help__args, .omfp-option-text__label) {

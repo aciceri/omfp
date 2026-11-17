@@ -25,7 +25,7 @@ export interface FocusMeasure {
 }
 
 /** The computed color of a token (`color`), as the page resolves it. */
-function tokenColor(token: string): string {
+export function tokenColor(token: string): string {
   const probe = document.createElement("span");
   probe.hidden = true;
   probe.style.color = `var(--omfp-${token})`;
@@ -36,7 +36,7 @@ function tokenColor(token: string): string {
 }
 
 /** The arguments of a CSS function, split at its top-level commas. */
-function functionArguments(value: string): string[] {
+export function functionArguments(value: string): string[] {
   const inner = value.slice(value.indexOf("(") + 1, value.lastIndexOf(")"));
   const parts: string[] = [];
   let depth = 0;
@@ -70,7 +70,7 @@ function startColor(token: string): string | undefined {
 }
 
 /** Paints layers of CSS colors over one another on a 1 px canvas and reads the result, or `undefined` if one is not a color the canvas takes. */
-function painter(): (layers: readonly string[]) => Rgb | undefined {
+export function painter(): (layers: readonly string[]) => Rgb | undefined {
   const canvas = document.createElement("canvas");
   canvas.width = 1;
   canvas.height = 1;

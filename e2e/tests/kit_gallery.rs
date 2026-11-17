@@ -115,7 +115,24 @@ async fn focus_measures(journey: &Journey) -> anyhow::Result<Vec<(bool, String)>
     Ok(serde_json::from_value(value)?)
 }
 
-// spec: UI-173, UI-174, UI-132, UI-135, UI-140, UI-196, UI-337, UI-338, UI-510, UI-512, UI-514, UI-736, UI-794, UI-797
+/// The key chips in buttons (UI-148, UI-149) under 3:1 on their button's fill: `enter in variant ratio`.
+async fn key_hint_failures(journey: &Journey) -> anyhow::Result<Vec<String>> {
+    let measured = journey.count("[data-testid=key-hint-contrast]").await?;
+    anyhow::ensure!(
+        measured == 4,
+        "the gallery measured {measured} key hints, not 4"
+    );
+    let value = journey
+        .eval(
+            "return [...document.querySelectorAll('[data-testid=key-hint-contrast][data-pass=false]')]
+               .map(({ dataset: row }) => `enter in ${row.variant} ${row.ratio}`);",
+            Vec::new(),
+        )
+        .await?;
+    Ok(serde_json::from_value(value)?)
+}
+
+// spec: UI-173, UI-174, UI-132, UI-135, UI-140, UI-148, UI-196, UI-337, UI-338, UI-510, UI-512, UI-514, UI-736, UI-794, UI-797
 #[tokio::test(flavor = "multi_thread")]
 async fn the_kit_gallery_text_reaches_aa_in_every_theme_and_skin() -> anyhow::Result<()> {
     let journey = Journey::start(Vec::new()).await?;
@@ -168,6 +185,11 @@ async fn the_kit_gallery_text_reaches_aa_in_every_theme_and_skin() -> anyhow::Re
                 );
                 for failure in contrast_failures(&journey).await? {
                     problems.push(format!("{skin} {theme} {scheme}: under AA: {failure}"));
+                }
+                for failure in key_hint_failures(&journey).await? {
+                    problems.push(format!(
+                        "{skin} {theme} {scheme}: key hint under 3:1: {failure}"
+                    ));
                 }
                 let guarded = journey.attr("html", "data-contrast-guard").await?;
                 if (theme == GUARDED_THEME) != guarded.is_some() {

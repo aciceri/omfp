@@ -13,7 +13,7 @@ export type {
   SessionInfo,
   ThreadEvent,
 } from "./event.ts";
-export type { JsonObject, JsonValue } from "./json.ts";
+export { isObject, type JsonObject, type JsonValue } from "./json.ts";
 export { liveErrorMessage } from "./live.ts";
 export { dialogId, reduce, replay } from "./reducer.ts";
 export {

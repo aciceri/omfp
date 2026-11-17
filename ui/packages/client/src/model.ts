@@ -18,10 +18,10 @@ import {
   type IndexSnapshot,
   type JobEvent,
   type JobState,
-  type JobsEvent,
   type JobsState,
   type JobView,
   type LoginActivity,
+  type ParsedTopic,
   type Position,
   parseTopic,
   type RepoStatus,
@@ -38,7 +38,9 @@ import {
   type ViewsState,
   type Workspace,
 } from "@omfp/protocol";
+import { listen } from "./changes.ts";
 import {
+  type Decoded,
   decodeIndexSnapshot,
   decodeJobState,
   decodeJobsState,
@@ -163,6 +165,28 @@ export interface Dirty {
   workspaceJobs: Set<string>;
 }
 
+/** The data of every topic kind but `index`, by topic id. */
+interface Keyed {
+  thread: ThreadView;
+  workspace: readonly RepoStatus[];
+  views: ViewsState;
+  job: JobState;
+  terminal: TerminalState;
+  jobs: WorkspaceJobs;
+}
+
+type KeyedKind = keyof Keyed;
+
+/** The {@link Dirty} set of each keyed topic kind. */
+const DIRTY = {
+  thread: "threads",
+  workspace: "workspaces",
+  views: "views",
+  job: "jobs",
+  terminal: "terminals",
+  jobs: "workspaceJobs",
+} as const satisfies Record<KeyedKind, keyof Dirty>;
+
 function emptyDirty(): Dirty {
   return {
     connection: false,
@@ -180,15 +204,7 @@ function emptyDirty(): Dirty {
 /** Whether nothing changed. */
 export function isDirtyEmpty(dirty: Dirty): boolean {
   return (
-    !dirty.connection &&
-    !dirty.topics &&
-    !dirty.index &&
-    dirty.threads.size === 0 &&
-    dirty.workspaces.size === 0 &&
-    dirty.views.size === 0 &&
-    dirty.jobs.size === 0 &&
-    dirty.terminals.size === 0 &&
-    dirty.workspaceJobs.size === 0
+    !dirty.connection && !dirty.topics && !dirty.index && Object.values(DIRTY).every((key) => dirty[key].size === 0)
   );
 }
 
@@ -422,20 +438,6 @@ function upsertJob(jobs: readonly JobView[], job: JobView): JobView[] {
   return before < 0 ? [...jobs, job] : [...jobs.slice(0, before), job, ...jobs.slice(before)];
 }
 
-function applyJobsEvent(jobs: WorkspaceJobs, event: JobsEvent, seq: number): WorkspaceJobs {
-  switch (event.kind) {
-    case "jobs_set":
-      return { ...jobs, state: { jobs: event.jobs, error: event.error ?? null } };
-    case "job_updated":
-      return { ...jobs, state: { ...jobs.state, jobs: upsertJob(jobs.state.jobs, event.job) } };
-    case "run_started":
-    case "run_ended": {
-      const runs = [...jobs.runs, { seq, kind: event.kind, run: event.run }];
-      return { ...jobs, runs: runs.length > RUN_EVENTS_KEPT ? runs.slice(runs.length - RUN_EVENTS_KEPT) : runs };
-    }
-  }
-}
-
 /** Applies one event with the shared reducer and records the interactions it closed. */
 function applyToView(view: ThreadView, event: ThreadEvent): ThreadView {
   const pending = view.state.interactions;
@@ -447,20 +449,37 @@ function applyToView(view: ThreadView, event: ThreadEvent): ThreadView {
     return { state, closed: view.closed };
   }
   const resolution = event.kind === "interaction_resolved" ? event.resolution : undefined;
-  const closed = [...view.closed, ...left.map((request) => ({ request, resolution }))];
-  return { state, closed: closed.length > CLOSED_KEPT ? closed.slice(closed.length - CLOSED_KEPT) : closed };
+  return { state, closed: [...view.closed, ...left.map((request) => ({ request, resolution }))].slice(-CLOSED_KEPT) };
 }
+
+/** Decodes the snapshot state of each keyed topic kind; `previous` is the topic's data before it. */
+const SNAPSHOTS: { [K in KeyedKind]: (state: unknown, previous: Keyed[K] | undefined) => Decoded<Keyed[K]> } = {
+  thread: (state) => {
+    const thread = decodeThreadState(state);
+    return thread.ok ? { ok: true, value: { state: thread.value, closed: [] } } : thread;
+  },
+  workspace: decodeRepoStatusList,
+  views: decodeViewsState,
+  job: decodeJobState,
+  terminal: decodeTerminalState,
+  jobs: (state, previous) => {
+    const jobs = decodeJobsState(state);
+    return jobs.ok ? { ok: true, value: { state: jobs.value, runs: previous?.runs ?? [] } } : jobs;
+  },
+};
 
 /** The client's state. Mutated only by the session (and by tests); hosts read it through {@link ModelView}. */
 export class Model implements ModelView {
   #connection: ConnectionStatus = { kind: "connecting" };
   #index: Index = EMPTY_INDEX;
-  #threads: ReadonlyMap<string, ThreadView> = new Map();
-  #workspaces: ReadonlyMap<string, readonly RepoStatus[]> = new Map();
-  #views: ReadonlyMap<string, ViewsState> = new Map();
-  #jobs: ReadonlyMap<string, JobState> = new Map();
-  #terminals: ReadonlyMap<string, TerminalState> = new Map();
-  #workspaceJobs: ReadonlyMap<string, WorkspaceJobs> = new Map();
+  readonly #data: { [K in KeyedKind]: ReadonlyMap<string, Keyed[K]> } = {
+    thread: new Map(),
+    workspace: new Map(),
+    views: new Map(),
+    job: new Map(),
+    terminal: new Map(),
+    jobs: new Map(),
+  };
   #runSeq = 0;
   readonly #runListeners = new Set<(workspaceId: string, event: RunEvent) => void>();
   #topics: readonly TopicState[] = [];
@@ -476,38 +495,35 @@ export class Model implements ModelView {
   }
 
   get threads(): ReadonlyMap<string, ThreadView> {
-    return this.#threads;
+    return this.#data.thread;
   }
 
   thread(id: string): ThreadView | undefined {
-    return this.#threads.get(id);
+    return this.#data.thread.get(id);
   }
 
   get workspaces(): ReadonlyMap<string, readonly RepoStatus[]> {
-    return this.#workspaces;
+    return this.#data.workspace;
   }
 
   get views(): ReadonlyMap<string, ViewsState> {
-    return this.#views;
+    return this.#data.views;
   }
 
   get jobs(): ReadonlyMap<string, JobState> {
-    return this.#jobs;
+    return this.#data.job;
   }
 
   get terminals(): ReadonlyMap<string, TerminalState> {
-    return this.#terminals;
+    return this.#data.terminal;
   }
 
   get workspaceJobs(): ReadonlyMap<string, WorkspaceJobs> {
-    return this.#workspaceJobs;
+    return this.#data.jobs;
   }
 
   onRunEvent(listener: (workspaceId: string, event: RunEvent) => void): () => void {
-    this.#runListeners.add(listener);
-    return () => {
-      this.#runListeners.delete(listener);
-    };
+    return listen(this.#runListeners, listener);
   }
 
   get topics(): readonly TopicState[] {
@@ -572,37 +588,11 @@ export class Model implements ModelView {
     }
     this.#topics = this.#topics.filter((state) => state.topic !== topic);
     const parsed = parseTopic(topic);
-    switch (parsed?.kind) {
-      case "index":
-        this.#index = EMPTY_INDEX;
-        this.#dirty.index = true;
-        break;
-      case "thread":
-        this.#threads = without(this.#threads, parsed.id);
-        this.#dirty.threads.add(parsed.id);
-        break;
-      case "workspace":
-        this.#workspaces = without(this.#workspaces, parsed.id);
-        this.#dirty.workspaces.add(parsed.id);
-        break;
-      case "views":
-        this.#views = without(this.#views, parsed.id);
-        this.#dirty.views.add(parsed.id);
-        break;
-      case "job":
-        this.#jobs = without(this.#jobs, parsed.id);
-        this.#dirty.jobs.add(parsed.id);
-        break;
-      case "terminal":
-        this.#terminals = without(this.#terminals, parsed.id);
-        this.#dirty.terminals.add(parsed.id);
-        break;
-      case "jobs":
-        this.#workspaceJobs = without(this.#workspaceJobs, parsed.id);
-        this.#dirty.workspaceJobs.add(parsed.id);
-        break;
-      case undefined:
-        break;
+    if (parsed?.kind === "index") {
+      this.#index = EMPTY_INDEX;
+      this.#dirty.index = true;
+    } else if (parsed !== undefined) {
+      this.#set(parsed.kind, parsed.id, undefined);
     }
     this.#topicsChanged();
     return true;
@@ -681,74 +671,54 @@ export class Model implements ModelView {
   /** Replaces a topic's data with a snapshot's `state`; the error message when it does not decode. */
   #replace(topic: Topic, state: unknown): string | undefined {
     const parsed = parseTopic(topic);
-    switch (parsed?.kind) {
-      case "index": {
-        const snapshot = decodeIndexSnapshot(state);
-        if (!snapshot.ok) {
-          return snapshot.error;
-        }
-        this.#index = indexFromSnapshot(snapshot.value);
-        this.#dirty.index = true;
-        return undefined;
-      }
-      case "thread": {
-        const thread = decodeThreadState(state);
-        if (!thread.ok) {
-          return thread.error;
-        }
-        this.#threads = upsert(this.#threads, parsed.id, { state: thread.value, closed: [] });
-        this.#dirty.threads.add(parsed.id);
-        return undefined;
-      }
-      case "workspace": {
-        const repos = decodeRepoStatusList(state);
-        if (!repos.ok) {
-          return repos.error;
-        }
-        this.#workspaces = upsert(this.#workspaces, parsed.id, repos.value);
-        this.#dirty.workspaces.add(parsed.id);
-        return undefined;
-      }
-      case "views": {
-        const views = decodeViewsState(state);
-        if (!views.ok) {
-          return views.error;
-        }
-        this.#views = upsert(this.#views, parsed.id, views.value);
-        this.#dirty.views.add(parsed.id);
-        return undefined;
-      }
-      case "job": {
-        const job = decodeJobState(state);
-        if (!job.ok) {
-          return job.error;
-        }
-        this.#jobs = upsert(this.#jobs, parsed.id, job.value);
-        this.#dirty.jobs.add(parsed.id);
-        return undefined;
-      }
-      case "terminal": {
-        const terminal = decodeTerminalState(state);
-        if (!terminal.ok) {
-          return terminal.error;
-        }
-        this.#terminals = upsert(this.#terminals, parsed.id, terminal.value);
-        this.#dirty.terminals.add(parsed.id);
-        return undefined;
-      }
-      case "jobs": {
-        const jobs = decodeJobsState(state);
-        if (!jobs.ok) {
-          return jobs.error;
-        }
-        const runs = this.#workspaceJobs.get(parsed.id)?.runs ?? [];
-        this.#workspaceJobs = upsert(this.#workspaceJobs, parsed.id, { state: jobs.value, runs });
-        this.#dirty.workspaceJobs.add(parsed.id);
-        return undefined;
-      }
-      case undefined:
-        return `invalid topic ${topic}`;
+    if (parsed === undefined) {
+      return `invalid topic ${topic}`;
     }
+    if (parsed.kind !== "index") {
+      return this.#replaceKeyed(parsed.kind, parsed.id, state);
+    }
+    const snapshot = decodeIndexSnapshot(state);
+    if (!snapshot.ok) {
+      return snapshot.error;
+    }
+    this.#index = indexFromSnapshot(snapshot.value);
+    this.#dirty.index = true;
+    return undefined;
+  }
+
+  #replaceKeyed<K extends KeyedKind>(kind: K, id: string, state: unknown): string | undefined {
+    const decoded = SNAPSHOTS[kind](state, this.#data[kind].get(id));
+    if (!decoded.ok) {
+      return decoded.error;
+    }
+    this.#set(kind, id, decoded.value);
+    return undefined;
+  }
+
+  /** Sets the data of keyed topic `kind`/`id`, or drops it for `undefined`. */
+  #set<K extends KeyedKind>(kind: K, id: string, value: Keyed[K] | undefined): void {
+    // Narrowed to `K`, the table's entry of `kind` takes a map of `Keyed[K]`.
+    const data: { [P in K]: ReadonlyMap<string, Keyed[P]> } = this.#data;
+    data[kind] = value === undefined ? without(data[kind], id) : upsert(data[kind], id, value);
+    this.#dirty[DIRTY[kind]].add(id);
+  }
+
+  /** Applies a live event to the data of `parsed` when it is a topic of `kind` with data; the topic's id when it
+   * did. */
+  #edit<K extends KeyedKind>(
+    parsed: ParsedTopic | undefined,
+    kind: K,
+    apply: (value: Keyed[K]) => Keyed[K],
+  ): string | undefined {
+    if (parsed === undefined || parsed.kind === "index" || parsed.kind !== kind) {
+      return undefined;
+    }
+    const value = this.#data[kind].get(parsed.id);
+    if (value === undefined) {
+      return undefined;
+    }
+    this.#set(kind, parsed.id, apply(value));
+    return parsed.id;
   }
 
   /** Applies one event frame if it continues its topic's stream (PRT-022): the next `seq` of the same epoch, or `seq`
@@ -760,16 +730,11 @@ export class Model implements ModelView {
       return "ignored";
     }
     const { position } = state;
-    let continues = false;
-    if (position !== undefined && position.epoch === frame.epoch) {
-      if (frame.seq <= position.seq) {
-        return "ignored";
-      }
-      continues = frame.seq === position.seq + 1;
-    } else if (position !== undefined) {
-      continues = frame.seq === 1;
+    if (position?.epoch === frame.epoch && frame.seq <= position.seq) {
+      return "ignored";
     }
-    if (!continues) {
+    const next = position === undefined ? undefined : position.epoch === frame.epoch ? position.seq + 1 : 1;
+    if (frame.seq !== next) {
       this.resync(frame.topic);
       return "gap";
     }
@@ -794,8 +759,7 @@ export class Model implements ModelView {
         break;
       case "status":
         if (parsed?.kind === "workspace") {
-          this.#workspaces = upsert(this.#workspaces, parsed.id, event.repos);
-          this.#dirty.workspaces.add(parsed.id);
+          this.#set("workspace", parsed.id, event.repos);
         }
         break;
       case "views_manifest":
@@ -803,58 +767,46 @@ export class Model implements ModelView {
       case "views_keymap":
       case "views_init":
       case "views_files":
-      case "widget_stored": {
-        const views = parsed?.kind === "views" ? this.#views.get(parsed.id) : undefined;
-        if (parsed?.kind === "views" && views !== undefined) {
-          this.#views = upsert(this.#views, parsed.id, applyViewsEvent(views, event));
-          this.#dirty.views.add(parsed.id);
-        }
+      case "widget_stored":
+        this.#edit(parsed, "views", (views) => applyViewsEvent(views, event));
         break;
-      }
       case "job_output":
-      case "job_exited": {
-        const job = parsed?.kind === "job" ? this.#jobs.get(parsed.id) : undefined;
-        if (parsed?.kind === "job" && job !== undefined) {
-          this.#jobs = upsert(this.#jobs, parsed.id, applyJobEvent(job, event));
-          this.#dirty.jobs.add(parsed.id);
-        }
+      case "job_exited":
+        this.#edit(parsed, "job", (job) => applyJobEvent(job, event));
         break;
-      }
       case "output":
-      case "exited": {
-        const terminal = parsed?.kind === "terminal" ? this.#terminals.get(parsed.id) : undefined;
-        if (parsed?.kind === "terminal" && terminal !== undefined) {
-          this.#terminals = upsert(this.#terminals, parsed.id, applyTerminalEvent(terminal, event));
-          this.#dirty.terminals.add(parsed.id);
-        }
+      case "exited":
+        this.#edit(parsed, "terminal", (terminal) => applyTerminalEvent(terminal, event));
         break;
-      }
       case "jobs_set":
+        this.#edit(parsed, "jobs", (jobs) => ({ ...jobs, state: { jobs: event.jobs, error: event.error ?? null } }));
+        break;
       case "job_updated":
+        this.#edit(parsed, "jobs", (jobs) => ({
+          ...jobs,
+          state: { ...jobs.state, jobs: upsertJob(jobs.state.jobs, event.job) },
+        }));
+        break;
       case "run_started":
       case "run_ended": {
-        const jobs = parsed?.kind === "jobs" ? this.#workspaceJobs.get(parsed.id) : undefined;
-        if (parsed?.kind === "jobs" && jobs !== undefined) {
-          if (event.kind === "run_started" || event.kind === "run_ended") {
-            this.#runSeq += 1;
-          }
-          this.#workspaceJobs = upsert(this.#workspaceJobs, parsed.id, applyJobsEvent(jobs, event, this.#runSeq));
-          this.#dirty.workspaceJobs.add(parsed.id);
-          if (event.kind === "run_started" || event.kind === "run_ended") {
-            // Synchronously, so a window that renders no frame for a while (a background tab) misses none.
-            const applied: RunEvent = { seq: this.#runSeq, kind: event.kind, run: event.run };
-            for (const listener of [...this.#runListeners]) {
-              listener(parsed.id, applied);
-            }
+        const applied: RunEvent = { seq: this.#runSeq + 1, kind: event.kind, run: event.run };
+        const id = this.#edit(parsed, "jobs", (jobs) => ({
+          ...jobs,
+          runs: [...jobs.runs, applied].slice(-RUN_EVENTS_KEPT),
+        }));
+        if (id !== undefined) {
+          this.#runSeq = applied.seq;
+          // Synchronously, so a window that renders no frame for a while (a background tab) misses none.
+          for (const listener of [...this.#runListeners]) {
+            listener(id, applied);
           }
         }
         break;
       }
       default:
         if (parsed?.kind === "thread") {
-          const view = this.#threads.get(parsed.id) ?? { state: emptyThreadState(), closed: [] };
-          this.#threads = upsert(this.#threads, parsed.id, applyToView(view, event));
-          this.#dirty.threads.add(parsed.id);
+          const view = this.#data.thread.get(parsed.id) ?? { state: emptyThreadState(), closed: [] };
+          this.#set("thread", parsed.id, applyToView(view, event));
         }
     }
     this.#revision += 1;

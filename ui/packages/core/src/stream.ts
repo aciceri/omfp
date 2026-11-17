@@ -11,6 +11,7 @@ import {
   type AssistantContent,
   type AssistantMessage,
   type AssistantMessageEvent,
+  type AssistantMessageEventType,
   assistantContent,
   assistantContentList,
 } from "./wire.ts";
@@ -52,103 +53,73 @@ function put(message: AssistantMessage, index: number, block: AssistantContent):
   return { ...message, content };
 }
 
+/** The block an event puts at `index` of `message`; `undefined` when it changes nothing. */
+type Step = (message: AssistantMessage, event: AssistantMessageEvent, index: number) => AssistantContent | undefined;
+
 /** `*_start`: the carried shell (or an empty block of `kind`) with its streamed string emptied. */
-function begin(message: AssistantMessage, event: AssistantMessageEvent, kind: Streamed): AssistantMessage {
-  const index = slot(event.contentIndex);
-  if (index === undefined) {
-    return message;
-  }
-  const block = assistantContent(event.block) ?? { type: kind };
-  return put(
-    message,
-    index,
-    withStreamed(block, kind, () => ""),
-  );
+function begin(kind: Streamed): Step {
+  return (_message, event) => withStreamed(assistantContent(event.block) ?? { type: kind }, kind, () => "");
 }
 
 /** `*_delta`: appends to the block at `index` when it is of `kind`. */
-function append(message: AssistantMessage, event: AssistantMessageEvent, kind: Streamed): AssistantMessage {
-  const delta = typeof event.delta === "string" ? event.delta : undefined;
-  const index = slot(event.contentIndex);
-  const content = assistantContentList(message.content);
-  const block = index === undefined ? undefined : content?.[index];
-  if (delta === undefined || index === undefined || block?.type !== kind) {
-    return message;
-  }
-  return put(
-    message,
-    index,
-    withStreamed(block, kind, (current) => current + delta),
-  );
+function append(kind: Streamed): Step {
+  return (message, event, index) => {
+    const delta = event.delta;
+    const block = assistantContentList(message.content)?.[index];
+    return typeof delta === "string" && block?.type === kind
+      ? withStreamed(block, kind, (current) => current + delta)
+      : undefined;
+  };
 }
 
 /** `text_end` / `thinking_end`: the carried shell (else the rebuilt block) with `content` as its text. */
-function finish(message: AssistantMessage, event: AssistantMessageEvent, kind: Streamed): AssistantMessage {
-  const index = slot(event.contentIndex);
-  if (index === undefined) {
-    return message;
-  }
-  const content = typeof event.content === "string" ? event.content : undefined;
-  const block = assistantContent(event.block) ?? assistantContentList(message.content)?.[index] ?? { type: kind };
-  return put(
-    message,
-    index,
-    withStreamed(block, kind, (current) => content ?? current),
-  );
+function finish(kind: Streamed): Step {
+  return (message, event, index) => {
+    const content = typeof event.content === "string" ? event.content : undefined;
+    const block = assistantContent(event.block) ?? assistantContentList(message.content)?.[index] ?? { type: kind };
+    return withStreamed(block, kind, (current) => content ?? current);
+  };
 }
 
-/** Applies one delta-mode event. `done` and `error` carry nothing to rebuild: `message_end` follows. */
-export function applyStreamEvent(streaming: StreamingMessage, event: AssistantMessageEvent): StreamingMessage {
-  const message = streaming.message;
-  let next: AssistantMessage = message;
-  switch (event.type) {
-    case "start":
-      // omp-rpc decodes `message` as an open record: any object does.
-      if (isObject(event.message)) {
-        next = event.message as AssistantMessage;
-      }
-      break;
-    case "text_start":
-      next = begin(message, event, "text");
-      break;
-    case "thinking_start":
-      next = begin(message, event, "thinking");
-      break;
-    case "toolcall_start":
-      next = begin(message, event, "toolCall");
-      break;
-    case "text_delta":
-      next = append(message, event, "text");
-      break;
-    case "thinking_delta":
-      next = append(message, event, "thinking");
-      break;
-    case "toolcall_delta":
-      next = append(message, event, "toolCall");
-      break;
-    case "text_end":
-      next = finish(message, event, "text");
-      break;
-    case "thinking_end":
-      next = finish(message, event, "thinking");
-      break;
-    case "image_end": {
-      const index = slot(event.contentIndex);
-      if (index !== undefined && isObject(event.content)) {
-        next = put(message, index, { ...event.content, type: "image" });
-      }
-      break;
-    }
-    case "toolcall_end": {
-      const index = slot(event.contentIndex);
-      if (index !== undefined && isObject(event.toolCall)) {
-        next = put(message, index, { ...event.toolCall, type: "toolCall" });
-      }
-      break;
-    }
-    case "done":
-    case "error":
-      break;
+/** `image_end` / `toolcall_end`: the complete block carried under `key`, as a block of `type`. */
+function carried(key: string, type: "image" | "toolCall"): Step {
+  return (_message, event) => {
+    const block = event[key];
+    return isObject(block) ? { ...block, type } : undefined;
+  };
+}
+
+/** The step of every event that rebuilds a block; `start` replaces the message, `done` and `error` carry nothing to
+ * rebuild (`message_end` follows). */
+const STEPS: { [T in AssistantMessageEventType]?: Step } = {
+  text_start: begin("text"),
+  thinking_start: begin("thinking"),
+  toolcall_start: begin("toolCall"),
+  text_delta: append("text"),
+  thinking_delta: append("thinking"),
+  toolcall_delta: append("toolCall"),
+  text_end: finish("text"),
+  thinking_end: finish("thinking"),
+  image_end: carried("content", "image"),
+  toolcall_end: carried("toolCall", "toolCall"),
+};
+
+function rebuild(message: AssistantMessage, event: AssistantMessageEvent): AssistantMessage {
+  if (event.type === "start") {
+    // omp-rpc decodes `message` as an open record: any object does.
+    return isObject(event.message) ? (event.message as AssistantMessage) : message;
   }
-  return next === message ? streaming : { ...streaming, message: next };
+  const step = STEPS[event.type];
+  const index = slot(event.contentIndex);
+  if (step === undefined || index === undefined) {
+    return message;
+  }
+  const block = step(message, event, index);
+  return block === undefined ? message : put(message, index, block);
+}
+
+/** Applies one delta-mode event. */
+export function applyStreamEvent(streaming: StreamingMessage, event: AssistantMessageEvent): StreamingMessage {
+  const next = rebuild(streaming.message, event);
+  return next === streaming.message ? streaming : { ...streaming, message: next };
 }

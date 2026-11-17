@@ -11,7 +11,8 @@ export class Invalid extends Error {}
 
 export type Decoder<T> = (value: unknown) => T;
 
-function fail(): never {
+/** Throws {@link Invalid}: the value does not decode. */
+export function fail(): never {
   throw new Invalid("invalid wire value");
 }
 

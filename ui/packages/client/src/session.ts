@@ -9,6 +9,7 @@
  * to completion synchronously; only call results are promises.
  */
 
+import { isObject } from "@omfp/core";
 import {
   type ErrorBody,
   type HelloParams,
@@ -22,9 +23,8 @@ import {
   type TransientFrame,
   type WindowRequestFrame,
 } from "@omfp/protocol";
-import { ChangeHub, Changes } from "./changes.ts";
+import { ChangeHub, Changes, listen } from "./changes.ts";
 import { decodeHelloResult, decodeServerFrame, decodeSubscribeResult } from "./decode.ts";
-import { isObject } from "./json.ts";
 import { type ConnectionStatus, type Dirty, Model, type ModelView } from "./model.ts";
 import { systemTimer, type Timer } from "./timer.ts";
 import { type Closed, type Connector, describeClosed, type Transport, TransportError } from "./transport.ts";
@@ -257,10 +257,7 @@ export class Client {
    * Transient frames never touch the model: no revision, no dirty set, no replay after a reconnect.
    */
   onTransient(listener: (frame: TransientFrame) => void): () => void {
-    this.#transient.add(listener);
-    return () => {
-      this.#transient.delete(listener);
-    };
+    return listen(this.#transient, listener);
   }
 
   /**
@@ -268,10 +265,7 @@ export class Client {
    * the listener answers it with `windows.answer`. Without a listener the client answers that it takes no requests.
    */
   onWindowRequest(listener: (frame: WindowRequestFrame) => void): () => void {
-    this.#windowRequests.add(listener);
-    return () => {
-      this.#windowRequests.delete(listener);
-    };
+    return listen(this.#windowRequests, listener);
   }
 
   /** Follows `topic`: subscribed now if connected, and resubscribed from its last position after every reconnect. */

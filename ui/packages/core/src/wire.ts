@@ -10,7 +10,7 @@ import {
   arrayOf,
   bool,
   type Decoder,
-  Invalid,
+  fail,
   int,
   json,
   num,
@@ -121,16 +121,19 @@ export interface ToolResultMessage {
   [key: string]: unknown;
 }
 
+const OTHER_MESSAGE_ROLES = [
+  "developer",
+  "bashExecution",
+  "pythonExecution",
+  "custom",
+  "hookMessage",
+  "branchSummary",
+  "compactionSummary",
+  "fileMention",
+] as const;
+
 /** Roles whose records the reducer only stores. */
-export type OtherMessageRole =
-  | "developer"
-  | "bashExecution"
-  | "pythonExecution"
-  | "custom"
-  | "hookMessage"
-  | "branchSummary"
-  | "compactionSummary"
-  | "fileMention";
+export type OtherMessageRole = (typeof OTHER_MESSAGE_ROLES)[number];
 
 export interface OtherMessage {
   role: OtherMessageRole;
@@ -140,19 +143,7 @@ export interface OtherMessage {
 /** A transcript message, discriminated by `role`. */
 export type AgentMessage = UserMessage | (AssistantMessage & { role: "assistant" }) | ToolResultMessage | OtherMessage;
 
-const AGENT_MESSAGE_ROLES: readonly string[] = [
-  "user",
-  "developer",
-  "assistant",
-  "toolResult",
-  "bashExecution",
-  "pythonExecution",
-  "custom",
-  "hookMessage",
-  "branchSummary",
-  "compactionSummary",
-  "fileMention",
-];
+const AGENT_MESSAGE_ROLES: readonly string[] = ["user", "assistant", "toolResult", ...OTHER_MESSAGE_ROLES];
 
 const ASSISTANT_CONTENT_TYPES: readonly string[] = [
   "text",
@@ -164,55 +155,46 @@ const ASSISTANT_CONTENT_TYPES: readonly string[] = [
   "toolCall",
 ];
 
-/** An `AgentMessage`: any object whose `role` is known (its other keys decode leniently). */
-export const agentMessage: Decoder<AgentMessage> = (value) => {
-  if (isObject(value) && typeof value.role === "string" && AGENT_MESSAGE_ROLES.includes(value.role)) {
-    return value as AgentMessage;
-  }
-  throw new Invalid("not an AgentMessage");
-};
+/** `value` as an open record when its `key` is one of `tags` (its other keys decode leniently), else `undefined`. */
+function openRecord<T>(value: unknown, key: string, tags: readonly string[]): T | undefined {
+  const tag = isObject(value) ? value[key] : undefined;
+  return typeof tag === "string" && tags.includes(tag) ? (value as T) : undefined;
+}
+
+/** An `AgentMessage`: any object whose `role` is known. */
+export const agentMessage: Decoder<AgentMessage> = (value) =>
+  openRecord<AgentMessage>(value, "role", AGENT_MESSAGE_ROLES) ?? fail();
 
 /** `value` as a content block when its `type` is known, else `undefined`. */
 export function assistantContent(value: unknown): AssistantContent | undefined {
-  if (isObject(value) && typeof value.type === "string" && ASSISTANT_CONTENT_TYPES.includes(value.type)) {
-    return value as AssistantContent;
-  }
-  return undefined;
+  return openRecord(value, "type", ASSISTANT_CONTENT_TYPES);
 }
 
 /** The `content` of an assistant message when it decodes (every block known), else `undefined`. */
 export function assistantContentList(value: unknown): AssistantContent[] | undefined {
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-  const blocks: AssistantContent[] = [];
-  for (const item of value) {
-    const block = assistantContent(item);
-    if (block === undefined) {
-      return undefined;
-    }
-    blocks.push(block);
-  }
-  return blocks;
+  return Array.isArray(value) && value.every((item) => assistantContent(item) !== undefined) ? value : undefined;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Streaming updates of one assistant message (`assistantMessageEvent`, open records)
 
-export type AssistantMessageEventType =
-  | "start"
-  | "text_start"
-  | "text_delta"
-  | "text_end"
-  | "thinking_start"
-  | "thinking_delta"
-  | "thinking_end"
-  | "image_end"
-  | "toolcall_start"
-  | "toolcall_delta"
-  | "toolcall_end"
-  | "done"
-  | "error";
+const ASSISTANT_MESSAGE_EVENT_TYPES = [
+  "start",
+  "text_start",
+  "text_delta",
+  "text_end",
+  "thinking_start",
+  "thinking_delta",
+  "thinking_end",
+  "image_end",
+  "toolcall_start",
+  "toolcall_delta",
+  "toolcall_end",
+  "done",
+  "error",
+] as const;
+
+export type AssistantMessageEventType = (typeof ASSISTANT_MESSAGE_EVENT_TYPES)[number];
 
 export interface AssistantMessageEvent {
   type: AssistantMessageEventType;
@@ -221,27 +203,8 @@ export interface AssistantMessageEvent {
   [key: string]: unknown;
 }
 
-export const assistantMessageEvent: Decoder<AssistantMessageEvent> = (value) => {
-  const types: readonly string[] = [
-    "start",
-    "text_start",
-    "text_delta",
-    "text_end",
-    "thinking_start",
-    "thinking_delta",
-    "thinking_end",
-    "image_end",
-    "toolcall_start",
-    "toolcall_delta",
-    "toolcall_end",
-    "done",
-    "error",
-  ];
-  if (isObject(value) && typeof value.type === "string" && types.includes(value.type)) {
-    return value as AssistantMessageEvent;
-  }
-  throw new Invalid("not an AssistantMessageEvent");
-};
+export const assistantMessageEvent: Decoder<AssistantMessageEvent> = (value) =>
+  openRecord<AssistantMessageEvent>(value, "type", ASSISTANT_MESSAGE_EVENT_TYPES) ?? fail();
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Closed structs the reducer keeps
@@ -721,13 +684,9 @@ export type ExtensionUiRequest =
   | UiRequest<"set_editor_text", SetEditorTextUiRequest>
   | UiRequest<"open_url", OpenUrlUiRequest>;
 
-const selectOptionDetail: Decoder<SelectOptionDetail> = (value) => {
-  // An open record: kept as received, an invalid `description` included.
-  if (isObject(value)) {
-    return value as SelectOptionDetail;
-  }
-  throw new Invalid("not a SelectOptionDetail");
-};
+// An open record: kept as received, an invalid `description` included.
+const selectOptionDetail: Decoder<SelectOptionDetail> = (value) =>
+  isObject(value) ? (value as SelectOptionDetail) : fail();
 
 const askOption = record<AskOption>({ label: str, description: optional(str), preview: optional(str) });
 
@@ -806,10 +765,9 @@ const UI_REQUESTS: { [M in ExtensionUiRequest["method"]]: Decoder<Extract<Extens
 /** An `extension_ui_request` frame, dispatched on `method`. */
 export const extensionUiRequest: Decoder<ExtensionUiRequest> = (value) => {
   const method = isObject(value) ? value.method : undefined;
-  if (typeof method === "string" && Object.hasOwn(UI_REQUESTS, method)) {
-    return UI_REQUESTS[method as ExtensionUiRequest["method"]](value);
-  }
-  throw new Invalid("unknown ExtensionUiRequest method");
+  return typeof method === "string" && Object.hasOwn(UI_REQUESTS, method)
+    ? UI_REQUESTS[method as ExtensionUiRequest["method"]](value)
+    : fail();
 };
 
 // ---------------------------------------------------------------------------------------------------------------------

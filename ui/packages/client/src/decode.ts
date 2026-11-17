@@ -4,11 +4,10 @@
  * nested omp wire objects are left to the reducer, which accepts any JSON.
  */
 
-import type { ThreadEvent, ThreadState } from "@omfp/core";
+import { isObject, type ThreadEvent, type ThreadState } from "@omfp/core";
 import {
   type ErrorBody,
   type ErrorCode,
-  type EventFrame,
   type HelloResult,
   type IndexEvent,
   type IndexSnapshot,
@@ -39,13 +38,16 @@ import {
   type WorkspaceBinding,
   type WorkspaceEvent,
 } from "@omfp/protocol";
-import { isObject } from "./json.ts";
 
 /** A decoded value, or why it does not decode. */
 export type Decoded<T> = { ok: true; value: T } | { ok: false; error: string };
 
 function invalid<T>(error: string): Decoded<T> {
   return { ok: false, error };
+}
+
+function valid<T>(value: T): Decoded<T> {
+  return { ok: true, value };
 }
 
 const ERROR_CODES = {
@@ -74,8 +76,16 @@ function isPositiveU16(value: unknown): value is number {
   return isSeq(value) && value > 0 && value <= 65_535;
 }
 
+function isNullish(value: unknown): value is null | undefined {
+  return value === undefined || value === null;
+}
+
 function isOptionalString(value: unknown): value is string | null | undefined {
-  return value === undefined || value === null || typeof value === "string";
+  return isNullish(value) || typeof value === "string";
+}
+
+function isOptionalNumber(value: unknown): boolean {
+  return isNullish(value) || typeof value === "number";
 }
 
 function isNullableObject(value: unknown): boolean {
@@ -110,15 +120,14 @@ function decodeErrorBody(value: unknown): Decoded<ErrorBody> {
   if (value.details !== undefined) {
     body.details = value.details;
   }
-  return { ok: true, value: body };
+  return valid(body);
 }
 
 /** The running login of the `index` topic (DMN-290): `null` (none), or its provider with the optional parts of its
  * flow. */
 function isLoginActivity(value: unknown): boolean {
   return (
-    value === undefined ||
-    value === null ||
+    isNullish(value) ||
     (isObject(value) &&
       typeof value.providerId === "string" &&
       typeof value.name === "string" &&
@@ -257,10 +266,6 @@ function isJobStream(value: unknown): boolean {
   return value === "stdout" || value === "stderr";
 }
 
-function isOptionalNumber(value: unknown): boolean {
-  return value === undefined || value === null || typeof value === "number";
-}
-
 const JOB_EVENTS: Record<JobEvent["kind"], (event: Record<string, unknown>) => boolean> = {
   job_output: (event) => isJobStream(event.stream) && typeof event.text === "string",
   job_exited: (event) =>
@@ -293,7 +298,7 @@ const EVENT_TABLES: Record<ParsedTopic["kind"], Record<string, (event: Record<st
 function decodeTopicEvent(topic: ParsedTopic, event: unknown): Decoded<TopicEvent> {
   const table = EVENT_TABLES[topic.kind];
   // Checked against the topic's event table.
-  return checkKind(table, event) ? { ok: true, value: event as TopicEvent } : invalid(`not a ${topic.kind} event`);
+  return checkKind(table, event) ? valid(event as TopicEvent) : invalid(`not a ${topic.kind} event`);
 }
 
 /** A level in [0, 1]. */
@@ -310,7 +315,7 @@ function decodeTransientEvent(topic: ParsedTopic, event: unknown): Decoded<Trans
   if (!isLevel(input) || !isLevel(output)) {
     return invalid("`live_levels` needs `input` and `output` in [0, 1]");
   }
-  return { ok: true, value: { kind: "live_levels", input, output } };
+  return valid({ kind: "live_levels", input, output });
 }
 
 /** Decodes the `request` of a window request frame (PRT-124, PRT-131): `run_command`, `check_widget` or a login's
@@ -323,60 +328,46 @@ function decodeWindowRequest(request: unknown): Decoded<WindowRequest> {
     case "run_command": {
       const { command, args } = request;
       return typeof command === "string" && isStringArray(args)
-        ? { ok: true, value: { kind: "run_command", command, args } }
+        ? valid({ kind: "run_command", command, args })
         : invalid("`run_command` needs a string `command` and string `args`");
     }
     case "check_widget": {
       const { reference, version, timeoutMs } = request;
-      if (
-        typeof reference !== "string" ||
-        !(version === undefined || version === null || typeof version === "string") ||
-        !isSeq(timeoutMs)
-      ) {
-        return invalid("`check_widget` needs a string `reference`, a `version` and a `timeoutMs`");
-      }
-      return { ok: true, value: { kind: "check_widget", reference, version: version ?? null, timeoutMs } };
+      return typeof reference === "string" && isOptionalString(version) && isSeq(timeoutMs)
+        ? valid({ kind: "check_widget", reference, version: version ?? null, timeoutMs })
+        : invalid("`check_widget` needs a string `reference`, a `version` and a `timeoutMs`");
     }
     case "login_url": {
       const { providerId, name, url, launchUrl, instructions } = request;
-      if (
-        typeof providerId !== "string" ||
-        typeof name !== "string" ||
-        typeof url !== "string" ||
-        !isOptionalString(launchUrl) ||
-        !isOptionalString(instructions)
-      ) {
-        return invalid("`login_url` needs a string `providerId`, `name` and `url`");
-      }
-      return {
-        ok: true,
-        value: {
-          kind: "login_url",
-          providerId,
-          name,
-          url,
-          launchUrl: launchUrl ?? null,
-          instructions: instructions ?? null,
-        },
-      };
+      return typeof providerId === "string" &&
+        typeof name === "string" &&
+        typeof url === "string" &&
+        isOptionalString(launchUrl) &&
+        isOptionalString(instructions)
+        ? valid({
+            kind: "login_url",
+            providerId,
+            name,
+            url,
+            launchUrl: launchUrl ?? null,
+            instructions: instructions ?? null,
+          })
+        : invalid("`login_url` needs a string `providerId`, `name` and `url`");
     }
     case "login_progress": {
       const { providerId, name, message } = request;
       return typeof providerId === "string" && typeof name === "string" && typeof message === "string"
-        ? { ok: true, value: { kind: "login_progress", providerId, name, message } }
+        ? valid({ kind: "login_progress", providerId, name, message })
         : invalid("`login_progress` needs a string `providerId`, `name` and `message`");
     }
     case "login_input": {
       const { providerId, name, message, placeholder } = request;
-      if (
-        typeof providerId !== "string" ||
-        typeof name !== "string" ||
-        typeof message !== "string" ||
-        !isOptionalString(placeholder)
-      ) {
-        return invalid("`login_input` needs a string `providerId`, `name` and `message`");
-      }
-      return { ok: true, value: { kind: "login_input", providerId, name, message, placeholder: placeholder ?? null } };
+      return typeof providerId === "string" &&
+        typeof name === "string" &&
+        typeof message === "string" &&
+        isOptionalString(placeholder)
+        ? valid({ kind: "login_input", providerId, name, message, placeholder: placeholder ?? null })
+        : invalid("`login_input` needs a string `providerId`, `name` and `message`");
     }
     default:
       return invalid("unknown window request `kind`");
@@ -398,13 +389,13 @@ export function decodeServerFrame(value: unknown): Decoded<ServerFrame> {
         if (value.error !== undefined) {
           return invalid("a successful response has no `error`");
         }
-        return { ok: true, value: { type: "response", id, ok, result: value.result ?? null } };
+        return valid({ type: "response", id, ok, result: value.result ?? null });
       }
       if (value.error === undefined || value.result !== undefined) {
         return invalid("a failed response needs an `error` and no `result`");
       }
       const error = decodeErrorBody(value.error);
-      return error.ok ? { ok: true, value: { type: "response", id, ok, error: error.value } } : error;
+      return error.ok ? valid({ type: "response", id, ok, error: error.value }) : error;
     }
     case "event": {
       const { topic, epoch, seq } = value;
@@ -416,15 +407,14 @@ export function decodeServerFrame(value: unknown): Decoded<ServerFrame> {
       if (!event.ok) {
         return invalid(`invalid event for topic ${topic}: ${event.error}`);
       }
-      const frame: EventFrame = { type: "event", topic, epoch, seq, event: event.value };
-      return { ok: true, value: frame };
+      return valid({ type: "event", topic, epoch, seq, event: event.value });
     }
     case "resync_required": {
       const { topic } = value;
       if (typeof topic !== "string" || parseTopic(topic) === undefined) {
         return invalid("`resync_required` needs a valid `topic`");
       }
-      return { ok: true, value: { type: "resync_required", topic } };
+      return valid({ type: "resync_required", topic });
     }
     case "transient": {
       const { topic } = value;
@@ -433,7 +423,7 @@ export function decodeServerFrame(value: unknown): Decoded<ServerFrame> {
         return invalid("a transient frame needs a valid `topic`");
       }
       const event = decodeTransientEvent(parsed, value.event);
-      return event.ok ? { ok: true, value: { type: "transient", topic, event: event.value } } : event;
+      return event.ok ? valid({ type: "transient", topic, event: event.value }) : event;
     }
     case "window_request": {
       const { id } = value;
@@ -441,7 +431,7 @@ export function decodeServerFrame(value: unknown): Decoded<ServerFrame> {
         return invalid("a window request needs a string `id`");
       }
       const request = decodeWindowRequest(value.request);
-      return request.ok ? { ok: true, value: { type: "window_request", id, request: request.value } } : request;
+      return request.ok ? valid({ type: "window_request", id, request: request.value }) : request;
     }
     default:
       return invalid("unknown frame `type`");
@@ -462,18 +452,15 @@ export function decodeHelloResult(value: unknown): Decoded<HelloResult> {
   ) {
     return invalid("expected `protocol`, `daemon`, `omp`, `warnings`, `widgetBase`, `fileBase` and `connection`");
   }
-  return {
-    ok: true,
-    value: {
-      protocol: value.protocol,
-      daemon: value.daemon,
-      omp: value.omp,
-      warnings: value.warnings,
-      widgetBase: value.widgetBase,
-      fileBase: value.fileBase,
-      connection: value.connection,
-    },
-  };
+  return valid({
+    protocol: value.protocol,
+    daemon: value.daemon,
+    omp: value.omp,
+    warnings: value.warnings,
+    widgetBase: value.widgetBase,
+    fileBase: value.fileBase,
+    connection: value.connection,
+  });
 }
 
 /** Decodes the result of `subscribe` (PRT-020). */
@@ -481,10 +468,10 @@ export function decodeSubscribeResult(value: unknown): Decoded<SubscribeResult> 
   if (isObject(value) && typeof value.epoch === "string") {
     const { epoch } = value;
     if (value.mode === "replay" && isSeq(value.fromSeq)) {
-      return { ok: true, value: { mode: "replay", epoch, fromSeq: value.fromSeq } };
+      return valid({ mode: "replay", epoch, fromSeq: value.fromSeq });
     }
     if (value.mode === "snapshot" && isSeq(value.seq) && "state" in value) {
-      return { ok: true, value: { mode: "snapshot", epoch, seq: value.seq, state: value.state } };
+      return valid({ mode: "snapshot", epoch, seq: value.seq, state: value.state });
     }
   }
   return invalid("expected a `replay` ({epoch, fromSeq}) or a `snapshot` ({epoch, seq, state})");
@@ -511,17 +498,22 @@ export function decodeIndexSnapshot(value: unknown): Decoded<IndexSnapshot> {
   if (!isOptionalString(value.init)) {
     return invalid("expected `init` to be a string or `null`");
   }
-  const init = typeof value.init === "string" ? value.init : null;
-  if (!(value.models === undefined || value.models === null || isSeq(value.models))) {
+  if (!(isNullish(value.models) || isSeq(value.models))) {
     return invalid("expected `models` to be a count or `null`");
   }
-  const models = typeof value.models === "number" ? value.models : null;
   if (!isLoginActivity(value.login)) {
     return invalid("expected `login` to be `{ providerId, name, url, instructions, progress }` or `null`");
   }
   const login = loginActivity(value.login);
   // Every list holds objects with a string `id`, the key the model files them under.
-  return { ok: true, value: { ...(value as IndexSnapshot), theme, settings, init, models, login } };
+  return valid({
+    ...(value as IndexSnapshot),
+    theme,
+    settings,
+    init: value.init ?? null,
+    models: value.models ?? null,
+    login,
+  });
 }
 
 const THREAD_STATE_FIELDS: Record<keyof ThreadState, (field: unknown) => boolean> = {
@@ -558,14 +550,12 @@ export function decodeThreadState(value: unknown): Decoded<ThreadState> {
     }
   }
   // Every field checked above; nested omp wire objects are the reducer's business.
-  return { ok: true, value: value as ThreadState };
+  return valid(value as ThreadState);
 }
 
 /** Decodes the state of a `workspace/<id>` snapshot: the git status of each repository. */
 export function decodeRepoStatusList(value: unknown): Decoded<RepoStatus[]> {
-  return isRepoStatusList(value)
-    ? { ok: true, value }
-    : invalid("expected a list of `{ name, status }` repository statuses");
+  return isRepoStatusList(value) ? valid(value) : invalid("expected a list of `{ name, status }` repository statuses");
 }
 
 function isStoredMap(value: unknown): value is Record<string, Record<string, unknown>> {
@@ -587,19 +577,16 @@ export function decodeViewsState(value: unknown): Decoded<ViewsState> {
   ) {
     return invalid("expected `{ manifest, error, widgets: { source, name, version, entry }[], stored, keymap? }`");
   }
-  return {
-    ok: true,
-    value: {
-      manifest: value.manifest ?? null,
-      error: typeof value.error === "string" ? value.error : null,
-      widgets: value.widgets,
-      stored: value.stored,
-      keymap: value.keymap ?? [],
-      keymapError: typeof value.keymapError === "string" ? value.keymapError : null,
-      init: typeof value.init === "string" ? value.init : null,
-      viewFiles: typeof value.viewFiles === "string" ? value.viewFiles : null,
-    },
-  };
+  return valid({
+    manifest: value.manifest ?? null,
+    error: value.error ?? null,
+    widgets: value.widgets,
+    stored: value.stored,
+    keymap: value.keymap ?? [],
+    keymapError: value.keymapError ?? null,
+    init: value.init ?? null,
+    viewFiles: value.viewFiles ?? null,
+  });
 }
 
 function isJobInfo(value: unknown): value is JobInfo {
@@ -635,7 +622,7 @@ export function decodeJobState(value: unknown): Decoded<JobState> {
     return invalid("expected `{ job: { id, workspaceId, command, startedAt, status }, lines, dropped }`");
   }
   // Every field checked above.
-  return { ok: true, value: value as JobState };
+  return valid(value as JobState);
 }
 
 function isTerminalInfo(value: unknown): value is TerminalInfo {
@@ -671,7 +658,7 @@ export function decodeTerminalState(value: unknown): Decoded<TerminalState> {
       "expected `{ terminal: { id, workspaceId, command, cwd, cols, rows, startedAt, status }, scrollback, dropped }`",
     );
   }
-  return { ok: true, value: value as TerminalState };
+  return valid(value as TerminalState);
 }
 
 function isRunInfo(value: unknown): value is RunInfo {
@@ -700,7 +687,7 @@ function isJobView(value: unknown): value is JobView {
     isObject(value.job) &&
     typeof value.job.trigger === "string" &&
     typeof value.job.enabled === "boolean" &&
-    [value.run, value.lastRun].every((run) => run === undefined || run === null || isRunInfo(run)) &&
+    [value.run, value.lastRun].every((run) => isNullish(run) || isRunInfo(run)) &&
     isOptionalNumber(value.nextAt)
   );
 }
@@ -714,5 +701,5 @@ export function decodeJobsState(value: unknown): Decoded<JobsState> {
   if (!isObject(value) || !isJobViewList(value.jobs) || !isOptionalString(value.error)) {
     return invalid("expected `{ jobs: { name, job, status, run, lastRun, nextAt }[], error }`");
   }
-  return { ok: true, value: { jobs: value.jobs, error: value.error ?? null } };
+  return valid({ jobs: value.jobs, error: value.error ?? null });
 }

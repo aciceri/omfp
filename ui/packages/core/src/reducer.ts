@@ -4,7 +4,7 @@
  * event; unchanged parts of the state are shared with the previous state.
  */
 
-import { arrayOf, type Decoder, decodeOrUndefined, Invalid } from "./decode.ts";
+import { arrayOf, type Decoder, decodeOrUndefined, Invalid, oneOf } from "./decode.ts";
 import {
   liveOwner,
   notifyRequest,
@@ -137,23 +137,15 @@ function closeInteraction(state: ThreadState, id: string): ThreadState {
   return interactions.length === state.interactions.length ? state : { ...state, interactions };
 }
 
-const JOB_STATES: Readonly<Record<string, JobState>> = {
-  running: "running",
-  completed: "completed",
-  failed: "failed",
-  cancelled: "cancelled",
-};
+const jobState = oneOf<JobState>(["running", "completed", "failed", "cancelled"]);
 
 /** The background job of an omp tool result or partial result (`{ content, details: { async: { state, jobId },
  * exitCode? } }`, PRT-100); `null` without a job frame or with an unknown state. */
 function jobFrame(result: unknown): BackgroundJob | null {
   const details = isObject(result) ? result.details : undefined;
   const frame = isObject(details) ? details.async : undefined;
-  if (!isObject(details) || !isObject(frame) || typeof frame.state !== "string" || typeof frame.jobId !== "string") {
-    return null;
-  }
-  const state = Object.hasOwn(JOB_STATES, frame.state) ? JOB_STATES[frame.state] : undefined;
-  if (state === undefined) {
+  const state = isObject(frame) ? decodeOrUndefined(jobState, frame.state) : undefined;
+  if (!isObject(details) || !isObject(frame) || state === undefined || typeof frame.jobId !== "string") {
     return null;
   }
   const content = isObject(result) && Array.isArray(result.content) ? result.content : [];
@@ -404,12 +396,7 @@ function applyFrame(state: ThreadState, type: string, frame: Record<string, unkn
       if (state.live === null) {
         return state;
       }
-      const live = liveTranscript(state.live, {
-        role: event.role,
-        turn: event.turn,
-        text: event.text,
-        final: event.final,
-      });
+      const live = liveTranscript(state.live, event);
       return live === state.live ? state : { ...state, live };
     }
     case "goal_updated":

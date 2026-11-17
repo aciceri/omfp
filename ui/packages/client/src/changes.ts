@@ -49,3 +49,11 @@ export class Changes {
     this.#seen = this.#hub.revision;
   }
 }
+
+/** Adds `listener` to `listeners`; returns its removal. */
+export function listen<T>(listeners: Set<T>, listener: T): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}

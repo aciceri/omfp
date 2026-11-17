@@ -1,9 +1,6 @@
 /** Helpers over JSON-decoded values. */
 
-/** A JSON object (not an array, not `null`). */
-export function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+import { isObject } from "@omfp/core";
 
 /** Structural equality of JSON-like values (objects compare by own keys; `undefined` members count as absent). */
 export function jsonEqual(a: unknown, b: unknown): boolean {

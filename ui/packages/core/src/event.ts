@@ -4,7 +4,7 @@
  * fixtures (TST-012).
  */
 
-import { bool, type Decoder, Invalid, i32, int, optional, record, str } from "./decode.ts";
+import { bool, type Decoder, fail, i32, int, oneOf, optional, record, str } from "./decode.ts";
 import { isObject, type JsonValue } from "./json.ts";
 import type { AgentMessage, RpcNotification } from "./wire.ts";
 
@@ -103,29 +103,18 @@ export const processState: Decoder<ProcessState> = (value) => {
       return stderr_tail === undefined || stderr_tail === "" ? { state, ...rest } : { state, ...rest, stderr_tail };
     }
     default:
-      throw new Invalid("unknown ProcessState");
+      return fail();
   }
 };
 
 export const sessionInfo = record<SessionInfo>({ session_id: str, session_file: optional(str), resumed: bool });
 
-export const resolution = record<Resolution>({
-  by: (value) => {
-    if (value === "client") {
-      return value;
-    }
-    throw new Invalid("unknown Resolution");
-  },
-  client: str,
-});
+export const resolution = record<Resolution>({ by: oneOf(["client"]), client: str });
 
 /** A `u64`: a connection number, a line. */
 const u64: Decoder<number> = (value) => {
   const decoded = int(value);
-  if (decoded < 0) {
-    throw new Invalid("negative u64");
-  }
-  return decoded;
+  return decoded >= 0 ? decoded : fail();
 };
 
 export const liveOwner = record<LiveOwner>({ client: str, connection: u64 });

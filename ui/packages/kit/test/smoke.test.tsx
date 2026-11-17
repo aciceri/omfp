@@ -46,6 +46,7 @@ import {
   ModeNotice,
   ModePill,
   ModeSegment,
+  NestedRow,
   Progress,
   QueueChip,
   Radio,
@@ -68,6 +69,7 @@ import {
   Toast,
   ToastRegion,
   TodoList,
+  ToggleRow,
   Toolbar,
   ToolCard,
   WorkspaceSection,
@@ -263,6 +265,17 @@ const CASES: readonly Case[] = [
   },
   { name: "ThreadRow", element: <ThreadRow {...FORWARDED} state="idle" title="Fix it" />, base: "omfp-thread" },
   { name: "ActionRow", element: <ActionRow {...FORWARDED}>thread</ActionRow>, base: "omfp-action-row", role: "button" },
+  {
+    name: "ToggleRow",
+    element: (
+      <ToggleRow {...FORWARDED} expanded={false}>
+        Archived (2)
+      </ToggleRow>
+    ),
+    base: "omfp-toggle-row",
+    role: "button",
+  },
+  { name: "NestedRow", element: <NestedRow {...FORWARDED} state="idle" title="deploy" />, base: "omfp-nested-row" },
   { name: "HintRow", element: <HintRow {...FORWARDED} />, base: "omfp-hint-row" },
   {
     name: "ChatHeader",

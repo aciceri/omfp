@@ -1,10 +1,10 @@
 /**
  * The left column the frame renders outside any view (UI-020..023, UI-026, UI-100, UI-169, UI-170, UI-240): the
  * brand, the full-text filter (`/`), the "+ workspace" field, the "spawned by" filter in force, then one section per
- * workspace in the daemon's order (UI-620) — `▾`/`▸`, name (the current one in
- * gradient text), its job counts (UI-740), path, count, a menu with rename and remove, a delete button, its threads
- * (state mark, title, time;
- * unread titles bold), its draft thread, a collapsed "Archived (N)" row and "+ thread". Sections collapse (`za`); the
+ * workspace in the daemon's order (UI-620) — `▾`/`▸`, name (the current one in gradient text), path as its tooltip,
+ * the thread count flush right, which a menu with rename and remove and a delete button replace on hover and focus,
+ * its threads (state mark, title, time; unread titles bold), its draft thread, "+ thread", then the collapsed
+ * "Jobs (N)" (UI-740, `job-rows.tsx`) and "Archived (N)" rows. Sections collapse (`za`); the
  * collapsed set is window-local and survives reloads. Threads and sections are dragged (and moved by keys) into
  * another place, a thread into another workspace (UI-621..UI-627, `reorder.ts`). Its
  * `threads` scope answers `nav.*` (j/k, gg/G, Ctrl-d/u, UI-095), which are also the global fallback, `dd` and `za` on
@@ -24,6 +24,7 @@ import {
   RowList,
   SearchField,
   ThreadRow,
+  ToggleRow,
   WorkspaceSection,
 } from "@omfp/kit";
 import { INDEX_TOPIC, type ThreadSummary, type Workspace } from "@omfp/protocol";
@@ -65,7 +66,7 @@ import {
   updateSeen,
   visibleOrder,
 } from "../../vm/threads.ts";
-import { JobCounts } from "./job-counts.tsx";
+import { WorkspaceJobs } from "./job-rows.tsx";
 import { ARCHIVED_OPEN, COLLAPSED_WORKSPACES, SEEN, SPAWNED_BY, THREAD_QUERY } from "./keys.ts";
 import { type DragStart, type DragState, useMoveCommands, useReorder, useReorderDrag } from "./reorder.ts";
 import { SummaryRow } from "./summary-row.tsx";
@@ -470,11 +471,6 @@ function WorkspaceGroup({
       data-drop-into={target?.kind === "thread" && target.workspaceId === workspace.id ? "true" : undefined}
       headProps={{ onPointerDown: start({ kind: "workspace", id: workspace.id }) }}
       name={workspace.name}
-      badges={
-        workspace.jobs === undefined || workspace.jobs === null ? undefined : (
-          <JobCounts workspaceId={workspace.id} counts={workspace.jobs} />
-        )
-      }
       path={workspace.path}
       count={section.threadIds.length}
       expanded={!collapsed}
@@ -536,8 +532,8 @@ function WorkspaceGroup({
   );
 }
 
-/** A section's threads, its draft thread, its archived threads behind their toggle, then "+ thread" (UI-020, UI-023);
- * its threads drag (UI-621), its archived ones do not. */
+/** A section's threads, its draft thread, "+ thread", then its jobs and its archived threads behind their toggles
+ * (UI-020, UI-023, UI-026, UI-740); its threads drag (UI-621), its archived ones do not. */
 function WorkspaceRows({
   section,
   filter,
@@ -605,22 +601,6 @@ function WorkspaceRows({
           </li>
         )}
       </RowList>
-      {section.archivedIds.length > 0 && (
-        <>
-          <ActionRow
-            kind="archived"
-            icon="archive"
-            data-testid="archived-toggle"
-            aria-expanded={showArchived}
-            onPress={() => setArchivedOpen((previous) => toggled(previous, workspace.id))}
-          >
-            {text.archived(section.archivedIds.length)}
-          </ActionRow>
-          {showArchived && (
-            <RowList data-testid="archived-list">{section.archivedIds.map((id) => row(id, true))}</RowList>
-          )}
-        </>
-      )}
       <ActionRow
         data-testid="add-thread"
         data-workspace-id={workspace.id}
@@ -628,6 +608,23 @@ function WorkspaceRows({
       >
         {text.addThread}
       </ActionRow>
+      {workspace.jobs !== undefined && workspace.jobs !== null && (
+        <WorkspaceJobs workspaceId={workspace.id} counts={workspace.jobs} />
+      )}
+      {section.archivedIds.length > 0 && (
+        <>
+          <ToggleRow
+            expanded={showArchived}
+            data-testid="archived-toggle"
+            onPress={() => setArchivedOpen((previous) => toggled(previous, workspace.id))}
+          >
+            {text.archived(section.archivedIds.length)}
+          </ToggleRow>
+          {showArchived && (
+            <RowList data-testid="archived-list">{section.archivedIds.map((id) => row(id, true))}</RowList>
+          )}
+        </>
+      )}
     </>
   );
 }

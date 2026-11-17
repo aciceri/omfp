@@ -7,6 +7,14 @@ The version's section is also the source of the GitHub release notes.
 
 ## Unreleased
 
+### Changed
+
+- The left column's workspace sections are tidier: the thread count sits at the right end of the header, with the
+  menu and delete buttons appearing in its place on hover; `+ thread` follows the threads; then two collapsed rows,
+  `Jobs (N)` and `Archived (N)`, each toggled on its own. `Jobs (N)` replaces the job counts after the workspace
+  name: it marks running and failing jobs and an invalid `jobs.json` at its right end, and expanded lists the jobs
+  with their state or next time, a press opening that job in `omfp:jobs`, with Run or Stop on hover.
+
 ## 0.2.1 — 2026-11-17
 
 ### Fixed

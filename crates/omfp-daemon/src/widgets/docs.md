@@ -463,6 +463,7 @@ export default function Tests({ command = "make test" }: { command?: string }) {
 | `SELECTED_THREAD` | Window key of the selected thread id (`useWindowState(SELECTED_THREAD)`). |
 | `REVEAL_WIDGET` | Window key of the latest reveal request, `{ reference, nonce }` (`nonce`: a new number per request): shows that widget in its tab of the view, else in a tab of the `main` slot, else in a floating panel (see Views in the window). |
 | `OPEN_SUBAGENT` | Window key of a request to open a subagent's transcript and steer field under its row of `omfp:background`: set `{ threadId, subagentId, nonce }` (`nonce`: a new number per request), and reveal `omfp:background` (`REVEAL_WIDGET`) to show it. |
+| `OPEN_JOB` | Window key of a request to open a declared job's row (its runs) in `omfp:jobs`: set `{ workspaceId, job, nonce }` (`nonce`: a new number per request), and reveal `omfp:jobs` (`REVEAL_WIDGET`, with `workspaceId` for another workspace) to show it; `omfp:jobs` clears it once applied. The left column's job rows do this. |
 | `FOCUS_COMPOSER` | Window key of the thread whose composer takes the focus once it shows; the composer clears it. |
 | `DRAFT_THREAD` | Window key of the draft thread, `{ workspaceId }` (`undefined` without one): a new thread being written before its first message is sent. |
 

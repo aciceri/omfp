@@ -3,7 +3,8 @@
  * `useJobs` (AGT-090), one row each — name (its description as tooltip), trigger, action, state and last run — with
  * Run (Start for a stopped or waiting service), Stop while a run runs, and Enable/Disable; an error is a toast. One row
  * at a time expands to its runs (`jobs.runs`, newest first, Load older): a command run to its output (`job/<id>`), a
- * prompt run to its thread. A refused file's error shows above the rows, with Open jobs.json.
+ * prompt run to its thread; an `OPEN_JOB` request for this workspace expands its job's row and scrolls to it (the
+ * left column's job rows send one, UI-741). A refused file's error shows above the rows, with Open jobs.json.
  */
 
 import type { JobRuns, JobView, RunInfo } from "@omfp/protocol";
@@ -11,6 +12,7 @@ import { Button, EmptyState, Icon, Log, StateBadge, StateMark } from "omfp/kit";
 import {
   type JobRow,
   jobRow,
+  OPEN_JOB,
   type RunRow,
   runRow,
   strings,
@@ -23,6 +25,7 @@ import {
   useThreads,
   useTopic,
   useWidget,
+  useWindowState,
   type WidgetProps,
 } from "omfp/sdk";
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
@@ -61,6 +64,20 @@ function Jobs({ workspaceId }: { workspaceId: string }): ReactNode {
   const report = useReportError();
   const openFile = useOpenFile();
   const [open, setOpen] = useState<string | undefined>(undefined);
+  // A job's row asked open elsewhere (the left column): once the rows show, expanded and scrolled to, then the request
+  // is cleared, so effects running again (the tab shown again, a remount) keep what the user opened since.
+  const [request, setRequest] = useWindowState(OPEN_JOB);
+  const list = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    if (!loaded || request === undefined || request.workspaceId !== workspaceId) {
+      return;
+    }
+    setOpen(request.job);
+    list.current
+      ?.querySelector(`[data-testid="job-row"][data-job="${CSS.escape(request.job)}"]`)
+      ?.scrollIntoView?.({ block: "nearest" });
+    setRequest(undefined);
+  }, [loaded, request, workspaceId, setRequest]);
   const now = useNow(jobs.some((job) => job.status === "running" || job.status === "waiting"));
   const openButton = (
     <Button
@@ -90,7 +107,7 @@ function Jobs({ workspaceId }: { workspaceId: string }): ReactNode {
           </EmptyState>
         )
       ) : (
-        <ul className="omfp-jobs__list">
+        <ul className="omfp-jobs__list" ref={list}>
           {jobs.map((job) => (
             <Row
               key={job.name}

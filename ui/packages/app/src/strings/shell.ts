@@ -26,6 +26,8 @@ export const shell = {
     addThread: "+ thread",
     draft: "draft",
     archived: (count: number) => `Archived (${count})`,
+    /** A workspace's declared jobs behind their toggle (UI-740). */
+    jobs: (count: number) => `Jobs (${count})`,
     unarchive: "Unarchive",
     unarchiveThread: (title: string) => `Unarchive \u201c${title}\u201d`,
     archiveThread: (title: string) => `Archive \u201c${title}\u201d`,
@@ -245,7 +247,7 @@ export const shell = {
     noneHint:
       "Declare jobs in .omfp/jobs.json: commands or prompts run by hand, on a schedule or kept running as services.",
     openFile: "Open jobs.json",
-    /** The `job-counts` button's tooltip and name (UI-740), its parts joined by ` · `. */
+    /** The tooltip and name of a workspace's job marks (UI-740), its parts joined by ` · `. */
     counts: (total: number, parts: string) => `${total} ${total === 1 ? "job" : "jobs"}: ${parts}`,
     countService: (count: number) => `${count} ${count === 1 ? "service" : "services"}`,
     countSchedule: (count: number) => `${count} scheduled`,
@@ -268,6 +270,8 @@ export const shell = {
       disabled: "disabled",
       idle: "idle",
     },
+    /** A scheduled job's next time, at the end of its row in the left column (UI-740). */
+    next: (when: string) => `next ${when}`,
     /** A run's end (UI-742, UI-743). */
     runStatus: {
       running: "running",

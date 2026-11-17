@@ -1,6 +1,6 @@
 /**
- * Declared jobs in the window (UI-740..UI-748): the left column's job counts, the rows and runs of `omfp:jobs`, the
- * job a thread was made by, and the init files' run events, as data the components render.
+ * Declared jobs in the window (UI-740..UI-748): the left column's job marks and job rows, the rows and runs of
+ * `omfp:jobs`, the job a thread was made by, and the init files' run events, as data the components render.
  */
 
 import type { ThreadState as MarkState } from "@omfp/kit";
@@ -17,7 +17,7 @@ export function threadJob(thread: Pick<ThreadSummary, "provenance">): string | u
   return createdBy.kind === "job" ? createdBy.job : undefined;
 }
 
-/** What the `job-counts` button of a workspace section shows (UI-740). */
+/** The marks at the right end of a workspace's `Jobs (N)` row in the left column (UI-740). */
 export interface JobCountsView {
   /** Runs running now; shown with the running mark when some run. */
   readonly running: number;
@@ -25,13 +25,11 @@ export interface JobCountsView {
   readonly failing: number;
   /** The file is refused: the warn mark. */
   readonly error: boolean;
-  /** The total, shown muted with the jobs icon only when nothing runs, failed or is refused. */
-  readonly total: number | undefined;
   /** The tooltip and accessible name, spelling everything out. */
   readonly label: string;
 }
 
-/** The button of `counts` (PRT-210); `error` is why the file is refused when the workspace's `jobs/<id>` says so. */
+/** The marks of `counts` (PRT-210); `error` is why the file is refused when the workspace's `jobs/<id>` says so. */
 export function jobCountsView(counts: JobCounts, error: string | null | undefined): JobCountsView {
   const kinds = [
     counts.service > 0 ? text.countService(counts.service) : undefined,
@@ -44,12 +42,10 @@ export function jobCountsView(counts: JobCounts, error: string | null | undefine
     counts.failing > 0 ? text.countFailed(counts.failing) : undefined,
     counts.error ? text.invalid(error ?? undefined) : undefined,
   ].filter((part) => part !== undefined);
-  const quiet = counts.running === 0 && counts.failing === 0 && !counts.error;
   return {
     running: counts.running,
     failing: counts.failing,
     error: counts.error,
-    total: quiet ? counts.total : undefined,
     label: parts.join(" · "),
   };
 }
@@ -157,6 +153,47 @@ export function jobRow(job: JobView, now: number): JobRow {
     run,
     start: definition.trigger === "service" && (job.status === "stopped" || job.status === "waiting") ? "start" : "run",
     enabled: definition.enabled,
+  };
+}
+
+/** A job's row under a workspace's expanded `Jobs (N)` in the left column (UI-740). */
+export interface JobSideRow {
+  readonly name: string;
+  readonly description: string | undefined;
+  /** Running while a run runs, else failed while it counts as failing (PRT-210), awaiting while a service waits to
+   * restart, else idle. */
+  readonly mark: MarkState;
+  /** Flush right: the state in words (`running`, without a duration that would need a clock), or the next time of a
+   * scheduled job at rest. */
+  readonly meta: string;
+  /** The running run, which Stop kills. */
+  readonly run: RunInfo | undefined;
+  /** Run starts it now: `start` for a stopped or waiting service. */
+  readonly start: "run" | "start";
+  readonly enabled: boolean;
+}
+
+export function jobSideRow(job: JobView, now: number): JobSideRow {
+  const row = jobRow(job, now);
+  const failing = row.enabled && row.lastRunStatus === "failed";
+  const mark = row.run !== undefined ? "running" : failing ? "failed" : row.mark;
+  const next = job.nextAt === undefined || job.nextAt === null ? undefined : formatWhen(job.nextAt, now);
+  const meta =
+    mark === "running"
+      ? text.status.running(undefined)
+      : mark === "failed"
+        ? text.runStatus.failed
+        : job.status === "idle" && next !== undefined
+          ? text.next(next)
+          : row.statusText;
+  return {
+    name: row.name,
+    description: row.description,
+    mark,
+    meta,
+    run: row.run,
+    start: row.start,
+    enabled: row.enabled,
   };
 }
 

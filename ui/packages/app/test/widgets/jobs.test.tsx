@@ -5,7 +5,15 @@ import { CallError } from "@omfp/client";
 import { jobsTopic, jobTopic } from "@omfp/protocol";
 import { act, cleanup, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ERRORS, OPEN_FILES, SELECTED_THREAD, type WidgetInfoScope, WidgetScope } from "../../src/sdk/index.ts";
+import { Activity, type ReactNode, useState } from "react";
+import {
+  ERRORS,
+  OPEN_FILES,
+  OPEN_JOB,
+  SELECTED_THREAD,
+  type WidgetInfoScope,
+  WidgetScope,
+} from "../../src/sdk/index.ts";
 import { JobsWidget } from "../../src/widgets/jobs/index.ts";
 import { jobView, runInfo, thread, workspace } from "../support/fixtures.ts";
 import { renderWithHost, testHost } from "../support/host.tsx";
@@ -14,12 +22,27 @@ afterEach(cleanup);
 
 const SCOPE: WidgetInfoScope = { instance: "omfp:jobs", reference: "omfp:jobs", workspaceId: "w1" };
 
+/** A tab's content as the kit's `TabPanel` keeps it: in an `Activity` that a button hides and shows again. */
+function InTab({ children }: { children: ReactNode }): ReactNode {
+  const [shown, setShown] = useState(true);
+  return (
+    <>
+      <button type="button" data-testid="tab-switch" onClick={() => setShown((current) => !current)}>
+        switch
+      </button>
+      <Activity mode={shown ? "visible" : "hidden"}>{children}</Activity>
+    </>
+  );
+}
+
 function setup(props: Record<string, unknown> = {}) {
   const base = testHost();
   base.host.window.set(SELECTED_THREAD, "t1");
   const test = renderWithHost(
     <WidgetScope value={SCOPE}>
-      <JobsWidget {...props} />
+      <InTab>
+        <JobsWidget {...props} />
+      </InTab>
     </WidgetScope>,
     base,
   );
@@ -111,6 +134,38 @@ describe("omfp:jobs", () => {
     const test = setup({ workspaceId: "w2" });
     expect(test.client.subscribed).toContain(jobsTopic("w2"));
     expect(test.client.subscribed).not.toContain(jobsTopic("w1"));
+  });
+
+  // spec: UI-741, UI-742, UI-743
+  test("an OPEN_JOB request for its workspace expands that job's row; one for another workspace changes nothing", () => {
+    const test = setup();
+    // Sent before the rows show (the reveal mounts the widget): the row opens once they do.
+    act(() => test.host.window.set(OPEN_JOB, { workspaceId: "w1", job: "watch", nonce: 1 }));
+    test.client.jobs("w1", { jobs: [jobView("deploy"), jobView("watch")] });
+    test.flush();
+    const expanded = () => screen.getAllByTestId("job-toggle").map((toggle) => toggle.getAttribute("aria-expanded"));
+    expect(expanded()).toEqual(["false", "true"]);
+    act(() => test.host.window.set(OPEN_JOB, { workspaceId: "w2", job: "deploy", nonce: 2 }));
+    expect(expanded()).toEqual(["false", "true"]);
+    act(() => test.host.window.set(OPEN_JOB, { workspaceId: "w1", job: "deploy", nonce: 3 }));
+    expect(expanded()).toEqual(["true", "false"]);
+  });
+
+  // spec: UI-742
+  test("a handled OPEN_JOB request is cleared: back on the tab, the row the user expanded since stays expanded", async () => {
+    const test = setup();
+    test.client.jobs("w1", { jobs: [jobView("deploy"), jobView("watch")] });
+    test.flush();
+    const expanded = () => screen.getAllByTestId("job-toggle").map((toggle) => toggle.getAttribute("aria-expanded"));
+    act(() => test.host.window.set(OPEN_JOB, { workspaceId: "w1", job: "watch", nonce: 1 }));
+    expect(expanded()).toEqual(["false", "true"]);
+    expect(test.host.window.get(OPEN_JOB)).toBeUndefined();
+    await test.user.click(within(row("deploy")).getByTestId("job-toggle"));
+    expect(expanded()).toEqual(["true", "false"]);
+    // Another tab, then back: the tab's effects run again, the old request does not.
+    await test.user.click(screen.getByTestId("tab-switch"));
+    await test.user.click(screen.getByTestId("tab-switch"));
+    expect(expanded()).toEqual(["true", "false"]);
   });
 
   // spec: UI-743

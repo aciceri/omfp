@@ -291,11 +291,9 @@ export interface WorkspaceSectionProps extends Omit<HTMLAttributes<HTMLElement>,
   current?: boolean;
   /** Said after the current workspace's name to screen readers (`current`). */
   currentLabel?: string;
-  /** Compact buttons right after the name, always shown (a workspace's job counts, UI-740). */
-  badges?: ReactNode;
   /** Replaces the name: a rename field. */
   editor?: ReactNode;
-  /** Buttons after the count (a menu, delete), shown on hover and focus. */
+  /** Buttons in the count's place (a menu, delete), shown on hover and focus instead of the count. */
   actions?: ReactNode;
   /** Class names of the head (forced states in the gallery). */
   headClassName?: string;
@@ -307,7 +305,8 @@ export interface WorkspaceSectionProps extends Omit<HTMLAttributes<HTMLElement>,
 
 /**
  * A workspace in the left column (UI-170, UI-442), labelled by its name: a head with the `▾`/`▸` toggle, the name as
- * a heading (its path on hover), the count and the actions, then its rows while expanded.
+ * a heading (its path on hover), the count flush right, which the actions replace on hover and focus, then its rows
+ * while expanded.
  */
 export function WorkspaceSection({
   name,
@@ -321,7 +320,6 @@ export function WorkspaceSection({
   current = false,
   currentLabel,
   editor,
-  badges,
   actions,
   headClassName,
   headProps,
@@ -361,7 +359,7 @@ export function WorkspaceSection({
             {current && currentLabel !== undefined && <span className="omfp-visually-hidden"> ({currentLabel})</span>}
           </h2>
         )}
-        {badges}
+        {/* The count, then the actions taking its place on hover and focus (kit.css), so neither reserves room. */}
         {count !== undefined && <span className="omfp-wsection__count">{count}</span>}
         {actions !== undefined && <span className="omfp-wsection__actions">{actions}</span>}
       </div>
@@ -492,19 +490,98 @@ function stateLabelProp(label: string | undefined): { label?: string } {
 }
 
 export interface ActionRowProps extends AriaButtonProps {
-  /** `action`: a "+ thread"-like row with a primary icon; `archived`: a muted, indented row. */
-  kind?: "action" | "archived";
   icon?: IconName;
   children?: ReactNode;
 }
 
-/** An action or archived row sharing the thread row's shape (UI-169). */
-export function ActionRow({ kind = "action", icon, className, children, ...props }: ActionRowProps) {
+/** An action row ("+ thread", a primary icon) sharing the thread row's shape (UI-169). */
+export function ActionRow({ icon, className, children, ...props }: ActionRowProps) {
   return (
-    <AriaButton {...props} className={withClass("omfp-row omfp-action-row", className)} data-kind={kind}>
+    <AriaButton {...props} className={withClass("omfp-row omfp-action-row", className)}>
       {icon !== undefined && <Icon name={icon} />}
       <span className="omfp-row__title">{children}</span>
     </AriaButton>
+  );
+}
+
+export interface ToggleRowProps extends Omit<AriaButtonProps, "children"> {
+  /** Whether the rows it toggles show: the `▾`/`▸` glyph and `aria-expanded`. */
+  expanded: boolean;
+  /** Marks or counts at its right end. */
+  end?: ReactNode;
+  children?: ReactNode;
+}
+
+/**
+ * A muted row toggling the rows under it (`Jobs (N)`, `Archived (N)`, UI-169): the `▾`/`▸` glyph where a thread row
+ * has its state mark, so its label lines up with the thread titles, then what `end` holds flush right.
+ */
+export function ToggleRow({ expanded, end, className, children, ...props }: ToggleRowProps) {
+  return (
+    <AriaButton
+      {...props}
+      aria-expanded={expanded}
+      className={withClass("omfp-row omfp-toggle-row", className)}
+      data-expanded={expanded}
+    >
+      <span className="omfp-toggle-row__glyph" aria-hidden="true">
+        {expanded ? "▾" : "▸"}
+      </span>
+      <span className="omfp-row__title">{children}</span>
+      {end !== undefined && <span className="omfp-toggle-row__end">{end}</span>}
+    </AriaButton>
+  );
+}
+
+export interface NestedRowProps extends Omit<HTMLAttributes<HTMLLIElement>, "title" | "onSelect"> {
+  state: ThreadState;
+  /** The state mark's accessible name: the state in words (what `meta` shows, which the actions hide on hover and
+   * focus and always without hover). Given, the meta is visual only (`aria-hidden`), so it is said once. */
+  stateLabel?: string;
+  title: ReactNode;
+  /** The state or a time, flush right; the actions replace it on hover and focus. */
+  meta?: ReactNode;
+  /** Presses the row: its button. */
+  onSelect?: () => void;
+  /** Props of the select button: a test id, a label, data attributes. */
+  selectProps?: Omit<ButtonHTMLAttributes<HTMLButtonElement>, "type" | "className" | "onClick"> & DataAttributes;
+  /** Buttons in the meta's place, shown on hover and focus (always without hover, UI-415). */
+  actions?: ReactNode;
+}
+
+/**
+ * A row listed under a {@link ToggleRow} (a job under `Jobs (N)`, UI-169): small, muted and indented like an archived
+ * thread row, a list item of a {@link RowList} with its select button (state mark, title, meta), then its actions.
+ */
+export function NestedRow({
+  state,
+  stateLabel,
+  title,
+  meta,
+  onSelect,
+  selectProps,
+  actions,
+  className,
+  ...props
+}: NestedRowProps) {
+  return (
+    <li {...props} className={cx("omfp-row omfp-nested-row omfp-focus-item", className)} data-state={state}>
+      <button
+        {...selectProps}
+        type="button"
+        className="omfp-nested-row__select omfp-focus-item__target"
+        onClick={onSelect}
+      >
+        <StateMark state={state} {...stateLabelProp(stateLabel)} />
+        <span className="omfp-row__title">{title}</span>
+        {meta !== undefined && (
+          <span className="omfp-row__meta" aria-hidden={stateLabel === undefined ? undefined : true}>
+            {meta}
+          </span>
+        )}
+      </button>
+      {actions !== undefined && <span className="omfp-nested-row__actions">{actions}</span>}
+    </li>
   );
 }
 

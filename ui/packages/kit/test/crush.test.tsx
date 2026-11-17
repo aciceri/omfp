@@ -34,6 +34,7 @@ import {
   ModeSegment,
   ModeViews,
   motionLevel,
+  NestedRow,
   PathField,
   QueueChip,
   QueueList,
@@ -51,6 +52,7 @@ import {
   ThreadRow,
   Toast,
   TodoList,
+  ToggleRow,
   ToolCard,
   WorkspaceSection,
 } from "../src/index.ts";
@@ -806,6 +808,69 @@ describe("shell", () => {
     render(<WorkspaceSection name="omfp" expanded editor={<input aria-label="New name" />} />);
     expect(screen.queryByRole("heading")).toBeNull();
     expect(screen.getByRole("textbox", { name: "New name" })).toBeDefined();
+  });
+
+  // spec: UI-169, UI-442
+  test("a toggle row: the ▾/▸ glyph where a thread row's mark sits, its label, then its end; aria-expanded", async () => {
+    const user = userEvent.setup();
+    const onPress = mock(() => undefined);
+    const { rerender } = render(
+      <ToggleRow expanded={false} end={<span>●1</span>} onPress={onPress} data-testid="toggle">
+        Jobs (3)
+      </ToggleRow>,
+    );
+    const toggle = screen.getByTestId("toggle");
+    expect([...toggle.children].map((child) => [child.className, child.textContent])).toEqual([
+      ["omfp-toggle-row__glyph", "▸"],
+      ["omfp-row__title", "Jobs (3)"],
+      ["omfp-toggle-row__end", "●1"],
+    ]);
+    expect([toggle.classList.contains("omfp-row"), toggle.getAttribute("aria-expanded")]).toEqual([true, "false"]);
+    expect(toggle.querySelector(".omfp-toggle-row__glyph")?.getAttribute("aria-hidden")).toBe("true");
+    await user.click(toggle);
+    expect(onPress).toHaveBeenCalledTimes(1);
+    rerender(<ToggleRow expanded data-testid="toggle" />);
+    expect([toggle.getAttribute("aria-expanded"), toggle.textContent]).toEqual(["true", "▾"]);
+  });
+
+  // spec: UI-169, UI-442
+  test("a nested row is a list item: its select button with the mark, title and meta, then its actions", async () => {
+    const user = userEvent.setup();
+    const onSelect = mock(() => undefined);
+    render(
+      <RowList>
+        <NestedRow
+          state="failed"
+          stateLabel="failed"
+          title="deploy"
+          meta="failed"
+          onSelect={onSelect}
+          selectProps={{ "data-testid": "select" }}
+          actions={<button type="button">Run deploy</button>}
+          data-testid="row"
+        />
+      </RowList>,
+    );
+    const row = screen.getByRole("listitem");
+    expect([row.getAttribute("data-testid"), row.dataset.state, row.classList.contains("omfp-nested-row")]).toEqual([
+      "row",
+      "failed",
+      true,
+    ]);
+    const select = screen.getByTestId("select");
+    // The mark's name says the state; the meta, which actions replace on hover and focus, is visual only.
+    expect(select.querySelector("[data-state]")?.getAttribute("aria-label")).toBe("failed");
+    expect(select.querySelector(".omfp-row__meta")?.getAttribute("aria-hidden")).toBe("true");
+    expect([
+      select.querySelector(".omfp-row__title")?.textContent,
+      select.querySelector(".omfp-row__meta")?.textContent,
+    ]).toEqual(["deploy", "failed"]);
+    expect([...row.children].map((child) => child.className)).toEqual([
+      "omfp-nested-row__select omfp-focus-item__target",
+      "omfp-nested-row__actions",
+    ]);
+    await user.click(select);
+    expect(onSelect).toHaveBeenCalledTimes(1);
   });
 
   // spec: UI-171

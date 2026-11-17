@@ -7,7 +7,13 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { DeleteWorkspaceDialog } from "../../src/frame/dialogs.tsx";
 import { DELETE_WORKSPACE, DRAFT_MESSAGE, DRAFT_THREAD, draftKey, SELECTED_THREAD } from "../../src/sdk/index.ts";
-import { COLLAPSED_WORKSPACES, SPAWNED_BY, ThreadsWidget } from "../../src/widgets/threads/index.ts";
+import {
+  ARCHIVED_OPEN,
+  COLLAPSED_WORKSPACES,
+  JOBS_OPEN,
+  SPAWNED_BY,
+  ThreadsWidget,
+} from "../../src/widgets/threads/index.ts";
 import { repo, thread, workspace } from "../support/fixtures.ts";
 import { renderWithHost } from "../support/host.tsx";
 
@@ -192,7 +198,7 @@ describe("omfp:threads", () => {
     const { client, host, user } = setup();
     expect(within(section("w1")).queryByTestId("archived-toggle")).toBeNull();
     const toggle = within(section("w2")).getByTestId("archived-toggle");
-    expect(toggle.textContent).toBe("Archived (1)");
+    expect(toggle.querySelector(".omfp-row__title")?.textContent).toBe("Archived (1)");
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(rows()).toEqual(["t1", "t2"]);
     await user.click(toggle);
@@ -205,6 +211,83 @@ describe("omfp:threads", () => {
     expect(client.callsTo("threads.unarchive").map((call) => call.params)).toEqual([{ threadId: "t3" }]);
     await user.click(archived.getByTestId("row-delete-thread"));
     expect(client.callsTo("threads.delete").map((call) => call.params)).toEqual([{ threadId: "t3" }]);
+  });
+
+  // spec: UI-020, UI-026, UI-740
+  test("a section's rows: threads, the draft, + thread, then Jobs (N) and Archived (N), collapsed and toggled apart", async () => {
+    const jobs = { total: 2, manual: 2, schedule: 0, service: 0, running: 0, failing: 0, error: false };
+    const { host, user } = setup({
+      ...INDEX,
+      workspaces: (INDEX.workspaces ?? []).map((candidate) =>
+        candidate.id === "w2" ? { ...candidate, jobs } : candidate,
+      ),
+    });
+    act(() => host.window.set(DRAFT_THREAD, { workspaceId: "w2" }));
+    const order = () =>
+      [
+        ...section("w2").querySelectorAll(
+          "[data-testid=thread-row], [data-testid=draft-thread], [data-testid=add-thread], [data-testid=jobs-toggle], [data-testid=archived-toggle]",
+        ),
+      ].map((element) => element.getAttribute("data-testid"));
+    expect(order()).toEqual(["thread-row", "draft-thread", "add-thread", "jobs-toggle", "archived-toggle"]);
+    expect(within(section("w1")).queryByTestId("jobs-toggle")).toBeNull();
+
+    const jobsToggle = within(section("w2")).getByTestId("jobs-toggle");
+    const archivedToggle = within(section("w2")).getByTestId("archived-toggle");
+    // Alike rows: the ▸/▾ glyph in place of an icon, collapsed by default.
+    for (const toggle of [jobsToggle, archivedToggle]) {
+      expect(toggle.classList.contains("omfp-toggle-row")).toBe(true);
+      expect(toggle.querySelector(".omfp-ic")).toBeNull();
+      expect([
+        toggle.querySelector(".omfp-toggle-row__glyph")?.textContent,
+        toggle.getAttribute("aria-expanded"),
+      ]).toEqual(["▸", "false"]);
+    }
+    expect(jobsToggle.querySelector(".omfp-row__title")?.textContent).toBe("Jobs (2)");
+    // Nothing runs, failed or is refused: no marks, the tooltip still spells the jobs out.
+    expect(within(jobsToggle).queryByTestId("job-counts")).toBeNull();
+    expect(jobsToggle.querySelector(".omfp-row__title [title]")?.getAttribute("title")).toBe("2 jobs: 2 manual");
+
+    await user.click(jobsToggle);
+    expect([host.window.get(JOBS_OPEN), host.window.get(ARCHIVED_OPEN)]).toEqual([["w2"], []]);
+    expect([jobsToggle.getAttribute("aria-expanded"), archivedToggle.getAttribute("aria-expanded")]).toEqual([
+      "true",
+      "false",
+    ]);
+    expect(jobsToggle.querySelector(".omfp-toggle-row__glyph")?.textContent).toBe("▾");
+    expect(within(section("w2")).getAllByTestId("jobs-list").length).toBe(1);
+    expect(screen.queryAllByTestId("archived-list").length).toBe(0);
+    await user.click(archivedToggle);
+    await user.click(jobsToggle);
+    expect([host.window.get(JOBS_OPEN), host.window.get(ARCHIVED_OPEN)]).toEqual([[], ["w2"]]);
+    expect(screen.queryAllByTestId("jobs-list").length).toBe(0);
+    // j/k still move through threads only.
+    await user.click(jobsToggle);
+    act(() => {
+      host.commands.run("nav.bottom", [], ["threads"]);
+    });
+    expect(host.window.get(SELECTED_THREAD)).toBe("t3");
+  });
+
+  // spec: UI-020, UI-442
+  test("a section's head: no badges after the name, the count last, the menu and delete after it to take its place", () => {
+    const jobs = { total: 1, manual: 1, schedule: 0, service: 0, running: 1, failing: 0, error: false };
+    setup({ ...INDEX, workspaces: (INDEX.workspaces ?? []).map((candidate) => ({ ...candidate, jobs })) });
+    const head = section("w1").querySelector(".omfp-wsection__head");
+    expect([...(head?.children ?? [])].map((child) => child.classList[0])).toEqual([
+      "omfp-wsection__toggle",
+      "omfp-wsection__name",
+      "omfp-wsection__count",
+      "omfp-wsection__actions",
+    ]);
+    expect(head?.querySelector(".omfp-wsection__count")?.textContent).toBe("1");
+    expect(
+      [...(head?.querySelectorAll(".omfp-wsection__actions [data-testid]") ?? [])].map((button) =>
+        button.getAttribute("data-testid"),
+      ),
+    ).toEqual(["workspace-menu", "delete-workspace"]);
+    expect(head?.querySelector("[data-testid=job-counts]")).toBeNull();
+    expect(within(section("w1")).getAllByTestId("job-counts").length).toBe(1);
   });
 
   // spec: UI-023
@@ -544,7 +627,13 @@ describe("omfp:threads", () => {
 
   // spec: UI-092
   test("every control and row is reachable with Tab", async () => {
-    const { user } = setup();
+    const jobs = { total: 1, manual: 1, schedule: 0, service: 0, running: 0, failing: 0, error: false };
+    const { user } = setup({
+      ...INDEX,
+      workspaces: (INDEX.workspaces ?? []).map((candidate) =>
+        candidate.id === "w1" ? { ...candidate, jobs } : candidate,
+      ),
+    });
     const reached = new Set<string>();
     for (let step = 0; step < 24; step += 1) {
       await user.tab();
@@ -563,6 +652,7 @@ describe("omfp:threads", () => {
       "row-archive-thread",
       "archived-toggle",
       "add-thread",
+      "jobs-toggle",
     ]) {
       expect(reached).toContain(testid);
     }

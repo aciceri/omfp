@@ -6,6 +6,7 @@ import {
   formatWhen,
   jobCountsView,
   jobRow,
+  jobSideRow,
   runEventKinds,
   runMark,
   runOutcome,
@@ -23,30 +24,64 @@ const ONE = new Date(2026, 10, 16, 13, 5).getTime();
 
 describe("job counts", () => {
   // spec: UI-740
-  test("running and failed counts show with their marks, else the total; the label spells everything out", () => {
+  test("running and failed counts and a refused file are the marks; the label spells everything out", () => {
     const counts = { ...NONE, total: 3, manual: 1, schedule: 1, service: 1 };
     expect(jobCountsView(counts, null)).toEqual({
       running: 0,
       failing: 0,
       error: false,
-      total: 3,
       label: "3 jobs: 1 service, 1 scheduled, 1 manual",
     });
     expect(jobCountsView({ ...counts, running: 1, failing: 1 }, null)).toEqual({
       running: 1,
       failing: 1,
       error: false,
-      total: undefined,
       label: "3 jobs: 1 service, 1 scheduled, 1 manual · 1 running · 1 failed",
     });
     expect(jobCountsView({ ...NONE, total: 1, service: 2, error: true }, "jobs.a: unknown key")).toEqual({
       running: 0,
       failing: 0,
       error: true,
-      total: undefined,
       label: "1 job: 2 services · jobs.json is invalid: jobs.a: unknown key",
     });
     expect(jobCountsView({ ...NONE, error: true }, undefined).label).toBe("jobs.json is invalid");
+  });
+});
+
+describe("job rows in the left column", () => {
+  // spec: UI-740
+  test("a job's row shows running, then failing, then waiting; its end says the state or a scheduled job's next time", () => {
+    const run = runInfo("r2", "watch", { startedAt: NOON - 90_000 });
+    const failed = runInfo("r1", "mail", { status: "failed", exitCode: 2, endedAt: NOON - 60_000 });
+    const side = (...args: Parameters<typeof jobView>) => {
+      const row = jobSideRow(jobView(...args), NOON);
+      return [row.mark, row.meta];
+    };
+    expect(side("deploy")).toEqual(["idle", "idle"]);
+    expect(side("watch", { trigger: "service" }, { status: "running", run, lastRun: failed })).toEqual([
+      "running",
+      "running",
+    ]);
+    expect(side("mail", { trigger: "schedule", schedule: "0 7 * * *" }, { nextAt: ONE, lastRun: failed })).toEqual([
+      "failed",
+      "failed",
+    ]);
+    expect(side("mail", { trigger: "schedule", schedule: "0 7 * * *" }, { nextAt: ONE })).toEqual([
+      "idle",
+      "next 13:05",
+    ]);
+    expect(side("old", { enabled: false }, { status: "disabled", lastRun: failed })).toEqual(["idle", "disabled"]);
+    expect(side("watch", { trigger: "service" }, { status: "waiting", nextAt: ONE })).toEqual([
+      "awaiting",
+      "waiting · restart 13:05",
+    ]);
+    expect(jobSideRow(jobView("watch", { trigger: "service" }, { status: "stopped" }), NOON)).toMatchObject({
+      name: "watch",
+      run: undefined,
+      start: "start",
+      enabled: true,
+    });
+    expect(jobSideRow(jobView("watch", {}, { status: "running", run }), NOON).run?.id).toBe("r2");
   });
 });
 

@@ -1202,17 +1202,17 @@
     max-block-size: 16rem;
   }
 
-  /* A workspace's job counts after its name in the left column (UI-740). */
-  .omfp-job-counts__parts {
+  /* A workspace's job marks at the right end of its `Jobs (N)` row in the left column (UI-740). */
+  .omfp-job-counts {
     display: inline-flex;
     align-items: center;
-    gap: var(--omfp-s1);
-    font-size: var(--omfp-fs-2xs);
+    gap: var(--omfp-s2);
   }
 
   .omfp-job-counts__part {
     display: inline-flex;
     align-items: center;
+    gap: var(--omfp-s1);
   }
 
   .omfp-job-counts__part[data-part="failing"] {
@@ -1221,10 +1221,6 @@
 
   .omfp-job-counts__part[data-part="error"] {
     color: var(--omfp-warn);
-  }
-
-  .omfp-job-counts__part[data-part="total"] {
-    color: var(--omfp-on-surface-variant);
   }
 
   /* The last output line of a running background job in its card's head (UI-270). */

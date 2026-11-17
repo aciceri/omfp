@@ -22,6 +22,7 @@ import {
   ModeNotice,
   ModeSegment,
   ModeViews,
+  NestedRow,
   RowList,
   Sheet,
   SheetRow,
@@ -32,6 +33,7 @@ import {
   TextField,
   ThreadRow,
   ThreadStrip,
+  ToggleRow,
   WhichKey,
   WhichKeyGroup,
   WhichKeyItem,
@@ -272,7 +274,7 @@ const ROW = { onSelect: () => undefined, onDelete: () => undefined, unreadLabel:
 
 export function LeftColumn() {
   return (
-    <Section title="Left column" note="UI-169 · UI-170 · UI-339 · UI-442">
+    <Section title="Left column" note="UI-169 · UI-170 · UI-339 · UI-442 · UI-740">
       <div className="omfp-gallery__side">
         <Brand host="devbox" />
         <WorkspaceSection
@@ -339,9 +341,34 @@ export function LeftColumn() {
             />
             <ThreadRow state="idle" title="Untitled" placeholder meta="draft" onSelect={() => undefined} />
           </RowList>
-          <ActionRow kind="archived" icon="archive">
-            Archived (4)
-          </ActionRow>
+          <ActionRow icon="plus">thread</ActionRow>
+          <ToggleRow
+            expanded
+            end={
+              <span className="omfp-job-counts" role="img" aria-label="3 jobs · 1 running · 1 failed">
+                <span className="omfp-job-counts__part" data-part="running">
+                  <StateMark state="running" />1
+                </span>
+                <span className="omfp-job-counts__part" data-part="failing">
+                  <StateMark state="failed" />1
+                </span>
+              </span>
+            }
+          >
+            Jobs (3)
+          </ToggleRow>
+          <RowList>
+            <NestedRow state="running" title="watch" meta="running" />
+            <NestedRow
+              state="failed"
+              title="deploy"
+              meta="failed"
+              className="is-hover"
+              actions={<IconButton label="Run deploy" icon={<Icon name="play" />} />}
+            />
+            <NestedRow state="idle" title="nightly" meta="next 08:00" />
+          </RowList>
+          <ToggleRow expanded>Archived (4)</ToggleRow>
           <RowList>
             <ThreadRow
               {...ROW}
@@ -357,7 +384,6 @@ export function LeftColumn() {
               }
             />
           </RowList>
-          <ActionRow icon="plus">thread</ActionRow>
         </WorkspaceSection>
         <WorkspaceSection
           name="dotfiles"
@@ -383,6 +409,7 @@ export function LeftColumn() {
             </li>
           </RowList>
           <ActionRow icon="plus">thread</ActionRow>
+          <ToggleRow expanded={false}>Archived (2)</ToggleRow>
         </WorkspaceSection>
       </div>
     </Section>

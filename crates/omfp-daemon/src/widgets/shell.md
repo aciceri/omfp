@@ -8,10 +8,12 @@ built-in command with its title and `:` names.
 
 The frame's own column, outside every view: one filter field at the top (thread titles, workspace and repository
 names and conversation text), "+ workspace" (a name, or a path starting with `/` or `~`, with
-completion), then one section per workspace — its name (the current one highlighted, a menu to rename or remove it),
-its threads with their state marks (running, awaiting input, failed, idle, unread) and "+ thread", which opens a draft
-thread there (the daemon creates the thread when its first message is sent). Archived threads hide behind
-"Archived (N)". A section folds with its chevron or `z a`; `d d` deletes the focused thread immediately, or asks
+completion), then one section per workspace — its name (the current one highlighted) and its thread count, which a
+menu to rename or remove it and a delete button replace on hover and focus, its threads with their state marks
+(running, awaiting input, failed, idle, unread) and "+ thread", which opens a draft thread there (the daemon creates
+the thread when its first message is sent). Then two collapsed rows, each toggled on its own: "Jobs (N)" when the
+workspace declares jobs (running and failing counts and a refused `jobs.json` marked at its right end; expanded, a row
+per job opens `omfp:jobs` on it, with Run or Stop on hover), and "Archived (N)", behind which archived threads hide. A section folds with its chevron or `z a`; `d d` deletes the focused thread immediately, or asks
 before deleting a workspace. A thread's `×`, the header's Delete, `:delete` and middle-click on a thread row all
 delete its history immediately, without confirmation, keeping its workspace. Middle-click never selects the thread
 first and never starts autoscroll. Deleting the selected thread clears the selection and its draft; deleting another

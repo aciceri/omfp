@@ -1011,21 +1011,22 @@
     border-color: color-mix(in oklab, var(--omfp-ok) 45%, transparent);
   }
 
-  :is(.omfp-chip, .omfp-queue-chip, .omfp-thread) .omfp-icon-button[data-size="sm"] {
+  :is(.omfp-chip, .omfp-queue-chip, .omfp-thread, .omfp-nested-row) .omfp-icon-button[data-size="sm"] {
     inline-size: 1.25em;
     block-size: 1.25em;
     border-radius: var(--omfp-r-row);
   }
 
-  /* Touch screens (UI-416): a thread row's delete `×` is a full touch target. */
+  /* Touch screens (UI-416): a thread row's delete `×` and a nested row's actions are full touch targets. */
   @media (pointer: coarse) {
-    .omfp-thread .omfp-icon-button[data-size="sm"].omfp-row__delete {
+    .omfp-thread .omfp-icon-button[data-size="sm"].omfp-row__delete,
+    .omfp-nested-row .omfp-nested-row__actions .omfp-icon-button[data-size="sm"] {
       inline-size: var(--omfp-touch);
       block-size: var(--omfp-touch);
     }
   }
 
-  :where(.omfp-chip, .omfp-queue-chip, .omfp-thread) .omfp-icon-button .omfp-ic {
+  :where(.omfp-chip, .omfp-queue-chip, .omfp-thread, .omfp-nested-row) .omfp-icon-button .omfp-ic {
     inline-size: 0.75rem;
     block-size: 0.75rem;
   }
@@ -2936,7 +2937,8 @@
     margin-block-start: var(--omfp-s3);
   }
 
-  /* A section's head (UI-442): the toggle, the name, the count, then its actions shown on hover and focus. */
+  /* A section's head (UI-442): the toggle, the name, then the count flush right, which the actions replace on hover
+   * and focus (and while their menu is open). */
   .omfp-wsection__head {
     display: flex;
     align-items: center;
@@ -2980,23 +2982,34 @@
     color: transparent;
   }
 
+  /* Flush right, its digits under the thread rows' times. */
   .omfp-wsection__count {
     flex: none;
-    margin-inline: auto var(--omfp-s1);
+    margin-inline-start: auto;
+    padding-inline-end: var(--omfp-s2);
     font-size: var(--omfp-fs-2xs);
   }
 
-  /* The head's buttons keep their square (UI-416): a long name gives way. */
+  /* The head's buttons keep their square (UI-416): a long name gives way. Hidden, they take no room. */
   .omfp-wsection__actions {
-    display: flex;
+    display: none;
     flex: none;
     align-items: center;
     gap: var(--omfp-s1);
-    opacity: 0;
+    margin-inline-start: auto;
   }
 
-  .omfp-wsection__head:is(:hover, :focus-within, .is-hover, .is-focus) .omfp-wsection__actions {
-    opacity: 1;
+  .omfp-wsection__head:is(:hover, :focus-within, .is-hover, .is-focus) .omfp-wsection__actions,
+  .omfp-wsection__head:has(.omfp-wsection__actions [aria-expanded="true"]) .omfp-wsection__actions {
+    display: flex;
+  }
+
+  /* Without hover the count stays, the actions after it (below). */
+  @media (hover: hover) {
+    .omfp-wsection__head:is(:hover, :focus-within, .is-hover, .is-focus) .omfp-wsection__count,
+    .omfp-wsection__head:has(.omfp-wsection__actions [aria-expanded="true"]) .omfp-wsection__count {
+      display: none;
+    }
   }
 
   .omfp-row-list {
@@ -3090,11 +3103,13 @@
     color: var(--omfp-on-surface-variant);
   }
 
-  .omfp-thread[data-state="awaiting"] .omfp-row__meta {
+  .omfp-thread[data-state="awaiting"] .omfp-row__meta,
+  .omfp-nested-row[data-state="awaiting"] .omfp-row__meta {
     color: var(--omfp-warn);
   }
 
-  .omfp-thread[data-state="failed"] .omfp-row__meta {
+  .omfp-thread[data-state="failed"] .omfp-row__meta,
+  .omfp-nested-row[data-state="failed"] .omfp-row__meta {
     color: var(--omfp-error);
   }
 
@@ -3111,8 +3126,10 @@
   }
 
   /* A thread row (UI-442): the select button fills it; unread titles are bold, placeholder titles italic; archived
-     rows are small, muted and indented; a filter match adds its snippet on a second line. */
-  .omfp-thread-row {
+     rows are small, muted and indented; a filter match adds its snippet on a second line. A nested row's button
+     (a job under `Jobs (N)`) is alike. */
+  .omfp-thread-row,
+  .omfp-nested-row__select {
     display: flex;
     flex: 1 1 auto;
     align-items: center;
@@ -3137,7 +3154,8 @@
     font-style: italic;
   }
 
-  .omfp-thread[data-archived] {
+  .omfp-thread[data-archived],
+  .omfp-nested-row {
     padding-inline-start: calc(var(--omfp-s2) * 2 + var(--omfp-ic-sm));
     font-size: var(--omfp-fs-xs);
     color: var(--omfp-on-surface-variant);
@@ -3162,10 +3180,15 @@
     white-space: nowrap;
   }
 
-  /* Screens without hover (UI-205, UI-415): the section's actions and a row's delete are always there. */
+  /* Screens without hover (UI-205, UI-415): the section's actions (after its count) and a row's delete or actions are
+   * always there. */
   @media (hover: none) {
     .omfp-wsection__head .omfp-wsection__actions {
-      opacity: 1;
+      display: flex;
+    }
+
+    .omfp-wsection__count + .omfp-wsection__actions {
+      margin-inline-start: 0;
     }
 
     .omfp-thread .omfp-row__delete {
@@ -3173,6 +3196,14 @@
     }
 
     .omfp-thread:has(.omfp-row__delete) .omfp-row__meta {
+      display: none;
+    }
+
+    .omfp-nested-row .omfp-nested-row__actions {
+      display: inline-flex;
+    }
+
+    .omfp-nested-row:has(.omfp-nested-row__actions) .omfp-row__meta {
       display: none;
     }
   }
@@ -3196,12 +3227,41 @@
     color: var(--omfp-primary);
   }
 
-  .omfp-action-row[data-kind="archived"] {
-    padding-inline-start: calc(var(--omfp-s2) * 2 + var(--omfp-ic-sm));
+  /* A row toggling the rows under it (`Jobs (N)`, `Archived (N)`): muted, its `▾`/`▸` where a thread row has its
+   * state mark, marks or counts flush right. */
+  .omfp-toggle-row {
+    font-size: var(--omfp-fs-xs);
+    color: var(--omfp-on-surface-variant);
   }
 
-  .omfp-action-row[data-kind="archived"] .omfp-ic {
-    color: var(--omfp-on-surface-variant);
+  .omfp-toggle-row__glyph {
+    flex: none;
+    color: var(--omfp-primary);
+  }
+
+  .omfp-toggle-row__end {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--omfp-s2);
+    font-size: var(--omfp-fs-2xs);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* A row under a toggle row (a job): its actions replace its meta on hover and focus. */
+  .omfp-nested-row__actions {
+    display: none;
+    flex: none;
+    align-items: center;
+    gap: var(--omfp-s1);
+  }
+
+  .omfp-nested-row:is(:hover, :focus-within, .is-hover, .is-focus) .omfp-nested-row__actions {
+    display: inline-flex;
+  }
+
+  .omfp-nested-row:is(:hover, :focus-within, .is-hover, .is-focus):has(.omfp-nested-row__actions) .omfp-row__meta {
+    display: none;
   }
 
   .omfp-hint-row {

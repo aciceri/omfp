@@ -168,3 +168,15 @@ export interface OpenSubagentRequest {
 }
 
 export const OPEN_SUBAGENT = windowKey<OpenSubagentRequest | undefined>("openSubagent", undefined);
+
+/**
+ * A request to open a declared job's row (its runs) in `omfp:jobs` showing `workspaceId` (UI-742); reveal `omfp:jobs`
+ * with it to show it. `nonce` tells one request from the next.
+ */
+export interface OpenJobRequest {
+  readonly workspaceId: string;
+  readonly job: string;
+  readonly nonce: number;
+}
+
+export const OPEN_JOB = windowKey<OpenJobRequest | undefined>("openJob", undefined);

@@ -1,10 +1,10 @@
-/** L4: declared jobs in the window (UI-740, UI-741, UI-744, UI-745, UI-746, UI-747, UI-748) over a fake client. */
+/** L4: declared jobs in the window (UI-740..UI-748) over a fake client. */
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { CallError, type CallMethod } from "@omfp/client";
 import { type JobCounts, jobsTopic } from "@omfp/protocol";
 import { act, cleanup, screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import userEvent, { type UserEvent } from "@testing-library/user-event";
 import { Frame } from "../../src/frame/frame.tsx";
 import { initUrl } from "../../src/frame/init.tsx";
 import { DEFAULT_BINDINGS } from "../../src/keymap/keymap.ts";
@@ -12,6 +12,7 @@ import {
   ERRORS,
   type InitApi,
   OPEN_FILES,
+  OPEN_JOB,
   REVEAL_WIDGET,
   SELECTED_THREAD,
   SUCCESSES,
@@ -78,23 +79,56 @@ function setup(answers: readonly CallMethod[] = ["threads.archive", "threads.del
   return { ...test, user: userEvent.setup() };
 }
 
-function counts(workspaceId: string): HTMLElement | null {
+/** The element `testId` of workspace `workspaceId`'s section, if any. */
+function inSection(workspaceId: string, testId: string): HTMLElement | null {
   const section = screen
     .getAllByTestId("workspace-section")
     .find((element) => element.dataset.workspaceId === workspaceId);
-  return section === undefined ? null : within(section).queryByTestId("job-counts");
+  return section === undefined ? null : within(section).queryByTestId(testId);
+}
+
+/** Presses the element, failing the test when there is none. */
+function press(user: UserEvent, element: Element | null | undefined): Promise<void> {
+  if (element === null || element === undefined) {
+    throw new Error("nothing to press");
+  }
+  return user.click(element);
+}
+
+/** The job rows under `workspaceId`'s expanded `Jobs (N)`. */
+function jobRows(workspaceId: string): HTMLElement[] {
+  const list = inSection(workspaceId, "jobs-list");
+  return list === null ? [] : within(list).queryAllByTestId("job-side-row");
 }
 
 describe("jobs in the left column", () => {
   // spec: UI-740
-  test("a workspace with jobs shows its counts after its name, spelled out in its name and tooltip", () => {
+  test("a workspace with jobs has a collapsed Jobs (N) row whose marks at its end spell everything out", () => {
     const test = setup();
-    expect(counts("w2")).toBeNull();
-    const button = counts("w1");
-    expect(button?.getAttribute("aria-label")).toBe("3 jobs: 1 service, 1 scheduled, 1 manual · 1 running · 1 failed");
-    expect([...(button?.querySelectorAll("[data-part]") ?? [])].map((part) => part.getAttribute("data-part"))).toEqual([
-      "running",
-      "failing",
+    expect(inSection("w2", "jobs-toggle")).toBeNull();
+    const toggle = inSection("w1", "jobs-toggle");
+    expect([
+      toggle?.querySelector(".omfp-toggle-row__glyph")?.textContent,
+      toggle?.querySelector(".omfp-row__title")?.textContent,
+      toggle?.getAttribute("aria-expanded"),
+    ]).toEqual(["▸", "Jobs (3)", "false"]);
+    expect(inSection("w1", "jobs-list")).toBeNull();
+    const marks = inSection("w1", "job-counts");
+    const label = "3 jobs: 1 service, 1 scheduled, 1 manual · 1 running · 1 failed";
+    expect([marks?.getAttribute("aria-label"), marks?.getAttribute("title"), marks?.getAttribute("role")]).toEqual([
+      label,
+      label,
+      "img",
+    ]);
+    expect(marks?.parentElement?.classList.contains("omfp-toggle-row__end")).toBe(true);
+    expect(
+      [...(marks?.querySelectorAll("[data-part]") ?? [])].map((part) => [
+        part.getAttribute("data-part"),
+        part.querySelector("[data-state]")?.getAttribute("data-state"),
+      ]),
+    ).toEqual([
+      ["running", "running"],
+      ["failing", "failed"],
     ]);
     // The window follows the jobs of every counted workspace: the refused file's reason shows.
     expect(test.client.subscribed).toEqual(expect.arrayContaining([jobsTopic("w1"), jobsTopic("w3")]));
@@ -104,32 +138,78 @@ describe("jobs in the left column", () => {
     });
     test.client.jobs("w3", { error: "jobs.a: unknown key" });
     test.flush();
-    expect(counts("w3")?.getAttribute("aria-label")).toBe(
+    expect(inSection("w3", "job-counts")?.getAttribute("aria-label")).toBe(
       "3 jobs: 1 service, 1 scheduled, 1 manual · jobs.json is invalid: jobs.a: unknown key",
     );
+    expect(
+      [...(inSection("w3", "job-counts")?.querySelectorAll("[data-part]") ?? [])].map((part) =>
+        part.getAttribute("data-part"),
+      ),
+    ).toEqual(["error"]);
   });
 
-  // spec: UI-741
-  test("pressing the counts reveals omfp:jobs: a tab here, a floating panel with workspaceId for another workspace", async () => {
+  // spec: UI-740, UI-741, UI-742, UI-092
+  test("expanded, a row per job (mark, name, state); pressing one reveals omfp:jobs on that job, a floating panel for another workspace", async () => {
     const test = setup();
-    const press = (button: HTMLElement | null) => {
-      if (button !== null) {
-        return test.user.click(button);
-      }
-      throw new Error("no counts");
-    };
-    await press(counts("w3"));
+    test.client.jobs("w1", {
+      jobs: [
+        jobView("deploy", { description: "Ship it" }),
+        jobView("watch", { trigger: "service" }, { status: "running", run: runInfo("r4", "watch") }),
+        jobView("lint", {}, { lastRun: runInfo("r3", "lint", { status: "failed", exitCode: 1 }) }),
+      ],
+    });
+    test.client.jobs("w3", { jobs: [jobView("mail")] });
     test.flush();
+    await press(test.user, inSection("w1", "jobs-toggle"));
+    expect(inSection("w1", "jobs-toggle")?.getAttribute("aria-expanded")).toBe("true");
+    expect(inSection("w3", "jobs-list")).toBeNull();
+    const rows = jobRows("w1");
+    expect(
+      rows.map((row) => [
+        row.dataset.job,
+        row.dataset.state,
+        row.querySelector(".omfp-row__title")?.textContent,
+        row.querySelector(".omfp-row__meta")?.textContent,
+      ]),
+    ).toEqual([
+      ["deploy", "idle", "deploy", "idle"],
+      ["watch", "running", "watch", "running"],
+      ["lint", "failed", "lint", "failed"],
+    ]);
+    // The state in words is the mark's name, so it stays when Run or Stop take the meta's place (focus, no hover).
+    expect(
+      rows.map((row) => {
+        const mark = row.querySelector(".omfp-state-mark");
+        const meta = row.querySelector(".omfp-row__meta");
+        return [mark?.getAttribute("role"), mark?.getAttribute("aria-label"), meta?.getAttribute("aria-hidden")];
+      }),
+    ).toEqual([
+      ["img", "idle", "true"],
+      ["img", "running", "true"],
+      ["img", "failed", "true"],
+    ]);
+    expect(
+      within(rows[0] as HTMLElement)
+        .getByTestId("job-side-open")
+        .getAttribute("title"),
+    ).toBe("Ship it");
+
+    await press(test.user, within(rows[1] as HTMLElement).getByTestId("job-side-open"));
+    test.flush();
+    expect(test.host.window.get(OPEN_FILES).w1?.widgets).toEqual(["omfp:jobs"]);
+    expect(test.host.window.get(OPEN_JOB)).toMatchObject({ workspaceId: "w1", job: "watch" });
+    expect(screen.queryByTestId("floating-widget")).toBeNull();
+
+    await press(test.user, inSection("w3", "jobs-toggle"));
+    await press(test.user, within(jobRows("w3")[0] as HTMLElement).getByTestId("job-side-open"));
+    test.flush();
+    expect(test.host.window.get(OPEN_JOB)).toMatchObject({ workspaceId: "w3", job: "mail" });
     const panel = screen.getByTestId("floating-widget");
     expect(within(panel).getByTestId("floating-widget-title").textContent).toBe("Jobs · w3");
     expect(within(panel).getByTestId("stub-jobs").textContent).toBe("w3");
     await test.user.click(within(panel).getByTestId("floating-widget-close"));
 
-    await press(counts("w1"));
-    test.flush();
-    expect(test.host.window.get(OPEN_FILES).w1?.widgets).toEqual(["omfp:jobs"]);
-    expect(screen.queryByTestId("floating-widget")).toBeNull();
-    // `:jobs` does the same for the current workspace.
+    // `:jobs` reveals omfp:jobs for the current workspace.
     act(() => test.host.window.set(OPEN_FILES, {}));
     act(() => {
       test.host.commands.run("jobs");
@@ -137,6 +217,46 @@ describe("jobs in the left column", () => {
     test.flush();
     expect(test.host.window.get(OPEN_FILES).w1?.widgets).toEqual(["omfp:jobs"]);
     expect(test.host.window.get(REVEAL_WIDGET)).toBeUndefined();
+  });
+
+  // spec: UI-740, UI-743
+  test("a job row's Run or Stop takes its state's place on hover and focus, through the calls of omfp:jobs; an error is a toast", async () => {
+    const test = setup();
+    test.client.jobs("w1", {
+      jobs: [
+        jobView("deploy"),
+        jobView("watch", { trigger: "service" }, { status: "running", run: runInfo("r4", "watch") }),
+        jobView("old", { enabled: false }, { status: "disabled" }),
+      ],
+    });
+    test.flush();
+    await press(test.user, inSection("w1", "jobs-toggle"));
+    const [deploy, watch, old] = jobRows("w1");
+    for (const row of [deploy, watch]) {
+      const actions = row?.querySelector(".omfp-nested-row__actions");
+      expect(actions?.previousElementSibling?.querySelector(".omfp-row__meta")).not.toBeNull();
+    }
+    expect(within(watch as HTMLElement).queryByTestId("job-side-run")).toBeNull();
+    expect(
+      within(old as HTMLElement)
+        .getByTestId("job-side-run")
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    await press(test.user, within(deploy as HTMLElement).getByRole("button", { name: "Run deploy" }));
+    await press(test.user, within(watch as HTMLElement).getByRole("button", { name: "Stop watch" }));
+    expect(
+      test.client.calls.filter((call) => call.method.startsWith("jobs.")).map((call) => [call.method, call.params]),
+    ).toEqual([
+      ["jobs.run", { workspaceId: "w1", job: "deploy" }],
+      ["jobs.kill", { jobId: "r4" }],
+    ]);
+    expect(test.host.window.get(REVEAL_WIDGET)).toBeUndefined();
+    const refused = new CallError({ kind: "daemon", error: { code: "conflict", message: "deploy is running" } });
+    await act(async () => {
+      test.client.callsTo("jobs.run")[0]?.reject(refused);
+      await Promise.resolve();
+    });
+    expect(test.host.window.get(ERRORS)).toEqual(["deploy is running (conflict)"]);
   });
 
   // spec: UI-746

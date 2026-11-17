@@ -56,6 +56,28 @@ describe(":compact", () => {
     expect(test.client.callsTo("thread.compact").map((call) => call.params)).toEqual([{ threadId: "t1" }]);
   });
 
+  // spec: UI-913
+  test("a first word naming a mode sends omp's /compact with it; snapcompact refuses a focus", async () => {
+    const test = setup();
+    test.client.answers.set("thread.prompt", () => ({ promptId: "req_1", agentInvoked: false }));
+    act(() => {
+      test.host.commands.run("compact", ["Soft", "keep", "the", "plan"]);
+    });
+    await waitFor(() => expect(successes(test.host)).toEqual(["Compacting the context (soft)"]));
+    expect(test.client.callsTo("thread.prompt").map((call) => call.params)).toEqual([
+      { threadId: "t1", text: "/compact soft keep the plan" },
+    ]);
+    act(() => {
+      test.host.commands.run("compact", ["snapcompact", "the", "plan"]);
+    });
+    expect(test.host.window.get(ERRORS)).toEqual([
+      "snapcompact takes no focus: it keeps the history as images, without a summary",
+    ]);
+    expect(test.client.callsTo("thread.prompt").length).toBe(1);
+    expect(test.client.callsTo("thread.compact")).toEqual([]);
+    expect(test.host.commands.resolve("compact")?.args?.([])).toEqual(["soft", "remote", "snapcompact"]);
+  });
+
   // spec: UI-910
   test("is refused while the thread works, without calling omp", () => {
     const test = setup(thread("t1", "checkout", "w1", { settled: false }));

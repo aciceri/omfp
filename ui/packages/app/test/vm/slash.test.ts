@@ -42,10 +42,14 @@ describe("slash commands over omp's RPC", () => {
     expect(route("/logout openai")).toEqual(["logout", { type: "command", id: "auth.logout", args: ["openai"] }]);
     expect(route("/model")).toEqual(["model", { type: "command", id: "thread.pickModel", args: [] }]);
     expect(route("/models")).toEqual(["model", { type: "command", id: "thread.pickModel", args: [] }]);
-    expect(route("/compact")).toEqual(["compact", { type: "compact" }]);
+    expect(route("/compact")).toEqual(["compact", { type: "command", id: "thread.compact", args: [] }]);
     expect(route("/compact keep the test plan")).toEqual([
       "compact",
-      { type: "compact", instructions: "keep the test plan" },
+      { type: "command", id: "thread.compact", args: ["keep the test plan"] },
+    ]);
+    expect(route("/compact soft keep the plan")).toEqual([
+      "compact",
+      { type: "command", id: "thread.compact", args: ["soft keep the plan"] },
     ]);
     expect(route("/fork")).toEqual(["fork", { type: "fork" }]);
     expect(route("/copy")).toEqual(["copy", { type: "command", id: "thread.copy", args: [] }]);
@@ -58,8 +62,6 @@ describe("slash commands over omp's RPC", () => {
   // spec: UI-976
   test("arguments omfp has no equivalent for go to omp when omp runs the command", () => {
     expect(action("/model anthropic/claude-sonnet-4-5")).toEqual({ type: "send", command: "model" });
-    expect(action("/compact soft keep the plan")).toEqual({ type: "send", command: "compact" });
-    expect(action("/compact SnapCompact")).toEqual({ type: "send", command: "compact" });
     expect(action("/export out.html")).toEqual({ type: "send", command: "export" });
   });
 

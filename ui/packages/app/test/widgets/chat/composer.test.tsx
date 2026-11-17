@@ -172,15 +172,19 @@ describe("composer", () => {
     const ran: string[][] = [];
     act(() => {
       host.commands.register({ id: "auth.login", title: "Log in", run: (args) => void ran.push([...args]) });
+      host.commands.register({
+        id: "thread.compact",
+        title: "Compact",
+        run: (args) => void ran.push(["compact", ...args]),
+      });
     });
     await userEvent.click(input());
     await userEvent.keyboard("/login anthropic{Enter}");
     expect(ran).toEqual([["anthropic"]]);
     expect(input().value).toBe("");
+    // `/compact`, its modes included, runs `:compact` with the text as typed (UI-910).
     await userEvent.keyboard("/compact keep the test plan{Enter}");
-    expect(client.callsTo("thread.compact").map((call) => call.params)).toEqual([
-      { threadId: THREAD, instructions: "keep the test plan" },
-    ]);
+    expect(ran.at(-1)).toEqual(["compact", "keep the test plan"]);
     // Enter on the open menu would pick the highlighted command: Tab completes it, then Enter sends.
     await userEvent.keyboard("/fork{Tab}{Enter}");
     expect(client.callsTo("threads.fork").map((call) => call.params)).toEqual([{ threadId: THREAD }]);
@@ -188,11 +192,9 @@ describe("composer", () => {
     // `/model` opens the header's model list: without a header nothing runs it, and the error says so.
     await userEvent.keyboard("/model{Tab}{Enter}");
     expect(host.window.get(ERRORS)).toEqual(["/model: nothing in this window runs it now"]);
-    // With arguments omfp has no equivalent for, omp runs it.
     await userEvent.keyboard("/compact soft{Enter}");
-    expect(client.callsTo("thread.prompt").map((call) => call.params)).toEqual([
-      { threadId: THREAD, text: "/compact soft" },
-    ]);
+    expect(ran.at(-1)).toEqual(["compact", "soft"]);
+    expect(client.callsTo("thread.prompt")).toEqual([]);
   });
 
   // spec: UI-977

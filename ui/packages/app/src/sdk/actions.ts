@@ -8,6 +8,7 @@ import { compactNumber } from "@omfp/kit";
 import type { CloseJobs, RunInfo } from "@omfp/protocol";
 import { useMemo } from "react";
 import { strings } from "../strings/index.ts";
+import { type CompactMode, compactPrompt, tokensBefore, UNFOCUSED_MODE } from "../vm/compaction.ts";
 import { expandPastes } from "../vm/paste.ts";
 import { adoptDraft, dropDraft } from "../vm/tab-choices.ts";
 import { displayTitle } from "../vm/threads.ts";
@@ -62,11 +63,13 @@ export interface ThreadActions {
    */
   forkAtMessage(threadId: string, message: { role: string; timestamp?: number | null }): Promise<string | undefined>;
   /**
-   * Has omp compact the thread's context (`thread.compact`, UI-910), with `instructions` (trimmed; blank: none) as the
-   * focus of its summary, then shows a success toast. Refused with an error toast while the thread works (its summary
-   * is not settled); a failure is reported. Resolves to whether omp compacted.
+   * Has omp compact the thread's context, with `instructions` (trimmed; blank: none) as the focus of its summary, then
+   * shows a success toast (UI-910, UI-911). Without `mode` through `thread.compact`; with one (`soft`, `remote`,
+   * `snapcompact`, which takes no focus) by sending omp's `/compact <mode> [focus]` as a prompt, whose outcome omp
+   * reports in the transcript (UI-913). Refused with an error toast while the thread works (its summary is not
+   * settled); a failure is reported. Resolves to whether omp compacted (with a mode: took the command).
    */
-  compact(threadId: string, instructions?: string): Promise<boolean>;
+  compact(threadId: string, instructions?: string, mode?: CompactMode): Promise<boolean>;
 }
 
 /** The message of a failed call or any thrown value; a daemon error carrying omp's stderr tail (a failed start,
@@ -352,7 +355,7 @@ export function threadActions(host: OmfpHost): ThreadActions {
         return undefined;
       }
     },
-    compact: (threadId, instructions) => compactThread(host, threadId, instructions),
+    compact: (threadId, instructions, mode) => compactThread(host, threadId, instructions, mode),
   };
 }
 
@@ -368,22 +371,36 @@ async function forkThread(host: OmfpHost, threadId: string, entryId: string | un
   }
 }
 
-async function compactThread(host: OmfpHost, threadId: string, instructions: string | undefined): Promise<boolean> {
+async function compactThread(
+  host: OmfpHost,
+  threadId: string,
+  instructions: string | undefined,
+  mode: CompactMode | undefined,
+): Promise<boolean> {
+  const text = strings.shell.compaction;
   // omp would abort the running turn and resume it after the summary: the window leaves the turn alone (UI-910).
   if (host.frames.getSnapshot().index.threads.get(threadId)?.settled === false) {
-    reportError(host, strings.shell.compaction.busy);
+    reportError(host, text.busy);
     return false;
   }
   const focus = instructions?.trim() ?? "";
+  if (mode === UNFOCUSED_MODE && focus !== "") {
+    reportError(host, text.noFocus(mode));
+    return false;
+  }
   try {
+    if (mode !== undefined) {
+      // omp's RPC `compact` takes no mode; its `/compact` builtin, sent as a prompt, does (UI-913).
+      await host.client.call("thread.prompt", { threadId, text: compactPrompt(mode, focus) });
+      reportSuccess(host, text.started(mode));
+      return true;
+    }
     const result = await host.client.call("thread.compact", {
       threadId,
       ...(focus === "" ? {} : { instructions: focus }),
     });
-    // omp's `CompactionResult`: the context's size before it.
-    const before = isObject(result) ? result.tokensBefore : undefined;
-    const held = typeof before === "number" && before > 0 ? compactNumber(before) : undefined;
-    reportSuccess(host, strings.shell.compaction.compacted(held));
+    const before = tokensBefore(result);
+    reportSuccess(host, text.compacted(before === undefined ? undefined : compactNumber(before)));
     return true;
   } catch (error) {
     reportError(host, error);

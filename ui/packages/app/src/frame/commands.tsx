@@ -33,6 +33,7 @@ import {
   useWindowState,
 } from "../sdk/index.ts";
 import { strings } from "../strings/index.ts";
+import { COMPACT_MODES, parseCompact } from "../vm/compaction.ts";
 import { displayTitle, isArchived, nextNeedingAttention, spawnerOf } from "../vm/threads.ts";
 import { DENSITIES, parseSet, parseTheme, SET_KEYS, themeArgs } from "./set.ts";
 
@@ -280,14 +281,19 @@ export function GlobalCommands({ viewIds, currentView, widgets, addWidget }: Glo
     enabled: () => summary() !== undefined,
     run: onSelected(conversation.export),
   });
-  // omp's `compact` with the arguments as the summary's focus, the only option omp's RPC takes (UI-910).
+  // `:compact [mode] [focus]`, read as omp's `/compact` reads it; `/compact` runs it too (UI-910, UI-913, UI-976).
   useCommand({
     id: "thread.compact",
     title: titles.compact,
     description: titles.compactDescription,
     aliases: ["compact"],
     enabled: live,
-    run: (args) => onSelected((threadId) => actions.compact(threadId, args.join(" ")))(),
+    args: (before) => (before.length === 0 ? [...COMPACT_MODES] : []),
+    run: (args) =>
+      onSelected((threadId) => {
+        const { mode, focus } = parseCompact(args.join(" "));
+        return actions.compact(threadId, focus, mode);
+      })(),
   });
   useCommand({
     id: "thread.nextAttention",

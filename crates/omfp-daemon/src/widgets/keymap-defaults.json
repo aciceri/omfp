@@ -706,11 +706,11 @@
     },
     {
       "id": "thread.compact",
-      "title": "Compact the context (:compact [focus of the summary])",
+      "title": "Compact the context (:compact [soft|remote|snapcompact] [focus of the summary])",
       "aliases": [
         "compact"
       ],
-      "description": "Has omp summarize the selected thread's conversation so far and continue from the summary, freeing context. Words after :compact tell the summary what to focus on. Refused while the thread works; the transcript shows the compaction as a notice."
+      "description": "Has omp summarize the selected thread's conversation so far and continue from the summary, freeing context. Words after :compact tell the summary what to focus on; a first word soft, remote or snapcompact picks omp's method for this once (snapcompact takes no focus). Refused while the thread works; the transcript shows the compaction as a notice."
     },
     {
       "id": "thread.copy",

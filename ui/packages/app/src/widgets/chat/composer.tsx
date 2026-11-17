@@ -682,12 +682,6 @@ export const Composer = memo(function Composer({
           reportError(text.slash.unavailable(name));
         }
         return;
-      case "compact":
-        call("thread.compact", {
-          threadId,
-          ...(route.instructions === undefined ? {} : { instructions: route.instructions }),
-        }).catch(reportError);
-        return;
       case "fork":
         void actions.fork(threadId);
         return;

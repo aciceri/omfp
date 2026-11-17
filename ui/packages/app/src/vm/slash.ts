@@ -61,15 +61,10 @@ export const OMP_TUI_COMMANDS: readonly { readonly name: string; readonly aliase
   { name: "quit", aliases: ["q"] },
 ];
 
-/** omp's `/compact` modes (`session/compact-modes.ts`): omfp's `thread.compact` has none, so these go to omp. */
-const COMPACT_MODES = ["soft", "remote", "snapcompact"];
-
 /** What omfp does instead of sending a routed command to omp (UI-976). */
 export type SlashRoute =
   /** Runs the window command `id` (`auth.login`, `thread.pickModel`, …) with `args`. */
   | { readonly type: "command"; readonly id: string; readonly args: readonly string[] }
-  /** `thread.compact` on the thread, with omp's focus instructions when given. */
-  | { readonly type: "compact"; readonly instructions?: string }
   /** Forks the whole conversation into a new thread (`threads.fork`). */
   | { readonly type: "fork" };
 
@@ -95,13 +90,8 @@ const ROUTES: Readonly<Record<string, (args: string) => SlashRoute | undefined>>
   login: (args) => command("auth.login", words(args)),
   logout: (args) => command("auth.logout", words(args)),
   model: (args) => (args === "" ? command("thread.pickModel") : undefined),
-  compact: (args) => {
-    const mode = words(args)[0];
-    if (mode !== undefined && COMPACT_MODES.includes(mode.toLowerCase())) {
-      return undefined;
-    }
-    return args === "" ? { type: "compact" } : { type: "compact", instructions: args };
-  },
+  // Every form, its modes included, through `:compact` (UI-910, UI-913); the text stays one argument, as typed.
+  compact: (args) => command("thread.compact", args === "" ? [] : [args]),
   fork: (args) => (args === "" ? { type: "fork" } : undefined),
   copy: (args) => (args === "" ? command("thread.copy") : undefined),
   export: (args) => (args === "" ? command("thread.export") : undefined),

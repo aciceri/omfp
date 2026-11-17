@@ -31,8 +31,8 @@ The version's section is also the source of the GitHub release notes.
 - `:compact [focus]` compacts the selected thread's context on demand, like oh-my-pi's `/compact`: oh-my-pi
   summarizes the conversation so far, with the words after `:compact` as what the summary should focus on, and the
   transcript shows the compaction as a notice; a toast says how big the context was. It is refused while the thread
-  works. The header's `⋯` offers it too, with a field for the focus. oh-my-pi's `/compact` modes (`soft`, `remote`,
-  `snapcompact`) are not offered: its RPC does not take them.
+  works. `:compact soft|remote|snapcompact [focus]` picks oh-my-pi's method for that once, and `/compact` in the
+  composer runs `:compact`. The header's `⋯` offers it too, with a field for the focus.
 
 ### Changed
 

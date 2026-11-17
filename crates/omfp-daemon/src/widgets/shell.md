@@ -92,7 +92,7 @@ bind. The built-in ones (`omfp://keymap` has them all):
 | `:spawned` | Show only the threads the selected one spawned (again: all). |
 | `:fork` | A new thread in the same workspace with the conversation up to the focused message (transcript; `j`/`k` focus messages) or tree entry (`omfp:tree`), the message included (`threads.fork`); the thread forked from is untouched. A user message's *Fork from here* does the same; the fork's header and row say where it comes from. |
 | `:copy`, `:export` | The selected thread's conversation as Markdown, rendered by the window from the thread's state (a stopped thread's too): `:copy` puts it on the clipboard (in the transcript, with a message focused by `j`/`k`, only that message), `:export` saves it as `<title>.md` (the browser downloads it; the desktop window saves it in the Downloads folder). Messages go under `## You` / `## Assistant`, thinking is left out, images are `[image: <type>]`, a tool call is one line with its result in a code block. Also in the header's `⋯`; no default key. |
-| `:compact [focus]` | Compact the selected thread's context, like omp's `/compact`: omp summarizes the conversation so far and continues from the summary (`thread.compact`; the words after it tell the summary what to focus on). omp's `/compact` modes (`soft`, `remote`, `snapcompact`) are not reachable over its RPC. Refused while the thread works (Abort ends the turn); the transcript shows the compaction as a notice and a toast says how big the context was. Also in the header's `⋯`, with a field for the focus; no default key. |
+| `:compact [soft\|remote\|snapcompact] [focus]` | Compact the selected thread's context, like omp's `/compact`: omp summarizes the conversation so far and continues from the summary (`thread.compact`; the words after it tell the summary what to focus on). A first word naming one of omp's modes sends omp's `/compact <mode> [focus]` instead, which reports in the transcript (`snapcompact` takes no focus). `/compact` in the composer runs `:compact`. Refused while the thread works (Abort ends the turn); the transcript shows the compaction as a notice and a toast says how big the context was. Also in the header's `⋯`, with a field for the focus; no default key. |
 | `:open <path>[:<line>]` | Open a file of the workspace in a tab next to the chat. |
 | `:rescan` | Rescan the current workspace's repositories. |
 | `:login [<provider>]`, `:logout <provider>` | Log omp in to a provider (without one, pick it); remove omp's stored credentials of one. See "Logging in". |
@@ -151,7 +151,7 @@ of a path suggest the workspace's files (fuzzy, like `Space f`); Tab or Enter in
 the prompt's context.
 
 `/` at the start of the message suggests omp's commands. omp runs most of them, but some only work in its terminal UI:
-omfp runs its own equivalent for `/login`, `/logout`, `/model` (the header's model list), `/compact [<focus>]`,
+omfp runs its own equivalent for `/login`, `/logout`, `/model` (the header's model list), `/compact [<mode>] [<focus>]` (`:compact`),
 `/fork` (a new thread with the whole conversation), `/copy`, `/export`, `/new`, `/hotkeys` (`:help`) and `/resume`
 (`:threads`); the other terminal-only ones (`/settings`, `/quit`, `/tree`, …) show greyed out with the reason and are
 not sent. A command defined by the workspace, a skill or a plugin always goes to omp. When omp refuses a command, the

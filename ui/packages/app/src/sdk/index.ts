@@ -294,6 +294,7 @@ export {
 export { chooseView, useActiveView, useViewChoicesUpkeep } from "./active-view.ts";
 export { type Background, useBackground, useRunningInBackground, useSubagentRows } from "./background.ts";
 export { type Command, CommandRegistry, SCOPE_ATTRIBUTE, scopesAt } from "./commands.ts";
+export { type ConversationActions, conversationActions, useConversationActions } from "./conversation.ts";
 export { useThreadCost } from "./cost.ts";
 export {
   cancelFilePicker,

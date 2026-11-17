@@ -705,12 +705,37 @@
       ]
     },
     {
+      "id": "thread.copy",
+      "title": "Copy the conversation as Markdown (the focused message only, in the transcript)",
+      "aliases": [
+        "copy"
+      ],
+      "description": "Copies the selected thread's conversation to the clipboard as Markdown: messages under their author, tool calls as a line with their result, thinking left out, images as placeholders. With a message of the transcript focused (j and k move between them), only that message."
+    },
+    {
+      "id": "thread.copy",
+      "title": "Copy the conversation as Markdown (the focused message only, in the transcript)",
+      "aliases": [
+        "copy"
+      ],
+      "description": "Copies the selected thread's conversation to the clipboard as Markdown: messages under their author, tool calls as a line with their result, thinking left out, images as placeholders. With a message of the transcript focused (j and k move between them), only that message.",
+      "scope": "transcript"
+    },
+    {
       "id": "thread.delete",
       "title": "Delete thread now",
       "aliases": [
         "delete"
       ],
       "description": "Immediately removes the thread's history without confirmation; its workspace is kept. Use Archive to keep the conversation."
+    },
+    {
+      "id": "thread.export",
+      "title": "Export the conversation as a Markdown file",
+      "aliases": [
+        "export"
+      ],
+      "description": "Saves the selected thread's conversation as a Markdown file, the same text :copy copies: the browser downloads it, the desktop window saves it in your Downloads folder."
     },
     {
       "id": "thread.fork",

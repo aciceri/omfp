@@ -1,7 +1,8 @@
 /**
  * The global commands of the frame (UI-095), shared by the keymap and the `:` line: a draft thread in the current
- * workspace and thread actions on the selected thread (UI-021, UI-023, UI-026, UI-030), a rescan of the current
- * workspace (DMN-023), colour scheme (UI-091, window-local), density and `:set` (daemon settings, UI-094, UI-097), the
+ * workspace and thread actions on the selected thread (UI-021, UI-023, UI-026, UI-030; copying and exporting its
+ * conversation, UI-790, UI-791), a rescan of the current workspace (DMN-023), colour scheme (UI-091, window-local),
+ * density and `:set` (daemon settings, UI-094, UI-097), the
  * view switch (UI-101), the next and previous view (UI-302) and `:view-reset` (UI-107, UI-430), adding a widget to the view
  * (UI-300), copying a widget into the workspace (UI-106), saving a workspace widget to the user library (UI-233) and
  * the current workspace's declared jobs (UI-745).
@@ -24,6 +25,7 @@ import {
   reportSuccess,
   SELECTED_THREAD,
   useCommand,
+  useConversationActions,
   useHost,
   useSetSettings,
   useThreadActions,
@@ -67,6 +69,7 @@ const WIDGET_ACTIONS = ["add", "copy", "save", "save!"];
 export function GlobalCommands({ viewIds, currentView, widgets, addWidget }: GlobalCommandsProps): ReactNode {
   const host = useHost();
   const actions = useThreadActions();
+  const conversation = useConversationActions();
   const setSettings = useSetSettings();
   const [selected] = useWindowState(SELECTED_THREAD);
   const summary = () => (selected === undefined ? undefined : host.frames.getSnapshot().index.threads.get(selected));
@@ -258,6 +261,23 @@ export function GlobalCommands({ viewIds, currentView, widgets, addWidget }: Glo
     aliases: ["restart"],
     enabled: () => ["stopped", "failed"].includes(summary()?.process.state ?? ""),
     run: onSelected(actions.restart),
+  });
+  // The whole conversation; the transcript's `:copy` copies its focused message (UI-790, UI-791).
+  useCommand({
+    id: "thread.copy",
+    title: titles.copy,
+    description: titles.copyDescription,
+    aliases: ["copy"],
+    enabled: () => summary() !== undefined,
+    run: onSelected(conversation.copy),
+  });
+  useCommand({
+    id: "thread.export",
+    title: titles.export,
+    description: titles.exportDescription,
+    aliases: ["export"],
+    enabled: () => summary() !== undefined,
+    run: onSelected(conversation.export),
   });
   useCommand({
     id: "thread.nextAttention",

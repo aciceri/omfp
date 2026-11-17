@@ -79,6 +79,8 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   "thread.stopSpawned": commandTitles.stopSpawned,
   "threads.spawnedBy": commandTitles.spawnedBy,
   "thread.restart": commandTitles.restart,
+  "thread.copy": commandTitles.copy,
+  "thread.export": commandTitles.export,
   "threads.toggle": commandTitles.toggleThreads,
   "window.theme": commandTitles.theme,
   "density.set": commandTitles.density,

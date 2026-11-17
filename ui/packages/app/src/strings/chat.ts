@@ -18,6 +18,14 @@ export const chat = {
   attachedImage: "Attached image",
   details: "Details",
   missingMessage: "missing",
+  /** The conversation as Markdown, for `:copy` and `:export` (UI-792). */
+  markdown: {
+    tool: "Tool",
+    error: "Error",
+    image: (mime: string) => `[image: ${mime}]`,
+    /** The exported file's name when the title has no letter or digit. */
+    fileName: "conversation",
+  },
   /** Label of omp's own bookkeeping records (device inventories, mount notices). */
   system: "system",
   records: {

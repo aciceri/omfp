@@ -7,6 +7,13 @@ The version's section is also the source of the GitHub release notes.
 
 ## Unreleased
 
+### Added
+
+- `:copy` copies the selected thread's conversation to the clipboard as Markdown (with a message focused in the
+  transcript, only that message), and `:export` saves it as a `.md` file named after the thread: the browser
+  downloads it, the desktop window saves it in the Downloads folder. Messages go under their author, tool calls are
+  one line with their result, thinking is left out and images are placeholders. Both are also in the header's `⋯`.
+
 ### Changed
 
 - The left column's workspace sections are tidier: the thread count sits at the right end of the header, with the

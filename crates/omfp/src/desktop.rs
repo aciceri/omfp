@@ -16,7 +16,8 @@ use omfp_daemon::watch::{self, WatchedFile};
 use omfp_protocol::Theme;
 use omfp_protocol::method::ThemeSet;
 use tauri::webview::{
-    NewWindowResponse, PageLoadEvent, PageLoadPayload, PermissionKind, PermissionResponse,
+    DownloadEvent, NewWindowResponse, PageLoadEvent, PageLoadPayload, PermissionKind,
+    PermissionResponse,
 };
 use tauri::{Manager as _, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
@@ -285,6 +286,14 @@ pub fn navigation(url: &Url, origin: &str) -> Navigation {
     }
 }
 
+/// Whether the window saves a download of `url` (UI-791): only a file the daemon's page made itself (a `blob:` URL of
+/// `origin`, `:export`); Tauri saves it in the user's Downloads folder, numbering the name rather than replacing a file.
+/// Without a handler `WKWebView` cancels every download.
+#[must_use]
+pub fn saves_download(url: &Url, origin: &str) -> bool {
+    url.scheme() == "blob" && url.origin().ascii_serialization() == origin
+}
+
 /// What the window does once its top-level page starts loading a URL (UI-678).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PageStart {
@@ -469,6 +478,14 @@ fn open_window(
                     crate::tray::open_in_browser(url.as_str());
                 }
                 NewWindowResponse::Deny
+            }
+        })
+        // UI-791: `:export`'s file, in the Downloads folder.
+        .on_download({
+            let origin = origin.clone();
+            move |_, event| match event {
+                DownloadEvent::Requested { url, .. } => saves_download(&url, &origin),
+                _ => true,
             }
         });
     // Per data directory: two daemons on the same port never share the window's storage (UI-005). WebKitGTK takes a
@@ -903,6 +920,23 @@ mod tests {
                 expected == Navigation::External,
                 "{target}"
             );
+        }
+    }
+
+    // spec: UI-791
+    #[test]
+    fn the_window_saves_only_the_files_its_page_made() {
+        let origin = "http://127.0.0.1:7420";
+        let url = |text: &str| Url::parse(text).unwrap();
+        for (target, saves) in [
+            ("blob:http://127.0.0.1:7420/8d5c1f2e", true),
+            ("blob:http://127.0.0.1:7421/8d5c1f2e", false),
+            ("blob:https://example.com/8d5c1f2e", false),
+            ("http://127.0.0.1:7420/files/k/notes.md", false),
+            ("data:text/markdown,hello", false),
+            ("https://example.com/file.zip", false),
+        ] {
+            assert_eq!(saves_download(&url(target), origin), saves, "{target}");
         }
     }
 

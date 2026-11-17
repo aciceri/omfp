@@ -2,12 +2,22 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import type { CallMethod } from "@omfp/client";
+import type { ThreadEvent } from "@omfp/core";
 import type { ThreadSummary } from "@omfp/protocol";
 import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent, { type UserEvent } from "@testing-library/user-event";
-import { AUTH_REVISION, draftKey, ERRORS, LOGIN, REVEAL_WIDGET, SELECTED_THREAD } from "../../src/sdk/index.ts";
+import {
+  AUTH_REVISION,
+  draftKey,
+  ERRORS,
+  LOGIN,
+  REVEAL_WIDGET,
+  SELECTED_THREAD,
+  SUCCESSES,
+} from "../../src/sdk/index.ts";
 import { Composer } from "../../src/widgets/chat/composer.tsx";
 import { HeaderWidget } from "../../src/widgets/header/index.ts";
+import { captureDownloads } from "../support/downloads.ts";
 import { repo, thread, workspace } from "../support/fixtures.ts";
 import { type FakeClient, renderWithHost, testHost } from "../support/host.tsx";
 import { installResizeObserver, resize } from "../support/resize.ts";
@@ -470,6 +480,39 @@ describe("omfp:header", () => {
     await waitFor(() => expect(client.callsTo("thread.models").length).toBe(2));
     await screen.findByTestId("model-select");
     expect(screen.queryAllByTestId("models-login").length).toBe(0);
+  });
+});
+
+describe("copying and exporting from the header", () => {
+  // spec: UI-793
+  test("the ⋯ popover copies and exports the whole conversation, then closes", async () => {
+    const test = setup(thread("t1", "Sky", "w1"));
+    test.client.thread("t1", [
+      {
+        kind: "history",
+        session: { session_id: "s", resumed: true },
+        messages: [{ role: "user", content: "Why is the sky blue?", timestamp: 1 }],
+      } as ThreadEvent,
+    ]);
+    test.flush();
+    const markdown = "# Sky\n\n## You\n\nWhy is the sky blue?\n";
+    await fromMore(test.user, "copy-conversation");
+    await waitFor(() => expect(screen.queryByTestId("header-more-dialog")).toBeNull());
+    expect(await navigator.clipboard.readText()).toBe(markdown);
+    const downloads = captureDownloads();
+    try {
+      await fromMore(test.user, "export-conversation");
+      await waitFor(() =>
+        expect(test.host.window.get(SUCCESSES).map((success) => success.text)).toEqual([
+          "Copied the conversation",
+          "Exported “sky.md”",
+        ]),
+      );
+      expect(downloads.files.map((file) => file.name)).toEqual(["sky.md"]);
+      expect(await downloads.files[0]?.text).toBe(markdown);
+    } finally {
+      downloads.restore();
+    }
   });
 });
 

@@ -1215,6 +1215,11 @@ requirements = [
   "PRT-211",
   "UI-751",
   "E2E-73",
+  # Copying and exporting a whole conversation as Markdown (#141)
+  "UI-790",
+  "UI-791",
+  "UI-792",
+  "UI-793",
 ]
 
 [M18]

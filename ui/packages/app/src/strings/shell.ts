@@ -451,6 +451,15 @@ export const shell = {
     notOnBranch: "That message is not on the session's current branch: open omfp:tree to fork from it",
     noTimestamp: "That message has no time stamp to find it in the session by",
   },
+  /** Copying and exporting a conversation (UI-790, UI-791, UI-793). */
+  conversation: {
+    copy: "Copy conversation",
+    export: "Export",
+    copied: "Copied the conversation",
+    copiedMessage: "Copied the message",
+    exported: (file: string) => `Exported \u201c${file}\u201d`,
+    notLoaded: "The conversation has not loaded yet",
+  },
   /** `omfp:activity` (UI-241). */
   activity: {
     label: "Activity",
@@ -778,6 +787,14 @@ export const shell = {
     /** `:describe-command fork` (UI-663). */
     forkDescription:
       "Makes a new thread in the same workspace holding the conversation up to the message, the message included; the thread you fork from is left as it is.",
+    copy: "Copy the conversation as Markdown (the focused message only, in the transcript)",
+    /** `:describe-command copy` (UI-790). */
+    copyDescription:
+      "Copies the selected thread's conversation to the clipboard as Markdown: messages under their author, tool calls as a line with their result, thinking left out, images as placeholders. With a message of the transcript focused (j and k move between them), only that message.",
+    export: "Export the conversation as a Markdown file",
+    /** `:describe-command export` (UI-791). */
+    exportDescription:
+      "Saves the selected thread's conversation as a Markdown file, the same text :copy copies: the browser downloads it, the desktop window saves it in your Downloads folder.",
     nextAttention: "Next thread needing attention",
     /** The job commands (UI-745). */
     jobRun: "Run a job of the current workspace (:job-run <name>)",

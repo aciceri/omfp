@@ -55,6 +55,7 @@ import {
   threadJob,
   threadMark,
   useCall,
+  useConversationActions,
   useHost,
   useReportError,
   useRunningInBackground,
@@ -188,8 +189,9 @@ function ThreadHeader({ summary }: { summary: ThreadSummary }): ReactNode {
 }
 
 /**
- * The header's `⋯` (UI-482): a popover with why the process failed, rename, archive and delete; the compact header's
- * (UI-202) adds stop or restart, the thinking level, the chips, context usage and cost. An action closes it.
+ * The header's `⋯` (UI-482): a popover with why the process failed, rename, archive and delete, copying and exporting
+ * the conversation (UI-793); the compact header's (UI-202) adds stop or restart, the thinking level, the chips, context
+ * usage and cost. An action closes it.
  */
 function More({
   threadId,
@@ -226,6 +228,7 @@ function More({
               {compact && <ProcessAction threadId={threadId} view={view} onDone={close} />}
             </div>
             <Lifecycle threadId={threadId} archived={view.archived} onDone={close} />
+            <ConversationActions threadId={threadId} onDone={close} />
             {compact && (
               <>
                 <ThinkingSelect threadId={threadId} view={view} onChanged={onChanged} />
@@ -778,6 +781,37 @@ function PendingRestart({ threadId, view }: { threadId: string; view: HeaderView
     >
       {view.restart.label}
     </Button>
+  );
+}
+
+/** Copy and export the whole conversation (UI-793), as `:copy` and `:export` do (UI-790, UI-791). */
+function ConversationActions({ threadId, onDone }: { threadId: string; onDone: () => void }): ReactNode {
+  const conversation = useConversationActions();
+  return (
+    <div className="omfp-thread-header__actions">
+      <Button
+        size="sm"
+        icon={<Icon name="copy" />}
+        data-testid="copy-conversation"
+        onPress={() => {
+          onDone();
+          void conversation.copy(threadId);
+        }}
+      >
+        {strings.shell.conversation.copy}
+      </Button>
+      <Button
+        size="sm"
+        icon={<Icon name="download" />}
+        data-testid="export-conversation"
+        onPress={() => {
+          onDone();
+          void conversation.export(threadId);
+        }}
+      >
+        {strings.shell.conversation.export}
+      </Button>
+    </div>
   );
 }
 

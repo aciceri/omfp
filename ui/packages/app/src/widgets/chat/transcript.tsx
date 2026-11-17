@@ -5,7 +5,8 @@
  * container, S-11) and the transcript-scope `nav.*` commands (UI-095): `j`/`k` page through an item taller than the
  * viewport before moving on (UI-370), `Ctrl-d`/`Ctrl-u` and PageDown/PageUp scroll and keep the focus while the
  * focused item shows (UI-371). Every scroll is instant, so no motion setting changes them. A user message offers
- * "Fork from here" (UI-660), and `:fork` forks from the current message (UI-663). A message sent on another day than
+ * "Fork from here" (UI-660), `:fork` forks from the current message (UI-663) and `:copy` copies it as Markdown
+ * (UI-790). A message sent on another day than
  * the one before it shows a day separator inside its item, so `j`/`k` never stop on one (UI-750). `/` searches the
  * conversation, visiting the query's occurrences and highlighting them in the rendered rows (UI-730, UI-736,
  * search.ts).
@@ -50,6 +51,7 @@ import {
   type TranscriptItem,
   useAnnounce,
   useCommand,
+  useConversationActions,
   useReportError,
   useSettings,
   useThreadActions,
@@ -230,6 +232,12 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
   );
   const latestCurrent = useRef(current);
   latestCurrent.current = current;
+  /** The row holding the focus, else the current one (`j`/`k`); `undefined` without either. */
+  const focusedRow = (): TranscriptItem | undefined => {
+    const focused = document.activeElement?.closest<HTMLElement>("[data-index]")?.dataset.index;
+    const position = focused === undefined ? latestCurrent.current : Number(focused);
+    return position === undefined ? undefined : rows[position];
+  };
   useCommand({
     id: "thread.fork",
     title: strings.shell.commands.fork,
@@ -237,15 +245,27 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
     aliases: ["fork"],
     scope: "transcript",
     run: () => {
-      const focused = document.activeElement?.closest<HTMLElement>("[data-index]")?.dataset.index;
-      const position = focused === undefined ? latestCurrent.current : Number(focused);
-      const row = position === undefined ? undefined : rows[position];
+      const row = focusedRow();
       const message = row?.kind.type === "message" ? state.transcript[row.kind.index]?.message : undefined;
       if (row?.kind.type === "message" && (message?.role === "user" || message?.role === "assistant")) {
         forkAt(row.kind.index);
       } else {
         reportError(strings.shell.fork.noMessage);
       }
+    },
+  });
+  const conversation = useConversationActions();
+  // `:copy` copies the focused message, else the whole conversation (UI-790).
+  useCommand({
+    id: "thread.copy",
+    title: strings.shell.commands.copy,
+    description: strings.shell.commands.copyDescription,
+    aliases: ["copy"],
+    scope: "transcript",
+    run: () => {
+      const row = focusedRow();
+      const content = row === undefined ? undefined : rowContent(state, row);
+      void (content?.type === "message" ? conversation.copyMessage(content.view) : conversation.copy(threadId));
     },
   });
 

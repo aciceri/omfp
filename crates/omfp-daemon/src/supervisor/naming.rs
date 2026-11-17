@@ -20,30 +20,30 @@ impl Supervisor {
         }
         // Serialize admission bookkeeping and task installation, not the model call itself.
         let mut policy = actor.title_policy.lock().await;
-        let threads = Arc::clone(&self.inner.threads);
-        let workspaces = Arc::clone(&self.inner.workspaces);
         let id = actor.id.clone();
         let placeholder = titles::placeholder(&message);
-        let prepared = blocking(move || {
-            let mut thread = threads.get(&id)?;
-            if thread.title_source == TitleSource::Set {
-                return Ok::<_, SupervisorError>(None);
-            }
-            let unnamed =
-                thread.title_source == TitleSource::Placeholder && thread.title.is_empty();
-            if unnamed
-                && threads.replace_placeholder(&id, &placeholder, TitleSource::Placeholder)?
-            {
-                thread.title = placeholder;
-            }
-            let cwd = workspaces.get(&thread.workspace_id)?.path;
-            Ok(Some((thread, cwd, unnamed)))
-        })
-        .await;
+        let prepared = self
+            .stores(move |inner| {
+                let threads = &inner.threads;
+                let mut thread = threads.get(&id)?;
+                if thread.title_source == TitleSource::Set {
+                    return Ok::<_, SupervisorError>(None);
+                }
+                let unnamed =
+                    thread.title_source == TitleSource::Placeholder && thread.title.is_empty();
+                if unnamed
+                    && threads.replace_placeholder(&id, &placeholder, TitleSource::Placeholder)?
+                {
+                    thread.title = placeholder;
+                }
+                let cwd = inner.workspaces.get(&thread.workspace_id)?.path;
+                Ok(Some((thread, cwd, unnamed)))
+            })
+            .await;
         let (thread, cwd, unnamed) = match prepared {
-            Ok(Ok(Some(prepared))) => prepared,
-            Ok(Ok(None)) => return,
-            Ok(Err(error)) | Err(error) => {
+            Ok(Some(prepared)) => prepared,
+            Ok(None) => return,
+            Err(error) => {
                 warn!(thread = %actor.id, %error, "cannot prepare the thread title");
                 return;
             }
@@ -89,18 +89,16 @@ impl Supervisor {
             message,
         };
         let supervisor = self.clone();
-        let actor = Arc::clone(actor);
-        let task_actor = Arc::clone(&actor);
+        let task_actor = Arc::clone(actor);
         let task = tokio::spawn(async move {
             let id = &task_actor.id;
             let launcher = Arc::clone(&supervisor.inner.launcher);
-            let title = match blocking(move || launcher.generate_title(&request)).await {
-                Ok(Ok(title)) => title,
-                Ok(Err(error)) => {
-                    task_actor.title_policy.lock().await.failed();
-                    warn!(thread = %id, %error, "title generation failed; the previous title stays");
-                    return;
-                }
+            let generated = blocking(move || launcher.generate_title(&request))
+                .await
+                .map_err(|error| error.to_string())
+                .and_then(|title| title.map_err(|error| error.to_string()));
+            let title = match generated {
+                Ok(title) => title,
                 Err(error) => {
                     task_actor.title_policy.lock().await.failed();
                     warn!(thread = %id, %error, "title generation failed; the previous title stays");
@@ -115,18 +113,20 @@ impl Supervisor {
             if !publish {
                 return;
             }
-            let threads = Arc::clone(&supervisor.inner.threads);
             let thread_id = id.clone();
-            let stored =
-                blocking(move || threads.replace_automatic(&thread_id, &previous.title, &title))
-                    .await;
+            let stored = supervisor
+                .stores(move |inner| {
+                    inner
+                        .threads
+                        .replace_automatic(&thread_id, &previous.title, &title)
+                })
+                .await;
             match stored {
-                Ok(Ok(true)) => {
+                Ok(true) => {
                     supervisor.name_session(id).await;
                     let _ = supervisor.inner.changes.send(id.clone());
                 }
-                Ok(Ok(false)) => {}
-                Ok(Err(error)) => warn!(thread = %id, %error, "cannot store the generated title"),
+                Ok(false) => {}
                 Err(error) => warn!(thread = %id, %error, "cannot store the generated title"),
             }
         });
@@ -146,9 +146,10 @@ impl Supervisor {
 
     /// Explicit titles disable automatic refresh, including generations already in flight.
     pub async fn set_title(&self, id: &str, title: String, source: TitleSource) -> Result<Thread> {
-        let threads = Arc::clone(&self.inner.threads);
-        let (thread_id, stored) = (id.to_owned(), title);
-        let thread = blocking(move || threads.rename(&thread_id, &stored, source)).await??;
+        let thread_id = id.to_owned();
+        let thread = self
+            .stores(move |inner| inner.threads.rename(&thread_id, &title, source))
+            .await?;
         self.name_session(id).await;
         let _ = self.inner.changes.send(id.to_owned());
         Ok(thread)
@@ -164,23 +165,20 @@ impl Supervisor {
         let Some(process) = actor.process() else {
             return;
         };
-        let threads = Arc::clone(&self.inner.threads);
         let thread_id = id.to_owned();
-        let named = blocking(move || {
-            let thread = threads.get(&thread_id)?;
-            if !thread.title.trim().is_empty() {
-                process.call(OmpCall::SetSessionName(SetSessionNameCommand {
-                    name: thread.title,
-                }))?;
-            }
-            Ok::<_, SupervisorError>(())
-        })
-        .await;
-        match named {
-            Ok(Ok(())) => {}
-            Ok(Err(error)) | Err(error) => {
-                warn!(thread = %id, %error, "cannot name the omp session");
-            }
+        let named = self
+            .stores(move |inner| {
+                let thread = inner.threads.get(&thread_id)?;
+                if !thread.title.trim().is_empty() {
+                    process.call(OmpCall::SetSessionName(SetSessionNameCommand {
+                        name: thread.title,
+                    }))?;
+                }
+                Ok::<_, SupervisorError>(())
+            })
+            .await;
+        if let Err(error) = named {
+            warn!(thread = %id, %error, "cannot name the omp session");
         }
     }
 }

@@ -7,8 +7,7 @@
 
 use std::collections::HashMap;
 use std::ffi::OsString;
-use std::io::{Read, Seek, SeekFrom};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::Duration;
@@ -18,20 +17,19 @@ use omfp_core::{
 };
 use omfp_protocol::RestartReason;
 use omp_rpc::{
-    FollowUpCommand, GetMessagesResult, LiveLevelsEvent, PromptCommand, RpcAgentEvent,
-    RpcNotification, SetModelCommand, SteerCommand,
+    ExtensionUiRequest, FollowUpCommand, GetMessagesResult, LiveLevelsEvent, PromptCommand,
+    RpcAgentEvent, RpcNotification, SetModelCommand, SteerCommand,
 };
 use serde_json::Value;
-use tokio::sync::{broadcast, mpsc, watch};
+use tokio::sync::{broadcast, watch};
 use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use tracing::{info, warn};
 
-use crate::agent::{AgentLauncher, AgentProcess, Lease, OmpCall, PromptAdmission};
+use crate::agent::{AgentLauncher, AgentProcess, OmpCall, PromptAdmission};
 use crate::conventions;
 use crate::event_log::EventLog;
 use crate::host_tools;
-use crate::omp::{LaunchSpec, startup_events, thread_event};
 use crate::paths::DataDir;
 use crate::store::{Thread, TitleSource, new_id};
 use crate::threads::{ThreadError, Threads};
@@ -45,6 +43,7 @@ mod mcp;
 mod models;
 mod naming;
 mod oauth;
+mod process;
 mod restart;
 mod roots;
 
@@ -52,14 +51,13 @@ pub use login::{AuthOmp, LOGIN_MODEL};
 pub use oauth::OAuthOwner;
 pub use restart::Restart;
 
+use process::{STDERR_TAIL_LINES, stderr_tail};
+
 /// The event log of one thread: omp frames and daemon events folded by the shared reducer (ARC-006).
 pub type ThreadLog = EventLog<ThreadEvent, ThreadState>;
 
 /// How long shutdown waits for omp processes to stop (DMN-005).
 pub const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
-
-/// Lines of `omp.log` reported with a crash (DMN-035).
-const STDERR_TAIL_LINES: usize = 20;
 
 /// How long the `command_output` of a local command the daemon sent itself (`/mcp test`, a root sync's `/add-dir`)
 /// may trail omp's answer to the prompt: omp writes the output first, so it is only in transit through the event pump
@@ -463,13 +461,7 @@ impl Actor {
 
     /// Frees the live session slot if it still holds session `id`; `true` when it did.
     fn release_voice(&self, id: u64) -> bool {
-        let mut voice = lock(&self.voice);
-        if voice.as_ref().is_some_and(|slot| slot.id == id) {
-            voice.take();
-            true
-        } else {
-            false
-        }
+        lock(&self.voice).take_if(|slot| slot.id == id).is_some()
     }
 }
 
@@ -663,41 +655,42 @@ impl Supervisor {
     /// naming its connection, which the window acts on. Without a window watching the thread the error tells the
     /// agent what to do instead.
     pub fn open_file(&self, id: &str, path: &str, line: Option<u64>) -> Result<(), String> {
-        let (actor, connection) = self.last_window(id).ok_or(NO_WINDOW)?;
-        self.push(
-            &actor,
+        self.ask_last_window(id, NO_WINDOW, |connection| {
             ThreadEvent::OpenFile(OpenFileRequest {
                 id: new_id(),
                 connection,
                 path: path.to_owned(),
                 line,
-            }),
-        );
-        Ok(())
+            })
+        })
     }
 
     /// Asks the window the user last used on thread `id` to notify the user (DMN-125): a `notify` event naming its
     /// connection, which the window shows as a notice about the thread (UI-215). Without a window watching the thread
     /// the error tells the agent what to do instead (DMN-126).
     pub fn notify(&self, id: &str, title: &str, body: &str) -> Result<(), String> {
-        let (actor, connection) = self.last_window(id).ok_or(NOTIFY_NO_WINDOW)?;
-        self.push(
-            &actor,
+        self.ask_last_window(id, NOTIFY_NO_WINDOW, |connection| {
             ThreadEvent::Notify(NotifyRequest {
                 id: new_id(),
                 connection,
                 title: title.to_owned(),
                 body: body.to_owned(),
-            }),
-        );
-        Ok(())
+            })
+        })
     }
 
-    /// The thread's actor and the connection of the window the user last used on it, if any watches it (DMN-060).
-    fn last_window(&self, id: &str) -> Option<(Arc<Actor>, u64)> {
-        let actor = self.lookup(id)?;
-        let connection = lock(&actor.watchers).last().copied()?;
-        Some((actor, connection))
+    /// Pushes the event `request` makes for the connection of the window the user last used on thread `id`
+    /// (DMN-060); `absent` when no window watches the thread.
+    fn ask_last_window(
+        &self,
+        id: &str,
+        absent: &str,
+        request: impl FnOnce(u64) -> ThreadEvent,
+    ) -> Result<(), String> {
+        let actor = self.lookup(id).ok_or(absent)?;
+        let connection = lock(&actor.watchers).last().copied().ok_or(absent)?;
+        self.push(&actor, request(connection));
+        Ok(())
     }
 
     /// Whether the thread has a live omp process.
@@ -774,10 +767,10 @@ impl Supervisor {
     }
 
     async fn store_model(&self, id: &str, model: String) -> Result<()> {
-        let threads = Arc::clone(&self.inner.threads);
         let id = id.to_owned();
-        blocking(move || threads.set_model(&id, Some(&model))).await??;
-        Ok(())
+        self.stores(move |inner| inner.threads.set_model(&id, Some(&model)))
+            .await
+            .map(drop)
     }
 
     /// Stops the thread's omp process, if any. Cancellation-safe ([`Self::detached`]).
@@ -808,9 +801,10 @@ impl Supervisor {
         let mut stopped = vec![id.to_owned()];
         let mut failed = None;
         loop {
-            let threads = Arc::clone(&self.inner.threads);
             let root = id.to_owned();
-            let tree = blocking(move || threads.spawned(&root)).await??;
+            let tree = self
+                .stores(move |inner| inner.threads.spawned(&root))
+                .await?;
             let pending: Vec<String> = tree
                 .into_iter()
                 .filter(|member| !stopped.contains(member))
@@ -851,24 +845,21 @@ impl Supervisor {
     pub async fn delete(&self, id: &str) -> Result<()> {
         let id = id.to_owned();
         self.detached(|supervisor| async move {
-            let workspaces = Arc::clone(&supervisor.inner.workspaces);
             let _hold = loop {
-                let threads = Arc::clone(&supervisor.inner.threads);
+                let workspace_id = supervisor.thread(&id).await?.workspace_id;
+                let hold = supervisor.inner.workspaces.hold_removal(&workspace_id);
                 let thread_id = id.clone();
-                let workspace_id = blocking(move || threads.get(&thread_id))
-                    .await??
-                    .workspace_id;
-                let hold = workspaces.hold_removal(&workspace_id);
-                let threads = Arc::clone(&supervisor.inner.threads);
-                let thread_id = id.clone();
-                if blocking(move || threads.delete_record(&thread_id, &workspace_id)).await?? {
+                if supervisor
+                    .stores(move |inner| inner.threads.delete_record(&thread_id, &workspace_id))
+                    .await?
+                {
                     break hold;
                 }
             };
             supervisor.forget(&id).await?;
-            let threads = Arc::clone(&supervisor.inner.threads);
-            blocking(move || threads.remove_dir(&id)).await??;
-            Ok(())
+            supervisor
+                .stores(move |inner| inner.threads.remove_dir(&id))
+                .await
         })
         .await
     }
@@ -939,18 +930,6 @@ impl Supervisor {
         Ok(sent)
     }
 
-    /// A root change made before the prompt reaches omp first (DMN-029): a sync still pending runs now if the session
-    /// settled, and one in flight (it holds the lifecycle lock) finishes before the prompt is sent.
-    async fn roots_before_prompt(&self, actor: &Actor) {
-        if actor.roots_pending.load(Ordering::SeqCst) && actor.status().settled {
-            if let Err(error) = self.sync_roots(&actor.id).await {
-                warn!(thread = %actor.id, %error, "root sync before the prompt failed");
-            }
-        } else {
-            drop(actor.lifecycle.lock().await);
-        }
-    }
-
     /// Forwards an omp command, starting omp first when needed (DMN-070). Commands do not wait for each other
     /// (DMN-037); omp's error codes are kept (DMN-071).
     pub async fn call(&self, id: &str, call: OmpCall) -> Result<Value> {
@@ -1008,9 +987,9 @@ impl Supervisor {
             resumed: true,
         };
         if change == SessionChange::Fork {
-            let threads = Arc::clone(&self.inner.threads);
             let (id, session_id) = (actor.id.clone(), session.session_id.clone());
-            blocking(move || threads.set_omp_session_id(&id, &session_id)).await??;
+            self.stores(move |inner| inner.threads.set_omp_session_id(&id, &session_id))
+                .await?;
         }
         let messages = blocking(move || process.call(OmpCall::Messages)).await??;
         let messages: GetMessagesResult = serde_json::from_value(messages)
@@ -1022,68 +1001,6 @@ impl Supervisor {
                 messages: messages.messages,
             },
         );
-        Ok(())
-    }
-
-    /// Brings the live process's roots in line with the repositories discovered in its workspace (DMN-029):
-    /// `/add-dir` for new ones, `/remove-dir` for roots that disappeared, through `prompt` (local commands). omp
-    /// refuses them while the agent streams, so a busy thread syncs once its session settles. A process still starting
-    /// is waited for (it holds the lifecycle lock), since its flags come from a scan made before. A stopped thread
-    /// needs nothing: its next launch passes the roots.
-    pub async fn sync_roots(&self, id: &str) -> Result<()> {
-        let Some(actor) = self.lookup(id) else {
-            return Ok(());
-        };
-        let _lifecycle = actor.lifecycle.lock().await;
-        let Some(process) = actor.process() else {
-            actor.roots_pending.store(false, Ordering::SeqCst);
-            return Ok(());
-        };
-        if !actor.status().settled {
-            actor.roots_pending.store(true, Ordering::SeqCst);
-            return Ok(());
-        }
-        actor.roots_pending.store(false, Ordering::SeqCst);
-        let threads = Arc::clone(&self.inner.threads);
-        let workspaces = Arc::clone(&self.inner.workspaces);
-        let thread_id = actor.id.clone();
-        let (desired, recorded) = blocking(move || {
-            let thread = threads.get(&thread_id)?;
-            let desired = root_paths(&workspaces.discovered(&thread.workspace_id)?);
-            Ok::<_, SupervisorError>((desired, threads.roots(&thread_id)?))
-        })
-        .await??;
-        self.apply_roots(&actor, process, desired, &recorded).await
-    }
-
-    /// Sends `/add-dir` for `desired` roots not `recorded` and `/remove-dir` for recorded ones no longer desired,
-    /// then records `desired`. Housekeeping, not the thread's doing: it is no activity of the thread and its output
-    /// stays out of the transcript (DMN-029).
-    async fn apply_roots(
-        &self,
-        actor: &Actor,
-        process: Arc<dyn AgentProcess>,
-        desired: Vec<PathBuf>,
-        recorded: &[PathBuf],
-    ) -> Result<()> {
-        let added = desired
-            .iter()
-            .filter(|root| !recorded.contains(root))
-            .map(|root| roots::RootCommand::Add(root.clone()));
-        let removed = recorded
-            .iter()
-            .filter(|root| !desired.contains(root))
-            .map(|root| roots::RootCommand::Remove(root.clone()));
-        let commands: Vec<roots::RootCommand> = added.chain(removed).collect();
-        if !commands.is_empty() {
-            let _one_at_a_time = actor.local_commands.lock().await;
-            for command in commands {
-                Self::root_command(actor, &process, command).await?;
-            }
-        }
-        let threads = Arc::clone(&self.inner.threads);
-        let thread_id = actor.id.clone();
-        blocking(move || threads.set_roots(&thread_id, &desired)).await??;
         Ok(())
     }
 
@@ -1158,14 +1075,32 @@ impl Supervisor {
         if let Some(actor) = self.lookup(id) {
             return Ok(actor);
         }
-        let threads = Arc::clone(&self.inner.threads);
-        let thread_id = id.to_owned();
-        blocking(move || threads.get(&thread_id)).await??;
+        self.thread(id).await?;
         Ok(Arc::clone(
             lock(&self.inner.actors)
                 .entry(id.to_owned())
                 .or_insert_with(|| Arc::new(Actor::new(id, &self.inner.config))),
         ))
+    }
+
+    /// Runs `work` on the thread and workspace stores off the runtime.
+    async fn stores<T, E>(
+        &self,
+        work: impl FnOnce(&Inner) -> Result<T, E> + Send + 'static,
+    ) -> Result<T>
+    where
+        T: Send + 'static,
+        E: Send + 'static,
+        SupervisorError: From<E>,
+    {
+        let inner = Arc::clone(&self.inner);
+        Ok(blocking(move || work(&inner)).await??)
+    }
+
+    /// The thread's records.
+    async fn thread(&self, id: &str) -> Result<Thread> {
+        let id = id.to_owned();
+        self.stores(move |inner| inner.threads.get(&id)).await
     }
 
     fn push(&self, actor: &Actor, event: ThreadEvent) {
@@ -1177,36 +1112,36 @@ impl Supervisor {
             let _ = actor.levels.send(levels);
             return;
         }
-        // Read-only tools cannot change files: skip the `git status` of a full scan after them (DMN-023).
-        let tool_end = matches!(
-            &event,
-            ThreadEvent::Omp {
-                frame: RpcNotification::RpcAgentEvent(RpcAgentEvent::ToolExecutionEnd(end))
-            } if !READ_ONLY_TOOLS.contains(&end.tool_name.as_str())
-        );
-        if let ThreadEvent::Omp {
-            frame: RpcNotification::CommandOutput(output),
-        } = &event
-        {
-            // The daemon's own root sync and checks answer the daemon, not the user (DMN-029, DMN-200).
-            if Self::take_root_output(actor, &output.text)
-                || Self::take_check_output(actor, &output.text)
-            {
-                return;
+        let mut tool_end = false;
+        if let ThreadEvent::Omp { frame } = &event {
+            match frame {
+                // Read-only tools cannot change files: skip the `git status` of a full scan after them (DMN-023).
+                RpcNotification::RpcAgentEvent(RpcAgentEvent::ToolExecutionEnd(end)) => {
+                    tool_end = !READ_ONLY_TOOLS.contains(&end.tool_name.as_str());
+                }
+                RpcNotification::CommandOutput(output) => {
+                    // The daemon's own root sync and checks answer the daemon, not the user (DMN-029, DMN-200).
+                    if Self::take_root_output(actor, &output.text)
+                        || Self::take_check_output(actor, &output.text)
+                    {
+                        return;
+                    }
+                    if let Some(reason) = crate::omp_mcp::restart_reason(&output.text) {
+                        lock(&actor.restart).want(reason);
+                    }
+                    // The OAuth sign-ins its URLs start; `/mcp reauth`'s end forgets them (DMN-340).
+                    lock(&actor.oauth).command_output(&output.text, Instant::now());
+                }
+                // An OAuth sign-in omp started (DMN-340).
+                RpcNotification::ExtensionUiRequest(ExtensionUiRequest::OpenUrl(open)) => {
+                    lock(&actor.oauth).opened(&open.url, Instant::now());
+                }
+                // omp ended the session: the thread may start another (DMN-101).
+                RpcNotification::LiveEnd(_) => {
+                    lock(&actor.voice).take();
+                }
+                _ => {}
             }
-            if let Some(reason) = crate::omp_mcp::restart_reason(&output.text) {
-                lock(&actor.restart).want(reason);
-            }
-        }
-        Self::track_oauth(actor, &event);
-        if matches!(
-            &event,
-            ThreadEvent::Omp {
-                frame: RpcNotification::LiveEnd(_)
-            }
-        ) {
-            // omp ended the session: the thread may start another (DMN-101).
-            lock(&actor.voice).take();
         }
         let before = actor.status();
         actor.log.push(event);
@@ -1229,417 +1164,6 @@ impl Supervisor {
             });
         }
     }
-
-    async fn ensure_running(&self, actor: &Arc<Actor>) -> Result<Arc<dyn AgentProcess>> {
-        if let Some(process) = actor.process() {
-            return Ok(process);
-        }
-        let _lifecycle = actor.lifecycle.lock().await;
-        if let Some(process) = actor.process() {
-            return Ok(process);
-        }
-        self.start_locked(actor).await
-    }
-
-    /// Starts omp; the caller holds the lifecycle lock.
-    async fn start_locked(&self, actor: &Arc<Actor>) -> Result<Arc<dyn AgentProcess>> {
-        if self.inner.shutting_down.load(Ordering::SeqCst) {
-            return Err(SupervisorError::ShuttingDown);
-        }
-        let max = self.inner.config.max_processes;
-        self.inner
-            .running
-            .try_update(Ordering::SeqCst, Ordering::SeqCst, |running| {
-                (running < max).then_some(running + 1)
-            })
-            .map_err(|_| SupervisorError::LimitReached(max))?;
-        let started = self.launch(actor).await;
-        if started.is_err() {
-            self.inner.running.fetch_sub(1, Ordering::SeqCst);
-        }
-        started
-    }
-
-    /// How to start the thread's omp (DMN-030), from a fresh scan of its workspace (DMN-023); with the roots its
-    /// session had and the ones it gets now.
-    async fn launch_spec(
-        &self,
-        actor: &Actor,
-    ) -> Result<(Thread, LaunchSpec, Vec<PathBuf>, Vec<PathBuf>)> {
-        let id = actor.id.clone();
-        let threads = Arc::clone(&self.inner.threads);
-        let workspaces = Arc::clone(&self.inner.workspaces);
-        let (thread, ws, repos, recorded) = blocking(move || {
-            let thread = threads.get(&id)?;
-            let (view, _) = workspaces.rescan(&thread.workspace_id)?;
-            let recorded = threads.roots(&id)?;
-            Ok::<_, SupervisorError>((thread, view.workspace, view.repos, recorded))
-        })
-        .await??;
-        let add_dirs = root_paths(&repos);
-        let data = &self.inner.data;
-        let spec = LaunchSpec {
-            program: self.inner.config.omp_program.clone(),
-            cwd: ws.path.clone(),
-            add_dirs: add_dirs.clone(),
-            session_dir: thread.session_dir.clone(),
-            // Only a thread without a session of its own yet starts from a copy (DMN-301).
-            fork: lock(&actor.fork_source)
-                .take()
-                .filter(|_| thread.omp_session_id.is_none()),
-            model: thread.model.clone(),
-            approval_mode: thread.approval_mode.clone(),
-            append_system_prompt: Some(conventions::append_system_prompt(
-                &ws.name,
-                &ws.id,
-                &ws.path,
-                self.inner.config.agent_dir.as_deref(),
-                &data.widgets(),
-                &actor.id,
-            )),
-            extension: Some(data.omp_extension()),
-            stderr_log: data.thread_log(&actor.id),
-            env: self.inner.config.omp_env.clone(),
-        };
-        Ok((thread, spec, recorded, add_dirs))
-    }
-
-    async fn launch(&self, actor: &Arc<Actor>) -> Result<Arc<dyn AgentProcess>> {
-        let (thread, spec, mut recorded, add_dirs) = self.launch_spec(actor).await?;
-        // Taken before omp reads the files: a change while it starts reloads it once more (DMN-201). The new process
-        // loads everything a due restart was for (DMN-203).
-        lock(&actor.restart).clear();
-        lock(&actor.oauth).clear();
-        self.loading_mcp_configs(actor, spec.cwd.clone()).await;
-        self.push(
-            actor,
-            ThreadEvent::Process {
-                state: ProcessState::Starting,
-            },
-        );
-
-        self.check_lease(actor, &thread, &spec).await?;
-
-        let agent_tools = lock(&self.inner.agent_host)
-            .clone()
-            .map(|host| host.tools(&actor.id, &thread.workspace_id))
-            .unwrap_or_default();
-        let tools = host_tools::thread_tools(
-            self.file_opener(&actor.id),
-            self.notifier(&actor.id),
-            self.title_setter(&actor.id),
-            agent_tools,
-        );
-        let check_host = lock(&self.inner.widget_host)
-            .clone()
-            .map(|host| (thread.workspace_id.clone(), host));
-        let uris =
-            match host_tools::host_uris(self.inner.config.builtin_widgets.clone(), check_host) {
-                Ok(uris) => uris,
-                Err(error) => {
-                    return Err(self
-                        .failed_start(actor, &thread, error.to_string(), String::new())
-                        .await);
-                }
-            };
-        let launcher = Arc::clone(&self.inner.launcher);
-        let launch_spec = spec.clone();
-        let launched = match blocking(move || launcher.launch(&launch_spec, tools, uris)).await? {
-            Ok(launched) => launched,
-            Err(error) => {
-                let path = spec.stderr_log.clone();
-                let tail = blocking(move || stderr_tail(&path, STDERR_TAIL_LINES))
-                    .await
-                    .unwrap_or_default();
-                return Err(self
-                    .failed_start(actor, &thread, error.to_string(), tail)
-                    .await);
-            }
-        };
-
-        // A new process starts a new epoch: positions of the old one cannot be replayed (PRT-022).
-        actor.log.new_epoch(new_id());
-        // omp numbers prompts per process (PRT-030, DMN-152).
-        actor.last_prompt.send_modify(|last| last.id = None);
-        // omp's own history follows; it knows the session's model (`thread.state`).
-        lock(&actor.session_model).take();
-        for event in startup_events(&launched.startup) {
-            self.push(actor, event);
-        }
-        let threads = Arc::clone(&self.inner.threads);
-        let (id, session_id) = (
-            actor.id.clone(),
-            launched.startup.session.session_id.clone(),
-        );
-        if let Err(error) = blocking(move || threads.set_omp_session_id(&id, &session_id)).await? {
-            warn!(thread = %actor.id, %error, "cannot store the omp session id");
-        }
-
-        let generation = self.inner.generations.fetch_add(1, Ordering::SeqCst);
-        let (ended_tx, ended) = watch::channel(false);
-        let process = launched.process;
-        *lock(&actor.live) = Some(Live {
-            process: Arc::clone(&process),
-            generation,
-            ended,
-        });
-        self.spawn_pump(Arc::clone(actor), launched.events, generation, ended_tx);
-        info!(thread = %actor.id, "omp started");
-        self.started_with(&spec);
-        // The flags added today's roots; the session still has the ones it saved before (S-10).
-        recorded.extend(add_dirs.iter().cloned());
-        if let Err(error) = self
-            .apply_roots(actor, Arc::clone(&process), add_dirs, &recorded)
-            .await
-        {
-            warn!(thread = %actor.id, %error, "cannot remove stale roots");
-        }
-        Ok(process)
-    }
-
-    /// A stored session another omp process owns fails the start (DMN-033); its transcript stays readable (DMN-337).
-    async fn check_lease(&self, actor: &Actor, thread: &Thread, spec: &LaunchSpec) -> Result<()> {
-        let Some(session_id) = thread.omp_session_id.clone() else {
-            return Ok(());
-        };
-        let launcher = Arc::clone(&self.inner.launcher);
-        let probe = spec.clone();
-        let lease = blocking(move || launcher.session_lease(&probe, &session_id)).await?;
-        match lease {
-            Ok(Lease::Held) => {
-                let error = SupervisorError::SessionLeased {
-                    session_id: thread.omp_session_id.clone().unwrap_or_default(),
-                };
-                self.history_from_file(actor, thread).await;
-                self.fail(actor, error.to_string(), String::new());
-                Err(error)
-            }
-            Ok(Lease::Free) => Ok(()),
-            Ok(Lease::Unknown) => {
-                warn!(thread = %actor.id, "omp could not probe the session lease; starting anyway");
-                Ok(())
-            }
-            Err(error) => Err(self
-                .failed_start(actor, thread, error.to_string(), String::new())
-                .await),
-        }
-    }
-
-    /// What the thread's `omfp_open_file` host tool calls (DMN-060): [`Self::open_file`] on this thread. It holds the
-    /// supervisor weakly (the tools live as long as the process it owns).
-    fn file_opener(&self, id: &str) -> host_tools::OpenFile {
-        let inner = Arc::downgrade(&self.inner);
-        let id = id.to_owned();
-        Arc::new(move |path: &str, line: Option<u64>| {
-            let inner = Weak::upgrade(&inner).ok_or("the daemon is shutting down")?;
-            Self { inner }.open_file(&id, path, line)
-        })
-    }
-
-    /// What the thread's `omfp_notify` host tool calls (DMN-125): [`Self::notify`] on this thread, holding the
-    /// supervisor weakly like [`Self::file_opener`].
-    fn notifier(&self, id: &str) -> host_tools::Notify {
-        let inner = Arc::downgrade(&self.inner);
-        let id = id.to_owned();
-        Arc::new(move |title: &str, body: &str| {
-            let inner = Weak::upgrade(&inner).ok_or("the daemon is shutting down")?;
-            Self { inner }.notify(&id, title, body)
-        })
-    }
-
-    /// What the thread's `set_thread_title` host tool calls (DMN-060): stores a set title, refreshes the index and
-    /// names the omp session. It runs on an `omp-rpc` handler thread, so the store call blocks there and the session
-    /// rename goes to the runtime; it holds the supervisor weakly (the tools live as long as the process it owns).
-    fn title_setter(&self, id: &str) -> host_tools::SetTitle {
-        let inner = Arc::downgrade(&self.inner);
-        let runtime = tokio::runtime::Handle::current();
-        let id = id.to_owned();
-        Arc::new(move |title: &str| {
-            let inner = Weak::upgrade(&inner).ok_or("the daemon is shutting down")?;
-            inner
-                .threads
-                .rename(&id, title, TitleSource::Set)
-                .map_err(|error| error.to_string())?;
-            let _ = inner.changes.send(id.clone());
-            let supervisor = Self { inner };
-            let id = id.clone();
-            runtime.spawn(async move { supervisor.name_session(&id).await });
-            Ok(())
-        })
-    }
-
-    /// Fails the thread whose omp could not start and returns the error carrying omp's stderr tail (DMN-212); omp's
-    /// refusal without a usable model may contradict the known count of usable models (DMN-237). The transcript stays
-    /// readable from the session file (DMN-337).
-    async fn failed_start(
-        &self,
-        actor: &Actor,
-        thread: &Thread,
-        message: String,
-        stderr_tail: String,
-    ) -> SupervisorError {
-        self.failed_with(&stderr_tail);
-        self.history_from_file(actor, thread).await;
-        self.fail(actor, message.clone(), stderr_tail.clone());
-        SupervisorError::Start {
-            message,
-            stderr_tail,
-        }
-    }
-
-    /// A thread whose omp could not start shows its stored session's current branch, read from the session file
-    /// without omp, as the `history` event omp's start would have given (DMN-337), and knows the model that session
-    /// restores (DMN-338). Without a session file nothing changes; an unreadable one is only logged.
-    async fn history_from_file(&self, actor: &Actor, thread: &Thread) {
-        let dir = thread.session_dir.clone();
-        let session_id = thread.omp_session_id.clone();
-        let read = blocking(move || crate::session_file::read(&dir, session_id.as_deref()))
-            .await
-            .and_then(|read| read.map_err(|error| SupervisorError::Internal(error.to_string())));
-        match read {
-            Ok(Some(read)) => {
-                *lock(&actor.session_model) = read.model;
-                self.push(
-                    actor,
-                    ThreadEvent::History {
-                        session: read.session,
-                        messages: read.messages,
-                    },
-                );
-            }
-            Ok(None) => {}
-            Err(error) => warn!(thread = %actor.id, %error, "cannot read the session file"),
-        }
-    }
-
-    fn fail(&self, actor: &Actor, message: String, stderr_tail: String) {
-        self.push(
-            actor,
-            ThreadEvent::Process {
-                state: ProcessState::Failed {
-                    message,
-                    exit_code: None,
-                    stderr_tail,
-                },
-            },
-        );
-    }
-
-    /// Forwards omp's frames into the log: a thread reads the blocking receiver into a channel, a task pushes them
-    /// (DMN-040). When the stream ends without a requested stop, the thread fails (DMN-035).
-    fn spawn_pump(
-        &self,
-        actor: Arc<Actor>,
-        events: std::sync::mpsc::Receiver<omp_rpc::Event>,
-        generation: u64,
-        ended: watch::Sender<bool>,
-    ) {
-        let (sender, mut receiver) = mpsc::unbounded_channel();
-        std::thread::spawn(move || {
-            for event in events {
-                if sender.send(thread_event(event)).is_err() {
-                    break;
-                }
-            }
-        });
-        let supervisor = self.clone();
-        tokio::spawn(async move {
-            while let Some(event) = receiver.recv().await {
-                supervisor.push(&actor, event);
-            }
-            // A live session ends with its process (DMN-103).
-            lock(&actor.voice).take();
-            supervisor.process_ended(&actor, generation).await;
-            let _ = ended.send(true);
-        });
-    }
-
-    async fn process_ended(&self, actor: &Actor, generation: u64) {
-        let crashed = {
-            let mut live = lock(&actor.live);
-            if live
-                .as_ref()
-                .is_some_and(|live| live.generation == generation)
-            {
-                live.take()
-            } else {
-                None
-            }
-        };
-        let Some(crashed) = crashed else {
-            return;
-        };
-        self.inner.running.fetch_sub(1, Ordering::SeqCst);
-        // Its OAuth listeners died with it: another process may take their ports (DMN-340).
-        lock(&actor.oauth).clear();
-        let path = self.inner.data.thread_log(&actor.id);
-        let process = crashed.process;
-        let tail = blocking(move || {
-            drop(process);
-            stderr_tail(&path, STDERR_TAIL_LINES)
-        })
-        .await
-        .unwrap_or_default();
-        warn!(thread = %actor.id, "omp exited unexpectedly");
-        self.fail(actor, "omp exited unexpectedly".into(), tail);
-    }
-
-    /// Stops the process; the caller holds the lifecycle lock.
-    async fn stop_locked(&self, actor: &Actor) -> Result<()> {
-        let Some(Live {
-            process, mut ended, ..
-        }) = lock(&actor.live).take()
-        else {
-            return Ok(());
-        };
-        blocking(move || drop(process)).await?;
-        let _ = ended.wait_for(|ended| *ended).await;
-        self.inner.running.fetch_sub(1, Ordering::SeqCst);
-        // The next process loads everything anew (DMN-203).
-        lock(&actor.mcp_configs).take();
-        lock(&actor.restart).clear();
-        lock(&actor.oauth).clear();
-        self.push(
-            actor,
-            ThreadEvent::Process {
-                state: ProcessState::Stopped,
-            },
-        );
-        info!(thread = %actor.id, "omp stopped");
-        Ok(())
-    }
-}
-
-/// The `--add-dir` roots for a workspace's repositories: every one but the folder itself, by its path inside the
-/// workspace (DMN-029).
-fn root_paths(repos: &[crate::workspaces::Discovered]) -> Vec<PathBuf> {
-    repos
-        .iter()
-        .filter(|repo| !repo.is_root)
-        .map(|repo| repo.path.clone())
-        .collect()
-}
-
-/// The last `lines` lines of omp's stderr log (at most its last 16 KiB).
-fn stderr_tail(path: &Path, lines: usize) -> String {
-    const MAX_BYTES: u64 = 16 * 1024;
-    let Ok(mut file) = std::fs::File::open(path) else {
-        return String::new();
-    };
-    let length = file.metadata().map_or(0, |metadata| metadata.len());
-    if file
-        .seek(SeekFrom::Start(length.saturating_sub(MAX_BYTES)))
-        .is_err()
-    {
-        return String::new();
-    }
-    let mut bytes = Vec::new();
-    if file.read_to_end(&mut bytes).is_err() {
-        return String::new();
-    }
-    let text = String::from_utf8_lossy(&bytes);
-    let all: Vec<&str> = text.lines().collect();
-    all[all.len().saturating_sub(lines)..].join("\n")
 }
 
 #[cfg(test)]

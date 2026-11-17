@@ -78,8 +78,10 @@ crates/omfp-protocol  UI ↔ daemon protocol types, JSON Schemas
 crates/omfp-daemon    daemon library: omp adapter (omp.rs), agent port + FakeLauncher (agent.rs, agent/fake.rs; omp's live voice
                       sequence in agent/fake/live.rs), live voice relay (supervisor/live.rs: one session per thread;
                       live_context.rs: omp's vendored live prompt live_instructions.txt + the thread's conversation),
-                      supervisor (supervisor.rs: launch in the workspace folder, root sync; supervisor/dialogs.rs:
-                      answers to omp's dialogs; supervisor/naming.rs: thread titles and session names), agent
+                      supervisor (supervisor.rs: the thread actors and their operations; supervisor/process.rs: launch
+                      in the workspace folder, event pump, crash and stop; supervisor/roots.rs: root sync;
+                      supervisor/dialogs.rs: answers to omp's dialogs; supervisor/naming.rs: thread titles and session
+                      names), agent
                       conventions and the widget-builder agent (conventions.rs),
                       event log, store (+ migrations, store/migrate.rs), workspaces (folder scanner in
                       workspaces/scan.rs, cheap change check in workspaces/fingerprint.rs, reading and writing

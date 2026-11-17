@@ -33,9 +33,11 @@ impl Supervisor {
 
     /// The servers configured for workspace `workspace_id`, unchecked (PRT-110, DMN-190).
     pub async fn workspace_mcp_servers(&self, workspace_id: &str) -> Result<McpServers> {
-        let workspaces = std::sync::Arc::clone(&self.inner.workspaces);
         let id = workspace_id.to_owned();
-        let path = blocking(move || workspaces.get(&id)).await??.path;
+        let path = self
+            .stores(move |inner| inner.workspaces.get(&id))
+            .await?
+            .path;
         let servers = omp_mcp::configured(&path, &self.homes());
         Ok(self.listing(workspace_id, None, false, &path, servers))
     }
@@ -56,15 +58,14 @@ impl Supervisor {
 
     /// The thread's servers; with `only`, the others are listed unchecked.
     async fn thread_servers(&self, thread_id: &str, only: Option<&str>) -> Result<McpServers> {
-        let threads = std::sync::Arc::clone(&self.inner.threads);
-        let workspaces = std::sync::Arc::clone(&self.inner.workspaces);
         let id = thread_id.to_owned();
-        let (workspace_id, path) = blocking(move || {
-            let thread = threads.get(&id)?;
-            let workspace = workspaces.get(&thread.workspace_id)?;
-            Ok::<_, SupervisorError>((thread.workspace_id, workspace.path))
-        })
-        .await??;
+        let (workspace_id, path) = self
+            .stores(move |inner| {
+                let thread = inner.threads.get(&id)?;
+                let workspace = inner.workspaces.get(&thread.workspace_id)?;
+                Ok::<_, SupervisorError>((thread.workspace_id, workspace.path))
+            })
+            .await?;
         let configured = omp_mcp::configured(&path, &self.homes());
         let running = self.is_running(thread_id);
         let mut servers = Vec::with_capacity(configured.len());
@@ -122,25 +123,21 @@ impl Supervisor {
             images: None,
             streaming_behavior: None,
         };
-        let sent = blocking(move || process.prompt(command)).await;
-        let check = match sent {
-            Ok(Ok(_)) => tokio::time::timeout(OUTPUT_WAIT, answered)
+        let check = match blocking(move || process.prompt(command)).await {
+            Ok(Ok(_)) => Ok(tokio::time::timeout(OUTPUT_WAIT, answered)
                 .await
                 .ok()
-                .and_then(std::result::Result::ok),
+                .and_then(std::result::Result::ok)),
             Ok(Err(error)) => {
                 warn!(thread = %thread_id, server = %name, %error, "MCP check failed");
-                Some(Check::Failed(format!(
+                Ok(Some(Check::Failed(format!(
                     "omp did not answer the check: {error}"
-                )))
+                ))))
             }
-            Err(error) => {
-                lock(&actor.mcp_check).take();
-                return Err(error);
-            }
+            Err(error) => Err(error),
         };
         lock(&actor.mcp_check).take();
-        Ok(check)
+        check
     }
 
     /// Hands a `command_output` that answers the daemon's pending `/mcp test` to it; `true` when it did, so the

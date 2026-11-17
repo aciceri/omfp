@@ -2,12 +2,10 @@
 //! output, an `open_url` request) and the running login's. `oauth.callback` (PRT-212) relays a pasted address only to
 //! one of them (`crate::oauth_relay`).
 
-use omfp_core::ThreadEvent;
-use omp_rpc::{ExtensionUiRequest, RpcNotification};
 use tokio::time::Instant;
 
-use super::{Actor, Result, Supervisor, lock};
-use crate::oauth_relay::{Callback, Refusal, Relay};
+use super::{Result, Supervisor, lock};
+use crate::oauth_relay::{Callback, Flows, Refusal, Relay};
 
 /// Whose sign-in a pasted address completes.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -18,41 +16,24 @@ pub enum OAuthOwner {
 }
 
 impl Supervisor {
-    /// Records the sign-ins a thread's frame says omp started: an `open_url` request's URL, the URLs of a
-    /// `command_output`; `/mcp reauth`'s end forgets them (DMN-340).
-    pub(super) fn track_oauth(actor: &Actor, event: &ThreadEvent) {
-        let ThreadEvent::Omp { frame } = event else {
-            return;
-        };
-        match frame {
-            RpcNotification::CommandOutput(output) => {
-                lock(&actor.oauth).command_output(&output.text, Instant::now());
-            }
-            RpcNotification::ExtensionUiRequest(ExtensionUiRequest::OpenUrl(open)) => {
-                lock(&actor.oauth).opened(&open.url, Instant::now());
-            }
-            _ => {}
-        }
-    }
-
     /// The login omp of login `login` opened `url` (DMN-340).
     pub fn login_opened_url(&self, login: u64, url: &str) {
-        if let Some(running) = lock(&self.inner.login)
-            .as_mut()
-            .filter(|running| running.id == login)
-        {
-            running.oauth.opened(url, Instant::now());
-        }
+        self.login_oauth(login, |oauth| oauth.opened(url, Instant::now()));
     }
 
     /// The login omp of login `login` is gone (exited, crashed or stopped): its OAuth listeners died with it, and
     /// another process may take their ports, so none of its sign-ins waits any more (DMN-340).
     pub fn login_omp_ended(&self, login: u64) {
+        self.login_oauth(login, Flows::clear);
+    }
+
+    /// Runs `update` on the sign-ins of login `login` while it runs.
+    fn login_oauth(&self, login: u64, update: impl FnOnce(&mut Flows)) {
         if let Some(running) = lock(&self.inner.login)
             .as_mut()
             .filter(|running| running.id == login)
         {
-            running.oauth.clear();
+            update(&mut running.oauth);
         }
     }
 
@@ -87,14 +68,7 @@ impl Supervisor {
                     lock(&actor.oauth).complete(callback);
                 }
             }
-            OAuthOwner::Login(id) => {
-                if let Some(running) = lock(&self.inner.login)
-                    .as_mut()
-                    .filter(|running| running.id == *id)
-                {
-                    running.oauth.complete(callback);
-                }
-            }
+            OAuthOwner::Login(id) => self.login_oauth(*id, |oauth| oauth.complete(callback)),
         }
     }
 }

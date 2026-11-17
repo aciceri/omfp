@@ -5,7 +5,6 @@
 //! The source thread's omp gets no command and its session files are only read.
 
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use omp_rpc::ForkCommand;
 use serde_json::Value;
@@ -30,9 +29,7 @@ impl Supervisor {
         let Some(entry_id) = entry_id else {
             return Ok(());
         };
-        let threads = Arc::clone(&self.inner.threads);
-        let thread_id = id.to_owned();
-        let copy = blocking(move || threads.get(&thread_id)).await??;
+        let copy = self.thread(id).await?;
         let answer = self
             .call(
                 id,

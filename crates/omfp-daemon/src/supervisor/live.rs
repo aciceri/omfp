@@ -1,7 +1,6 @@
 //! Live voice relay (DMN-100..110): one session per thread, opened on the client's peer (`live_connect`) or on the
 //! daemon machine (`live_start`), owned by the connection that opened it.
 
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use omfp_core::{LiveOwner, ThreadEvent, live_error_message};
@@ -98,25 +97,14 @@ impl Supervisor {
                 owner: owner.clone(),
             });
         }
-        let process = match self.ensure_running(&actor).await {
-            Ok(process) => process,
-            Err(error) => {
-                actor.release_voice(slot);
-                return Err(error);
-            }
-        };
-        let threads = Arc::clone(&self.inner.threads);
-        let thread_id = id.to_owned();
-        let fetched = blocking(move || threads.get(&thread_id).map_err(SupervisorError::from))
-            .await
-            .and_then(|fetched| fetched);
-        let title = match fetched {
-            Ok(thread) => thread.title,
-            Err(error) => {
-                actor.release_voice(slot);
-                return Err(error);
-            }
-        };
+        let (process, title) = async {
+            let process = self.ensure_running(&actor).await?;
+            Ok::<_, SupervisorError>((process, self.thread(id).await?.title))
+        }
+        .await
+        .inspect_err(|_| {
+            actor.release_voice(slot);
+        })?;
         // The realtime model knows only its instructions, so they carry the thread's conversation (DMN-105).
         let instructions = actor
             .log

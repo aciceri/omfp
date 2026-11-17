@@ -146,29 +146,16 @@ impl Supervisor {
     /// Forgets login `id` once it ended; `false` when it was cancelled meanwhile (DMN-222).
     #[must_use]
     pub fn end_login(&self, id: u64) -> bool {
-        let mut login = lock(&self.inner.login);
-        if login.as_ref().is_some_and(|running| running.id == id) {
-            login.take();
-            true
-        } else {
-            false
-        }
+        lock(&self.inner.login)
+            .take_if(|running| running.id == id)
+            .is_some()
     }
 
     /// Cancels the running login — with `window`, only the one that window shows (its connection closed) — by
     /// stopping its omp; returns its provider (DMN-222).
     pub fn cancel_login(&self, window: Option<u64>) -> Option<String> {
-        let running = {
-            let mut login = lock(&self.inner.login);
-            if window.is_some_and(|window| {
-                login
-                    .as_ref()
-                    .is_none_or(|running| running.window != window)
-            }) {
-                return None;
-            }
-            login.take()
-        }?;
+        let running = lock(&self.inner.login)
+            .take_if(|running| window.is_none_or(|window| running.window == window))?;
         info!(provider = %running.provider_id, "login cancelled");
         running.process.kill();
         Some(running.provider_id)

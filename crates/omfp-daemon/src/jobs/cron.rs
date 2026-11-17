@@ -301,12 +301,6 @@ impl Schedule {
             from = due.checked_add(jiff::SignedDuration::from_mins(1)).ok()?;
         }
     }
-
-    /// [`Schedule::next_after`] in the host's local time zone (DMN-323).
-    #[must_use]
-    pub fn next_after_local(&self, after_ms: i64) -> Option<i64> {
-        self.next_after(after_ms, &TimeZone::system())
-    }
 }
 
 #[cfg(test)]

@@ -127,6 +127,20 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// Where tests hold a step: told on arrival, released by the receiver.
+#[cfg(test)]
+type Gate = Mutex<Option<(oneshot::Sender<()>, oneshot::Receiver<()>)>>;
+
+/// Waits at `gate` while a test holds it.
+#[cfg(test)]
+async fn pass(gate: &Gate) {
+    let held = lock(gate).take();
+    if let Some((arrived, release)) = held {
+        let _ = arrived.send(());
+        let _ = release.await;
+    }
+}
+
 async fn blocking<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, ErrorBody> + Send + 'static,
 ) -> Result<T, ErrorBody> {
@@ -461,12 +475,6 @@ enum Applied {
     Bytes(Vec<u8>),
 }
 
-impl From<Option<Vec<u8>>> for Applied {
-    fn from(bytes: Option<Vec<u8>>) -> Self {
-        bytes.map_or(Self::Missing, Self::Bytes)
-    }
-}
-
 /// A jobs file's size and modification time; `None` without a file.
 type Stamp = Option<(u64, Option<std::time::SystemTime>)>;
 
@@ -489,17 +497,6 @@ enum Setup {
     LastDue(String, i64),
 }
 
-/// How a run ended, before it is recorded.
-struct Ended {
-    status: JobRunStatus,
-    reason: Option<String>,
-    exit_code: Option<i32>,
-    signal: Option<i32>,
-    at: i64,
-    output_tail: Option<String>,
-    line_count: u64,
-}
-
 struct Inner {
     store: Arc<Store>,
     jobs: Jobs,
@@ -520,12 +517,12 @@ struct Inner {
     closed: AtomicBool,
     /// Command runs whose end is not recorded yet.
     recording: watch::Sender<usize>,
-    /// Tests hold a registration here, after its store write: told on arrival, released by the receiver.
+    /// Tests hold a registration here, after its store write.
     #[cfg(test)]
-    register_gate: Mutex<Option<(oneshot::Sender<()>, oneshot::Receiver<()>)>>,
-    /// Tests hold a workspace's first load here, under its file lock, the same way.
+    register_gate: Gate,
+    /// Tests hold a workspace's first load here, under its file lock.
     #[cfg(test)]
-    load_gate: Mutex<Option<(oneshot::Sender<()>, oneshot::Receiver<()>)>>,
+    load_gate: Gate,
 }
 
 /// The declared jobs of every workspace. Cheap to clone.
@@ -611,6 +608,15 @@ impl Declared {
         lock(&self.inner.spaces).get(id).cloned()
     }
 
+    /// Runs `work` on the store off the async workers.
+    async fn with_store<T: Send + 'static, E: Into<ErrorBody> + 'static>(
+        &self,
+        work: impl FnOnce(&Store) -> Result<T, E> + Send + 'static,
+    ) -> Result<T, ErrorBody> {
+        let store = Arc::clone(&self.inner.store);
+        blocking(move || work(&store).map_err(Into::into)).await
+    }
+
     /// The workspace's declared jobs, read at the first use; `not_found` for an unknown workspace. Every caller waits
     /// until that first read is applied, so none sees a workspace's jobs before they are known.
     async fn ensure(&self, id: &str) -> Result<Arc<Space>, ErrorBody> {
@@ -618,9 +624,10 @@ impl Declared {
             self.loaded(&space).await;
             return Ok(space);
         }
-        let store = Arc::clone(&self.inner.store);
         let workspace_id = id.to_owned();
-        let workspace = blocking(move || Ok(store.workspace(&workspace_id)?)).await?;
+        let workspace = self
+            .with_store(move |store| store.workspace(&workspace_id))
+            .await?;
         let space = Arc::clone(
             lock(&self.inner.spaces)
                 .entry(id.to_owned())
@@ -652,13 +659,7 @@ impl Declared {
             .get_or_init(|| async {
                 let mut applied = space.file.lock().await;
                 #[cfg(test)]
-                {
-                    let gate = lock(&self.inner.load_gate).take();
-                    if let Some((arrived, release)) = gate {
-                        let _ = arrived.send(());
-                        let _ = release.await;
-                    }
-                }
+                pass(&self.inner.load_gate).await;
                 if *applied == Applied::Never {
                     self.read_and_apply(space, &mut applied).await;
                 }
@@ -721,14 +722,7 @@ impl Declared {
 
     async fn read_and_apply(&self, space: &Arc<Space>, applied: &mut Applied) {
         let path = file::path(&space.folder);
-        let read = blocking(move || {
-            Ok(match std::fs::read(&path) {
-                Ok(bytes) => Ok(Some(bytes)),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-                Err(error) => Err(format!("cannot read .omfp/jobs.json: {error}")),
-            })
-        })
-        .await;
+        let read = blocking(move || Ok(file::read_bytes(&path))).await;
         match read {
             Ok(Ok(bytes)) => self.apply_bytes(space, applied, bytes).await,
             Ok(Err(error)) => {
@@ -743,7 +737,7 @@ impl Declared {
 
     /// Applies the file's bytes unless they are the ones applied last.
     async fn apply_bytes(&self, space: &Arc<Space>, applied: &mut Applied, bytes: Option<Vec<u8>>) {
-        let read = Applied::from(bytes);
+        let read = bytes.map_or(Applied::Missing, Applied::Bytes);
         if *applied == read {
             return;
         }
@@ -782,35 +776,29 @@ impl Declared {
                 .cloned()
                 .collect()
         };
-        let (store, workspace_id, now) = (
-            Arc::clone(&self.inner.store),
-            space.id.clone(),
-            self.inner.clock.now_ms(),
-        );
-        let known = blocking(move || {
-            new.into_iter()
-                .map(|name| {
-                    let last = store.last_job_run(&workspace_id, &name)?;
-                    let kept = store.job_state(&workspace_id, &name)?;
-                    // A job first seen now never catches up on earlier times (DMN-325).
-                    let last_due_at = if let Some(at) = kept.last_due_at {
-                        at
-                    } else {
-                        store.set_job_last_due(&workspace_id, &name, now)?;
-                        now
-                    };
-                    Ok((name, (last.as_ref().map(run_info), last_due_at)))
-                })
-                .collect::<Result<HashMap<_, _>, ErrorBody>>()
-        })
-        .await;
-        let mut known = match known {
-            Ok(known) => known,
-            Err(error) => {
-                warn!(workspace = %space.id, error = %error.message, "cannot read the jobs' runs");
-                HashMap::new()
-            }
-        };
+        let (workspace_id, now) = (space.id.clone(), self.inner.clock.now_ms());
+        let known = self
+            .with_store(move |store| {
+                new.into_iter()
+                    .map(|name| {
+                        let last = store.last_job_run(&workspace_id, &name)?;
+                        let kept = store.job_state(&workspace_id, &name)?;
+                        // A job first seen now never catches up on earlier times (DMN-325).
+                        let last_due_at = if let Some(at) = kept.last_due_at {
+                            at
+                        } else {
+                            store.set_job_last_due(&workspace_id, &name, now)?;
+                            now
+                        };
+                        Ok((name, (last.as_ref().map(run_info), last_due_at)))
+                    })
+                    .collect::<Result<HashMap<_, _>, ErrorBody>>()
+            })
+            .await;
+        let mut known = known.unwrap_or_else(|error| {
+            warn!(workspace = %space.id, error = %error.message, "cannot read the jobs' runs");
+            HashMap::new()
+        });
         let mut setups = Vec::new();
         {
             let mut guard = lock(&space.state);
@@ -880,13 +868,13 @@ impl Declared {
         for setup in setups {
             match setup {
                 Setup::Service(name) => {
-                    self.spawn_start(space, name, RunTrigger::Service, None, false);
+                    self.spawn_start(space, name, RunTrigger::Service, None);
                 }
                 Setup::LastDue(name, at) => {
-                    let (store, workspace_id) = (Arc::clone(&self.inner.store), space.id.clone());
-                    let stored =
-                        blocking(move || Ok(store.set_job_last_due(&workspace_id, &name, at)?))
-                            .await;
+                    let workspace_id = space.id.clone();
+                    let stored = self
+                        .with_store(move |store| store.set_job_last_due(&workspace_id, &name, at))
+                        .await;
                     if let Err(error) = stored {
                         warn!(workspace = %space.id, error = %error.message, "cannot record a job's due time");
                     }
@@ -1022,21 +1010,16 @@ impl Declared {
 
     fn publish_counts(&self, workspace_id: &str, state: &SpaceState) {
         let counts = if state.removed { None } else { state.counts() };
-        let changed = {
-            let mut all = lock(&self.inner.counts);
-            if all.get(workspace_id) == counts.as_ref() {
-                false
-            } else {
-                match counts {
-                    Some(counts) => all.insert(workspace_id.to_owned(), counts),
-                    None => all.remove(workspace_id),
-                };
-                true
-            }
-        };
-        if changed {
-            self.inner.changed.send_modify(|count| *count += 1);
+        let mut all = lock(&self.inner.counts);
+        if all.get(workspace_id) == counts.as_ref() {
+            return;
         }
+        match counts {
+            Some(counts) => all.insert(workspace_id.to_owned(), counts),
+            None => all.remove(workspace_id),
+        };
+        drop(all);
+        self.inner.changed.send_modify(|count| *count += 1);
     }
 
     // The scheduler (DMN-323, DMN-325).
@@ -1046,7 +1029,7 @@ impl Declared {
         space: Arc<Space>,
         name: String,
         schedule: Schedule,
-        missed: MissedPolicy,
+        missed_policy: MissedPolicy,
         mut last_due_at: i64,
     ) {
         loop {
@@ -1055,33 +1038,28 @@ impl Declared {
             };
             self.inner.clock.sleep_until(due).await;
             let now = self.inner.clock.now_ms();
-            let tz = self.inner.tz.clone();
-            let (store, workspace_id, job) = (
-                Arc::clone(&self.inner.store),
-                space.id.clone(),
-                name.clone(),
-            );
+            let missed = now - due > MISSED_AFTER_MS;
+            let (tz, workspace_id, job) = (self.inner.tz.clone(), space.id.clone(), name.clone());
             // Every time missed meanwhile counts as handled (DMN-325); counted off the async workers.
-            let handled = blocking(move || {
-                let mut latest = due;
-                if now - due > MISSED_AFTER_MS {
-                    while let Some(next) = schedule.next_after(latest, &tz)
-                        && next <= now
-                    {
-                        latest = next;
+            let handled = self
+                .with_store(move |store| {
+                    let mut latest = due;
+                    if missed {
+                        while let Some(next) = schedule.next_after(latest, &tz)
+                            && next <= now
+                        {
+                            latest = next;
+                        }
                     }
-                }
-                store.set_job_last_due(&workspace_id, &job, latest)?;
-                Ok(latest)
-            })
-            .await;
-            last_due_at = match handled {
-                Ok(latest) => latest,
-                Err(error) => {
-                    warn!(job = %name, error = %error.message, "cannot record a job's due time");
-                    due
-                }
-            };
+                    store
+                        .set_job_last_due(&workspace_id, &job, latest)
+                        .map(|()| latest)
+                })
+                .await;
+            last_due_at = handled.unwrap_or_else(|error| {
+                warn!(job = %name, error = %error.message, "cannot record a job's due time");
+                due
+            });
             {
                 let mut state = lock(&space.state);
                 let Some(entry) = state.jobs.get_mut(&name) else {
@@ -1092,16 +1070,14 @@ impl Declared {
                 entry.next_at = schedule.next_after(last_due_at, &self.inner.tz);
                 self.publish(&space, &state, &name);
             }
-            let trigger = if now - due > MISSED_AFTER_MS {
-                (missed == MissedPolicy::Run).then_some(RunTrigger::Missed)
+            let trigger = if missed {
+                (missed_policy == MissedPolicy::Run).then_some(RunTrigger::Missed)
             } else {
                 Some(RunTrigger::Schedule)
             };
             if let Some(trigger) = trigger {
                 // Its own task: aborting the scheduler never cuts a start short.
-                let _ = self
-                    .spawn_start(&space, name.clone(), trigger, None, false)
-                    .await;
+                let _ = self.spawn_start(&space, name.clone(), trigger, None).await;
             }
         }
     }
@@ -1114,9 +1090,9 @@ impl Declared {
         name: String,
         trigger: RunTrigger,
         started_by: Option<Provenance>,
-        manual: bool,
     ) -> tokio::task::JoinHandle<Result<RunInfo, ErrorBody>> {
         let (declared, space) = (self.clone(), Arc::clone(space));
+        let manual = trigger == RunTrigger::Manual;
         tokio::spawn(async move {
             let result = declared
                 .start(&space, &name, trigger, started_by, manual)
@@ -1140,7 +1116,7 @@ impl Declared {
         started_by: Option<Provenance>,
         manual: bool,
     ) -> Result<RunInfo, ErrorBody> {
-        let reserved = {
+        let (run, reserved) = {
             let mut guard = lock(&space.state);
             let state = &mut *guard;
             if state.removed || self.closed() {
@@ -1154,8 +1130,23 @@ impl Declared {
             if !entry.def.enabled {
                 return Err(conflict(format!("job {name} is disabled")));
             }
+            let run = RunInfo {
+                id: new_id(),
+                workspace_id: space.id.clone(),
+                job: Some(name.to_owned()),
+                trigger,
+                started_by: started_by.as_ref().map(created_by),
+                thread_id: None,
+                command: entry.def.command.clone(),
+                started_at: self.inner.clock.now_ms(),
+                ended_at: None,
+                status: JobRunStatus::Running,
+                reason: None,
+                exit_code: None,
+                signal: None,
+            };
             if entry.run.is_some() || state.starting.contains(name) {
-                Err(entry.def.command.clone())
+                (run, None)
             } else {
                 state.starting.insert(name.to_owned());
                 if trigger == RunTrigger::Manual || trigger == RunTrigger::Service {
@@ -1166,46 +1157,26 @@ impl Declared {
                     entry.service.cancel();
                     entry.service.stopped = false;
                 }
-                Ok((entry.def.clone(), entry.generation))
+                (run, Some((entry.def.clone(), entry.generation)))
             }
         };
-        let (def, generation) = match reserved {
-            Ok(reserved) => reserved,
-            Err(command) => {
-                if manual {
-                    return Err(conflict(format!("job {name} is running")));
-                }
-                return self
-                    .skip(space, name, trigger, started_by, None, command, "running")
-                    .await;
+        let Some((def, generation)) = reserved else {
+            if manual {
+                return Err(conflict(format!("job {name} is running")));
             }
-        };
-        let base = RunInfo {
-            id: new_id(),
-            workspace_id: space.id.clone(),
-            job: Some(name.to_owned()),
-            trigger,
-            started_by: started_by.as_ref().map(created_by),
-            thread_id: None,
-            command: def.command.clone(),
-            started_at: self.inner.clock.now_ms(),
-            ended_at: None,
-            status: JobRunStatus::Running,
-            reason: None,
-            exit_code: None,
-            signal: None,
+            return self.skip(space, name, run, "running").await;
         };
         match (&def.command, &def.prompt) {
             (Some(command), _) => {
-                self.start_command(space, name, &def, command, base, generation)
+                self.start_command(space, name, &def, command, run, generation)
                     .await
             }
             (None, Some(prompt)) => {
-                self.start_prompt(space, name, prompt, base, manual, generation)
+                self.start_prompt(space, name, prompt, run, manual, generation)
                     .await
             }
             (None, None) => {
-                self.release(space, name, &base);
+                self.release(space, name, &run);
                 Err(internal(format!("job {name} has no action")))
             }
         }
@@ -1222,52 +1193,45 @@ impl Declared {
         self.after_end(space, name, run, Some(Kill::Replace));
     }
 
-    /// Records a `skipped` run (DMN-324, DMN-328) and publishes its `run_ended`.
-    #[allow(clippy::too_many_arguments)] // The run's fields, all known to the caller.
+    /// Records `run` as `skipped` for `reason`, started and ended now (DMN-324, DMN-328), and publishes its
+    /// `run_ended`.
     async fn skip(
         &self,
         space: &Arc<Space>,
         name: &str,
-        trigger: RunTrigger,
-        started_by: Option<Provenance>,
-        thread_id: Option<String>,
-        command: Option<String>,
+        run: RunInfo,
         reason: &str,
     ) -> Result<RunInfo, ErrorBody> {
         let now = self.inner.clock.now_ms();
         let run = RunInfo {
             id: new_id(),
-            workspace_id: space.id.clone(),
-            job: Some(name.to_owned()),
-            trigger,
-            started_by: started_by.as_ref().map(created_by),
-            thread_id,
-            command,
             started_at: now,
             ended_at: Some(now),
             status: JobRunStatus::Skipped,
             reason: Some(reason.to_owned()),
-            exit_code: None,
-            signal: None,
+            ..run
         };
-        self.record_ended(space, name, &run, None).await;
+        self.record_ended(space, name, &run, false).await;
         Ok(run)
     }
 
-    /// Stores a run that ended as it began (skipped, or failed to start) and publishes `run_ended` (DMN-336).
-    async fn record_ended(
-        &self,
-        space: &Arc<Space>,
-        name: &str,
-        run: &RunInfo,
-        starting: Option<()>,
-    ) {
-        let (store, row) = (Arc::clone(&self.inner.store), job_run(run));
-        if let Err(error) = blocking(move || Ok(store.insert_job_run(&row)?)).await {
+    /// Stores a run's row (DMN-330).
+    async fn insert_run(&self, name: &str, run: &RunInfo) {
+        let row = job_run(run);
+        if let Err(error) = self
+            .with_store(move |store| store.insert_job_run(&row))
+            .await
+        {
             warn!(job = %name, error = %error.message, "cannot record a job's run");
         }
+    }
+
+    /// Stores a run that ended as it began (skipped, or failed to start) and publishes `run_ended` (DMN-336);
+    /// `reserved`: the start that ended it holds the job's `starting` mark.
+    async fn record_ended(&self, space: &Arc<Space>, name: &str, run: &RunInfo, reserved: bool) {
+        self.insert_run(name, run).await;
         let mut state = lock(&space.state);
-        if starting.is_some() {
+        if reserved {
             state.starting.remove(name);
         }
         if state.removed {
@@ -1295,18 +1259,9 @@ impl Declared {
         kind: RunKind,
         generation: u64,
     ) {
-        let (store, row) = (Arc::clone(&self.inner.store), job_run(run));
-        if let Err(error) = blocking(move || Ok(store.insert_job_run(&row)?)).await {
-            warn!(job = %name, error = %error.message, "cannot record a job's run");
-        }
+        self.insert_run(name, run).await;
         #[cfg(test)]
-        {
-            let gate = lock(&self.inner.register_gate).take();
-            if let Some((arrived, release)) = gate {
-                let _ = arrived.send(());
-                let _ = release.await;
-            }
-        }
+        pass(&self.inner.register_gate).await;
         let mut guard = lock(&space.state);
         let state = &mut *guard;
         let mut kill = None;
@@ -1357,35 +1312,32 @@ impl Declared {
         mut run: RunInfo,
         generation: u64,
     ) -> Result<RunInfo, ErrorBody> {
-        let folder = file::cwd_folder(&space.folder, def.cwd.as_deref())
-            .ok_or_else(|| bad_request(format!("job {name}: its cwd leaves the workspace folder")));
-        let started = folder.and_then(|folder| {
-            self.inner
-                .jobs
-                .start_run(&space.id, &folder, command)
-                .map_err(ErrorBody::from)
-        });
+        let started = file::cwd_folder(&space.folder, def.cwd.as_deref())
+            .ok_or_else(|| bad_request(format!("job {name}: its cwd leaves the workspace folder")))
+            .and_then(|folder| {
+                self.inner
+                    .jobs
+                    .start_run(&space.id, &folder, command)
+                    .map_err(ErrorBody::from)
+            });
         let (job, exit) = match started {
             Ok(started) => started,
             Err(error) => {
                 run.status = JobRunStatus::Failed;
                 run.ended_at = Some(run.started_at);
                 run.reason = Some(error.message);
-                self.record_ended(space, name, &run, Some(())).await;
+                self.record_ended(space, name, &run, true).await;
                 self.after_end(space, name, &run, None);
                 return Ok(run);
             }
         };
         run.id = job.id;
         run.started_at = job.started_at;
-        let recording = {
-            self.inner.recording.send_modify(|count| *count += 1);
-            Recording(self.inner.recording.clone())
-        };
+        self.inner.recording.send_modify(|count| *count += 1);
+        let recording = Recording(self.inner.recording.clone());
         self.register(space, name, &run, RunKind::Command, generation)
             .await;
-        let declared = self.clone();
-        let (space, run_id) = (Arc::clone(space), run.id.clone());
+        let (declared, space, run_id) = (self.clone(), Arc::clone(space), run.id.clone());
         tokio::spawn(async move {
             let _recording = recording;
             declared.command_ended(&space, &run_id, exit).await;
@@ -1399,41 +1351,28 @@ impl Declared {
         run_id: &str,
         exit: oneshot::Receiver<RunExit>,
     ) {
-        let ended = match exit.await {
-            Ok(exit) => {
-                let status = if exit.killed {
-                    JobRunStatus::Killed
-                } else if exit.code == Some(0) {
-                    JobRunStatus::Succeeded
-                } else {
-                    JobRunStatus::Failed
-                };
-                Ended {
-                    status,
-                    reason: None,
-                    exit_code: exit.code,
-                    signal: exit.signal,
-                    at: exit.ended_at,
-                    output_tail: serde_json::to_string(&exit.tail).ok(),
-                    line_count: exit.line_count,
-                }
-            }
-            Err(_) => Ended {
-                status: JobRunStatus::Failed,
-                reason: Some("the daemon lost the run".to_owned()),
-                exit_code: None,
-                signal: None,
-                at: self.inner.clock.now_ms(),
-                output_tail: None,
-                line_count: 0,
-            },
+        let exit = exit.await.ok();
+        let status = match &exit {
+            Some(exit) if exit.killed => JobRunStatus::Killed,
+            Some(exit) if exit.code == Some(0) => JobRunStatus::Succeeded,
+            _ => JobRunStatus::Failed,
         };
-        self.finish(space, run_id, ended).await;
+        let reason = exit.is_none().then(|| "the daemon lost the run".to_owned());
+        self.finish(space, run_id, status, reason, exit.as_ref())
+            .await;
     }
 
-    /// Records the end of a running run, publishes `run_ended` then the job (DMN-336), and restarts a service
-    /// (DMN-326).
-    async fn finish(&self, space: &Arc<Space>, run_id: &str, ended: Ended) {
+    /// Records the end of a running run — at `exit`'s end with its output for a command run, else now — publishes
+    /// `run_ended` then the job (DMN-336), and restarts a service (DMN-326).
+    async fn finish(
+        &self,
+        space: &Arc<Space>,
+        run_id: &str,
+        status: JobRunStatus,
+        reason: Option<String>,
+        exit: Option<&RunExit>,
+    ) {
+        let ended_at = exit.map_or_else(|| self.inner.clock.now_ms(), |exit| exit.ended_at);
         let (mut run, job) = {
             let state = lock(&space.state);
             if state.removed {
@@ -1444,31 +1383,31 @@ impl Declared {
             };
             (running.info.clone(), running.job.clone())
         };
-        run.status = ended.status;
-        run.reason = ended.reason;
-        run.exit_code = ended.exit_code;
-        run.signal = ended.signal;
-        run.ended_at = Some(ended.at);
-        let (store, id) = (Arc::clone(&self.inner.store), run.id.clone());
-        let status = status_name(run.status);
-        let reason = run.reason.clone();
-        let (exit_code, signal, ended_at) = (run.exit_code, run.signal, ended.at);
-        let (output_tail, line_count) = (ended.output_tail, ended.line_count);
-        let recorded = blocking(move || {
-            Ok(store.finish_job_run(
-                &id,
-                &RunEnd {
-                    ended_at,
-                    status,
-                    reason: reason.as_deref(),
-                    exit_code,
-                    signal,
-                    output_tail: output_tail.as_deref(),
-                    line_count,
-                },
-            )?)
-        })
-        .await;
+        run.status = status;
+        run.reason = reason;
+        run.exit_code = exit.and_then(|exit| exit.code);
+        run.signal = exit.and_then(|exit| exit.signal);
+        run.ended_at = Some(ended_at);
+        let (id, reason) = (run.id.clone(), run.reason.clone());
+        let (exit_code, signal) = (run.exit_code, run.signal);
+        let output_tail = exit.and_then(|exit| serde_json::to_string(&exit.tail).ok());
+        let line_count = exit.map_or(0, |exit| exit.line_count);
+        let recorded = self
+            .with_store(move |store| {
+                store.finish_job_run(
+                    &id,
+                    &RunEnd {
+                        ended_at,
+                        status: status_name(status),
+                        reason: reason.as_deref(),
+                        exit_code,
+                        signal,
+                        output_tail: output_tail.as_deref(),
+                        line_count,
+                    },
+                )
+            })
+            .await;
         if let Err(error) = recorded {
             warn!(job = %job, error = %error.message, "cannot record a job's run");
         }
@@ -1514,22 +1453,19 @@ impl Declared {
         {
             return;
         }
-        match kill {
-            Some(Kill::Protocol) => {
-                entry.service.stopped = true;
-                self.publish(space, state, name);
-                return;
-            }
+        let stop = match kill {
             Some(Kill::Teardown) => return,
             Some(Kill::Replace) => {
                 drop(guard);
-                self.spawn_start(space, name.to_owned(), RunTrigger::Service, None, false);
+                self.spawn_start(space, name.to_owned(), RunTrigger::Service, None);
                 return;
             }
-            None => {}
-        }
-        let failed = run.status == JobRunStatus::Failed;
-        if entry.def.restart == RestartPolicy::OnFailure && !failed {
+            Some(Kill::Protocol) => true,
+            None => {
+                entry.def.restart == RestartPolicy::OnFailure && run.status != JobRunStatus::Failed
+            }
+        };
+        if stop {
             entry.service.stopped = true;
             self.publish(space, state, name);
             return;
@@ -1569,7 +1505,7 @@ impl Declared {
             entry.service.restart = None;
         }
         let _ = self
-            .spawn_start(&space, name, RunTrigger::Service, None, false)
+            .spawn_start(&space, name, RunTrigger::Service, None)
             .await;
     }
 
@@ -1585,37 +1521,36 @@ impl Declared {
         generation: u64,
     ) -> Result<RunInfo, ErrorBody> {
         let reuse = prompt.thread == PromptThread::Reuse;
-        let mut thread_id = None;
-        if reuse {
-            let (store, threads, workspace_id, job) = (
-                Arc::clone(&self.inner.store),
+        let kept = if reuse {
+            let (threads, workspace_id, job) = (
                 Arc::clone(&self.inner.threads),
                 space.id.clone(),
                 name.to_owned(),
             );
-            let kept = blocking(move || {
-                let Some(id) = store.job_state(&workspace_id, &job)?.thread_id else {
-                    return Ok(None);
-                };
+            self.with_store(move |store| {
                 // A deleted or archived thread, or one moved to another workspace, makes way for a new one
                 // (DMN-283: a job never works on another workspace's repositories).
-                Ok(threads
-                    .get(&id)
-                    .ok()
-                    .filter(|thread| {
-                        thread.archived_at.is_none() && thread.workspace_id == workspace_id
-                    })
-                    .map(|thread| thread.id))
+                store.job_state(&workspace_id, &job).map(|state| {
+                    state
+                        .thread_id
+                        .and_then(|id| threads.get(&id).ok())
+                        .filter(|thread| {
+                            thread.archived_at.is_none() && thread.workspace_id == workspace_id
+                        })
+                        .map(|thread| thread.id)
+                })
             })
-            .await;
-            thread_id = match kept {
-                Ok(kept) => kept,
-                Err(error) => {
-                    self.release(space, name, &run);
-                    return Err(error);
-                }
-            };
-        }
+            .await
+        } else {
+            Ok(None)
+        };
+        let thread_id = match kept {
+            Ok(kept) => kept,
+            Err(error) => {
+                self.release(space, name, &run);
+                return Err(error);
+            }
+        };
         if let Some(id) = &thread_id {
             let status = self.inner.supervisor.status(id);
             if status.process == ProcessState::Starting || !status.settled || status.needs_attention
@@ -1624,17 +1559,11 @@ impl Declared {
                     self.release(space, name, &run);
                     return Err(conflict(format!("the thread of job {name} is busy")));
                 }
-                let skipped = self
-                    .skip(
-                        space,
-                        name,
-                        run.trigger,
-                        None,
-                        Some(id.clone()),
-                        None,
-                        "busy",
-                    )
-                    .await;
+                let busy = RunInfo {
+                    thread_id: Some(id.clone()),
+                    ..run.clone()
+                };
+                let skipped = self.skip(space, name, busy, "busy").await;
                 self.release(space, name, &run);
                 return skipped;
             }
@@ -1683,7 +1612,7 @@ impl Declared {
                         _ => body.message.clone(),
                     },
                 );
-                self.record_ended(space, name, &run, Some(())).await;
+                self.record_ended(space, name, &run, true).await;
                 // The job may have become a service while omp started: it starts now (DMN-322).
                 self.after_end(space, name, &run, Some(Kill::Replace));
                 self.inner.changed.send_modify(|count| *count += 1);
@@ -1691,15 +1620,11 @@ impl Declared {
             }
         };
         if created && reuse {
-            let (store, workspace_id, job, id) = (
-                Arc::clone(&self.inner.store),
-                space.id.clone(),
-                name.to_owned(),
-                thread_id.clone(),
-            );
-            if let Err(error) =
-                blocking(move || Ok(store.set_job_thread(&workspace_id, &job, &id)?)).await
-            {
+            let (workspace_id, job, id) = (space.id.clone(), name.to_owned(), thread_id.clone());
+            let stored = self
+                .with_store(move |store| store.set_job_thread(&workspace_id, &job, &id))
+                .await;
+            if let Err(error) = stored {
                 warn!(job = %name, error = %error.message, "cannot record a job's thread");
             }
         }
@@ -1817,20 +1742,7 @@ impl Declared {
             Err(_) if killed => (JobRunStatus::Killed, None),
             Err(reason) => (JobRunStatus::Failed, Some(reason)),
         };
-        self.finish(
-            space,
-            run_id,
-            Ended {
-                status,
-                reason,
-                exit_code: None,
-                signal: None,
-                at: self.inner.clock.now_ms(),
-                output_tail: None,
-                line_count: 0,
-            },
-        )
-        .await;
+        self.finish(space, run_id, status, reason, None).await;
     }
 
     // The protocol.
@@ -1854,10 +1766,9 @@ impl Declared {
         limit: Option<u32>,
     ) -> Result<JobRuns, ErrorBody> {
         let limit = limit.unwrap_or(RUNS_DEFAULT).min(RUNS_MAX);
-        let store = Arc::clone(&self.inner.store);
-        let (runs, more) =
-            blocking(move || Ok(store.job_runs(&workspace_id, &job, before.as_deref(), limit)?))
-                .await?;
+        let (runs, more) = self
+            .with_store(move |store| store.job_runs(&workspace_id, &job, before.as_deref(), limit))
+            .await?;
         Ok(JobRuns {
             runs: runs.iter().map(run_info).collect(),
             more,
@@ -1872,15 +1783,9 @@ impl Declared {
         started_by: Provenance,
     ) -> Result<RunInfo, ErrorBody> {
         let space = self.ensure(workspace_id).await?;
-        self.spawn_start(
-            &space,
-            job.to_owned(),
-            RunTrigger::Manual,
-            Some(started_by),
-            true,
-        )
-        .await
-        .map_err(internal)?
+        self.spawn_start(&space, job.to_owned(), RunTrigger::Manual, Some(started_by))
+            .await
+            .map_err(internal)?
     }
 
     /// `jobs.kill` of a running declared run (DMN-326, DMN-328): `None` when `run_id` is no such run. A command run is
@@ -1912,9 +1817,11 @@ impl Declared {
 
     /// The `job/<id>` log of a stored command run the engine no longer holds (DMN-330), if the store has it.
     pub async fn stored_log(&self, run_id: &str) -> Option<Arc<JobLog>> {
-        let store = Arc::clone(&self.inner.store);
         let id = run_id.to_owned();
-        let (run, output) = blocking(move || Ok(store.job_run(&id)?)).await.ok()??;
+        let (run, output) = self
+            .with_store(move |store| store.job_run(&id))
+            .await
+            .ok()??;
         let command = run.command?;
         let lines: Vec<JobLine> = output
             .output_tail
@@ -1993,8 +1900,7 @@ impl Declared {
         let defined = name.clone();
         let space = self
             .write(workspace_id, move |current| {
-                let bytes = file::write_job(current, &defined, Some(&job))
-                    .map_err(|error| write_error(&error))?;
+                let bytes = file::write_job(current, &defined, Some(&job))?;
                 let exists = current
                     .and_then(|current| file::parse_jobs_file(current).ok())
                     .is_some_and(|jobs| jobs.contains_key(&defined));
@@ -2012,7 +1918,7 @@ impl Declared {
     /// `jobs.remove` (PRT-206).
     pub async fn remove(&self, workspace_id: &str, name: String) -> Result<(), ErrorBody> {
         self.write(workspace_id, move |current| {
-            file::write_job(current, &name, None).map_err(|error| write_error(&error))
+            Ok(file::write_job(current, &name, None)?)
         })
         .await?;
         Ok(())
@@ -2028,7 +1934,7 @@ impl Declared {
         let changed = name.clone();
         let space = self
             .write(workspace_id, move |current| {
-                file::set_enabled(current, &changed, enabled).map_err(|error| write_error(&error))
+                Ok(file::set_enabled(current, &changed, enabled)?)
             })
             .await?;
         Self::published(&space, &name)
@@ -2067,15 +1973,6 @@ impl Declared {
     pub async fn wait_recorded(&self) {
         let mut recording = self.inner.recording.subscribe();
         let _ = tokio::time::timeout(RECORD_WAIT, recording.wait_for(|count| *count == 0)).await;
-    }
-}
-
-fn write_error(error: &file::WriteError) -> ErrorBody {
-    match error {
-        file::WriteError::NotFound(_) => not_found(error.to_string()),
-        file::WriteError::InvalidFile(_) | file::WriteError::InvalidJob(_) => {
-            bad_request(error.to_string())
-        }
     }
 }
 

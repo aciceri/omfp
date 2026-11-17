@@ -98,12 +98,16 @@ impl JobTopic {
 #[must_use]
 pub fn stored_log(job: JobInfo, lines: Vec<JobLine>, dropped: u64) -> Arc<JobLog> {
     let text_bytes = lines.iter().map(|line| line.text.len()).sum();
-    let topic = JobTopic {
+    topic_log(JobTopic {
         job,
         lines: lines.into(),
         text_bytes,
         dropped,
-    };
+    })
+}
+
+/// A `job/<id>` topic starting at `topic`.
+fn topic_log(topic: JobTopic) -> Arc<JobLog> {
     Arc::new(EventLog::new(
         new_id(),
         topic,
@@ -346,6 +350,13 @@ impl Control {
             }
         })
     }
+
+    /// [`Control::terminate`] with the escalation in a task of its own.
+    fn kill(self: &Arc<Self>) {
+        if let Some(escalation) = self.terminate() {
+            tokio::spawn(escalation);
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -465,13 +476,7 @@ impl Jobs {
             started_at: now_ms(),
             status: JobStatus::Running,
         };
-        let log = Arc::new(EventLog::new(
-            new_id(),
-            JobTopic::new(job.clone()),
-            apply,
-            REPLAY_EVENTS,
-            REPLAY_EVENTS,
-        ));
+        let log = topic_log(JobTopic::new(job.clone()));
         let control = Arc::new(Control {
             group,
             exited: watch::Sender::new(false),
@@ -486,10 +491,8 @@ impl Jobs {
                 control: Arc::clone(&control),
             },
         );
-        if let Some(old) = replaces.and_then(|old| registry.forget(old))
-            && let Some(escalation) = old.control.terminate()
-        {
-            tokio::spawn(escalation);
+        if let Some(old) = replaces.and_then(|old| registry.forget(old)) {
+            old.control.kill();
         }
         drop(registry);
         tokio::spawn(self.clone().run(
@@ -582,15 +585,12 @@ impl Jobs {
     /// SIGTERM to the job's group, SIGKILL [`KILL_GRACE`] later if the shell has not exited (DMN-081); once the
     /// shell exited, only a group that still has members is signalled (see [`Control`]).
     pub fn kill(&self, id: &str) -> Result<(), JobError> {
-        let control = self
-            .lock()
+        self.lock()
             .jobs
             .get(id)
-            .map(|entry| Arc::clone(&entry.control))
-            .ok_or_else(|| JobError::NotFound(id.to_owned()))?;
-        if let Some(escalation) = control.terminate() {
-            tokio::spawn(escalation);
-        }
+            .ok_or_else(|| JobError::NotFound(id.to_owned()))?
+            .control
+            .kill();
         Ok(())
     }
 
@@ -608,20 +608,13 @@ impl Jobs {
 
     /// Kills the running jobs the agents of `threads` started (DMN-162), as [`Jobs::kill`] does.
     pub fn kill_started_by(&self, threads: &[String]) {
-        let escalations: Vec<_> = self
-            .lock()
-            .jobs
-            .values()
-            .filter(|entry| {
-                entry
-                    .started_by
-                    .as_ref()
-                    .is_some_and(|thread| threads.contains(thread))
-            })
-            .filter_map(|entry| entry.control.terminate())
-            .collect();
-        for escalation in escalations {
-            tokio::spawn(escalation);
+        for entry in self.lock().jobs.values().filter(|entry| {
+            entry
+                .started_by
+                .as_ref()
+                .is_some_and(|thread| threads.contains(thread))
+        }) {
+            entry.control.kill();
         }
     }
 
@@ -648,9 +641,7 @@ impl Jobs {
             .jobs
             .extract_if(|_, entry| entry.workspace_id == workspace_id)
         {
-            if let Some(escalation) = entry.control.terminate() {
-                tokio::spawn(escalation);
-            }
+            entry.control.kill();
         }
     }
 

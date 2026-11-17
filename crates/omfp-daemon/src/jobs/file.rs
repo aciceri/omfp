@@ -7,7 +7,8 @@ use std::path::{Component, Path, PathBuf};
 
 use omfp_core::wire::ThinkingLevel;
 use omfp_protocol::{
-    ApprovalMode, JobDefinition, JobPrompt, JobTrigger, MissedPolicy, PromptThread, RestartPolicy,
+    ApprovalMode, ErrorBody, ErrorCode, JobDefinition, JobPrompt, JobTrigger, MissedPolicy,
+    PromptThread, RestartPolicy,
 };
 use serde::Deserialize as _;
 use serde_json::{Map, Value};
@@ -38,6 +39,8 @@ const JOB_KEYS: [&str; 9] = [
 ];
 /// The keys of a job's prompt (DMN-320).
 const PROMPT_KEYS: [&str; 5] = ["text", "thread", "model", "thinkingLevel", "approvalMode"];
+/// Why a file is no jobs file.
+const NOT_JOBS: &str = "jobs: expected an object of jobs by name";
 
 /// `<workspace>/.omfp/jobs.json` (DMN-320).
 #[must_use]
@@ -48,12 +51,19 @@ pub fn path(workspace: &Path) -> PathBuf {
 /// The jobs file at `path` (DMN-321): `Ok(None)` without a file, its jobs by name when valid, else why it is refused
 /// (unreadable, not JSON, or the first rule it breaks).
 pub fn read(path: &Path) -> Result<Option<BTreeMap<String, JobDefinition>>, String> {
-    let bytes = match std::fs::read(path) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(format!("cannot read .omfp/jobs.json: {error}")),
-    };
-    parse_jobs_file(&bytes).map(Some)
+    read_bytes(path)?
+        .as_deref()
+        .map(parse_jobs_file)
+        .transpose()
+}
+
+/// The bytes of the jobs file at `path`: `Ok(None)` without a file, else why it is unreadable.
+pub fn read_bytes(path: &Path) -> Result<Option<Vec<u8>>, String> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(format!("cannot read .omfp/jobs.json: {error}")),
+    }
 }
 
 /// The jobs of a jobs file's bytes by name, defaults filled in, or why it is refused: not JSON, or the first rule of
@@ -66,8 +76,7 @@ pub fn parse_jobs_file(bytes: &[u8]) -> Result<BTreeMap<String, JobDefinition>, 
 
 /// The jobs of a parsed jobs file by name, or the first rule of DMN-320 it breaks as `<JSON path>: <reason>`.
 pub fn check(file: &Value) -> Result<BTreeMap<String, JobDefinition>, String> {
-    let not_jobs = || "jobs: expected an object of jobs by name".to_owned();
-    let file = file.as_object().ok_or_else(not_jobs)?;
+    let file = file.as_object().ok_or_else(|| NOT_JOBS.to_owned())?;
     for (key, value) in file {
         match key.as_str() {
             "jobs" => {}
@@ -79,7 +88,7 @@ pub fn check(file: &Value) -> Result<BTreeMap<String, JobDefinition>, String> {
     let jobs = file
         .get("jobs")
         .and_then(Value::as_object)
-        .ok_or_else(not_jobs)?;
+        .ok_or_else(|| NOT_JOBS.to_owned())?;
     jobs.iter()
         .map(|(name, value)| {
             let path = format!("jobs.{name}");
@@ -162,6 +171,11 @@ fn unknown_keys(object: &Map<String, Value>, known: &[&str], path: &str) -> Resu
     }
 }
 
+/// `<path>.<key>: <reason>`: the rule of DMN-320 a job breaks.
+fn invalid<T>(path: &str, key: &str, reason: &str) -> Result<T, String> {
+    Err(format!("{path}.{key}: {reason}"))
+}
+
 /// The job at `path` with its defaults, or the first rule of DMN-320 it breaks.
 #[allow(clippy::too_many_lines)] // One rule after the other, in DMN-320's order.
 fn job(value: &Value, path: &str) -> Result<JobDefinition, String> {
@@ -182,18 +196,12 @@ fn job(value: &Value, path: &str) -> Result<JobDefinition, String> {
         None | Some(Some("manual")) => JobTrigger::Manual,
         Some(Some("schedule")) => JobTrigger::Schedule,
         Some(Some("service")) => JobTrigger::Service,
-        Some(_) => {
-            return Err(format!(
-                "{path}.trigger: expected manual, schedule or service"
-            ));
-        }
+        Some(_) => return invalid(path, "trigger", "expected manual, schedule or service"),
     };
     let only_schedule = |key: &str| format!("{path}.{key}: only with trigger \"schedule\"");
     let schedule = match (trigger, object.get("schedule")) {
         (JobTrigger::Schedule, None) => {
-            return Err(format!(
-                "{path}.schedule: required with trigger \"schedule\""
-            ));
+            return invalid(path, "schedule", "required with trigger \"schedule\"");
         }
         (JobTrigger::Schedule, Some(Value::String(expression))) => {
             Schedule::parse(expression).map_err(|error| format!("{path}.schedule: {error}"))?;
@@ -213,17 +221,13 @@ fn job(value: &Value, path: &str) -> Result<JobDefinition, String> {
         Some(value) => match value.as_str() {
             Some("skip") => MissedPolicy::Skip,
             Some("run") => MissedPolicy::Run,
-            _ => return Err(format!("{path}.missed: expected skip or run")),
+            _ => return invalid(path, "missed", "expected skip or run"),
         },
     };
     let command = match object.get("command") {
         None => None,
         Some(Value::String(command)) if !command.trim().is_empty() => Some(command.clone()),
-        Some(_) => {
-            return Err(format!(
-                "{path}.command: expected a non-blank shell command"
-            ));
-        }
+        Some(_) => return invalid(path, "command", "expected a non-blank shell command"),
     };
     let prompt = object
         .get("prompt")
@@ -239,7 +243,7 @@ fn job(value: &Value, path: &str) -> Result<JobDefinition, String> {
     }
     let cwd = match object.get("cwd") {
         None => None,
-        Some(_) if command.is_none() => return Err(format!("{path}.cwd: only with command")),
+        Some(_) if command.is_none() => return invalid(path, "cwd", "only with command"),
         Some(value) => {
             let cwd = value.as_str().unwrap_or_default();
             match relative_folder(cwd) {
@@ -250,7 +254,7 @@ fn job(value: &Value, path: &str) -> Result<JobDefinition, String> {
                     ));
                 }
                 Err(CwdError::Leaves) => {
-                    return Err(format!("{path}.cwd: leaves the workspace folder"));
+                    return invalid(path, "cwd", "leaves the workspace folder");
                 }
             }
         }
@@ -258,18 +262,18 @@ fn job(value: &Value, path: &str) -> Result<JobDefinition, String> {
     let restart = match object.get("restart") {
         None => RestartPolicy::Always,
         Some(_) if trigger != JobTrigger::Service => {
-            return Err(format!("{path}.restart: only with trigger \"service\""));
+            return invalid(path, "restart", "only with trigger \"service\"");
         }
         Some(value) => match value.as_str() {
             Some("always") => RestartPolicy::Always,
             Some("on-failure") => RestartPolicy::OnFailure,
-            _ => return Err(format!("{path}.restart: expected always or on-failure")),
+            _ => return invalid(path, "restart", "expected always or on-failure"),
         },
     };
     let enabled = match object.get("enabled") {
         None => true,
         Some(Value::Bool(enabled)) => *enabled,
-        Some(_) => return Err(format!("{path}.enabled: expected true or false")),
+        Some(_) => return invalid(path, "enabled", "expected true or false"),
     };
     Ok(JobDefinition {
         description,
@@ -298,7 +302,7 @@ fn prompt(value: &Value, path: &str) -> Result<JobPrompt, String> {
     let thread = match object.get("thread").map(Value::as_str) {
         None | Some(Some("new")) => PromptThread::New,
         Some(Some("reuse")) => PromptThread::Reuse,
-        Some(_) => return Err(format!("{path}.thread: expected new or reuse")),
+        Some(_) => return invalid(path, "thread", "expected new or reuse"),
     };
     let model = match object.get("model") {
         None => None,
@@ -309,7 +313,7 @@ fn prompt(value: &Value, path: &str) -> Result<JobPrompt, String> {
         {
             Some(model.clone())
         }
-        Some(_) => return Err(format!("{path}.model: expected provider/id")),
+        Some(_) => return invalid(path, "model", "expected provider/id"),
     };
     let thinking_level = match object.get("thinkingLevel") {
         None => None,
@@ -356,36 +360,35 @@ pub enum WriteError {
     NotFound(String),
 }
 
-/// The jobs file `current` (`None`: no file yet, `{ "jobs": {} }`) as a JSON object, refused when invalid.
-fn current_file(current: Option<&[u8]>) -> Result<Map<String, Value>, WriteError> {
-    let Some(bytes) = current else {
-        let mut file = Map::new();
-        file.insert("jobs".to_owned(), Value::Object(Map::new()));
-        return Ok(file);
+impl From<WriteError> for ErrorBody {
+    fn from(error: WriteError) -> Self {
+        let code = match &error {
+            WriteError::NotFound(_) => ErrorCode::NotFound,
+            WriteError::InvalidFile(_) | WriteError::InvalidJob(_) => ErrorCode::BadRequest,
+        };
+        ErrorBody::new(code, error.to_string())
+    }
+}
+
+/// The jobs file `current` (`None`: no file yet, `{ "jobs": {} }`) with its `jobs` object changed by `change`, checked
+/// again (DMN-321) and written as `views.set` writes `views.json` (DMN-083): two-space indentation, keys sorted at
+/// every level, a final newline. An invalid current file is refused.
+fn change_jobs(
+    current: Option<&[u8]>,
+    change: impl FnOnce(&mut Map<String, Value>) -> Result<(), WriteError>,
+) -> Result<Vec<u8>, WriteError> {
+    let not_jobs = || WriteError::InvalidFile(NOT_JOBS.to_owned());
+    let mut file = match current {
+        None => serde_json::json!({ "jobs": {} }),
+        Some(bytes) => {
+            parse_jobs_file(bytes).map_err(WriteError::InvalidFile)?;
+            serde_json::from_slice(bytes).map_err(|_| not_jobs())?
+        }
     };
-    parse_jobs_file(bytes).map_err(WriteError::InvalidFile)?;
-    match serde_json::from_slice(bytes) {
-        Ok(Value::Object(file)) => Ok(file),
-        _ => Err(WriteError::InvalidFile(
-            "jobs: expected an object of jobs by name".to_owned(),
-        )),
-    }
-}
-
-/// The `jobs` object of a checked file.
-fn jobs_of(file: &mut Map<String, Value>) -> Result<&mut Map<String, Value>, WriteError> {
-    match file.get_mut("jobs") {
-        Some(Value::Object(jobs)) => Ok(jobs),
-        _ => Err(WriteError::InvalidFile(
-            "jobs: expected an object of jobs by name".to_owned(),
-        )),
-    }
-}
-
-/// The changed file checked again (DMN-321) and written as `views.set` writes `views.json` (DMN-083): two-space
-/// indentation, keys sorted at every level, a final newline.
-fn finish(file: Map<String, Value>) -> Result<Vec<u8>, WriteError> {
-    let file = Value::Object(file);
+    let Some(Value::Object(jobs)) = file.get_mut("jobs") else {
+        return Err(not_jobs());
+    };
+    change(jobs)?;
     check(&file).map_err(WriteError::InvalidJob)?;
     Ok(manifest::to_text(&file).into_bytes())
 }
@@ -399,26 +402,23 @@ pub fn write_job(
     name: &str,
     job: Option<&Value>,
 ) -> Result<Vec<u8>, WriteError> {
-    let mut file = current_file(current)?;
-    let jobs = jobs_of(&mut file)?;
-    match job {
-        Some(job) => {
-            validate_job(name, job).map_err(WriteError::InvalidJob)?;
-            let mut job = job.clone();
-            if let Some(object) = job.as_object_mut()
-                && object.get("enabled") == Some(&Value::Bool(true))
-            {
-                object.remove("enabled");
-            }
-            jobs.insert(name.to_owned(), job);
+    change_jobs(current, |jobs| {
+        let Some(job) = job else {
+            return match jobs.remove(name) {
+                Some(_) => Ok(()),
+                None => Err(WriteError::NotFound(name.to_owned())),
+            };
+        };
+        validate_job(name, job).map_err(WriteError::InvalidJob)?;
+        let mut job = job.clone();
+        if let Some(object) = job.as_object_mut()
+            && object.get("enabled") == Some(&Value::Bool(true))
+        {
+            object.remove("enabled");
         }
-        None => {
-            if jobs.remove(name).is_none() {
-                return Err(WriteError::NotFound(name.to_owned()));
-            }
-        }
-    }
-    finish(file)
+        jobs.insert(name.to_owned(), job);
+        Ok(())
+    })
 }
 
 /// The jobs file `current` with job `name`'s `enabled` set (DMN-332, PRT-207): `true` removes the key (the default),
@@ -428,16 +428,17 @@ pub fn set_enabled(
     name: &str,
     enabled: bool,
 ) -> Result<Vec<u8>, WriteError> {
-    let mut file = current_file(current)?;
-    let Some(Value::Object(job)) = jobs_of(&mut file)?.get_mut(name) else {
-        return Err(WriteError::NotFound(name.to_owned()));
-    };
-    if enabled {
-        job.remove("enabled");
-    } else {
-        job.insert("enabled".to_owned(), Value::Bool(false));
-    }
-    finish(file)
+    change_jobs(current, |jobs| {
+        let Some(Value::Object(job)) = jobs.get_mut(name) else {
+            return Err(WriteError::NotFound(name.to_owned()));
+        };
+        if enabled {
+            job.remove("enabled");
+        } else {
+            job.insert("enabled".to_owned(), Value::Bool(false));
+        }
+        Ok(())
+    })
 }
 
 #[cfg(test)]

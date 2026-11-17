@@ -344,6 +344,9 @@ methods! {
     AuthLoginCancel = "auth.login_cancel" (params::Empty) -> auth::LoginCancelled;
     /// Removes every credential omp stored for a provider (PRT-133).
     AuthLogout = "auth.logout" (auth::ProviderRef) -> auth::LoggedOut;
+    /// Relays the address a browser ended on after an OAuth sign-in omp started (a thread's `/mcp reauth`, else the
+    /// running login) to omp's loopback callback listener on the daemon's host (PRT-212, DMN-340..DMN-342).
+    OauthCallback = "oauth.callback" (auth::OAuthCallbackParams) -> auth::OAuthCallbackRelayed;
 }
 
 #[cfg(test)]

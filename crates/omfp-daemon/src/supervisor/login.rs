@@ -36,11 +36,13 @@ impl std::fmt::Debug for AuthOmp {
 
 /// The running `auth.login` (DMN-222).
 pub(super) struct Running {
-    id: u64,
+    pub(super) id: u64,
     provider_id: String,
     /// The connection whose window shows the flow.
     window: u64,
     process: Arc<dyn AgentProcess>,
+    /// The sign-ins of this login waiting for their loopback callback (DMN-340), forgotten with the login.
+    pub(super) oauth: crate::oauth_relay::Flows,
 }
 
 impl Supervisor {
@@ -132,6 +134,7 @@ impl Supervisor {
             provider_id: provider_id.to_owned(),
             window,
             process: Arc::clone(process),
+            oauth: crate::oauth_relay::Flows::default(),
         });
         if let Some(previous) = previous {
             info!(provider = %previous.provider_id, "a new login cancels the running one");

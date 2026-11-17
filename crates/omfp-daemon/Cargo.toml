@@ -29,6 +29,9 @@ oxc_span.workspace = true
 oxc_syntax.workspace = true
 oxc_transformer.workspace = true
 portable-pty.workspace = true
+# The relay of an OAuth callback to omp's loopback listener (DMN-342); also the MCP server's L2 tests speak HTTP to it
+# (DMN-155). Already in the tree through fake-llm.
+reqwest.workspace = true
 rusqlite.workspace = true
 rustix.workspace = true
 serde.workspace = true
@@ -47,8 +50,6 @@ vt100.workspace = true
 [dev-dependencies]
 fake-llm.workspace = true
 omfp-testkit.workspace = true
-# The MCP server's L2 tests speak HTTP to it (DMN-155); already in the tree through fake-llm.
-reqwest.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["test-util"] }
 tokio-tungstenite.workspace = true

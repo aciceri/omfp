@@ -130,6 +130,15 @@ export const chat = {
     loopbackNote:
       "OAuth sign-ins send the browser back to a loopback address (localhost) on the daemon's host: if the daemon " +
       "runs on another machine, finish the last step in a browser on that machine.",
+    /** UI-347 when a URL's sign-in returns to omp's loopback listener: its address can be pasted (UI-761). */
+    relayNote:
+      "OAuth sign-ins send the browser back to a loopback address (localhost) on the daemon's host: if the daemon " +
+      "runs on another machine, that last page fails to load. Paste its address below and omfp hands it to omp.",
+    /** The field of a sign-in's callback address (UI-761). */
+    relayLabel: "Paste the address your browser ended on",
+    relayPlaceholder: (callback: string) => `${callback}?code=…`,
+    relayAction: "Send",
+    relayed: "omp got the sign-in",
   },
   composer: {
     label: "Message",

@@ -74,6 +74,36 @@ export function urlHost(url: string): string {
   }
 }
 
+/** The hosts omp's OAuth callback listener answers on, the only ones the daemon relays to (DMN-341). */
+const LOOPBACK_HOSTS: readonly string[] = ["localhost", "127.0.0.1"];
+
+/**
+ * The loopback callback an authorization URL omp opened sends the browser back to (UI-761): its `redirect_uri` when
+ * that is a plain `http` address on `localhost` or `127.0.0.1`, as `http://localhost:<port><path>`; `undefined` for
+ * any other URL (a device page, a non-loopback redirect), where pasting the address would not help.
+ */
+export function loopbackCallback(url: string): string | undefined {
+  let redirect: URL;
+  try {
+    const raw = new URL(url).searchParams.get("redirect_uri");
+    if (raw === null) {
+      return undefined;
+    }
+    redirect = new URL(raw);
+  } catch {
+    return undefined;
+  }
+  if (
+    redirect.protocol !== "http:" ||
+    redirect.username !== "" ||
+    redirect.password !== "" ||
+    !LOOPBACK_HOSTS.includes(redirect.hostname)
+  ) {
+    return undefined;
+  }
+  return `http://localhost:${redirect.port === "" ? "80" : redirect.port}${redirect.pathname}`;
+}
+
 /**
  * Which opened URLs are new to a window (UI-346): those present when the window first sees a thread's state are not,
  * and each URL of a thread is new once.

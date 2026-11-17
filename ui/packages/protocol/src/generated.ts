@@ -1098,6 +1098,26 @@ export type NotificationMode =
   /** Only while the window has no focus (default). */
   | "background";
 
+/**
+ * `oauth.callback` params (PRT-212): the address the user's browser ended on after an OAuth sign-in omp started, to
+ * be requested on the daemon's own loopback.
+ */
+export type OAuthCallbackParams = {
+  /**
+   * The thread whose omp started the sign-in (`/mcp reauth`, an `open_url`); absent for the running login
+   * (`auth.login`).
+   */
+  threadId?: string | null;
+  /** The pasted address, e.g. `http://localhost:1455/auth/callback?code=…&state=…`. */
+  url: string;
+};
+
+/** `oauth.callback` result (PRT-212): omp's callback listener took the address. */
+export type OAuthCallbackRelayed = {
+  /** The HTTP status omp's listener answered (2xx). */
+  status: number;
+};
+
 /** `fs.complete` result: directories sorted by name, at most 200. */
 export type PathCompletions = {
   entries: PathEntry[];
@@ -2438,6 +2458,7 @@ export interface Methods {
   "auth.login": { params: ProviderRef; result: LoggedIn };
   "auth.login_cancel": { params: Empty; result: LoginCancelled };
   "auth.logout": { params: ProviderRef; result: LoggedOut };
+  "oauth.callback": { params: OAuthCallbackParams; result: OAuthCallbackRelayed };
 }
 
 export type MethodName = keyof Methods;
@@ -2549,4 +2570,5 @@ export const METHODS: readonly MethodName[] = [
   "auth.login",
   "auth.login_cancel",
   "auth.logout",
+  "oauth.callback",
 ];

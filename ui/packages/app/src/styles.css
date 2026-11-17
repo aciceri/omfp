@@ -237,6 +237,22 @@
     font-size: var(--omfp-fs-xs);
   }
 
+  /* The field of an OAuth sign-in's callback address (UI-761), in the command-output card and the opened-URL toast:
+   * a whole line of its own, the field growing, Send beside it (under it when narrow). */
+  .omfp-oauth-callback {
+    display: flex;
+    flex: 1 0 100%;
+    flex-wrap: wrap;
+    gap: var(--omfp-s2);
+    align-items: end;
+    margin-block-start: var(--omfp-s1);
+  }
+
+  .omfp-oauth-callback .omfp-field {
+    flex: 1 1 16rem;
+    min-inline-size: 0;
+  }
+
   /* Logging in (UI-380..UI-388): the progress and URL toasts' second line, the provider picker, the header's offer. */
   .omfp-login__progress,
   .omfp-login__instructions {

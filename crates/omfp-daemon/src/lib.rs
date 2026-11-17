@@ -17,6 +17,7 @@ pub mod host_tools;
 pub mod jobs;
 pub mod live_context;
 pub mod names;
+pub mod oauth_relay;
 pub mod omp;
 pub mod omp_binary;
 pub mod omp_mcp;

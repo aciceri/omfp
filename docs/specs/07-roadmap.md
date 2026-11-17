@@ -868,6 +868,15 @@ The daemon now reads the session file itself after a failed start, and `thread.s
 not run stores the pick and starts omp with it. Nothing picks a model or a provider on the user's behalf: a silent
 substitution would send the conversation to another provider.
 
+## OAuth from a remote browser
+
+M17 lets a browser on any machine finish `/mcp reauth` and loopback-callback logins (#136, DMN-340..342, PRT-212,
+UI-761). omp 18.18.6 waits for the provider's redirect on a loopback listener of the daemon's host and wires no
+manual-code input for `/mcp reauth` over RPC, so the window offers a field for the address the browser ended on and
+the daemon requests it on its own loopback. The SSRF guard accepts only the exact `localhost`/`127.0.0.1` callback
+(port and path of the `redirect_uri`) of a sign-in omp opened and still waits on. Not reproduced end to end against a
+real provider: the relay is checked against a stand-in listener.
+
 ## Later (noted, not scheduled)
 
 - Helix-style modal editing in the composer (UI-095 keeps a keymap with modes, so it fits later).

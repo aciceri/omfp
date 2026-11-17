@@ -1,6 +1,7 @@
 //! Params and results of logging omp in to a provider (PRT-129..PRT-133, PRT-140): `auth.status`, `auth.providers`,
 //! `auth.login`, `auth.login_cancel` and `auth.logout`. The flow of a login reaches a window as `login_*` window
-//! requests ([`crate::WindowRequest`]).
+//! requests ([`crate::WindowRequest`]). `oauth.callback` (PRT-212) relays the loopback callback of an OAuth sign-in
+//! omp started — a login or a thread's `/mcp reauth` — from a browser on another machine.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -103,4 +104,25 @@ pub struct LoggedOut {
     /// What still authenticates the provider once they are gone, as omp names it (e.g. an environment variable);
     /// `null` when nothing does.
     pub remaining_source: Option<String>,
+}
+
+/// `oauth.callback` params (PRT-212): the address the user's browser ended on after an OAuth sign-in omp started, to
+/// be requested on the daemon's own loopback.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthCallbackParams {
+    /// The thread whose omp started the sign-in (`/mcp reauth`, an `open_url`); absent for the running login
+    /// (`auth.login`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+    /// The pasted address, e.g. `http://localhost:1455/auth/callback?code=…&state=…`.
+    pub url: String,
+}
+
+/// `oauth.callback` result (PRT-212): omp's callback listener took the address.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OAuthCallbackRelayed {
+    /// The HTTP status omp's listener answered (2xx).
+    pub status: u16,
 }

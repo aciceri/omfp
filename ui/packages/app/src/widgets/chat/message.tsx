@@ -20,7 +20,9 @@ import {
   expandedByDefault,
   formatDuration,
   lastOutputLine,
+  loopbackCallback,
   markdownChunks,
+  OAuthCallbackField,
   strings,
   useOpenFile,
   useUrlActions,
@@ -429,11 +431,11 @@ function ToolMeta({ card, exitCode }: { card: Card; exitCode: number | undefined
 }
 
 /** An inline notice row (UI-043); unknown frames expand to their JSON. A command's output and an `open_url` request
- * are cards (UI-345). */
-export function NoticeRowView({ cardKey, row }: { cardKey: string; row: NoticeRow }) {
+ * are cards (UI-345) of thread `threadId`. */
+export function NoticeRowView({ threadId, cardKey, row }: { threadId: string; cardKey: string; row: NoticeRow }) {
   const [expanded, setExpanded] = useExpanded(cardKey, false);
   if (row.kind === "command" || row.kind === "open-url") {
-    return <CommandOutputCard row={row} />;
+    return <CommandOutputCard threadId={threadId} row={row} />;
   }
   return (
     <div className="omfp-notice" data-testid="notice" data-kind={row.kind} data-level={row.level}>
@@ -450,10 +452,12 @@ export function NoticeRowView({ cardKey, row }: { cardKey: string; row: NoticeRo
 /**
  * The output of a local slash command (`/dirs`, `/mcp reauth …`) or omp's `open_url` request as a compact card
  * (UI-345): the text as omp wrote it, then each URL omp opened on the daemon's host, selectable with Open and Copy,
- * and where an OAuth sign-in returns to (UI-347).
+ * where an OAuth sign-in returns to (UI-347) and, when it returns to omp's loopback listener, the field its address is
+ * pasted into (UI-761).
  */
-function CommandOutputCard({ row }: { row: NoticeRow }): ReactNode {
+function CommandOutputCard({ threadId, row }: { threadId: string; row: NoticeRow }): ReactNode {
   const urls = useUrlActions();
+  const relayable = row.urls.some((url) => loopbackCallback(url) !== undefined);
   return (
     <section
       className="omfp-notice omfp-command"
@@ -489,9 +493,12 @@ function CommandOutputCard({ row }: { row: NoticeRow }): ReactNode {
           >
             {text.notice.copyUrlAction}
           </Button>
+          <OAuthCallbackField threadId={threadId} url={url} />
         </div>
       ))}
-      {row.urls.length > 0 && <p data-testid="loopback-note">{text.notice.loopbackNote}</p>}
+      {row.urls.length > 0 && (
+        <p data-testid="loopback-note">{relayable ? text.notice.relayNote : text.notice.loopbackNote}</p>
+      )}
     </section>
   );
 }

@@ -2456,3 +2456,35 @@ async fn a_restart_waits_for_the_message_on_its_way_to_omp() {
 
     assert_eq!(h.launcher.launches().len(), 2);
 }
+
+// spec: DMN-340
+#[tokio::test]
+async fn an_omp_that_exits_unexpectedly_leaves_no_sign_in_waiting() {
+    let h = harness(|_| {});
+    let id = h.thread();
+    h.supervisor.start(&id).await.unwrap();
+    let authorize =
+        "https://auth.example.com/authorize?redirect_uri=http%3A%2F%2Flocalhost%3A1455%2Fcallback";
+    h.launcher.process(0).emit(vec![frame(json!({
+        "type": "command_output",
+        "text": format!("Opening your browser to authorize. If it did not open:\n{authorize}"),
+    }))]);
+    h.wait(&id, "the output", |state| !state.notices.is_empty())
+        .await;
+    let pasted = "http://localhost:1455/callback?code=c0de";
+    assert!(matches!(
+        h.supervisor.oauth_target(Some(&id), pasted).await,
+        Ok(Ok(_))
+    ));
+
+    // Its listener is gone: another process may take the port.
+    h.launcher.process(0).exit();
+    h.wait(&id, "the failure", |state| {
+        matches!(state.process, ProcessState::Failed { .. })
+    })
+    .await;
+    assert!(matches!(
+        h.supervisor.oauth_target(Some(&id), pasted).await,
+        Ok(Err(crate::oauth_relay::Refusal::NotPending))
+    ));
+}

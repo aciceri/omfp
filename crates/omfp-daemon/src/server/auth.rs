@@ -125,7 +125,8 @@ pub fn permission(method: &str) -> Option<Permission> {
         | "widgets.save"
         | "jobs.define"
         | "jobs.remove"
-        | "jobs.enable" => Manage,
+        | "jobs.enable"
+        | "oauth.callback" => Manage,
         "thread.prompt"
         | "thread.steer"
         | "thread.follow_up"
@@ -474,5 +475,11 @@ mod tests {
         for method in ["auth.login", "auth.login_cancel", "auth.logout"] {
             assert_eq!(permission(method), Some(Permission::Drive), "{method}");
         }
+    }
+
+    // spec: PRT-212
+    #[test]
+    fn relaying_an_oauth_callback_manages() {
+        assert_eq!(permission("oauth.callback"), Some(Permission::Manage));
     }
 }

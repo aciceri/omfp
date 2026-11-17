@@ -13,6 +13,11 @@ The version's section is also the source of the GitHub release notes.
   transcript, only that message), and `:export` saves it as a `.md` file named after the thread: the browser
   downloads it, the desktop window saves it in the Downloads folder. Messages go under their author, tool calls are
   one line with their result, thinking is left out and images are placeholders. Both are also in the header's `⋯`.
+- OAuth sign-ins started by `/mcp reauth <name>` or by logging in to a provider can be finished from a browser on
+  another machine: when the provider sends the browser back to `localhost` and the page fails to load, paste its
+  address into the new **Paste the address your browser ended on** field under the URL's chat card or toast, and the
+  daemon hands it to oh-my-pi on its own host (`oauth.callback`, also open to agents). Only the exact callback
+  oh-my-pi is waiting on is accepted.
 
 ### Changed
 

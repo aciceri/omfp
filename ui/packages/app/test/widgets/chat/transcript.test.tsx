@@ -1,10 +1,11 @@
 /** L4: `omfp:transcript` over recorded fixtures. */
 
 import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
+import { CallError } from "@omfp/client";
 import type { JsonObject, ThreadEvent } from "@omfp/core";
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { SELECTED_THREAD, scopesAt } from "../../../src/sdk/index.ts";
+import { ERRORS, SELECTED_THREAD, SUCCESSES, scopesAt } from "../../../src/sdk/index.ts";
 import { TranscriptWidget } from "../../../src/widgets/chat/index.ts";
 import { renderWithHost } from "../../support/host.tsx";
 import { fixtureEvents, isFrame } from "./fixtures.ts";
@@ -664,6 +665,8 @@ describe("transcript", () => {
           .map((row) => row.dataset.url),
       ).toEqual([url]);
       expect(within(oauth).getByTestId("loopback-note").textContent).toContain("loopback address");
+      // Its sign-in does not return to a loopback address: nothing to paste.
+      expect(within(oauth).queryAllByTestId("oauth-callback").length).toBe(0);
       await userEvent.click(within(oauth).getByRole("button", { name: `Open ${url} in this browser` }));
       expect(opened).toEqual([[url, "_blank", "noopener"]]);
       await userEvent.click(within(oauth).getByRole("button", { name: `Copy ${url}` }));
@@ -672,6 +675,47 @@ describe("transcript", () => {
       window.open = open;
       Reflect.deleteProperty(navigator, "clipboard");
     }
+  });
+
+  // spec: UI-761, UI-347
+  test("a URL whose sign-in returns to omp's loopback listener takes the address the browser ended on", async () => {
+    const url =
+      "https://auth.example.com/authorize?state=s1&redirect_uri=" +
+      encodeURIComponent("http://localhost:1455/callback");
+    const pasted = "http://localhost:1455/callback?code=c0de&state=s1";
+    const events: ThreadEvent[] = [
+      ...fixtureEvents("text_reply"),
+      {
+        kind: "omp",
+        frame: { type: "command_output", text: `Opening your browser to authorize. If it did not open:\n${url}` },
+      },
+    ];
+    const test = renderThread(<TranscriptWidget />, events);
+    const card = screen.getByTestId("command-output");
+    expect(within(card).getByTestId("loopback-note").textContent).toContain("Paste its address below");
+    expect(within(card).getByTestId("oauth-callback").dataset.callback).toBe("http://localhost:1455/callback");
+    const input = within(card).getByLabelText("Paste the address your browser ended on");
+    expect(input.getAttribute("placeholder")).toBe("http://localhost:1455/callback?code=…");
+
+    await userEvent.type(input, ` ${pasted} `);
+    await userEvent.click(within(card).getByTestId("oauth-callback-send"));
+    const calls = () => test.client.callsTo("oauth.callback");
+    expect(calls().map((call) => call.params)).toEqual([{ threadId: THREAD, url: pasted }]);
+    await act(async () => {
+      calls()[0]?.reject(new CallError({ kind: "daemon", error: { code: "conflict", message: "no sign-in waits" } }));
+      await Promise.resolve();
+    });
+    // A refusal goes to the error list; the field stays for another try.
+    expect(test.host.window.get(ERRORS).length).toBe(1);
+    expect(within(card).queryAllByTestId("oauth-callback").length).toBe(1);
+
+    await userEvent.click(within(card).getByTestId("oauth-callback-send"));
+    await act(async () => {
+      calls()[1]?.resolve({ status: 200 });
+      await Promise.resolve();
+    });
+    expect(test.host.window.get(SUCCESSES).map((success) => success.text)).toEqual(["omp got the sign-in"]);
+    expect(within(card).queryAllByTestId("oauth-callback").length).toBe(0);
   });
 
   // spec: UI-043

@@ -161,7 +161,7 @@ export {
   reauthPrompt,
 } from "../vm/mcp.ts";
 export type { NoticeRow } from "../vm/notice.ts";
-export { OpenedUrlWatch, openedUrls, urlHost } from "../vm/opened-url.ts";
+export { loopbackCallback, OpenedUrlWatch, openedUrls, urlHost } from "../vm/opened-url.ts";
 export {
   applyEdit,
   type Edited,
@@ -422,6 +422,7 @@ export {
   type NoticeTone,
   useNotify,
 } from "./notify.ts";
+export { OAuthCallbackField } from "./oauth-callback.tsx";
 export { type PathSources, usePathSources } from "./paths.ts";
 export {
   type ReportSink,

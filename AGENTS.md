@@ -110,6 +110,9 @@ crates/omfp-daemon    daemon library: omp adapter (omp.rs), agent port + FakeLau
                       time, the reload of running threads after a login; supervisor/models.rs: the count of usable
                       models of `auth.status`; server/services/logins.rs: `auth.*` and the
                       `login_*` window requests of a login's flow);
+                      the relay of an OAuth sign-in's loopback callback pasted from a remote browser (oauth_relay.rs:
+                      the SSRF guard and the GET; supervisor/oauth.rs: the sign-ins each thread and the login wait on;
+                      server/services/oauth.rs: `oauth.callback`);
                       the MCP servers omp loads for a workspace (omp_mcp.rs: the config files omp reads, the `/mcp test`
                       reply; supervisor/mcp.rs: checks by the thread's omp, reconnect by restart, M13; supervisor/restart.rs:
                       the one restart of a thread's omp and the restarts the daemon owes, with their reasons);

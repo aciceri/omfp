@@ -8,7 +8,15 @@
 
 import { Button, Icon, Toast } from "@omfp/kit";
 import { type ReactNode, useEffect, useRef } from "react";
-import { OpenedUrlWatch, urlHost, useHost, useSnapshot, useUrlActions, windowKey } from "../sdk/index.ts";
+import {
+  OAuthCallbackField,
+  OpenedUrlWatch,
+  urlHost,
+  useHost,
+  useSnapshot,
+  useUrlActions,
+  windowKey,
+} from "../sdk/index.ts";
 import { strings } from "../strings/index.ts";
 
 /** omp waits 5 minutes for an OAuth callback: the toast stays as long. */
@@ -58,7 +66,8 @@ export function OpenedUrls(): ReactNode {
 const text = strings.shell.frame;
 
 /** One opened URL's toast: "omp opened <host> in the browser" (a login's: "Log in to <name> at <host>" and omp's
- * instructions), Open, Copy and `×`. */
+ * instructions), Open, Copy and `×`; for a sign-in returning to omp's loopback listener, the field its address is pasted
+ * into (UI-761), whose success dismisses the toast. */
 export function OpenedUrlToast({ opened, onDismiss }: { opened: OpenedUrl; onDismiss: () => void }): ReactNode {
   const urls = useUrlActions();
   return (
@@ -108,6 +117,7 @@ export function OpenedUrlToast({ opened, onDismiss }: { opened: OpenedUrl; onDis
           )}
         </>
       )}
+      <OAuthCallbackField threadId={opened.threadId} url={opened.url} onRelayed={onDismiss} />
     </Toast>
   );
 }

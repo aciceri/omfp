@@ -1,0 +1,23 @@
+---
+source: crates/omfp-protocol/tests/protocol/golden.rs
+expression: golden
+---
+{
+  "request": {
+    "id": "c42",
+    "method": "oauth.callback",
+    "params": {
+      "threadId": "01JD8X3Q4T9V2W6Y5Z7A1B3C4D",
+      "url": "http://localhost:1455/auth/callback?code=c0de&state=5tate"
+    },
+    "type": "request"
+  },
+  "response": {
+    "id": "c42",
+    "ok": true,
+    "result": {
+      "status": 200
+    },
+    "type": "response"
+  }
+}

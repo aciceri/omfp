@@ -179,6 +179,10 @@ use, every window follows (`auth.status`).
 - Providers whose page shows a code to paste (or whose redirect lands on an address this browser cannot reach, such
   as `localhost` of a daemon on another machine) ask for it: a dialog takes the code or the redirect URL; Enter sends
   it, Escape cancels the login.
+- Providers (and `/mcp reauth <name>`) that send the browser back to omp's listener on the daemon's host
+  (`http://localhost:<port>/…`) leave a browser on another machine on a page that fails to load. Paste that page's
+  address into **Paste the address your browser ended on** under the URL's toast or chat card and press Send: the
+  daemon requests it on its own loopback (`oauth.callback`; only the exact callback omp waits on, for 5 minutes).
 - `Logged in to <name>` confirms it. The window reads the models again, and the daemon restarts each running thread's
   omp once that thread is free, so it sees the new models; a thread whose start failed needs Restart.
 - **Log in** buttons show where omp says it needs a login: on an error toast quoting omp's refusal, beside Restart in

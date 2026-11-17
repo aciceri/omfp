@@ -3493,3 +3493,233 @@ async fn a_fork_that_cannot_be_made_leaves_nothing_and_a_deleted_source_keeps_it
         .clone();
     assert_eq!(kept["forkedFrom"], fork["forkedFrom"]);
 }
+
+/// A stand-in for omp's OAuth callback listener on `127.0.0.1:0`: answers each connection with the next of `statuses`
+/// and hands over the request line it received.
+async fn callback_listener(
+    statuses: &'static [u16],
+) -> (u16, tokio::sync::mpsc::UnboundedReceiver<String>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let (requests, received) = tokio::sync::mpsc::unbounded_channel();
+    tokio::spawn(async move {
+        for status in statuses {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0; 1024];
+            while !request.windows(4).any(|end| end == b"\r\n\r\n") {
+                let read = socket.read(&mut buffer).await.unwrap();
+                assert_ne!(read, 0, "the request ends early");
+                request.extend_from_slice(&buffer[..read]);
+            }
+            let text = String::from_utf8(request).unwrap();
+            requests
+                .send(text.lines().next().unwrap().to_owned())
+                .unwrap();
+            let reply =
+                format!("HTTP/1.1 {status} X\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
+            socket.write_all(reply.as_bytes()).await.unwrap();
+        }
+    });
+    (port, received)
+}
+
+/// An authorization URL whose `redirect_uri` is omp's listener on `port`, path `/callback`.
+fn authorization_url(port: u16) -> String {
+    format!(
+        "https://auth.example.com/authorize?client_id=omp&redirect_uri=http%3A%2F%2Flocalhost%3A{port}%2Fcallback\
+         &state=s1"
+    )
+}
+
+// spec: PRT-212, DMN-340, DMN-341, DMN-342
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pasted_callback_of_a_threads_mcp_reauth_reaches_omps_loopback_listener_once() {
+    let daemon = daemon(&[]).await;
+    let mut window = daemon.client("test").await;
+    let thread = create_thread(&mut window).await;
+    window
+        .ok("thread.state", json!({ "threadId": thread }))
+        .await;
+    let mut follower = Follower::snapshot(&mut window, &thread, None).await;
+    let (port, mut requests) = callback_listener(&[500, 200]).await;
+    let pasted = format!("http://localhost:{port}/callback?code=c0de&state=s1#ignored");
+    let relay = json!({ "threadId": thread, "url": pasted });
+
+    let error = window
+        .call("oauth.callback", relay.clone())
+        .await
+        .unwrap_err();
+    assert_eq!(error["code"], "conflict", "nothing pending yet: {error}");
+
+    daemon
+        .launcher
+        .process(0)
+        .emit(vec![RpcNotification::CommandOutput(
+            omfp_core::wire::CommandOutputEvent {
+                text: format!(
+                    "━━━ OAuth Authorization Required ━━━\nOpening your browser to authorize. If it did not \
+                     open:\n{}",
+                    authorization_url(port)
+                ),
+            },
+        )]);
+    follower
+        .until(&mut window, |state| !state.notices.is_empty())
+        .await;
+
+    for other in [
+        format!("http://localhost:{port}/other?code=c0de"),
+        format!("http://example.com:{port}/callback?code=c0de"),
+        format!("http://user@127.0.0.1:{port}/callback?code=c0de"),
+        format!("https://localhost:{port}/callback?code=c0de"),
+    ] {
+        let error = window
+            .call(
+                "oauth.callback",
+                json!({ "threadId": thread, "url": other }),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error["code"], "bad_request", "{other}: {error}");
+    }
+
+    // omp's listener refused it (a state mismatch answers 500): the sign-in still waits.
+    let error = window
+        .call("oauth.callback", relay.clone())
+        .await
+        .unwrap_err();
+    assert_eq!(error["code"], "omp_error", "{error}");
+    assert_eq!(error["details"]["status"], 500, "{error}");
+    assert_eq!(
+        requests.recv().await.unwrap(),
+        "GET /callback?code=c0de&state=s1 HTTP/1.1"
+    );
+
+    assert_eq!(
+        window.ok("oauth.callback", relay.clone()).await,
+        json!({ "status": 200 })
+    );
+    assert_eq!(
+        requests.recv().await.unwrap(),
+        "GET /callback?code=c0de&state=s1 HTTP/1.1"
+    );
+
+    // Completed: it waits no more.
+    let error = window.call("oauth.callback", relay).await.unwrap_err();
+    assert_eq!(error["code"], "conflict", "{error}");
+
+    let error = window
+        .call(
+            "oauth.callback",
+            json!({ "threadId": "nope", "url": pasted }),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error["code"], "not_found", "{error}");
+}
+
+// spec: PRT-212, DMN-340
+#[tokio::test(flavor = "multi_thread")]
+async fn a_pasted_callback_without_a_thread_completes_the_running_login_and_none_after_it() {
+    use omfp_core::wire::{ExtensionUiRequest, OpenUrlUiRequest};
+    let daemon = daemon(&[]).await;
+    daemon
+        .launcher
+        .reply("get_login_providers", login_providers());
+    let gate = daemon.launcher.gate("login");
+    let mut window = daemon.client("test").await;
+    let (port, mut requests) = callback_listener(&[200]).await;
+    let relay = json!({ "url": format!("http://127.0.0.1:{port}/callback?code=c0de&state=s1") });
+
+    send_request(
+        &mut window,
+        "l1",
+        "auth.login",
+        json!({ "providerId": "anthropic" }),
+    )
+    .await;
+    gate.arrived(1).await;
+    daemon
+        .launcher
+        .process(0)
+        .emit(vec![RpcNotification::ExtensionUiRequest(
+            ExtensionUiRequest::OpenUrl(OpenUrlUiRequest {
+                id: "u1".into(),
+                url: authorization_url(port),
+                launch_url: Some(format!("http://localhost:{port}/launch")),
+                instructions: None,
+            }),
+        )]);
+    let (_, url) = next_window_request(&mut window).await;
+    assert_eq!(url["kind"], "login_url");
+
+    assert_eq!(
+        window.ok("oauth.callback", relay.clone()).await,
+        json!({ "status": 200 })
+    );
+    assert_eq!(
+        requests.recv().await.unwrap(),
+        "GET /callback?code=c0de&state=s1 HTTP/1.1"
+    );
+
+    window.ok("auth.login_cancel", json!({})).await;
+    let error = window.call("oauth.callback", relay).await.unwrap_err();
+    assert_eq!(error["code"], "conflict", "{error}");
+    gate.open();
+}
+
+// spec: DMN-340
+#[tokio::test(flavor = "multi_thread")]
+async fn a_login_omp_that_exits_unexpectedly_leaves_no_sign_in_waiting() {
+    use omfp_core::wire::{ExtensionUiRequest, OpenUrlUiRequest};
+    let daemon = daemon(&[]).await;
+    daemon
+        .launcher
+        .reply("get_login_providers", login_providers());
+    let gate = daemon.launcher.gate("login");
+    let mut window = daemon.client("test").await;
+    // Nothing listens on the port any more: before the guard forgot it, a relay would reach whatever took it.
+    let (port, _) = callback_listener(&[]).await;
+    let relay = json!({ "url": format!("http://localhost:{port}/callback?code=c0de&state=s1") });
+
+    send_request(
+        &mut window,
+        "l1",
+        "auth.login",
+        json!({ "providerId": "anthropic" }),
+    )
+    .await;
+    gate.arrived(1).await;
+    let omp = daemon.launcher.process(0);
+    omp.emit(vec![RpcNotification::ExtensionUiRequest(
+        ExtensionUiRequest::OpenUrl(OpenUrlUiRequest {
+            id: "u1".into(),
+            url: authorization_url(port),
+            launch_url: None,
+            instructions: None,
+        }),
+    )]);
+    next_window_request(&mut window).await;
+
+    // The login omp crashes while omp's `login` call is still out.
+    omp.exit();
+    let forgotten = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        loop {
+            let error = window
+                .call("oauth.callback", relay.clone())
+                .await
+                .unwrap_err();
+            if error["code"] == "conflict" {
+                break error;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await;
+    // Released first: a blocked `login` call would hold the runtime's shutdown if the assertion fails.
+    gate.open();
+    let error = forgotten.expect("the crashed login's sign-in is forgotten");
+    assert_eq!(error["message"], "no login waits for its callback");
+}

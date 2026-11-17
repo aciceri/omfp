@@ -651,6 +651,7 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
                   }}
                 >
                   <Row
+                    threadId={threadId}
                     cardKey={`${threadId}/${row.key}`}
                     content={content}
                     forkIndex={forkIndex(state, row)}
@@ -701,6 +702,7 @@ function firstLine(view: MessageView): string {
 
 /** One row; renders again only when its content changes (a streaming delta changes the streaming row's only). */
 const Row = memo(function Row({
+  threadId,
   cardKey,
   content,
   forkIndex,
@@ -708,6 +710,7 @@ const Row = memo(function Row({
   day,
   today,
 }: {
+  threadId: string;
   cardKey: string;
   content: RowContent;
   forkIndex: number | undefined;
@@ -717,7 +720,7 @@ const Row = memo(function Row({
   today?: number;
 }) {
   const separator = day === undefined || today === undefined ? undefined : daySeparator(day, today);
-  const body = rowBody(cardKey, content, forkIndex, onFork);
+  const body = rowBody(threadId, cardKey, content, forkIndex, onFork);
   return separator === undefined ? (
     body
   ) : (
@@ -732,6 +735,7 @@ const Row = memo(function Row({
 });
 
 function rowBody(
+  threadId: string,
   cardKey: string,
   content: RowContent,
   forkIndex: number | undefined,
@@ -765,6 +769,6 @@ function rowBody(
     case "system":
       return <SystemRowView cardKey={cardKey} row={content.row} />;
     case "notice":
-      return <NoticeRowView cardKey={cardKey} row={content.row} />;
+      return <NoticeRowView threadId={threadId} cardKey={cardKey} row={content.row} />;
   }
 }

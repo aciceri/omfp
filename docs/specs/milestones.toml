@@ -1222,6 +1222,12 @@ requirements = [
   "UI-793",
   # Consecutive reads of one message grouped into one card (#147)
   "UI-765",
+  # OAuth from a remote browser: the loopback callback relayed through the daemon (#136)
+  "DMN-340",
+  "DMN-341",
+  "DMN-342",
+  "PRT-212",
+  "UI-761",
 ]
 
 [M18]

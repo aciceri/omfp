@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { emptyThreadState, type NoticeFrame, type ThreadState } from "@omfp/core";
-import { OpenedUrlWatch, openedUrls, threadOpenedUrls, urlHost } from "../../src/vm/opened-url.ts";
+import { loopbackCallback, OpenedUrlWatch, openedUrls, threadOpenedUrls, urlHost } from "../../src/vm/opened-url.ts";
 
 const AUTH = "https://auth.example.com/authorize?client_id=omp&state=s1&redirect_uri=http%3A%2F%2Flocalhost%3A1455";
 
@@ -69,5 +69,29 @@ describe("opened URLs", () => {
   test("the host a toast names", () => {
     expect(urlHost(AUTH)).toBe("auth.example.com");
     expect(urlHost("not a url")).toBe("not a url");
+  });
+
+  // spec: UI-761
+  test("an authorization URL names the loopback callback its sign-in returns to; other URLs none", () => {
+    const authorize = (redirect: string) =>
+      `https://auth.example.com/authorize?state=s1&redirect_uri=${encodeURIComponent(redirect)}`;
+    expect(loopbackCallback(AUTH)).toBe("http://localhost:1455/");
+    expect(loopbackCallback(authorize("http://localhost:1455/auth/callback"))).toBe(
+      "http://localhost:1455/auth/callback",
+    );
+    expect(loopbackCallback(authorize("http://127.0.0.1:8080/callback"))).toBe("http://localhost:8080/callback");
+    expect(loopbackCallback(authorize("http://localhost/callback"))).toBe("http://localhost:80/callback");
+    for (const elsewhere of [
+      "https://localhost:1455/callback",
+      "http://example.com:1455/callback",
+      "http://[::1]:1455/callback",
+      "http://user@localhost:1455/callback",
+      "vscode://gitlab.gitlab-workflow/authentication",
+      "not a url",
+    ]) {
+      expect([elsewhere, loopbackCallback(authorize(elsewhere))]).toEqual([elsewhere, undefined]);
+    }
+    expect(loopbackCallback("https://login.example.com/device?code=1")).toBeUndefined();
+    expect(loopbackCallback("not a url")).toBeUndefined();
   });
 });

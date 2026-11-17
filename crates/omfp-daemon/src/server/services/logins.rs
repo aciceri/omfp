@@ -150,6 +150,7 @@ struct Flow {
     login: u64,
     board: Arc<LoginBoard>,
     index: Arc<IndexLog>,
+    supervisor: crate::supervisor::Supervisor,
 }
 
 impl Flow {
@@ -204,6 +205,8 @@ impl Flow {
             };
             match request {
                 ExtensionUiRequest::OpenUrl(open) => {
+                    // Its loopback callback may be relayed by `oauth.callback` (DMN-340).
+                    self.supervisor.login_opened_url(self.login, &open.url);
                     self.board.update(&self.index, self.login, |activity| {
                         activity.url = Some(open.url.clone());
                         activity.instructions.clone_from(&open.instructions);
@@ -240,7 +243,9 @@ impl Flow {
                 | ExtensionUiRequest::SetEditorText(_) => {}
             }
         }
-        // The login omp is gone: a question still open has nobody left to answer.
+        // The login omp is gone: a question still open has nobody left to answer, and its OAuth listeners died with
+        // it, so no pasted callback may be relayed to whatever takes their ports (DMN-340).
+        self.supervisor.login_omp_ended(self.login);
         for ask in asks {
             ask.abort();
         }
@@ -321,6 +326,7 @@ impl Services {
             login,
             board: Arc::clone(&self.login_board),
             index: Arc::clone(&self.index),
+            supervisor: self.supervisor.clone(),
         };
         let events = omp.events;
         let pump = tokio::task::spawn_blocking(move || flow.pump(&events));

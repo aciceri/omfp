@@ -44,10 +44,12 @@ mod login;
 mod mcp;
 mod models;
 mod naming;
+mod oauth;
 mod restart;
 mod roots;
 
 pub use login::{AuthOmp, LOGIN_MODEL};
+pub use oauth::OAuthOwner;
 pub use restart::Restart;
 
 /// The event log of one thread: omp frames and daemon events folded by the shared reducer (ARC-006).
@@ -356,6 +358,9 @@ struct Actor {
     /// The model the stored session restores, read from its file when omp could not start (DMN-338); cleared when omp
     /// starts.
     session_model: Mutex<Option<String>>,
+    /// The OAuth sign-ins the running omp started that wait for their loopback callback (DMN-340); cleared when omp
+    /// starts or stops.
+    oauth: Mutex<crate::oauth_relay::Flows>,
 }
 
 impl Actor {
@@ -389,6 +394,7 @@ impl Actor {
             prompting: tokio::sync::RwLock::new(()),
             fork_source: Mutex::new(None),
             session_model: Mutex::new(None),
+            oauth: Mutex::new(crate::oauth_relay::Flows::default()),
         }
     }
 
@@ -1163,6 +1169,7 @@ impl Supervisor {
                 lock(&actor.restart).want(reason);
             }
         }
+        Self::track_oauth(actor, &event);
         if matches!(
             &event,
             ThreadEvent::Omp {
@@ -1273,6 +1280,7 @@ impl Supervisor {
         // Taken before omp reads the files: a change while it starts reloads it once more (DMN-201). The new process
         // loads everything a due restart was for (DMN-203).
         lock(&actor.restart).clear();
+        lock(&actor.oauth).clear();
         self.loading_mcp_configs(actor, spec.cwd.clone()).await;
         self.push(
             actor,
@@ -1533,6 +1541,8 @@ impl Supervisor {
             return;
         };
         self.inner.running.fetch_sub(1, Ordering::SeqCst);
+        // Its OAuth listeners died with it: another process may take their ports (DMN-340).
+        lock(&actor.oauth).clear();
         let path = self.inner.data.thread_log(&actor.id);
         let process = crashed.process;
         let tail = blocking(move || {
@@ -1559,6 +1569,7 @@ impl Supervisor {
         // The next process loads everything anew (DMN-203).
         lock(&actor.mcp_configs).take();
         lock(&actor.restart).clear();
+        lock(&actor.oauth).clear();
         self.push(
             actor,
             ThreadEvent::Process {

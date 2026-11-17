@@ -268,6 +268,33 @@ describe("logging in", () => {
     }
   });
 
+  // spec: UI-761
+  test("a login page returning to omp's loopback listener takes the address the browser ended on, for the login", async () => {
+    const test = setup();
+    const open = window.open;
+    window.open = () => null;
+    try {
+      run(test, "login openai-codex");
+      const url = `https://auth.openai.com/oauth/authorize?state=s&redirect_uri=${encodeURIComponent(
+        "http://localhost:1455/auth/callback",
+      )}`;
+      request(test, "u1", { kind: "login_url", ...ANTHROPIC, url, launchUrl: null, instructions: null });
+      const toast = screen.getByTestId("opened-url-toast");
+      const pasted = "http://localhost:1455/auth/callback?code=c0de&state=s";
+      await test.user.type(within(toast).getByTestId("oauth-callback-input"), pasted);
+      await test.user.click(within(toast).getByTestId("oauth-callback-send"));
+      const [relay] = test.client.callsTo("oauth.callback");
+      // No thread: the daemon relays it to the running login's sign-in.
+      expect(relay?.params).toEqual({ url: pasted });
+      await settle(() => relay?.resolve({ status: 200 }));
+      expect(screen.queryAllByTestId("opened-url-toast").length).toBe(0);
+      // The login itself goes on until omp stored the credential.
+      expect(screen.queryAllByTestId("login-progress").length).toBe(1);
+    } finally {
+      window.open = open;
+    }
+  });
+
   // spec: UI-640
   test("a login this window did not start shows its progress and its page from the index, until it ends", async () => {
     const test = setup();

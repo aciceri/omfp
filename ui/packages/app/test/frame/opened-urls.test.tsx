@@ -118,4 +118,31 @@ describe("opened URLs", () => {
     ]);
     expect(OPENED_URL_MS).toBeGreaterThanOrEqual(60_000);
   });
+
+  // spec: UI-761
+  test("a toast whose sign-in returns to omp's loopback listener relays the pasted address and goes once omp took it", async () => {
+    const test = setup();
+    test.client.threadEvents("t2", openUrl("n1", LOGIN));
+    const reauth = `https://auth.example.com/authorize?redirect_uri=${encodeURIComponent("http://127.0.0.1:1455/cb")}`;
+    test.client.threadEvents("t2", openUrl("n2", reauth));
+    test.flush();
+    const [device, oauth] = toasts();
+    if (device === undefined || oauth === undefined) {
+      throw new Error("no toasts");
+    }
+    // A device page returns nowhere: nothing to paste.
+    expect(within(device).queryAllByTestId("oauth-callback").length).toBe(0);
+    const pasted = "http://127.0.0.1:1455/cb?code=c0de&state=s1";
+    await test.user.type(within(oauth).getByTestId("oauth-callback-input"), `${pasted}{Enter}`);
+    const [relay] = test.client.callsTo("oauth.callback");
+    expect(relay?.params).toEqual({ threadId: "t2", url: pasted });
+    await act(async () => {
+      relay?.resolve({ status: 200 });
+      await Promise.resolve();
+    });
+    expect(toasts().map((toast) => toast.dataset.url)).toEqual([LOGIN]);
+    await waitFor(() =>
+      expect(screen.getAllByTestId("success").map((success) => success.textContent)).toEqual(["omp got the sign-in"]),
+    );
+  });
 });

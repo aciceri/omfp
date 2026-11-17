@@ -33,7 +33,8 @@ use omfp_protocol::{
     WindowView,
 };
 use omfp_protocol::{
-    AuthProvider, AuthProviders, AuthStatus, LoggedIn, LoggedOut, LoginCancelled, ProviderRef,
+    AuthProvider, AuthProviders, AuthStatus, LoggedIn, LoggedOut, LoginCancelled,
+    OAuthCallbackParams, OAuthCallbackRelayed, ProviderRef,
 };
 use omfp_protocol::{
     CloseJobs, DefineJobParams, EnableJobParams, JobDefinition, JobNameParams, JobPrompt,
@@ -1580,7 +1581,27 @@ fn auth_examples() -> Vec<(&'static str, Value)> {
                 remaining_source: Some("ANTHROPIC_API_KEY".to_owned()),
             },
         ),
+        example::<method::OauthCallback>(
+            OAuthCallbackParams {
+                thread_id: Some(THREAD_ID.to_owned()),
+                url: "http://localhost:1455/auth/callback?code=c0de&state=5tate".to_owned(),
+            },
+            &OAuthCallbackRelayed { status: 200 },
+        ),
     ]
+}
+
+// spec: PRT-212
+#[test]
+fn an_oauth_callback_without_a_thread_is_the_running_logins() {
+    let login: OAuthCallbackParams =
+        serde_json::from_value(json!({ "url": "http://localhost:1455/auth/callback?code=c" }))
+            .expect("decodes");
+    assert_eq!(login.thread_id, None);
+    assert_eq!(
+        serde_json::to_value(&login).unwrap(),
+        json!({ "url": "http://localhost:1455/auth/callback?code=c" })
+    );
 }
 
 // spec: PRT-085

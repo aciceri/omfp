@@ -115,13 +115,18 @@ export function useReportSuccess(): (text: string) => void {
   return useMemo(() => (text: string) => reportSuccess(host, text), [host]);
 }
 
-/** Opening and copying a URL omp opened on the daemon's host (UI-346, UI-347). */
+/** Opening and copying a URL omp opened on the daemon's host (UI-346, UI-347), and relaying the address its OAuth
+ * sign-in ended on (UI-761). */
 export interface UrlActions {
   /** Opens `url` in a new tab of this browser, without access to this window. */
   open(url: string): void;
   /** Copies `url` to the clipboard with a success toast (UI-520); a refusal (or no clipboard: a page served over plain
    * HTTP from another machine) goes to the error list. */
   copy(url: string): void;
+  /** Hands `pasted`, the address a browser ended on after an OAuth sign-in omp started (thread `threadId`'s, else the
+   * running login's), to omp's loopback listener through the daemon (`oauth.callback`, PRT-212): `true` with a
+   * success toast once omp took it, else `false` with the daemon's refusal in the error list. */
+  relay(threadId: string | undefined, pasted: string): Promise<boolean>;
 }
 
 export function useUrlActions(): UrlActions {
@@ -140,6 +145,17 @@ export function useUrlActions(): UrlActions {
             (error: unknown) => reportError(host, error),
           );
       },
+      relay: (threadId, pasted) =>
+        host.client.call("oauth.callback", threadId === undefined ? { url: pasted } : { threadId, url: pasted }).then(
+          () => {
+            reportSuccess(host, strings.chat.notice.relayed);
+            return true;
+          },
+          (error: unknown) => {
+            reportError(host, error);
+            return false;
+          },
+        ),
     }),
     [host],
   );

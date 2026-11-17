@@ -194,6 +194,7 @@ previous settings stay). A thread summary carries `title` (`""` until the first 
 | `auth.login` | `providerId` | `LoggedIn { providerId, name }` once omp stored the credential; the flow reaches the window as `login_*` window requests (PRT-130, PRT-131) |
 | `auth.login_cancel` | — | `{ providerId }`: the login it cancelled, `null` when none ran (PRT-132) |
 | `auth.logout` | `providerId` | `LoggedOut { providerId, removed, remainingSource }` (PRT-133) |
+| `oauth.callback` | `threadId?`, `url` | `{ status }` once omp's loopback OAuth listener took the pasted address (PRT-212) |
 
 Results of omp-forwarded methods are omp's response data (`data` of its `response` frame), the `omp-rpc` wire
 `*Result` type named in the method table, even where `omp-rpc` decodes the command's output to the bare list or
@@ -264,6 +265,7 @@ The daemon runs them on a short-lived omp of its own (DMN-219..DMN-224) and show
 | PRT-132 | `auth.login_cancel {}` (permission `Drive`) MUST cancel the running login (DMN-222) and answer `LoginCancelled { providerId }`, `null` when none ran; the cancelled `auth.login` fails with `conflict`. A new `auth.login` and closing the window that shows a login cancel it too. |
 | PRT-133 | `auth.logout { providerId }` (permission `Drive`) MUST remove every credential omp stored for the provider (DMN-223) and answer `LoggedOut { providerId, removed, remainingSource }`: how many it removed, and what still authenticates the provider (omp's words, e.g. an environment variable), `null` when nothing does. |
 | PRT-140 | (QA) `auth.status {}` (permission `Read`) MUST answer `AuthStatus { models }`: how many models omp can use (DMN-235), `0` on a fresh install where every thread start fails until a login. The first call starts an omp, so it takes seconds; later calls answer the count the daemon keeps current (DMN-236, DMN-237), which the `index` topic also carries (PRT-141). `auth.models {}` (permission `Read`) MUST return `{ models }`, omp's `GetAvailableModelsResult`, from a fresh short-lived login omp on every call, stopping it on success or error; it creates no thread or workspace and sends no prompt. |
+| PRT-212 | `oauth.callback { threadId?, url }` (permission `Manage`) MUST relay `url`, the address a browser on any machine ended on after an OAuth sign-in omp started (`http://localhost:<port>/<path>?code=…&state=…`), to omp's loopback callback listener on the daemon's host (DMN-340..DMN-342): the sign-in of thread `threadId`'s omp (`/mcp reauth`, an `open_url` request), else, without `threadId`, the running login's (`auth.login`). It answers `OAuthCallbackRelayed { status }` (omp's 2xx); an address the guard refuses (DMN-341) is `bad_request` naming the callbacks omp waits on, no sign-in waiting `conflict`, an unknown thread `not_found`, and a listener that answers another status (`details.status`) or none `omp_error`. Windows and agents call it alike (D-17). |
 
 Both `auth.models` and `thread.models` publish concrete result schemas for `{ models: [{ provider, id, name, … }] }`.
 The entries permit upstream extension fields; the Rust wire result still carries omp's complete model descriptor.

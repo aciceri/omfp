@@ -6,6 +6,7 @@
 mod file_checks;
 mod logins;
 mod mounts;
+mod oauth;
 mod polls;
 mod views;
 mod widget_tools;

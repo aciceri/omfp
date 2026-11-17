@@ -63,7 +63,7 @@ describe("omfp:debug", () => {
     expect(screen.getByTestId("debug-none").textContent).toContain("No debug session");
   });
 
-  // spec: UI-946, UI-947, UI-948, UI-949
+  // spec: UI-946, UI-947, UI-948, UI-949, UI-119
   test("follows the agent's debug results: the stop, its stack and variables, the breakpoints; places open files", async () => {
     const test = setup();
     test.client.threadEvents(
@@ -108,8 +108,9 @@ describe("omfp:debug", () => {
     expect(screen.getAllByTestId("debug-variable").map((row) => row.textContent)).toEqual(["n: int7"]);
 
     await test.user.click(within(screen.getByTestId("debug-stop")).getByTestId("debug-place"));
+    // Resolved against the session's folder `/work/w1`, the workspace's: its tab is the workspace-relative path.
     expect(test.host.window.get(OPEN_FILES).w1?.tabs.map(({ path, line }) => ({ path, line }))).toEqual([
-      { path: "/work/w1/src/main.c", line: 42 },
+      { path: "src/main.c", line: 42 },
     ]);
   });
 

@@ -14,6 +14,7 @@ import {
   movePanel,
   NO_FILE_TABS,
   neighbourTab,
+  normalizeTabs,
   openedTabIds,
   openTab,
   openWidgetTab,
@@ -22,7 +23,74 @@ import {
   retargetTab,
   widgetTabId,
   workspaceFilePath,
+  workspaceTabId,
+  workspaceTabPath,
 } from "../../src/vm/files.ts";
+
+describe("the path a file tab keeps", () => {
+  // spec: UI-119
+  test("a path inside the workspace folder becomes workspace-relative, `.`, `..` and slashes resolved", () => {
+    expect(workspaceTabPath("/work/ws", "/work/ws/buggy.py")).toBe("buggy.py");
+    expect(workspaceTabPath("/work/ws/", "/work/ws//fe/./src/../lib.rs")).toBe("fe/lib.rs");
+    expect(workspaceTabPath("/work/ws", "/work/other/../ws/fe/lib.rs/")).toBe("fe/lib.rs");
+    expect(workspaceTabPath("/work/ws", "./fe//src/./x/../lib.rs/")).toBe("fe/src/lib.rs");
+    expect(workspaceTabPath("/work/ws", "buggy.py")).toBe("buggy.py");
+    expect(workspaceTabPath("/", "/etc/hosts")).toBe("etc/hosts");
+  });
+
+  // spec: UI-119, UI-700
+  test("a path outside stays absolute, only normalized; a relative path leaving the folder keeps its `..`", () => {
+    expect(workspaceTabPath("/work/ws", "/work/ws2/a.rs")).toBe("/work/ws2/a.rs");
+    expect(workspaceTabPath("/work/ws", "/work/ws/../x/./a.rs")).toBe("/work/x/a.rs");
+    expect(workspaceTabPath("/work/ws", "/work/ws")).toBe("/work/ws");
+    expect(workspaceTabPath("/work/ws", "/../a.rs")).toBe("/a.rs");
+    expect(workspaceTabPath("/work/ws", "../x/a.rs")).toBe("../x/a.rs");
+    expect(workspaceTabPath("/work/ws", "fe/../../x/../../a.rs")).toBe("../../a.rs");
+    expect(workspaceTabPath("/work/ws", "fe/..")).toBe(".");
+    // The workspace not known yet: absolute paths stay absolute.
+    expect(workspaceTabPath(undefined, "/work/ws/fe/./lib.rs")).toBe("/work/ws/fe/lib.rs");
+  });
+
+  // spec: UI-119
+  test("a file's tab id takes the same path; other tab ids stay as they are", () => {
+    expect(workspaceTabId("/work/ws", fileTabId("/work/ws/fe/lib.rs"))).toBe(fileTabId("fe/lib.rs"));
+    expect(workspaceTabId("/work/ws", fileTabId("/elsewhere/a.rs"))).toBe(fileTabId("/elsewhere/a.rs"));
+    expect(workspaceTabId("/work/ws", widgetTabId("omfp:todos"))).toBe(widgetTabId("omfp:todos"));
+    expect(workspaceTabId("/work/ws", "0.0.1.0")).toBe("0.0.1.0");
+  });
+
+  // spec: UI-119, UI-115
+  test("kept tabs normalize: two spellings of one file merge into the first one's tab", () => {
+    const kept: FileTabs = {
+      tabs: [
+        { path: "/work/ws/buggy.py", line: 5, diff: undefined, seq: 0 },
+        { path: "/elsewhere/a.rs", line: undefined, diff: undefined, seq: 0 },
+        { path: "./buggy.py", line: 8, diff: true, seq: 0 },
+        { path: "fe/lib.rs", line: undefined, diff: undefined, seq: 0 },
+      ],
+      widgets: ["omfp:todos"],
+    };
+    expect(normalizeTabs(kept, "/work/ws")).toEqual({
+      tabs: [
+        { path: "buggy.py", line: 5, diff: undefined, seq: 0 },
+        { path: "/elsewhere/a.rs", line: undefined, diff: undefined, seq: 0 },
+        { path: "fe/lib.rs", line: undefined, diff: undefined, seq: 0 },
+      ],
+      widgets: ["omfp:todos"],
+    });
+    const clean = normalizeTabs(kept, "/work/ws");
+    expect(normalizeTabs(clean, "/work/ws")).toBe(clean);
+    expect(normalizeTabs(NO_FILE_TABS, undefined)).toBe(NO_FILE_TABS);
+  });
+
+  // spec: UI-119, UI-115
+  test("opening a file again by another spelling moves its one tab to the new line", () => {
+    const folder = "/work/ws";
+    let tabs = openTab(NO_FILE_TABS, workspaceTabPath(folder, "/work/ws/buggy.py"), { line: 5 });
+    tabs = openTab(normalizeTabs(tabs, folder), workspaceTabPath(folder, "buggy.py"), { line: 8 });
+    expect(tabs.tabs).toEqual([{ path: "buggy.py", line: 8, diff: undefined, seq: 2 }]);
+  });
+});
 
 describe("file tabs", () => {
   // spec: UI-115

@@ -13,6 +13,9 @@ The version's section is also the source of the GitHub release notes.
   color instead of a muted gray that nearly vanished on the dark Send button, and with `theme = matugen`.
 - A window no longer flashes the default Synth palette and Crush skin for a moment while it loads: the daemon serves
   the page with the configured `[ui]` theme, skin, density, motion and font size already applied.
+- A file of the workspace reached by its absolute path (a breakpoint in `omfp:debug`) and by its workspace-relative
+  path (a tool card) now opens in one tab, which moves to the line of the latest opening, instead of two tabs. Tabs
+  kept from before show once too.
 - Selecting a thread low in a long list of workspaces no longer scrolls the whole window up, leaving an empty band at
   the bottom: only the left column scrolls (#167).
 - `omfp:browser` no longer presents a tab's address as current after the agent clicked, went back or ran code in

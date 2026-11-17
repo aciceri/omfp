@@ -1266,6 +1266,8 @@ requirements = [
   "UI-950",
   # The window itself never scrolls: visually hidden text anchored (#167)
   "UI-967",
+  # One file tab per file, whatever path reached it (#171)
+  "UI-119",
 ]
 
 [M18]

@@ -22,10 +22,13 @@ import {
   fileTabId,
   NO_FILE_TABS,
   neighbourTab,
+  normalizeTabs,
   type OpenFileOptions,
   type OpenFiles,
   openTab,
   retargetTab,
+  workspaceTabId,
+  workspaceTabPath,
 } from "../vm/files.ts";
 import { replaceTab } from "../vm/tab-choices.ts";
 import { currentWorkspaceId, errorMessage, reportError, useCurrentWorkspaceId } from "./actions.ts";
@@ -87,18 +90,27 @@ export const intervalPoll: FilePoll = (check) => {
 };
 
 /** Opens `path` in this window's current workspace, or in `options.workspaceId`'s (UI-115); without a workspace it
- * reports why. */
+ * reports why. A path inside the workspace folder opens as its workspace-relative path, so every spelling of a file
+ * gives one tab (UI-119). */
 export function openFile(host: OmfpHost, path: string, options: OpenFileOptions = {}): void {
   const workspaceId = options.workspaceId ?? currentWorkspaceId(host);
   if (workspaceId === undefined) {
     reportError(host, new Error(strings.shell.files.noWorkspace(path)));
     return;
   }
+  const folder = folderOf(host, workspaceId);
+  const tabPath = workspaceTabPath(folder, path);
   host.window.set(OPEN_FILES, (files) => ({
     ...files,
-    [workspaceId]: openTab(files[workspaceId] ?? NO_FILE_TABS, path, options),
+    [workspaceId]: openTab(normalizeTabs(files[workspaceId] ?? NO_FILE_TABS, folder), tabPath, options),
   }));
-  selectOpenedTab(host, workspaceId, fileTabId(path));
+  selectOpenedTab(host, workspaceId, fileTabId(tabPath));
+}
+
+/** The folder of `workspaceId` by the live index, which file tabs are relative to (UI-119); `undefined` until the
+ * index has it. */
+function folderOf(host: OmfpHost, workspaceId: string): string | undefined {
+  return host.frames.getSnapshot().index.workspaces.get(workspaceId)?.path;
 }
 
 /** The view the frame renders for the selected thread (none: the draft thread of the current workspace); `undefined`
@@ -133,10 +145,10 @@ export function selectOpenedTab(host: OmfpHost, workspaceId: string, tabId: stri
 }
 
 /**
- * Closes the opened tab `tabId` of `workspaceId` (a file's or a revealed widget's): when the shown thread had it
- * selected in `viewId` (the view, or floating panel, whose tab bar closed it; by default the view shown), its
- * neighbour is (UI-366), and the other threads of the workspace that had it selected go back to their first tab
- * (UI-372).
+ * Closes the opened tab `tabId` of `workspaceId` (a file's or a revealed widget's; a file by any spelling of its path,
+ * UI-119): when the shown thread had it selected in `viewId` (the view, or floating panel, whose tab bar closed it; by
+ * default the view shown), its neighbour is (UI-366), and the other threads of the workspace that had it selected go
+ * back to their first tab (UI-372).
  */
 export function closeOpened(
   host: OmfpHost,
@@ -144,18 +156,22 @@ export function closeOpened(
   tabId: string,
   viewId: string | undefined = shownViewId(host, false),
 ): void {
-  const tabs = host.window.get(OPEN_FILES)[workspaceId];
-  if (tabs === undefined || closeOpenedTab(tabs, tabId) === tabs) {
+  const stored = host.window.get(OPEN_FILES)[workspaceId];
+  const folder = folderOf(host, workspaceId);
+  const tabs = stored === undefined ? undefined : normalizeTabs(stored, folder);
+  const id = workspaceTabId(folder, tabId);
+  if (tabs === undefined || closeOpenedTab(tabs, id) === tabs) {
     return;
   }
   const shown = workspaceId === currentWorkspaceId(host) ? viewId : undefined;
-  const selected = shown !== undefined && chosenTabOf(host, shown, MAIN_SLOT) === tabId;
-  host.window.set(OPEN_FILES, (files) => ({ ...files, [workspaceId]: closeOpenedTab(tabs, tabId) }));
+  const chosen = shown === undefined ? undefined : chosenTabOf(host, shown, MAIN_SLOT);
+  const selected = shown !== undefined && chosen !== undefined && workspaceTabId(folder, chosen) === id;
+  host.window.set(OPEN_FILES, (files) => ({ ...files, [workspaceId]: closeOpenedTab(tabs, id) }));
   host.window.set(TAB_CHOICES, (choices) =>
-    replaceTab(choices, workspaceId, threadsOf(host, workspaceId), tabId, undefined),
+    replaceTab(choices, workspaceId, threadsOf(host, workspaceId), id, undefined),
   );
   if (selected) {
-    selectTab(host, shown, MAIN_SLOT, neighbourTab(tabs, tabId));
+    selectTab(host, shown, MAIN_SLOT, neighbourTab(tabs, id));
   }
 }
 
@@ -210,7 +226,7 @@ export async function findMissingFile(
 /**
  * Opens `chosen` in place of the tab of `path` (UI-117), closing the picker: the threads that selected `path`'s tab
  * select `chosen`'s (UI-372), whichever thread is shown when the lookup answers. Without a tab of `path`, `chosen`
- * opens as `openFile` opens it.
+ * opens as `openFile` opens it; both are compared as tabs keep them (UI-119).
  */
 export function chooseFile(
   host: OmfpHost,
@@ -220,17 +236,21 @@ export function chooseFile(
   options: OpenFileOptions = {},
 ): void {
   host.window.set(FILE_PICKER, undefined);
-  const tabbed = (host.window.get(OPEN_FILES)[workspaceId] ?? NO_FILE_TABS).tabs.some((tab) => tab.path === path);
+  const folder = folderOf(host, workspaceId);
+  const from = workspaceTabPath(folder, path);
+  const to = workspaceTabPath(folder, chosen);
+  const tabs = normalizeTabs(host.window.get(OPEN_FILES)[workspaceId] ?? NO_FILE_TABS, folder);
+  const tabbed = tabs.tabs.some((tab) => tab.path === from);
   host.window.set(OPEN_FILES, (files) => ({
     ...files,
-    [workspaceId]: retargetTab(files[workspaceId] ?? NO_FILE_TABS, path, chosen, options),
+    [workspaceId]: retargetTab(normalizeTabs(files[workspaceId] ?? NO_FILE_TABS, folder), from, to, options),
   }));
   if (tabbed) {
     host.window.set(TAB_CHOICES, (choices) =>
-      replaceTab(choices, workspaceId, threadsOf(host, workspaceId), fileTabId(path), fileTabId(chosen)),
+      replaceTab(choices, workspaceId, threadsOf(host, workspaceId), fileTabId(from), fileTabId(to)),
     );
   } else {
-    selectOpenedTab(host, workspaceId, fileTabId(chosen));
+    selectOpenedTab(host, workspaceId, fileTabId(to));
   }
 }
 
@@ -298,12 +318,18 @@ export interface FileTabsState extends FileTabs {
   closeTab(id: string): void;
 }
 
+/** `workspaceId`'s opened tabs, their paths as `openFile` keeps them (tabs kept before UI-119 included). */
 export function useFileTabs(workspaceId: string | undefined): FileTabsState {
   const host = useHost();
   const [files] = useWindowState(OPEN_FILES);
   const [shown] = useWindowState(SHOWN_VIEW);
-  const [active, select] = useChosenTab(shown?.viewId, MAIN_SLOT);
-  const tabs = workspaceId === undefined ? NO_FILE_TABS : (files[workspaceId] ?? NO_FILE_TABS);
+  const [chosen, select] = useChosenTab(shown?.viewId, MAIN_SLOT);
+  const folder = useSnapshot((snapshot) =>
+    workspaceId === undefined ? undefined : snapshot.index.workspaces.get(workspaceId)?.path,
+  );
+  const stored = workspaceId === undefined ? NO_FILE_TABS : (files[workspaceId] ?? NO_FILE_TABS);
+  const tabs = useMemo(() => normalizeTabs(stored, folder), [stored, folder]);
+  const active = chosen === undefined ? undefined : workspaceTabId(folder, chosen);
   return useMemo(
     () => ({
       ...tabs,

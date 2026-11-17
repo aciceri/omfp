@@ -47,6 +47,68 @@ export function widgetTabId(reference: string): string {
   return `widget:${reference}`;
 }
 
+/**
+ * `path` as a file tab keeps it (UI-119): `.` and `..` resolved without following links, repeated and trailing slashes
+ * dropped, and an absolute path inside the workspace folder `folder` made relative to it, so every spelling of a
+ * workspace file gives one tab. An absolute path outside the folder (UI-700) stays absolute, the folder itself too; a
+ * relative path keeps the `..` that leave the folder (the daemon refuses it, DMN-312). Without `folder` (the
+ * workspace not known yet) an absolute path stays absolute.
+ */
+export function workspaceTabPath(folder: string | undefined, path: string): string {
+  const absolute = path.startsWith("/");
+  const parts: string[] = [];
+  for (const part of path.split("/")) {
+    if (part === "..") {
+      if (parts.length > 0 && parts.at(-1) !== "..") {
+        parts.pop();
+      } else if (!absolute) {
+        parts.push(part);
+      }
+    } else if (part !== "" && part !== ".") {
+      parts.push(part);
+    }
+  }
+  if (!absolute) {
+    return parts.length === 0 ? "." : parts.join("/");
+  }
+  const resolved = `/${parts.join("/")}`;
+  if (folder === undefined) {
+    return resolved;
+  }
+  const root = workspaceTabPath(undefined, folder);
+  const prefix = root === "/" ? "/" : `${root}/`;
+  return resolved.startsWith(prefix) && resolved.length > prefix.length ? resolved.slice(prefix.length) : resolved;
+}
+
+/** The tab id `id` with its file's path as {@link workspaceTabPath} gives it for `folder`; another tab's id as is. */
+export function workspaceTabId(folder: string | undefined, id: string): string {
+  const prefix = fileTabId("");
+  return id.startsWith(prefix) ? fileTabId(workspaceTabPath(folder, id.slice(prefix.length))) : id;
+}
+
+/**
+ * `tabs` with each file's path as {@link workspaceTabPath} gives it for `folder`, two spellings of one file merged into
+ * the first one's tab (tabs kept before UI-119); the same object when nothing changes.
+ */
+export function normalizeTabs(tabs: FileTabs, folder: string | undefined): FileTabs {
+  const seen = new Set<string>();
+  let changed = false;
+  const normalized = tabs.tabs.flatMap((tab) => {
+    const path = workspaceTabPath(folder, tab.path);
+    if (seen.has(path)) {
+      changed = true;
+      return [];
+    }
+    seen.add(path);
+    if (path === tab.path) {
+      return [tab];
+    }
+    changed = true;
+    return [{ ...tab, path }];
+  });
+  return changed ? { ...tabs, tabs: normalized } : tabs;
+}
+
 /** The ids of the opened tabs in their order: the files, then the widgets. */
 export function openedTabIds(tabs: FileTabs): string[] {
   return [...tabs.tabs.map((tab) => fileTabId(tab.path)), ...tabs.widgets.map(widgetTabId)];

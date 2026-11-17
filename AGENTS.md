@@ -81,7 +81,8 @@ crates/omfp-daemon    daemon library: omp adapter (omp.rs), agent port + FakeLau
                       supervisor (supervisor.rs: launch in the workspace folder, root sync; supervisor/dialogs.rs:
                       answers to omp's dialogs; supervisor/naming.rs: thread titles and session names), agent
                       conventions and the widget-builder agent (conventions.rs),
-                      event log, store (+ migrations, store/migrate.rs), workspaces (folder scanner in
+                      event log, store (+ migrations, store/migrate.rs; activity log and prompt history,
+                      store/history.rs), workspaces (folder scanner in
                       workspaces/scan.rs, cheap change check in workspaces/fingerprint.rs, reading and writing
                       workspace files with a hash check in workspaces/files.rs, add/remove repo,
                       suggestions of seen repositories), path completion (fs_complete.rs), conversation search over

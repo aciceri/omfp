@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use omfp_protocol::{Call, CreateWorkspaceParams, ErrorBody};
 
-use super::{Reply, empty, ok};
+use super::{Reply, empty, ok, on_workspaces};
 use crate::server::auth::Principal;
 use crate::server::convert::{diff_page, internal, supervisor_error, workspace_error};
 use crate::server::services::{Services, blocking};
@@ -58,7 +58,6 @@ pub(super) async fn create_workspace(
 
 #[allow(clippy::too_many_lines)] // One arm per method.
 pub(super) async fn workspaces(services: &Services, principal: &Principal, call: Call) -> Reply {
-    let workspaces = Arc::clone(&services.workspaces);
     let id = match call {
         Call::WorkspacesCreate(params) => {
             let client = principal.client().to_owned();
@@ -66,31 +65,23 @@ pub(super) async fn workspaces(services: &Services, principal: &Principal, call:
         }
         Call::WorkspacesUpdate(params) => {
             let id = params.workspace_id.clone();
-            blocking(move || {
-                workspaces
-                    .rename(&params.workspace_id, &params.name)
-                    .map_err(workspace_error)
+            on_workspaces(services, move |all| {
+                all.rename(&params.workspace_id, &params.name)
             })
             .await?;
             id
         }
         Call::WorkspacesRemove(params) => {
             let (id, force) = (params.workspace_id, params.force);
-            let checker = Arc::clone(&workspaces);
             let checked = id.clone();
-            blocking(move || {
-                checker
-                    .check_removal(&checked, force)
-                    .map_err(workspace_error)
-            })
-            .await?;
+            on_workspaces(services, move |all| all.check_removal(&checked, force)).await?;
             // Declared jobs, jobs and PTYs die before the workspace folder is deleted (DMN-329, DMN-081, TRM-104);
             // the runs and job state go with the workspace's row.
             services.declared.remove_workspace(&id).await;
             services.jobs.kill_workspace(&id).await;
             services.terminals.kill_workspace(&id);
             let removed = id.clone();
-            blocking(move || workspaces.remove(&removed, force).map_err(workspace_error)).await?;
+            on_workspaces(services, move |all| all.remove(&removed, force)).await?;
             services.jobs.forget_workspace(&id);
             services.terminals.forget_workspace(&id);
             services.refresh_index_quietly().await;
@@ -100,25 +91,21 @@ pub(super) async fn workspaces(services: &Services, principal: &Principal, call:
         Call::WorkspacesAddRepo(params) => {
             let id = params.workspace_id.clone();
             let source = repo_source(params.source);
-            blocking(move || {
-                workspaces
-                    .add_repo(&params.workspace_id, params.name.as_deref(), source)
-                    .map_err(workspace_error)
+            on_workspaces(services, move |all| {
+                all.add_repo(&params.workspace_id, params.name.as_deref(), source)
             })
             .await?;
             id
         }
         Call::WorkspacesRemoveRepo(params) => {
             let id = params.workspace_id.clone();
-            blocking(move || {
-                workspaces
-                    .remove_repo(
-                        &params.workspace_id,
-                        &params.name,
-                        params.force,
-                        params.delete_branch,
-                    )
-                    .map_err(workspace_error)
+            on_workspaces(services, move |all| {
+                all.remove_repo(
+                    &params.workspace_id,
+                    &params.name,
+                    params.force,
+                    params.delete_branch,
+                )
             })
             .await?;
             id
@@ -136,12 +123,8 @@ pub(super) async fn workspaces(services: &Services, principal: &Principal, call:
         }
         Call::WorkspacesDiff(params) => {
             services.rescan(&params.workspace_id).await?;
-            let (workspace_id, repo) = (params.workspace_id.clone(), params.repo.clone());
-            let diff = blocking(move || {
-                let repo = workspaces
-                    .repo(&workspace_id, &repo)
-                    .map_err(workspace_error)?;
-                workspaces.diff(&repo).map_err(workspace_error)
+            let diff = on_workspaces(services, move |all| {
+                all.diff(&all.repo(&params.workspace_id, &params.repo)?)
             })
             .await?;
             return ok(&diff_page(
@@ -151,14 +134,12 @@ pub(super) async fn workspaces(services: &Services, principal: &Principal, call:
             )?);
         }
         Call::WorkspacesReadFile(params) => {
-            return ok(&blocking(move || {
-                workspaces
-                    .read_file(
-                        &params.workspace_id,
-                        &params.path,
-                        params.known_hash.as_deref(),
-                    )
-                    .map_err(workspace_error)
+            return ok(&on_workspaces(services, move |all| {
+                all.read_file(
+                    &params.workspace_id,
+                    &params.path,
+                    params.known_hash.as_deref(),
+                )
             })
             .await?);
         }
@@ -172,29 +153,25 @@ pub(super) async fn workspaces(services: &Services, principal: &Principal, call:
                     .with_state(named_files),
                 None => BTreeSet::new(),
             };
-            return ok(&blocking(move || {
-                workspaces
-                    .find_file(
-                        &params.workspace_id,
-                        &params.query,
-                        &mentioned,
-                        params.fuzzy,
-                    )
-                    .map_err(workspace_error)
+            return ok(&on_workspaces(services, move |all| {
+                all.find_file(
+                    &params.workspace_id,
+                    &params.query,
+                    &mentioned,
+                    params.fuzzy,
+                )
             })
             .await?);
         }
         Call::WorkspacesWriteFile(params) => {
             let id = params.workspace_id.clone();
-            let written = blocking(move || {
-                workspaces
-                    .write_file(
-                        &params.workspace_id,
-                        &params.path,
-                        &params.content,
-                        params.expected_hash.as_deref(),
-                    )
-                    .map_err(workspace_error)
+            let written = on_workspaces(services, move |all| {
+                all.write_file(
+                    &params.workspace_id,
+                    &params.path,
+                    &params.content,
+                    params.expected_hash.as_deref(),
+                )
             })
             .await?;
             // Then, as after an agent's edit, the folder is rescanned and `workspace/<id>` gets the new git status.

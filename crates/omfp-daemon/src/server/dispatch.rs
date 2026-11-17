@@ -13,11 +13,12 @@ use serde_json::Value;
 
 use super::activity;
 use super::auth::Principal;
-use super::convert::{bad_request, internal, supervisor_error, workspace_error};
+use super::convert::{bad_request, internal, supervisor_error, thread_error, workspace_error};
 use super::prompts;
 use super::services::{Services, blocking};
-use crate::store::Provenance;
 use crate::terminals::StartTerminal;
+use crate::threads::Threads;
+use crate::workspaces::Workspaces;
 use crate::{fs_complete, search};
 
 mod fork;
@@ -34,6 +35,32 @@ fn ok(value: &impl Serialize) -> Reply {
 
 fn empty() -> Reply {
     ok(&Empty {})
+}
+
+/// Runs `work` on the workspaces on a blocking task.
+async fn on_workspaces<T: Send + 'static>(
+    services: &Services,
+    work: impl FnOnce(&Workspaces) -> crate::workspaces::Result<T> + Send + 'static,
+) -> Result<T, ErrorBody> {
+    let workspaces = Arc::clone(&services.workspaces);
+    blocking(move || work(&workspaces).map_err(workspace_error)).await
+}
+
+/// Runs `work` on the thread records on a blocking task.
+async fn on_threads<T: Send + 'static>(
+    services: &Services,
+    work: impl FnOnce(&Threads) -> crate::threads::Result<T> + Send + 'static,
+) -> Result<T, ErrorBody> {
+    let threads = Arc::clone(&services.threads);
+    blocking(move || work(&threads).map_err(thread_error)).await
+}
+
+/// The thread whose agent calls, which a run or terminal it starts records (DMN-162, TRM-104).
+fn agent_thread(principal: &Principal) -> Option<&str> {
+    match principal {
+        Principal::Agent { thread_id, .. } => Some(thread_id),
+        Principal::Owner { .. } | Principal::Mcp { .. } => None,
+    }
 }
 
 /// Runs a method for `principal`. Authorization already happened (PRT-034). An agent's call beyond reading goes into
@@ -58,10 +85,8 @@ async fn run(services: &Services, principal: &Principal, call: Call) -> Reply {
         | Call::ThreadLiveConnect(_)
         | Call::ThreadLiveStart(_) => Err(bad_request("handled by the connection")),
         Call::ReposSuggest(params) => {
-            let workspaces = Arc::clone(&services.workspaces);
             let query = params.query.unwrap_or_default();
-            let repos =
-                blocking(move || workspaces.suggest(&query).map_err(workspace_error)).await?;
+            let repos = on_workspaces(services, move |all| all.suggest(&query)).await?;
             ok(&RepoSuggestions {
                 repos: repos
                     .into_iter()
@@ -224,19 +249,13 @@ async fn jobs(services: &Services, principal: &Principal, call: Call) -> Reply {
     let declared = &services.declared;
     match call {
         Call::JobsStart(params) => {
-            let workspaces = Arc::clone(&services.workspaces);
-            let workspace_id = params.workspace_id;
             let workspace =
-                blocking(move || workspaces.get(&workspace_id).map_err(workspace_error)).await?;
-            let started_by = match principal.created_by() {
-                Provenance::Thread(thread_id) => Some(thread_id),
-                Provenance::User | Provenance::Mcp | Provenance::Job(_) => None,
-            };
+                on_workspaces(services, move |all| all.get(&params.workspace_id)).await?;
             ok(&services.jobs.start(
                 &workspace.id,
                 &workspace.path,
                 &params.command,
-                started_by.as_deref(),
+                agent_thread(principal),
                 params.replaces.as_deref(),
             )?)
         }
@@ -277,14 +296,8 @@ async fn jobs(services: &Services, principal: &Principal, call: Call) -> Reply {
 async fn terminals(services: &Services, principal: &Principal, call: Call) -> Reply {
     match call {
         Call::TerminalsStart(params) => {
-            let workspaces = Arc::clone(&services.workspaces);
-            let workspace_id = params.workspace_id;
             let workspace =
-                blocking(move || workspaces.get(&workspace_id).map_err(workspace_error)).await?;
-            let started_by = match principal.created_by() {
-                Provenance::Thread(thread_id) => Some(thread_id),
-                Provenance::User | Provenance::Mcp | Provenance::Job(_) => None,
-            };
+                on_workspaces(services, move |all| all.get(&params.workspace_id)).await?;
             ok(&services.terminals.start(StartTerminal {
                 workspace_id: &workspace.id,
                 workspace: &workspace.path,
@@ -292,7 +305,7 @@ async fn terminals(services: &Services, principal: &Principal, call: Call) -> Re
                 cwd: params.cwd.as_deref(),
                 cols: params.cols,
                 rows: params.rows,
-                started_by: started_by.as_deref(),
+                started_by: agent_thread(principal),
             })?)
         }
         Call::TerminalsScreen(params) => ok(&services

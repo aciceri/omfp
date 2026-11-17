@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use omfp_protocol::{Call, ReorderThreadParams, ReorderWorkspaceParams};
 
-use super::{Reply, empty};
-use crate::server::convert::{bad_request, internal, supervisor_error, thread_error};
+use super::{Reply, empty, on_threads};
+use crate::server::convert::{bad_request, internal, supervisor_error};
 use crate::server::services::{Services, blocking};
 
 pub(super) async fn reorder(services: &Services, call: Call) -> Reply {
@@ -43,24 +43,25 @@ async fn thread(services: &Services, params: ReorderThreadParams) -> Reply {
     if before_id.as_ref() == Some(&thread_id) {
         return Err(bad_request("a thread cannot go before itself"));
     }
-    let threads = Arc::clone(&services.threads);
     let id = thread_id.clone();
-    let current = blocking(move || threads.get(&id).map_err(thread_error))
+    let current = on_threads(services, move |all| all.get(&id))
         .await?
         .workspace_id;
     let target = workspace_id.filter(|target| *target != current);
-    let threads = Arc::clone(&services.threads);
-    let id = thread_id.clone();
-    let moving = target.is_some();
-    let apply = move || threads.reorder(&id, target.as_deref(), before_id.as_deref());
-    if moving {
+    if target.is_some() {
+        let threads = Arc::clone(&services.threads);
+        let id = thread_id.clone();
+        let apply = move || threads.reorder(&id, target.as_deref(), before_id.as_deref());
         services
             .supervisor
             .relocate(&thread_id, apply)
             .await
             .map_err(supervisor_error)?;
     } else {
-        blocking(move || apply().map_err(thread_error)).await?;
+        on_threads(services, move |all| {
+            all.reorder(&thread_id, None, before_id.as_deref())
+        })
+        .await?;
     }
     services.refresh_index_quietly().await;
     empty()

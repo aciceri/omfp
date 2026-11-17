@@ -19,19 +19,23 @@ use tracing::{info, warn};
 use super::{Provenance, Result, StoreError, Thread, TitleSource, Workspace, new_id, path_str};
 use crate::names::{is_entry_name, slugify, unique};
 
-const MIGRATION_1: &str = include_str!("0001_initial.sql");
-const MIGRATION_2: &str = include_str!("0002_created_client.sql");
-const MIGRATION_3: &str = include_str!("0003_workspace_folders.sql");
-const MIGRATION_4: &str = include_str!("0004_title_source.sql");
-const MIGRATION_5: &str = include_str!("0005_seen_repositories.sql");
-const MIGRATION_6: &str = include_str!("0006_workspaces_under_root.sql");
-const MIGRATION_7: &str = include_str!("0007_widget_state.sql");
-const MIGRATION_8: &str = include_str!("0008_activity.sql");
-const MIGRATION_9: &str = include_str!("0009_activity_mcp.sql");
-const MIGRATION_10: &str = include_str!("0010_prompt_history.sql");
-const MIGRATION_11: &str = include_str!("0011_order.sql");
-const MIGRATION_12: &str = include_str!("0012_thread_forks.sql");
-const MIGRATION_13: &str = include_str!("0013_jobs.sql");
+/// Every migration's SQL in order: the `n`th brings the schema to `user_version` `n`. Migrations 3 and 6 are run by
+/// code around their SQL.
+const MIGRATIONS: [&str; 13] = [
+    include_str!("0001_initial.sql"),
+    include_str!("0002_created_client.sql"),
+    include_str!("0003_workspace_folders.sql"),
+    include_str!("0004_title_source.sql"),
+    include_str!("0005_seen_repositories.sql"),
+    include_str!("0006_workspaces_under_root.sql"),
+    include_str!("0007_widget_state.sql"),
+    include_str!("0008_activity.sql"),
+    include_str!("0009_activity_mcp.sql"),
+    include_str!("0010_prompt_history.sql"),
+    include_str!("0011_order.sql"),
+    include_str!("0012_thread_forks.sql"),
+    include_str!("0013_jobs.sql"),
+];
 
 /// Number of migrations: the highest `user_version` this daemon knows.
 const LATEST: i64 = 13;
@@ -47,22 +51,15 @@ pub(super) fn run(conn: &mut Connection, workspaces_root: &Path) -> Result<()> {
         });
     }
     conn.pragma_update(None, "foreign_keys", false)?;
-    for version in (found + 1)..=LATEST {
+    let pending = (1..=LATEST)
+        .zip(MIGRATIONS)
+        .skip_while(|(version, _)| *version <= found);
+    for (version, sql) in pending {
         let tx = conn.transaction()?;
         match version {
-            1 => tx.execute_batch(MIGRATION_1)?,
-            2 => tx.execute_batch(MIGRATION_2)?,
-            3 => to_workspace_folders(&tx, workspaces_root)?,
-            4 => tx.execute_batch(MIGRATION_4)?,
-            5 => tx.execute_batch(MIGRATION_5)?,
-            6 => to_workspaces_under_root(&tx, workspaces_root)?,
-            7 => tx.execute_batch(MIGRATION_7)?,
-            8 => tx.execute_batch(MIGRATION_8)?,
-            9 => tx.execute_batch(MIGRATION_9)?,
-            10 => tx.execute_batch(MIGRATION_10)?,
-            11 => tx.execute_batch(MIGRATION_11)?,
-            12 => tx.execute_batch(MIGRATION_12)?,
-            _ => tx.execute_batch(MIGRATION_13)?,
+            3 => to_workspace_folders(&tx, workspaces_root, sql)?,
+            6 => to_workspaces_under_root(&tx, workspaces_root, sql)?,
+            _ => tx.execute_batch(sql)?,
         }
         check_foreign_keys(&tx)?;
         tx.pragma_update(None, "user_version", version)?;
@@ -96,16 +93,10 @@ struct OldDir {
     name: String,
 }
 
-/// The two parts of `0003_workspace_folders.sql`, around the rows written in between.
-fn parts() -> (&'static str, &'static str) {
-    MIGRATION_3
-        .split_once("-- part: swap")
-        .unwrap_or((MIGRATION_3, ""))
-}
-
-fn to_workspace_folders(tx: &Transaction<'_>, root: &Path) -> Result<()> {
+/// Migration 3: `sql` holds the new schema, then the swap to it after the rows written in between.
+fn to_workspace_folders(tx: &Transaction<'_>, root: &Path, sql: &str) -> Result<()> {
     let old = old_threads(tx)?;
-    let (schema, swap) = parts();
+    let (schema, swap) = sql.split_once("-- part: swap").unwrap_or((sql, ""));
     tx.execute_batch(schema)?;
     if !old.is_empty() {
         std::fs::create_dir_all(root).map_err(|error| io(root, &error))?;
@@ -284,8 +275,8 @@ fn insert_thread_v3(tx: &Transaction<'_>, old: &OldThread, workspace_id: &str) -
 }
 
 /// Migration 6: see the module documentation.
-fn to_workspaces_under_root(tx: &Transaction<'_>, root: &Path) -> Result<()> {
-    tx.execute_batch(MIGRATION_6)?;
+fn to_workspaces_under_root(tx: &Transaction<'_>, root: &Path, sql: &str) -> Result<()> {
+    tx.execute_batch(sql)?;
     let workspaces: Vec<(String, String, PathBuf)> = {
         let mut stmt = tx.prepare("SELECT id, name, path FROM workspaces ORDER BY id")?;
         stmt.query_map([], |row| {

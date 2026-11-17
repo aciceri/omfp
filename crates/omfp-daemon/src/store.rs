@@ -1,13 +1,16 @@
 //! SQLite persistence (02-daemon, "Persistence"): workspace folders, threads and their roots, the repositories seen in
-//! workspaces (DMN-021), settings, widget state (DMN-086).
+//! workspaces (DMN-021), settings, widget state (DMN-086); the activity log and prompt history in `history`, declared
+//! jobs' runs in `jobs`.
 //!
 //! Transcripts are not stored here (DMN-012): omp's session files in each thread's `session_dir` are the source of
 //! truth, and the repositories inside a workspace are discovered from its folder (DMN-022). All calls are blocking;
 //! the server layer runs them on blocking tasks.
 
+mod history;
 mod jobs;
 mod migrate;
 
+pub use history::{Activity, ActivityQuery, NewActivity, PromptQuery, SentPrompt};
 pub use jobs::{FINISHED_RUNS_KEPT, JobRun, JobState, RunEnd, RunOutput};
 
 use std::collections::{BTreeMap, HashMap};
@@ -164,59 +167,6 @@ pub struct ThreadFork {
     pub message: Option<String>,
 }
 
-/// One agent-originated action to log (AGT-072, DMN-160).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NewActivity {
-    /// Unix milliseconds.
-    pub at: i64,
-    /// The calling agent's thread; `None` for the MCP principal (AGT-053).
-    pub thread_id: Option<String>,
-    /// The calling principal's client (PRT-033).
-    pub client: String,
-    pub method: String,
-    pub params: serde_json::Value,
-    /// `None` when the call succeeded.
-    pub error: Option<String>,
-}
-
-/// A logged action with its place in the log.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Activity {
-    pub seq: i64,
-    pub entry: NewActivity,
-}
-
-/// Which part of the activity log to read (PRT-086).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ActivityQuery {
-    pub thread_id: Option<String>,
-    /// Only entries with a smaller `seq`.
-    pub before: Option<i64>,
-    /// Only entries with a greater `seq`.
-    pub after: Option<i64>,
-    pub limit: u32,
-}
-
-/// One prompt of the prompt history (DMN-216): its text, the thread and workspace it was last sent to, and when.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SentPrompt {
-    pub text: String,
-    pub thread_id: String,
-    pub workspace_id: String,
-    /// Unix milliseconds.
-    pub at: i64,
-}
-
-/// How to read the prompt history (DMN-217): `thread_id`'s prompts first, then `workspace_id`'s, then the others,
-/// newest first within each; only those containing `query` (case-insensitive) when given.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PromptQuery {
-    pub thread_id: Option<String>,
-    pub workspace_id: Option<String>,
-    pub query: Option<String>,
-    pub limit: u32,
-}
-
 /// A new ULID as a string. IDs are monotonic within the process, so ordering by id is ordering by creation.
 #[must_use]
 pub fn new_id() -> String {
@@ -292,23 +242,46 @@ impl Store {
 
     /// Every seen repository, most recently seen first, then by path.
     pub fn seen_repositories(&self) -> Result<Vec<SeenRepository>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
+        query_all(
+            &self.conn(),
             "SELECT path, last_seen_at FROM seen_repositories ORDER BY last_seen_at DESC, path",
-        )?;
-        let rows = stmt.query_map([], |row| {
-            Ok(SeenRepository {
-                path: PathBuf::from(row.get::<_, String>(0)?),
-                last_seen_at: row.get(1)?,
-            })
-        })?;
-        Ok(rows.collect::<Result<_, _>>()?)
+            [],
+            |row| {
+                Ok(SeenRepository {
+                    path: PathBuf::from(row.get::<_, String>(0)?),
+                    last_seen_at: row.get(1)?,
+                })
+            },
+        )
     }
 
     // Workspaces
 
+    /// Inserts a workspace last among the workspaces (DMN-280).
     pub fn insert_workspace(&self, ws: &Workspace) -> Result<()> {
-        insert_workspace(&self.conn(), ws, None)
+        self.conn()
+            .execute(
+                "INSERT INTO workspaces (id, name, path, created_by, created_at, position)
+                 VALUES (?1, ?2, ?3, ?4, ?5, (SELECT coalesce(max(position) + 1, 0) FROM workspaces))",
+                params![
+                    ws.id,
+                    ws.name,
+                    path_str(&ws.path)?,
+                    ws.created_by.as_str(),
+                    ws.created_at
+                ],
+            )
+            .map_err(|error| {
+                unique_conflict(
+                    error,
+                    &format!(
+                        "a workspace is already named {:?} or at {}",
+                        ws.name,
+                        ws.path.display()
+                    ),
+                )
+            })?;
+        Ok(())
     }
 
     pub fn workspace(&self, id: &str) -> Result<Workspace> {
@@ -335,23 +308,17 @@ impl Store {
 
     /// Whether a workspace already has this name.
     pub fn workspace_name_taken(&self, name: &str) -> Result<bool> {
-        Ok(self
-            .conn()
-            .query_row("SELECT 1 FROM workspaces WHERE name = ?1", [name], |_| {
-                Ok(())
-            })
-            .optional()?
-            .is_some())
+        exists(&self.conn(), "workspaces", "name", name)
     }
 
     /// Every workspace, oldest first.
     pub fn workspaces(&self) -> Result<Vec<Workspace>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(&format!(
-            "SELECT {WORKSPACE_COLUMNS} FROM workspaces ORDER BY id"
-        ))?;
-        let rows = stmt.query_map([], workspace_from_row)?;
-        Ok(rows.collect::<Result<_, _>>()?)
+        query_all(
+            &self.conn(),
+            &format!("SELECT {WORKSPACE_COLUMNS} FROM workspaces ORDER BY id"),
+            [],
+            workspace_from_row,
+        )
     }
 
     pub fn rename_workspace(&self, id: &str, name: &str) -> Result<()> {
@@ -364,10 +331,7 @@ impl Store {
             .map_err(|error| {
                 unique_conflict(error, &format!("a workspace is already named {name:?}"))
             })?;
-        if updated == 0 {
-            return Err(not_found("workspace", id));
-        }
-        Ok(())
+        found(updated, "workspace", id)
     }
 
     /// Deletes a workspace record; refused while threads live in it (DMN-028).
@@ -384,20 +348,23 @@ impl Store {
                 "workspace {id} still has {threads} thread(s)"
             )));
         }
-        if tx.execute("DELETE FROM workspaces WHERE id = ?1", [id])? == 0 {
-            return Err(not_found("workspace", id));
-        }
+        found(
+            tx.execute("DELETE FROM workspaces WHERE id = ?1", [id])?,
+            "workspace",
+            id,
+        )?;
         tx.commit()?;
         Ok(())
     }
 
     /// Ids of the threads living in a workspace (DMN-027), oldest first, archived ones included.
     pub fn workspace_thread_ids(&self, workspace_id: &str) -> Result<Vec<String>> {
-        let conn = self.conn();
-        let mut stmt =
-            conn.prepare("SELECT id FROM threads WHERE workspace_id = ?1 ORDER BY id")?;
-        let rows = stmt.query_map([workspace_id], |row| row.get(0))?;
-        Ok(rows.collect::<Result<_, _>>()?)
+        query_all(
+            &self.conn(),
+            "SELECT id FROM threads WHERE workspace_id = ?1 ORDER BY id",
+            [workspace_id],
+            |row| row.get(0),
+        )
     }
 
     // Order of the left column
@@ -405,17 +372,17 @@ impl Store {
     /// The place of every workspace among the workspaces and of every thread among the threads of its workspace,
     /// archived ones included, from 0 (DMN-284).
     pub fn positions(&self) -> Result<HashMap<String, u32>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
+        query_all(
+            &self.conn(),
             "SELECT id, row_number() OVER (ORDER BY position, id) - 1 FROM workspaces
              UNION ALL
              SELECT id, row_number() OVER (PARTITION BY workspace_id ORDER BY position, id) - 1 FROM threads",
-        )?;
-        let rows = stmt.query_map([], |row| {
-            let position: i64 = row.get(1)?;
-            Ok((row.get(0)?, u32::try_from(position).unwrap_or(u32::MAX)))
-        })?;
-        Ok(rows.collect::<rusqlite::Result<_>>()?)
+            [],
+            |row| {
+                let position: i64 = row.get(1)?;
+                Ok((row.get(0)?, u32::try_from(position).unwrap_or(u32::MAX)))
+            },
+        )
     }
 
     /// Puts workspace `id` just before workspace `before`, or last (DMN-281), in one transaction, so reorders from
@@ -424,7 +391,12 @@ impl Store {
     pub fn reorder_workspace(&self, id: &str, before: Option<&str>) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
-        let order = ids(&tx, "SELECT id FROM workspaces ORDER BY position, id", [])?;
+        let order: Vec<String> = query_all(
+            &tx,
+            "SELECT id FROM workspaces ORDER BY position, id",
+            [],
+            |row| row.get(0),
+        )?;
         if !order.iter().any(|other| other == id) {
             return Err(not_found("workspace", id));
         }
@@ -456,17 +428,12 @@ impl Store {
             .optional()?
             .ok_or_else(|| not_found("thread", id))?;
         let workspace_id = workspace_id.unwrap_or(&current);
-        tx.query_row(
-            "SELECT 1 FROM workspaces WHERE id = ?1",
-            [workspace_id],
-            |_| Ok(()),
-        )
-        .optional()?
-        .ok_or_else(|| not_found("workspace", workspace_id))?;
-        let order = ids(
+        ensure(&tx, "workspaces", "workspace", workspace_id)?;
+        let order = query_all(
             &tx,
             "SELECT id FROM threads WHERE workspace_id = ?1 ORDER BY position, id",
             [workspace_id],
+            |row| row.get(0),
         )?;
         let order = placed(order, id, before).ok_or_else(|| {
             StoreError::Conflict(format!(
@@ -488,8 +455,31 @@ impl Store {
 
     // Threads
 
+    /// Inserts a thread last among the threads of its workspace (DMN-280).
     pub fn insert_thread(&self, thread: &Thread) -> Result<()> {
-        insert_thread(&self.conn(), thread)
+        self.conn()
+            .execute(
+                "INSERT INTO threads (id, title, workspace_id, session_dir, omp_session_id, approval_mode, model,
+                     thinking_level, created_by, created_at, archived_at, title_source, position)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
+                     (SELECT coalesce(max(position) + 1, 0) FROM threads WHERE workspace_id = ?3))",
+                params![
+                    thread.id,
+                    thread.title,
+                    thread.workspace_id,
+                    path_str(&thread.session_dir)?,
+                    thread.omp_session_id,
+                    thread.approval_mode,
+                    thread.model,
+                    thread.thinking_level,
+                    thread.created_by.as_str(),
+                    thread.created_at,
+                    thread.archived_at,
+                    thread.title_source.as_str()
+                ],
+            )
+            .map_err(|error| unique_conflict(error, &format!("thread {} exists", thread.id)))?;
+        Ok(())
     }
 
     pub fn thread(&self, id: &str) -> Result<Thread> {
@@ -505,22 +495,20 @@ impl Store {
 
     /// Every thread, archived ones included, oldest first.
     pub fn threads(&self) -> Result<Vec<Thread>> {
-        let conn = self.conn();
-        let mut stmt =
-            conn.prepare(&format!("SELECT {THREAD_COLUMNS} FROM threads ORDER BY id"))?;
-        let rows = stmt.query_map([], thread_from_row)?;
-        Ok(rows.collect::<Result<_, _>>()?)
+        query_all(
+            &self.conn(),
+            &format!("SELECT {THREAD_COLUMNS} FROM threads ORDER BY id"),
+            [],
+            thread_from_row,
+        )
     }
 
     pub fn set_thread_title(&self, id: &str, title: &str, source: TitleSource) -> Result<()> {
-        if self.conn().execute(
+        let updated = self.conn().execute(
             "UPDATE threads SET title = ?2, title_source = ?3 WHERE id = ?1",
             params![id, title, source.as_str()],
-        )? == 0
-        {
-            return Err(not_found("thread", id));
-        }
-        Ok(())
+        )?;
+        found(updated, "thread", id)
     }
 
     /// Sets the title only while the thread's title is a placeholder; returns whether it did. A title set meanwhile
@@ -554,16 +542,11 @@ impl Store {
         Ok(changed > 0)
     }
 
-    /// The setting `key` as a string; `None` when unset or `null`.
-    fn string_setting(&self, key: &str) -> Result<Option<String>> {
-        Ok(self
-            .setting(key)?
-            .and_then(|value| value.as_str().map(str::to_owned)))
-    }
-
-    /// The user's theme CSS (DMN-075).
+    /// The user's theme CSS (DMN-075); `None` when unset or `null`.
     pub fn theme(&self) -> Result<Option<String>> {
-        self.string_setting(THEME_SETTING)
+        Ok(self
+            .setting(THEME_SETTING)?
+            .and_then(|value| value.as_str().map(str::to_owned)))
     }
 
     pub fn set_theme(&self, css: Option<&str>) -> Result<()> {
@@ -571,78 +554,63 @@ impl Store {
     }
 
     pub fn set_thread_archived_at(&self, id: &str, archived_at: Option<i64>) -> Result<()> {
-        self.update_thread(
-            id,
-            "UPDATE threads SET archived_at = ?2 WHERE id = ?1",
-            archived_at,
-        )
+        self.set_thread_column(id, "archived_at", archived_at)
     }
 
     pub fn set_thread_omp_session_id(&self, id: &str, session_id: Option<&str>) -> Result<()> {
-        self.update_thread(
-            id,
-            "UPDATE threads SET omp_session_id = ?2 WHERE id = ?1",
-            session_id,
-        )
+        self.set_thread_column(id, "omp_session_id", session_id)
     }
 
     pub fn set_thread_model(&self, id: &str, model: Option<&str>) -> Result<()> {
-        self.update_thread(id, "UPDATE threads SET model = ?2 WHERE id = ?1", model)
+        self.set_thread_column(id, "model", model)
     }
 
     pub fn set_thread_thinking_level(&self, id: &str, level: Option<&str>) -> Result<()> {
-        self.update_thread(
-            id,
-            "UPDATE threads SET thinking_level = ?2 WHERE id = ?1",
-            level,
-        )
+        self.set_thread_column(id, "thinking_level", level)
     }
 
     pub fn set_thread_approval_mode(&self, id: &str, mode: &str) -> Result<()> {
-        self.update_thread(
-            id,
-            "UPDATE threads SET approval_mode = ?2 WHERE id = ?1",
-            mode,
-        )
+        self.set_thread_column(id, "approval_mode", mode)
     }
 
-    fn update_thread(&self, id: &str, sql: &str, value: impl rusqlite::ToSql) -> Result<()> {
-        if self.conn().execute(sql, params![id, value])? == 0 {
-            return Err(not_found("thread", id));
-        }
-        Ok(())
+    fn set_thread_column(&self, id: &str, column: &str, value: impl rusqlite::ToSql) -> Result<()> {
+        let sql = format!("UPDATE threads SET {column} = ?2 WHERE id = ?1");
+        found(self.conn().execute(&sql, params![id, value])?, "thread", id)
     }
 
     /// The `--add-dir` roots last given to the thread's omp session (DMN-029), sorted.
     pub fn thread_roots(&self, id: &str) -> Result<Vec<PathBuf>> {
-        let conn = self.conn();
-        let mut stmt =
-            conn.prepare("SELECT path FROM thread_roots WHERE thread_id = ?1 ORDER BY path")?;
-        let rows = stmt.query_map([id], |row| Ok(PathBuf::from(row.get::<_, String>(0)?)))?;
-        Ok(rows.collect::<Result<_, _>>()?)
+        query_all(
+            &self.conn(),
+            "SELECT path FROM thread_roots WHERE thread_id = ?1 ORDER BY path",
+            [id],
+            |row| Ok(PathBuf::from(row.get::<_, String>(0)?)),
+        )
     }
 
     /// Replaces the thread's recorded roots.
     pub fn set_thread_roots(&self, id: &str, roots: &[PathBuf]) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
-        ensure_thread(&tx, id)?;
+        ensure(&tx, "threads", "thread", id)?;
         tx.execute("DELETE FROM thread_roots WHERE thread_id = ?1", [id])?;
-        write_roots(&tx, id, roots)?;
+        {
+            let mut stmt =
+                tx.prepare("INSERT OR IGNORE INTO thread_roots (thread_id, path) VALUES (?1, ?2)")?;
+            for root in roots {
+                stmt.execute(params![id, path_str(root)?])?;
+            }
+        }
         tx.commit()?;
         Ok(())
     }
 
     /// Deletes a thread with its roots; its workspace stays.
     pub fn delete_thread(&self, id: &str) -> Result<()> {
-        if self
+        let deleted = self
             .conn()
-            .execute("DELETE FROM threads WHERE id = ?1", [id])?
-            == 0
-        {
-            return Err(not_found("thread", id));
-        }
-        Ok(())
+            .execute("DELETE FROM threads WHERE id = ?1", [id])?;
+        found(deleted, "thread", id)
     }
 
     /// Deletes a thread with its roots if it still lives in workspace `workspace_id`: `false` (nothing deleted) when
@@ -656,7 +624,7 @@ impl Store {
         {
             return Ok(true);
         }
-        ensure_thread(&conn, id)?;
+        ensure(&conn, "threads", "thread", id)?;
         Ok(false)
     }
 
@@ -664,7 +632,7 @@ impl Store {
     pub fn check_provenance(&self, created_by: &Provenance) -> Result<()> {
         match created_by {
             Provenance::User | Provenance::Mcp | Provenance::Job(_) => Ok(()),
-            Provenance::Thread(id) => ensure_thread(&self.conn(), id),
+            Provenance::Thread(id) => ensure(&self.conn(), "threads", "thread", id),
         }
     }
 
@@ -678,24 +646,19 @@ impl Store {
             "UPDATE workspaces SET created_client = ?2 WHERE id = ?1",
             params![id, client],
         )?;
-        if updated == 0 {
-            return Err(not_found("thread or workspace", id));
-        }
-        Ok(())
+        found(updated, "thread or workspace", id)
     }
 
     /// The recorded creating clients of threads and workspaces, by id.
     pub fn created_clients(&self) -> Result<HashMap<String, String>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
+        query_all(
+            &self.conn(),
             "SELECT id, created_client FROM threads WHERE created_client IS NOT NULL
              UNION ALL
              SELECT id, created_client FROM workspaces WHERE created_client IS NOT NULL",
-        )?;
-        let clients = stmt
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-            .collect::<rusqlite::Result<_>>()?;
-        Ok(clients)
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
     }
 
     /// Records that thread `id` was forked (DMN-300); the row goes with the thread.
@@ -718,12 +681,11 @@ impl Store {
 
     /// The lineage of every forked thread, by thread id (DMN-300).
     pub fn thread_forks(&self) -> Result<HashMap<String, ThreadFork>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
+        query_all(
+            &self.conn(),
             "SELECT thread_id, source_thread_id, source_title, entry_id, message FROM thread_forks",
-        )?;
-        let forks = stmt
-            .query_map([], |row| {
+            [],
+            |row| {
                 Ok((
                     row.get(0)?,
                     ThreadFork {
@@ -733,9 +695,8 @@ impl Store {
                         message: row.get(4)?,
                     },
                 ))
-            })?
-            .collect::<rusqlite::Result<_>>()?;
-        Ok(forks)
+            },
+        )
     }
 
     // Widget state
@@ -745,20 +706,14 @@ impl Store {
         &self,
         workspace_id: &str,
     ) -> Result<BTreeMap<String, BTreeMap<String, serde_json::Value>>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
+        let rows: Vec<(String, String, String)> = query_all(
+            &self.conn(),
             "SELECT instance, key, value FROM widget_state WHERE workspace_id = ?1 ORDER BY instance, key",
+            [workspace_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )?;
-        let rows = stmt.query_map([workspace_id], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-            ))
-        })?;
         let mut state: BTreeMap<String, BTreeMap<String, serde_json::Value>> = BTreeMap::new();
-        for row in rows {
-            let (instance, key, value) = row?;
+        for (instance, key, value) in rows {
             state
                 .entry(instance)
                 .or_default()
@@ -791,148 +746,22 @@ impl Store {
         Ok(())
     }
 
-    // Spawned threads and the activity log (M10)
+    // Spawned threads (M10)
 
     /// The threads `id` spawned, transitively (AGT-070): those whose provenance names it or one of them, archived
     /// ones included, oldest first.
     pub fn spawned_thread_ids(&self, id: &str) -> Result<Vec<String>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
+        query_all(
+            &self.conn(),
             "WITH RECURSIVE spawned (id) AS (
                  SELECT id FROM threads WHERE created_by = ?1
                  UNION
                  SELECT threads.id FROM threads JOIN spawned ON threads.created_by = spawned.id
              )
              SELECT id FROM spawned ORDER BY id",
-        )?;
-        let ids = stmt
-            .query_map([id], |row| row.get(0))?
-            .collect::<rusqlite::Result<_>>()?;
-        Ok(ids)
-    }
-
-    /// Appends an entry to the activity log and deletes those older than the newest `keep` (DMN-160).
-    pub fn record_activity(&self, entry: &NewActivity, keep: u32) -> Result<Activity> {
-        let mut conn = self.conn();
-        let tx = conn.transaction()?;
-        tx.execute(
-            "INSERT INTO activity (at, thread_id, client, method, params, error) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                entry.at,
-                entry.thread_id,
-                entry.client,
-                entry.method,
-                entry.params.to_string(),
-                entry.error
-            ],
-        )?;
-        let seq = tx.last_insert_rowid();
-        tx.execute(
-            "DELETE FROM activity WHERE seq <= ?1",
-            [seq - i64::from(keep)],
-        )?;
-        tx.commit()?;
-        Ok(Activity {
-            seq,
-            entry: entry.clone(),
-        })
-    }
-
-    /// The entries of the activity log `query` selects, newest first, and whether its limit left some out (PRT-086).
-    pub fn activity(&self, query: &ActivityQuery) -> Result<(Vec<Activity>, bool)> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
-            "SELECT seq, at, thread_id, client, method, params, error FROM activity
-             WHERE (?1 IS NULL OR thread_id = ?1) AND (?2 IS NULL OR seq < ?2) AND (?3 IS NULL OR seq > ?3)
-             ORDER BY seq DESC LIMIT ?4",
-        )?;
-        let rows = stmt.query_map(
-            params![
-                query.thread_id,
-                query.before,
-                query.after,
-                i64::from(query.limit) + 1
-            ],
-            |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    NewActivity {
-                        at: row.get(1)?,
-                        thread_id: row.get(2)?,
-                        client: row.get(3)?,
-                        method: row.get(4)?,
-                        params: serde_json::Value::Null,
-                        error: row.get(6)?,
-                    },
-                    row.get::<_, String>(5)?,
-                ))
-            },
-        )?;
-        let mut entries = Vec::new();
-        for row in rows {
-            let (seq, mut entry, params) = row?;
-            entry.params = serde_json::from_str(&params)?;
-            entries.push(Activity { seq, entry });
-        }
-        let more = entries.len() > usize::try_from(query.limit).unwrap_or(usize::MAX);
-        entries.truncate(usize::try_from(query.limit).unwrap_or(usize::MAX));
-        Ok((entries, more))
-    }
-
-    // Prompt history (DMN-216, DMN-217)
-
-    /// Records a prompt the user sent: a text already kept takes this submission's thread, workspace and time; the
-    /// history then keeps the newest `keep` prompts.
-    pub fn record_prompt(&self, prompt: &SentPrompt, keep: u32) -> Result<()> {
-        let mut conn = self.conn();
-        let tx = conn.transaction()?;
-        tx.execute(
-            "INSERT INTO prompt_history (text, thread_id, workspace_id, at) VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT (text) DO UPDATE SET thread_id = ?2, workspace_id = ?3, at = ?4",
-            params![
-                prompt.text,
-                prompt.thread_id,
-                prompt.workspace_id,
-                prompt.at
-            ],
-        )?;
-        tx.execute(
-            "DELETE FROM prompt_history WHERE rowid NOT IN
-                 (SELECT rowid FROM prompt_history ORDER BY at DESC, rowid DESC LIMIT ?1)",
-            [keep],
-        )?;
-        tx.commit()?;
-        Ok(())
-    }
-
-    /// The prompts `query` selects, in its order (DMN-217).
-    pub fn prompts(&self, query: &PromptQuery) -> Result<Vec<SentPrompt>> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(
-            "SELECT text, thread_id, workspace_id, at FROM prompt_history
-             WHERE ?3 IS NULL OR ?3 = '' OR instr(lower(text), lower(?3)) > 0
-             ORDER BY thread_id IS ?1 DESC, workspace_id IS ?2 DESC, at DESC, rowid DESC
-             LIMIT ?4",
-        )?;
-        let prompts = stmt
-            .query_map(
-                params![
-                    query.thread_id,
-                    query.workspace_id,
-                    query.query,
-                    query.limit
-                ],
-                |row| {
-                    Ok(SentPrompt {
-                        text: row.get(0)?,
-                        thread_id: row.get(1)?,
-                        workspace_id: row.get(2)?,
-                        at: row.get(3)?,
-                    })
-                },
-            )?
-            .collect::<rusqlite::Result<_>>()?;
-        Ok(prompts)
+            [id],
+            |row| row.get(0),
+        )
     }
 
     // Settings
@@ -984,79 +813,50 @@ fn path_str(path: &Path) -> Result<&str> {
         .ok_or_else(|| StoreError::InvalidPath(path.to_owned()))
 }
 
-fn ensure_thread(conn: &Connection, id: &str) -> Result<()> {
-    conn.query_row("SELECT 1 FROM threads WHERE id = ?1", [id], |_| Ok(()))
-        .optional()?
-        .ok_or_else(|| not_found("thread", id))
-}
-
-/// Inserts a workspace last among the workspaces (DMN-280).
-fn insert_workspace(conn: &Connection, ws: &Workspace, client: Option<&str>) -> Result<()> {
-    conn.execute(
-        "INSERT INTO workspaces (id, name, path, created_by, created_client, created_at, position)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, (SELECT coalesce(max(position) + 1, 0) FROM workspaces))",
-        params![
-            ws.id,
-            ws.name,
-            path_str(&ws.path)?,
-            ws.created_by.as_str(),
-            client,
-            ws.created_at
-        ],
-    )
-    .map_err(|error| {
-        unique_conflict(
-            error,
-            &format!(
-                "a workspace is already named {:?} or at {}",
-                ws.name,
-                ws.path.display()
-            ),
-        )
-    })?;
-    Ok(())
-}
-
-/// Inserts a thread last among the threads of its workspace (DMN-280).
-fn insert_thread(conn: &Connection, thread: &Thread) -> Result<()> {
-    conn.execute(
-        "INSERT INTO threads (id, title, workspace_id, session_dir, omp_session_id, approval_mode, model,
-             thinking_level, created_by, created_at, archived_at, title_source, position)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12,
-             (SELECT coalesce(max(position) + 1, 0) FROM threads WHERE workspace_id = ?3))",
-        params![
-            thread.id,
-            thread.title,
-            thread.workspace_id,
-            path_str(&thread.session_dir)?,
-            thread.omp_session_id,
-            thread.approval_mode,
-            thread.model,
-            thread.thinking_level,
-            thread.created_by.as_str(),
-            thread.created_at,
-            thread.archived_at,
-            thread.title_source.as_str()
-        ],
-    )
-    .map_err(|error| unique_conflict(error, &format!("thread {} exists", thread.id)))?;
-    Ok(())
-}
-
-fn write_roots(conn: &Connection, thread_id: &str, roots: &[PathBuf]) -> Result<()> {
-    let mut stmt =
-        conn.prepare("INSERT OR IGNORE INTO thread_roots (thread_id, path) VALUES (?1, ?2)")?;
-    for root in roots {
-        stmt.execute(params![thread_id, path_str(root)?])?;
+/// `Ok` when `changed` rows were touched, else entity `id` was not found.
+fn found(changed: usize, entity: &'static str, id: &str) -> Result<()> {
+    if changed == 0 {
+        return Err(not_found(entity, id));
     }
     Ok(())
 }
 
-/// The ids the first column of `sql` lists.
-fn ids(conn: &Connection, sql: &str, params: impl rusqlite::Params) -> Result<Vec<String>> {
+/// Whether `table` has a row whose `column` is `value`.
+fn exists(conn: &Connection, table: &str, column: &str, value: &str) -> Result<bool> {
+    let sql = format!("SELECT 1 FROM {table} WHERE {column} = ?1");
+    Ok(conn
+        .query_row(&sql, [value], |_| Ok(()))
+        .optional()?
+        .is_some())
+}
+
+/// Fails unless `table` has the row of `entity` `id`.
+fn ensure(conn: &Connection, table: &str, entity: &'static str, id: &str) -> Result<()> {
+    exists(conn, table, "id", id)?
+        .then_some(())
+        .ok_or_else(|| not_found(entity, id))
+}
+
+/// Every row `sql` selects, mapped by `row`.
+fn query_all<T, C: FromIterator<T>>(
+    conn: &Connection,
+    sql: &str,
+    params: impl rusqlite::Params,
+    row: impl FnMut(&Row<'_>) -> rusqlite::Result<T>,
+) -> Result<C> {
     let mut stmt = conn.prepare(sql)?;
-    let rows = stmt.query_map(params, |row| row.get(0))?;
-    Ok(rows.collect::<Result<_, _>>()?)
+    let rows = stmt
+        .query_map(params, row)?
+        .collect::<rusqlite::Result<C>>()?;
+    Ok(rows)
+}
+
+/// The first `limit` of `rows`, read with one more, and whether more follow.
+fn page<T>(mut rows: Vec<T>, limit: u32) -> (Vec<T>, bool) {
+    let limit = usize::try_from(limit).unwrap_or(usize::MAX);
+    let more = rows.len() > limit;
+    rows.truncate(limit);
+    (rows, more)
 }
 
 /// `order` with `id` taken out and put back just before `before`, or last; `None` when `before` is not in it.

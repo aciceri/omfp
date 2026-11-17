@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use omfp_core::wire::{ImageContent, ThinkingLevel};
 use omfp_protocol::{
-    Call, CloseJobs, CreatedBy, ErrorBody, ErrorCode, JobRunStatus, LiveMuted, PromptBehavior,
-    PromptResult, RunInfo, RunTrigger, ThreadGit, ThreadWorkspace, ThreadsStopped,
+    Call, CloseJobs, CreatedBy, ErrorBody, ErrorCode, JobRunStatus, LiveMuted, MessageParams,
+    PromptBehavior, PromptResult, RunInfo, RunTrigger, ThreadGit, ThreadWorkspace, ThreadsStopped,
 };
 use omp_rpc::{
     BashCommand, BtwCommand, CancelSubagentCommand, CompactCommand, FollowUpCommand, ForkCommand,
@@ -17,10 +17,10 @@ use omp_rpc::{
 use serde_json::{Value, json};
 
 use super::workspaces::create_workspace;
-use super::{Reply, empty, ok};
+use super::{Reply, empty, ok, on_threads, on_workspaces};
 use crate::agent::OmpCall;
 use crate::server::auth::Principal;
-use crate::server::convert::{internal, supervisor_error, thread_error, workspace_error};
+use crate::server::convert::{internal, supervisor_error, thread_error};
 use crate::server::prompts;
 use crate::server::services::{Services, blocking};
 use crate::store::TitleSource;
@@ -152,13 +152,7 @@ pub(super) async fn discard_thread(services: &Services, id: &str) {
 /// Best effort: removes the workspace `threads.create` made for a thread it could not create; the new folder had no
 /// other use.
 async fn remove_new_workspace(services: &Services, workspace_id: String) {
-    let workspaces = Arc::clone(&services.workspaces);
-    let _ = blocking(move || {
-        workspaces
-            .remove(&workspace_id, false)
-            .map_err(workspace_error)
-    })
-    .await;
+    let _ = on_workspaces(services, move |all| all.remove(&workspace_id, false)).await;
     services.refresh_index_quietly().await;
 }
 
@@ -214,7 +208,6 @@ fn close_jobs(
 }
 
 pub(super) async fn threads(services: &Services, principal: &Principal, call: Call) -> Reply {
-    let threads = Arc::clone(&services.threads);
     let supervisor = &services.supervisor;
     match call {
         Call::ThreadsCreate(params) => create_thread(services, principal, params).await,
@@ -226,17 +219,14 @@ pub(super) async fn threads(services: &Services, principal: &Principal, call: Ca
                     .await
                     .map_err(supervisor_error)?;
             }
-            let approval_mode = params.approval_mode;
-            let thread_id = id.clone();
-            blocking(move || {
-                if let Some(mode) = approval_mode {
-                    threads
-                        .set_approval_mode(&thread_id, mode.as_str())
-                        .map_err(thread_error)?;
-                }
-                threads.get(&thread_id).map_err(thread_error)
-            })
-            .await?;
+            if let Some(mode) = params.approval_mode {
+                on_threads(services, move |all| {
+                    all.set_approval_mode(&params.thread_id, mode.as_str())
+                })
+                .await?;
+            } else {
+                on_threads(services, move |all| all.get(&params.thread_id)).await?;
+            }
             ok(&services.thread_summary(&id).await?)
         }
         Call::ThreadsArchive(params) => {
@@ -245,18 +235,18 @@ pub(super) async fn threads(services: &Services, principal: &Principal, call: Ca
                 .stop(&params.thread_id)
                 .await
                 .map_err(supervisor_error)?;
-            blocking(move || threads.archive(&params.thread_id).map_err(thread_error)).await?;
+            on_threads(services, move |all| all.archive(&params.thread_id)).await?;
             services.refresh_index_quietly().await;
             empty()
         }
         Call::ThreadsUnarchive(params) => {
-            blocking(move || threads.unarchive(&params.thread_id).map_err(thread_error)).await?;
+            on_threads(services, move |all| all.unarchive(&params.thread_id)).await?;
             services.refresh_index_quietly().await;
             empty()
         }
         Call::ThreadsDelete(params) => {
             let id = params.thread_id.clone();
-            blocking(move || threads.get(&id).map_err(thread_error)).await?;
+            on_threads(services, move |all| all.get(&id)).await?;
             close_jobs(services, &params.thread_id, params.jobs)?;
             supervisor
                 .delete(&params.thread_id)
@@ -266,8 +256,7 @@ pub(super) async fn threads(services: &Services, principal: &Principal, call: Ca
             empty()
         }
         Call::ThreadGit(params) => {
-            let id = params.thread_id.clone();
-            let thread = blocking(move || threads.get(&id).map_err(thread_error)).await?;
+            let thread = on_threads(services, move |all| all.get(&params.thread_id)).await?;
             services.rescan(&thread.workspace_id).await?;
             let repos = services.workspace_status(&thread.workspace_id).await?;
             ok(&ThreadGit {
@@ -284,16 +273,20 @@ pub(super) async fn threads(services: &Services, principal: &Principal, call: Ca
 async fn queue(
     services: &Services,
     principal: &Principal,
-    thread_id: &str,
-    text: &str,
-    message: QueuedMessage,
+    params: MessageParams,
+    message: fn(String, Option<Vec<ImageContent>>) -> QueuedMessage,
 ) -> Reply {
+    let MessageParams {
+        thread_id,
+        text,
+        images: attached,
+    } = params;
     services
         .supervisor
-        .queue(thread_id, message)
+        .queue(&thread_id, message(text.clone(), images(attached)))
         .await
         .map_err(supervisor_error)?;
-    prompts::record(services, principal, thread_id, None, text).await;
+    prompts::record(services, principal, &thread_id, None, &text).await;
     empty()
 }
 
@@ -334,31 +327,15 @@ pub(super) async fn thread(services: &Services, principal: &Principal, call: Cal
             })
         }
         Call::ThreadSteer(params) => {
-            let message = QueuedMessage::Steer(SteerCommand {
-                message: params.text.clone(),
-                images: images(params.images),
-            });
-            queue(
-                services,
-                principal,
-                &params.thread_id,
-                &params.text,
-                message,
-            )
+            queue(services, principal, params, |message, images| {
+                QueuedMessage::Steer(SteerCommand { message, images })
+            })
             .await
         }
         Call::ThreadFollowUp(params) => {
-            let message = QueuedMessage::FollowUp(FollowUpCommand {
-                message: params.text.clone(),
-                images: images(params.images),
-            });
-            queue(
-                services,
-                principal,
-                &params.thread_id,
-                &params.text,
-                message,
-            )
+            queue(services, principal, params, |message, images| {
+                QueuedMessage::FollowUp(FollowUpCommand { message, images })
+            })
             .await
         }
         Call::ThreadAbort(params) => forward(params.thread_id, OmpCall::AbortAndRestoreQueue).await,
@@ -392,11 +369,8 @@ pub(super) async fn thread(services: &Services, principal: &Principal, call: Cal
                 level: params.level,
             };
             forward(params.thread_id.clone(), OmpCall::SetThinkingLevel(command)).await?;
-            let threads = Arc::clone(&services.threads);
-            blocking(move || {
-                threads
-                    .set_thinking_level(&params.thread_id, Some(&name))
-                    .map_err(thread_error)
+            on_threads(services, move |all| {
+                all.set_thinking_level(&params.thread_id, Some(&name))
             })
             .await?;
             empty()

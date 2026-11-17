@@ -2,7 +2,7 @@
 
 use rusqlite::{OptionalExtension, Row, params};
 
-use super::{Provenance, Result, Store};
+use super::{Provenance, Result, Store, page, query_all};
 
 /// Finished runs kept per job; the oldest go first.
 pub const FINISHED_RUNS_KEPT: u32 = 50;
@@ -170,23 +170,19 @@ impl Store {
         before: Option<&str>,
         limit: u32,
     ) -> Result<(Vec<JobRun>, bool)> {
-        let conn = self.conn();
-        let mut stmt = conn.prepare(&format!(
-            "SELECT {RUN_COLUMNS} FROM job_runs
-             WHERE workspace_id = ?1 AND job = ?2
-               AND (?3 IS NULL OR (started_at, id) <
-                    (SELECT started_at, id FROM job_runs WHERE id = ?3 AND workspace_id = ?1 AND job = ?2))
-             ORDER BY started_at DESC, id DESC LIMIT ?4"
-        ))?;
-        let mut runs = stmt
-            .query_map(
-                params![workspace_id, job, before, i64::from(limit) + 1],
-                run_row,
-            )?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        let more = runs.len() > usize::try_from(limit).unwrap_or(usize::MAX);
-        runs.truncate(usize::try_from(limit).unwrap_or(usize::MAX));
-        Ok((runs, more))
+        let runs = query_all(
+            &self.conn(),
+            &format!(
+                "SELECT {RUN_COLUMNS} FROM job_runs
+                 WHERE workspace_id = ?1 AND job = ?2
+                   AND (?3 IS NULL OR (started_at, id) <
+                        (SELECT started_at, id FROM job_runs WHERE id = ?3 AND workspace_id = ?1 AND job = ?2))
+                 ORDER BY started_at DESC, id DESC LIMIT ?4"
+            ),
+            params![workspace_id, job, before, i64::from(limit) + 1],
+            run_row,
+        )?;
+        Ok(page(runs, limit))
     }
 
     /// The newest finished run of the job that was not `skipped` (PRT-200 `lastRun`).
@@ -247,20 +243,27 @@ impl Store {
 
     /// Sets a job's `last_due_at` (DMN-325).
     pub fn set_job_last_due(&self, workspace_id: &str, job: &str, at: i64) -> Result<()> {
-        self.conn().execute(
-            "INSERT INTO job_state (workspace_id, job, last_due_at) VALUES (?1, ?2, ?3)
-             ON CONFLICT (workspace_id, job) DO UPDATE SET last_due_at = ?3",
-            params![workspace_id, job, at],
-        )?;
-        Ok(())
+        self.set_job_state(workspace_id, job, "last_due_at", at)
     }
 
     /// Sets the thread a `reuse` job sends to (DMN-328).
     pub fn set_job_thread(&self, workspace_id: &str, job: &str, thread_id: &str) -> Result<()> {
+        self.set_job_state(workspace_id, job, "thread_id", thread_id)
+    }
+
+    fn set_job_state(
+        &self,
+        workspace_id: &str,
+        job: &str,
+        column: &str,
+        value: impl rusqlite::ToSql,
+    ) -> Result<()> {
         self.conn().execute(
-            "INSERT INTO job_state (workspace_id, job, thread_id) VALUES (?1, ?2, ?3)
-             ON CONFLICT (workspace_id, job) DO UPDATE SET thread_id = ?3",
-            params![workspace_id, job, thread_id],
+            &format!(
+                "INSERT INTO job_state (workspace_id, job, {column}) VALUES (?1, ?2, ?3)
+                 ON CONFLICT (workspace_id, job) DO UPDATE SET {column} = ?3"
+            ),
+            params![workspace_id, job, value],
         )?;
         Ok(())
     }

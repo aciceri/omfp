@@ -309,32 +309,19 @@ const WORKSPACE_SYMBOL = /^ {2}\S+ (.+) @ (.+):(\d+):\d+$/;
 function symbolsResult(text: string): LspResult | undefined {
   const [title = "", ...lines] = text.split("\n");
   const document = DOCUMENT_SYMBOLS.exec(title);
-  if (document !== null) {
-    const path = document[1];
-    return {
-      type: "symbols",
-      title: title.replace(/:$/, ""),
-      workspace: false,
-      symbols: lines.flatMap((line) => {
-        const symbol = DOCUMENT_SYMBOL.exec(line);
-        return symbol === null
-          ? []
-          : [{ depth: Math.floor((symbol[1] ?? "").length / 2), name: symbol[2] ?? "", path, line: Number(symbol[3]) }];
-      }),
-    };
-  }
-  if (!WORKSPACE_SYMBOLS.test(title)) {
+  if (document === null && !WORKSPACE_SYMBOLS.test(title)) {
     return undefined;
   }
-  return {
-    type: "symbols",
-    title: title.replace(/:$/, ""),
-    workspace: true,
-    symbols: lines.flatMap((line) => {
+  const symbols = lines.flatMap((line): CodeSymbol[] => {
+    if (document === null) {
       const symbol = WORKSPACE_SYMBOL.exec(line);
       return symbol === null ? [] : [{ depth: 0, name: symbol[1] ?? "", path: symbol[2], line: Number(symbol[3]) }];
-    }),
-  };
+    }
+    const symbol = DOCUMENT_SYMBOL.exec(line);
+    const depth = Math.floor((symbol?.[1] ?? "").length / 2);
+    return symbol === null ? [] : [{ depth, name: symbol[2] ?? "", path: document[1], line: Number(symbol[3]) }];
+  });
+  return { type: "symbols", title: title.replace(/:$/, ""), workspace: document === null, symbols };
 }
 
 /** The rows of an applied or previewed workspace edit (`applyWorkspaceEdit`, `formatWorkspaceEdit`). */

@@ -14,6 +14,7 @@ import {
   languageOfPath,
   Markdown,
   PathLink,
+  type PathLinkProps,
   TodoList,
   type Tone,
 } from "omfp/kit";
@@ -175,18 +176,6 @@ function AnsiOutput({ output }: { output: string }): ReactNode {
   );
 }
 
-/** The error of a failed call (omp's message). */
-function ToolError({ card }: { card: ToolCard }): ReactNode {
-  if (card.status !== "failed" || card.result === undefined) {
-    return null;
-  }
-  return (
-    <div className="omfp-tool-card__error" data-testid="tool-error">
-      {card.result}
-    </div>
-  );
-}
-
 /** Lines of a `write`'s content shown while it is collapsed (UI-053). */
 const WRITE_PREVIEW_LINES = 6;
 
@@ -222,7 +211,6 @@ function WriteContent({ content, language }: { content: string; language: string
 /** The body of a specialized card; its sections are split by labelled rules on the card's border (UI-187). */
 export function ToolBody({ card }: { card: ToolCard }): ReactNode {
   const { view } = card;
-  const openFile = useOpenFile();
   switch (view.kind) {
     case "bash":
       return (
@@ -241,10 +229,50 @@ export function ToolBody({ card }: { card: ToolCard }): ReactNode {
           </div>
         </>
       );
-    case "read":
+    case "generic":
+      return (
+        <>
+          <div className="omfp-tool-card__section">
+            <Code code={card.args} block data-testid="tool-args" />
+          </div>
+          {card.result !== undefined && (
+            <>
+              <BoxRule label={text.result} />
+              <div className="omfp-tool-card__section">
+                <Code code={card.result} block data-testid="tool-result" />
+              </div>
+            </>
+          )}
+        </>
+      );
+    default:
+      // Every other card is one section, a failed call's error (omp's message) first (UI-052).
       return (
         <div className="omfp-tool-card__section">
-          <ToolError card={card} />
+          {card.status === "failed" && card.result !== undefined && (
+            <div className="omfp-tool-card__error" data-testid="tool-error">
+              {card.result}
+            </div>
+          )}
+          <ToolSection card={card} view={view} />
+        </div>
+      );
+  }
+}
+
+/** The section of a card other than `bash`'s and the fallback's, after its error. */
+function ToolSection({
+  card,
+  view,
+}: {
+  card: ToolCard;
+  view: Exclude<ToolView, { kind: "bash" | "generic" }>;
+}): ReactNode {
+  const openFile = useOpenFile();
+  switch (view.kind) {
+    case "read":
+      return (
+        <>
           {view.range !== undefined && (
             <p className="omfp-tool-card__meta" data-testid="tool-range">
               {view.range}
@@ -258,47 +286,35 @@ export function ToolBody({ card }: { card: ToolCard }): ReactNode {
               data-testid="tool-content"
             />
           )}
-        </div>
+        </>
       );
     case "fetch":
       return (
-        <div className="omfp-tool-card__section">
-          <ToolError card={card} />
+        <>
           <a className="omfp-tool-card__link" href={view.url} target="_blank" rel="noreferrer" data-testid="tool-link">
             {view.url}
           </a>
           {card.status !== "failed" && view.content !== undefined && (
             <Code code={view.content} block language="markdown" data-testid="tool-content" />
           )}
-        </div>
+        </>
       );
     case "edit":
-      return (
-        <div className="omfp-tool-card__section">
-          <ToolError card={card} />
-          {view.diff !== undefined ? (
-            <Diff lines={view.diff} language={view.language} data-testid="tool-diff" />
-          ) : (
-            view.input !== undefined && (
-              <>
-                <h3>{text.edit}</h3>
-                <Code code={view.input} block data-testid="tool-input" />
-              </>
-            )
-          )}
-        </div>
+      return view.diff !== undefined ? (
+        <Diff lines={view.diff} language={view.language} data-testid="tool-diff" />
+      ) : (
+        view.input !== undefined && (
+          <>
+            <h3>{text.edit}</h3>
+            <Code code={view.input} block data-testid="tool-input" />
+          </>
+        )
       );
     case "write":
-      return (
-        <div className="omfp-tool-card__section">
-          <ToolError card={card} />
-          {view.content !== undefined && <WriteContent content={view.content} language={view.language} />}
-        </div>
-      );
+      return view.content !== undefined && <WriteContent content={view.content} language={view.language} />;
     case "search":
       return (
-        <div className="omfp-tool-card__section">
-          <ToolError card={card} />
+        <>
           <p className="omfp-tool-card__meta">
             {view.scope !== undefined && <span>{text.in(view.scope)}</span>}
             {view.total !== undefined && <span data-testid="tool-total">{view.total}</span>}
@@ -322,12 +338,11 @@ export function ToolBody({ card }: { card: ToolCard }): ReactNode {
               </ul>
             ))}
           {view.truncated && <p className="omfp-tool-card__meta">{text.truncated}</p>}
-        </div>
+        </>
       );
     case "ast_edit":
       return (
-        <div className="omfp-tool-card__section">
-          <ToolError card={card} />
+        <>
           <p className="omfp-tool-card__meta">
             {view.total !== undefined && <span data-testid="tool-total">{view.total}</span>}
             {card.status === "succeeded" && !view.applied && <span data-testid="tool-preview">{text.preview}</span>}
@@ -339,12 +354,9 @@ export function ToolBody({ card }: { card: ToolCard }): ReactNode {
             {view.files.map((file) => (
               <li key={file.path} data-testid="tool-file">
                 <div className="omfp-tool-card__file">
-                  <PathLink
-                    reference={{ path: file.path, line: file.diff[0]?.oldLine ?? file.diff[0]?.newLine }}
-                    onOpen={(ref) => openFile(ref.path, { line: ref.line })}
-                  >
+                  <LineLink path={file.path} line={file.diff[0]?.oldLine ?? file.diff[0]?.newLine}>
                     <FilePath path={file.path} />
-                  </PathLink>
+                  </LineLink>
                   {file.count !== undefined && <Badge>{file.count}</Badge>}
                 </div>
                 {file.diff.length > 0 && (
@@ -354,40 +366,32 @@ export function ToolBody({ card }: { card: ToolCard }): ReactNode {
             ))}
           </ul>
           {view.truncated && <p className="omfp-tool-card__meta">{text.truncated}</p>}
-        </div>
+        </>
       );
     case "resolve":
       return (
-        <div className="omfp-tool-card__section">
-          <ToolError card={card} />
+        <>
           {view.action === "discard" && <p className="omfp-tool-card__meta">{text.discarded}</p>}
           {view.reason !== undefined && <p className="omfp-tool-card__task">{view.reason}</p>}
           <ChangedFiles files={view.files} />
-        </div>
+        </>
       );
     case "lsp":
       return (
-        <div className="omfp-tool-card__section">
-          <ToolError card={card} />
+        <>
           {card.status !== "failed" && view.result !== undefined && <LspAnswer result={view.result} />}
           {view.noServer && (
             <p className="omfp-tool-card__meta" data-testid="lsp-environment">
               {text.serverEnvironment}
             </p>
           )}
-        </div>
+        </>
       );
     case "todo":
-      return (
-        <div className="omfp-tool-card__section">
-          <ToolError card={card} />
-          <TodoPhases phases={view.phases} />
-        </div>
-      );
+      return <TodoPhases phases={view.phases} />;
     case "web_search":
       return (
-        <div className="omfp-tool-card__section">
-          <ToolError card={card} />
+        <>
           {card.status === "succeeded" && view.links.length === 0 && (
             <p className="omfp-tool-card__meta">{text.noLinks}</p>
           )}
@@ -402,50 +406,28 @@ export function ToolBody({ card }: { card: ToolCard }): ReactNode {
               </li>
             ))}
           </ul>
-        </div>
+        </>
       );
     case "ask":
       return (
-        <div className="omfp-tool-card__section">
-          <ToolError card={card} />
-          <dl className="omfp-tool-card__answers">
-            {view.questions.map((question) => (
-              <div key={question.question} data-testid="ask-question">
-                <dt>{question.question}</dt>
-                {question.answer !== undefined && (
-                  <dd data-testid="ask-answer">{question.answer === "" ? text.noAnswer : question.answer}</dd>
-                )}
-              </div>
-            ))}
-          </dl>
-        </div>
+        <dl className="omfp-tool-card__answers">
+          {view.questions.map((question) => (
+            <div key={question.question} data-testid="ask-question">
+              <dt>{question.question}</dt>
+              {question.answer !== undefined && (
+                <dd data-testid="ask-answer">{question.answer === "" ? text.noAnswer : question.answer}</dd>
+              )}
+            </div>
+          ))}
+        </dl>
       );
     case "task":
       return (
-        <div className="omfp-tool-card__section">
-          <ToolError card={card} />
-          <ul className="omfp-tool-card__agents">
-            {view.agents.map((agent) => (
-              <Subagent key={agent.name} agent={agent} />
-            ))}
-          </ul>
-        </div>
-      );
-    case "generic":
-      return (
-        <>
-          <div className="omfp-tool-card__section">
-            <Code code={card.args} block data-testid="tool-args" />
-          </div>
-          {card.result !== undefined && (
-            <>
-              <BoxRule label={text.result} />
-              <div className="omfp-tool-card__section">
-                <Code code={card.result} block data-testid="tool-result" />
-              </div>
-            </>
-          )}
-        </>
+        <ul className="omfp-tool-card__agents">
+          {view.agents.map((agent) => (
+            <Subagent key={agent.name} agent={agent} />
+          ))}
+        </ul>
       );
   }
 }
@@ -455,20 +437,15 @@ export function ToolBody({ card }: { card: ToolCard }): ReactNode {
  * file's language, its metavariable captures under it.
  */
 function Matches({ path, matches }: { path: string; matches: readonly AstMatch[] }): ReactNode {
-  const openFile = useOpenFile();
   const language = languageOfPath(path);
   return (
     <ol className="omfp-tool-card__matches">
       {matches.map((match, index) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: a result's matches never move
         <li key={index} data-testid="tool-match">
-          <PathLink
-            reference={{ path, line: match.line }}
-            onOpen={(ref) => openFile(ref.path, { line: ref.line })}
-            data-testid="tool-match-line"
-          >
+          <LineLink path={path} line={match.line} data-testid="tool-match-line">
             {match.line}
-          </PathLink>
+          </LineLink>
           <Code code={match.code} block language={language} data-testid="tool-match-code" />
           {match.captures !== undefined && (
             <p className="omfp-tool-card__meta omfp-tool-card__captures" data-testid="tool-match-captures">
@@ -481,21 +458,26 @@ function Matches({ path, matches }: { path: string; matches: readonly AstMatch[]
   );
 }
 
+/** A link opening `path` at `line` (UI-116). */
+function LineLink({
+  path,
+  line,
+  ...link
+}: { path: string; line: number | undefined } & Pick<PathLinkProps, "children" | "data-testid">): ReactNode {
+  const openFile = useOpenFile();
+  return <PathLink reference={{ path, line }} onOpen={(ref) => openFile(ref.path, { line: ref.line })} {...link} />;
+}
+
 /** `path:line:col`, opening the file at the line (UI-116). */
 function Location({ path, line, column }: { path: string; line: number; column?: number | undefined }): ReactNode {
-  const openFile = useOpenFile();
   return (
-    <PathLink
-      reference={{ path, line }}
-      onOpen={(ref) => openFile(ref.path, { line: ref.line })}
-      data-testid="lsp-location"
-    >
+    <LineLink path={path} line={line} data-testid="lsp-location">
       <FilePath path={path} />
       <span className="omfp-tool-card__selector">
         :{line}
         {column !== undefined && `:${column}`}
       </span>
-    </PathLink>
+    </LineLink>
   );
 }
 
@@ -565,7 +547,6 @@ function DiagnosticRow({ diagnostic }: { diagnostic: Diagnostic }): ReactNode {
  * omp's text.
  */
 function LspAnswer({ result }: { result: LspResult }): ReactNode {
-  const openFile = useOpenFile();
   switch (result.type) {
     case "diagnostics":
       return (
@@ -626,13 +607,9 @@ function LspAnswer({ result }: { result: LspResult }): ReactNode {
               >
                 <span className="omfp-tool-card__symbol">{symbol.name}</span>
                 {symbol.path !== undefined && (
-                  <PathLink
-                    reference={{ path: symbol.path, line: symbol.line }}
-                    onOpen={(ref) => openFile(ref.path, { line: ref.line })}
-                    data-testid="lsp-symbol-line"
-                  >
+                  <LineLink path={symbol.path} line={symbol.line} data-testid="lsp-symbol-line">
                     {result.workspace && <FilePath path={symbol.path} />}:{symbol.line}
-                  </PathLink>
+                  </LineLink>
                 )}
               </li>
             ))}

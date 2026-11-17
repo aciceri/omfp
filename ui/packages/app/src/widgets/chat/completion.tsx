@@ -5,8 +5,16 @@
  */
 
 import { Menu, MenuItem, Popover } from "omfp/kit";
-import { type FileMention, fileMention, fileSuggestions, type Suggestion, strings, useHost } from "omfp/sdk";
-import { type KeyboardEvent, type RefObject, useEffect, useState } from "react";
+import {
+  completeFile,
+  type FileMention,
+  fileMention,
+  fileSuggestions,
+  type Suggestion,
+  strings,
+  useHost,
+} from "omfp/sdk";
+import { type KeyboardEvent, type RefObject, type SyntheticEvent, useEffect, useState } from "react";
 import { useClock } from "./state.ts";
 
 const text = strings.chat.composer;
@@ -15,25 +23,14 @@ const text = strings.chat.composer;
 export const FILE_QUERY_DELAY_MS = 120;
 
 /** One entry of the menu: a `/` command or a workspace-relative file path. */
-export type Completion =
+type Completion =
   | { readonly kind: "command"; readonly id: string; readonly suggestion: Suggestion }
   | { readonly kind: "file"; readonly id: string; readonly path: string };
 
 /** The draft's text and the caret within it, as last measured on the text area. */
-export interface Cursor {
+interface Cursor {
   readonly text: string;
   readonly caret: number;
-}
-
-/** A state update to the text area's text and caret, for {@link mentionAt}; the same object while they are unchanged. */
-export function cursorOf(input: HTMLTextAreaElement): (previous: Cursor | undefined) => Cursor {
-  const next = { text: input.value, caret: input.selectionEnd };
-  return (previous) => (previous?.text === next.text && previous.caret === next.caret ? previous : next);
-}
-
-/** The `@` mention at the caret, measured on the current `text` only: after a programmatic change it is gone. */
-export function mentionAt(text: string, cursor: Cursor | undefined): FileMention | undefined {
-  return cursor?.text === text ? fileMention(text, cursor.caret) : undefined;
 }
 
 /**
@@ -41,7 +38,7 @@ export function mentionAt(text: string, cursor: Cursor | undefined): FileMention
  * asked once typing has paused {@link FILE_QUERY_DELAY_MS}. An answer to an older query is dropped; until the new one
  * comes, the last answer narrowed to the paths still matching shows.
  */
-export function useFileSuggestions(
+function useFileSuggestions(
   workspaceId: string | undefined,
   threadId: string | undefined,
   query: string | undefined,
@@ -87,11 +84,103 @@ export function useFileSuggestions(
   return fileSuggestions(query, answer);
 }
 
-/** The menu entries: the `/` commands when the draft is one, else the `@` files. */
-export function completionsOf(commands: readonly Suggestion[], files: readonly string[]): Completion[] {
-  return commands.length > 0
-    ? commands.map((suggestion) => ({ kind: "command", id: `/${suggestion.name}`, suggestion }))
-    : files.map((path) => ({ kind: "file", id: `@${path}`, path }));
+/**
+ * The suggestion menu of a composer whose text is `value` (UI-060, UI-732): the `/` commands `commands` when there
+ * are any, else the files of workspace `workspaceId` the `@` mention at the caret asks for. A picked command goes to
+ * `onCommand`, a picked file replaces its mention through `onChange`; Esc closes the menu until the next keystroke.
+ */
+export function useCompletions({
+  inputRef,
+  value,
+  commands,
+  workspaceId,
+  threadId,
+  onChange,
+  onCommand,
+}: {
+  inputRef: RefObject<HTMLTextAreaElement | null>;
+  value: string;
+  commands: readonly Suggestion[];
+  workspaceId: string | undefined;
+  threadId: string | undefined;
+  onChange: (text: string) => void;
+  onCommand?: (suggestion: Suggestion) => void;
+}) {
+  /** Esc closed the suggestions; typing opens them again. */
+  const [dismissed, setDismissed] = useState(false);
+  /** The text and caret the last edit left: a `@` before the caret asks for files, until the text changes otherwise
+   * (UI-732). */
+  const [cursor, setCursor] = useState<Cursor>();
+  const mention = commands.length > 0 || cursor?.text !== value ? undefined : fileMention(value, cursor.caret);
+  const files = useFileSuggestions(workspaceId, threadId, mention?.query);
+  const completions: Completion[] =
+    commands.length > 0
+      ? commands.map((suggestion) => ({ kind: "command", id: `/${suggestion.name}`, suggestion }))
+      : files.map((path) => ({ kind: "file", id: `@${path}`, path }));
+  const open = completions.length > 0 && !dismissed;
+  /** Measures the text and caret again, keeping the same object while they are unchanged. */
+  const measure = () => {
+    const input = inputRef.current;
+    if (input !== null) {
+      const next = { text: input.value, caret: input.selectionEnd };
+      setCursor((previous) => (previous?.text === next.text && previous.caret === next.caret ? previous : next));
+    }
+  };
+  const pick = (completion: Completion) => {
+    if (completion.kind === "command") {
+      onCommand?.(completion.suggestion);
+    } else if (mention !== undefined) {
+      setCursor(insertFile(inputRef.current, value, mention, completion.path, onChange));
+    }
+    setDismissed(false);
+  };
+  return {
+    open,
+    /** After an edit: the caret measured again, the menu open again. */
+    typed: () => {
+      measure();
+      setDismissed(false);
+    },
+    /** The form's `onSelect`: a selection change in the text area moves the caret. */
+    onSelect: (event: SyntheticEvent) => {
+      if (event.target === inputRef.current) {
+        measure();
+      }
+    },
+    /** Whether the open menu took the key ({@link completionKey}). */
+    onKeyDown: (event: KeyboardEvent<HTMLElement>, input: HTMLTextAreaElement) =>
+      open && completionKey(event, input, completions, pick, () => setDismissed(true)),
+    /** The menu, inside the composer's `Autocomplete`. */
+    menu: (
+      <CompletionMenu
+        inputRef={inputRef}
+        completions={completions}
+        open={open}
+        onOpenChange={(isOpen) => setDismissed(!isOpen)}
+        pick={pick}
+      />
+    ),
+  };
+}
+
+/**
+ * Picks the workspace-relative `path` for `mention` (UI-732): the text area gets the completed text and the caret after
+ * the inserted `@path ` first, so React, finding the same value, leaves the caret there. Returns the new text and caret.
+ */
+function insertFile(
+  input: HTMLTextAreaElement | null,
+  text: string,
+  mention: FileMention,
+  path: string,
+  apply: (text: string) => void,
+): Cursor {
+  const next = completeFile(text, mention, path);
+  if (input !== null) {
+    input.value = next.text;
+    input.setSelectionRange(next.caret, next.caret);
+  }
+  apply(next.text);
+  return next;
 }
 
 /**
@@ -100,7 +189,7 @@ export function completionsOf(commands: readonly Suggestion[], files: readonly s
  * ⌘ held: the queue keys, Alt+Enter, Ctrl-C keep their composer and keymap roles) nor an Enter that sends (Shift held,
  * or no entry highlighted); arrows and a plain Enter on a highlighted entry go on to the `Autocomplete`.
  */
-export function completionKey(
+function completionKey(
   event: KeyboardEvent<HTMLElement>,
   input: HTMLTextAreaElement,
   completions: readonly Completion[],
@@ -135,7 +224,7 @@ export function completionKey(
 }
 
 /** The suggestion menu over the composer's text area; mount it inside the composer's `Autocomplete`. */
-export function CompletionMenu({
+function CompletionMenu({
   inputRef,
   completions,
   open,

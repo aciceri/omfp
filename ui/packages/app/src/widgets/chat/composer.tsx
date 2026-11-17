@@ -29,7 +29,6 @@ import {
   canAbort,
   commandsOf,
   complete,
-  completeFile,
   DRAFT_MESSAGE,
   DRAFT_THREAD,
   type Draft,
@@ -38,7 +37,6 @@ import {
   EMPTY_DRAFT,
   errorMessage,
   expandPastes,
-  type FileMention,
   FOCUS_COMPOSER,
   formatDuration,
   INTERRUPT_WINDOW_MS,
@@ -87,16 +85,7 @@ import {
   useState,
 } from "react";
 import { Attachments } from "./attachments.tsx";
-import {
-  type Completion,
-  CompletionMenu,
-  type Cursor,
-  completionKey,
-  completionsOf,
-  cursorOf,
-  mentionAt,
-  useFileSuggestions,
-} from "./completion.tsx";
+import { useCompletions } from "./completion.tsx";
 import { usePromptHistory } from "./history.ts";
 import { useLineKeys } from "./line-keys.ts";
 import { LiveVoicePanel, MicButton } from "./live.tsx";
@@ -195,26 +184,19 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
   };
   useFocusCommands(inputRef, leave);
   const pastes = usePastes(message, setMessage, inputRef);
-  /** Esc closed the suggestions; typing opens them again. */
-  const [dismissed, setDismissed] = useState(false);
-  const [cursor, setCursor] = useState<Cursor>();
-  const mention = mentionAt(message.text, cursor);
-  const completions = completionsOf([], useFileSuggestions(draft.workspaceId, undefined, mention?.query));
-  const open = completions.length > 0 && !dismissed;
+  const completions = useCompletions({
+    inputRef,
+    value: message.text,
+    commands: [],
+    workspaceId: draft.workspaceId,
+    threadId: undefined,
+    onChange: pastes.onChange,
+  });
   const typed = (value: string) => {
     pastes.onChange(value);
-    if (inputRef.current !== null) {
-      setCursor(cursorOf(inputRef.current));
-    }
-    setDismissed(false);
+    completions.typed();
   };
   useLineKeys(inputRef, typed, message.pastes);
-  const pick = (completion: Completion) => {
-    if (completion.kind === "file" && mention !== undefined) {
-      setCursor(insertFile(inputRef.current, message.text, mention, completion.path, pastes.onChange));
-    }
-    setDismissed(false);
-  };
   const images = imageInput((files) => {
     // While the thread is created the message is read-only: images pasted or dropped then are ignored.
     if (sending) {
@@ -239,7 +221,7 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
       return;
     }
     pastes.onKeyDown(event, modifiersOf(event));
-    if (open && completionKey(event, inputRef.current, completions, pick, () => setDismissed(true))) {
+    if (completions.onKeyDown(event, inputRef.current)) {
       return;
     }
     composerKey(event, inputRef.current, { busy: false, touch, onChange: pastes.onChange, send, leave });
@@ -252,11 +234,7 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
       data-touch={touch || undefined}
       data-workspace-id={draft.workspaceId}
       {...{ [SCOPE_ATTRIBUTE]: "composer" }}
-      onSelect={(event) => {
-        if (event.target === inputRef.current) {
-          setCursor(cursorOf(inputRef.current));
-        }
-      }}
+      onSelect={completions.onSelect}
       onSubmit={(event) => {
         event.preventDefault();
         send();
@@ -268,16 +246,7 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
       <KitComposer mode={insert ? "insert" : "normal"}>
         {message.images.length > 0 && <Attachments draft={message} setDraft={setMessage} />}
         {message.pastes.length > 0 && <PasteChips draft={message} setDraft={setMessage} inputRef={inputRef} />}
-        <Autocomplete
-          inputValue={message.text}
-          onInputChange={(value) => {
-            pastes.onChange(value);
-            if (inputRef.current !== null) {
-              setCursor(cursorOf(inputRef.current));
-            }
-            setDismissed(false);
-          }}
-        >
+        <Autocomplete inputValue={message.text} onInputChange={typed}>
           <ComposerTextArea
             touch={touch}
             keys="Enter Alt+Enter Escape Tab"
@@ -288,13 +257,7 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
             inputRef={inputRef}
             onPaste={images.onPaste}
           />
-          <CompletionMenu
-            inputRef={inputRef}
-            completions={completions}
-            open={open}
-            onOpenChange={(isOpen) => setDismissed(!isOpen)}
-            pick={pick}
-          />
+          {completions.menu}
         </Autocomplete>
         <ComposerBar hints={touch ? undefined : <KeyHints abortable={false} interruptHint={false} />}>
           <Button
@@ -317,20 +280,6 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
 
 function sendKey(mode: SendMode): string {
   return keyLabel(mode === "follow-up" ? queueKeys() : "Enter");
-}
-
-/**
- * The composer's text area takes prose (UI-422): autocorrect, capitals and the spell check on, which React Aria's
- * `Autocomplete` would turn off as for a search field; the on-screen keyboard's Enter key reads "enter" on a touch
- * screen, where it makes a new line (UI-421), else "send".
- */
-function proseInput(touch: boolean) {
-  return {
-    autoCorrect: "on",
-    autoCapitalize: "sentences",
-    spellCheck: true,
-    enterKeyHint: touch ? "enter" : "send",
-  } as const;
 }
 
 /** The key hints of the composer's bar (UI-148, UI-172); a touch screen has no such keys and shows none (UI-423). The
@@ -381,26 +330,6 @@ function insertLineBreak(input: HTMLTextAreaElement, apply: (text: string) => vo
   input.value = text;
   input.setSelectionRange(selectionStart + 1, selectionStart + 1);
   apply(text);
-}
-
-/**
- * Picks the workspace-relative `path` for `mention` (UI-732): the text area gets the completed text and the caret after
- * the inserted `@path ` first, as {@link insertLineBreak} does. Returns the new text and caret.
- */
-function insertFile(
-  input: HTMLTextAreaElement | null,
-  text: string,
-  mention: FileMention,
-  path: string,
-  apply: (text: string) => void,
-): Cursor {
-  const next = completeFile(text, mention, path);
-  if (input !== null) {
-    input.value = next.text;
-    input.setSelectionRange(next.caret, next.caret);
-  }
-  apply(next.text);
-  return next;
 }
 
 /**
@@ -485,7 +414,13 @@ function ComposerTextArea({ touch, keys, onPaste, ...props }: ComposerTextAreaPr
       rows={2}
       inputProps={{
         ...testId("composer-input"),
-        ...proseInput(touch),
+        // Prose (UI-422): autocorrect, capitals and the spell check on, which React Aria's `Autocomplete` would turn
+        // off as for a search field; the on-screen keyboard's Enter reads "enter" on a touch screen, where it makes a
+        // new line (UI-421), else "send".
+        autoCorrect: "on",
+        autoCapitalize: "sentences",
+        spellCheck: true,
+        enterKeyHint: touch ? "enter" : "send",
         "aria-keyshortcuts": `${keys} ${ariaKeys(rawPasteKeys())}`,
         onPaste,
       }}
@@ -499,14 +434,6 @@ function ariaKeys(keys: string): string {
     .split("-")
     .map((part) => (part === "Ctrl" ? "Control" : part.length === 1 ? part.toUpperCase() : part))
     .join("+");
-}
-
-/** The image attachments among `files` (UI-060). */
-async function attachments(files: readonly File[]): Promise<ImageContent[]> {
-  const images = await Promise.all(
-    files.map(async (file) => imageAttachment(file.type, new Uint8Array(await file.arrayBuffer()))),
-  );
-  return images.filter((image) => image !== undefined);
 }
 
 /** Per window, the draft thread's pasted or dropped images still being read. */
@@ -548,7 +475,11 @@ async function attachImages(
   files: readonly File[],
   setDraft: (update: (previous: Draft) => Draft) => void,
 ): Promise<void> {
-  const images = await attachments(files).catch((): ImageContent[] => []);
+  const images = await Promise.all(
+    files.map(async (file) => imageAttachment(file.type, new Uint8Array(await file.arrayBuffer()))),
+  )
+    .then((read) => read.filter((image) => image !== undefined))
+    .catch((): ImageContent[] => []);
   if (images.length > 0) {
     setDraft((previous) => ({ ...previous, images: [...previous.images, ...images] }));
   }
@@ -645,8 +576,6 @@ export const Composer = memo(function Composer({
   /** "Ctrl-C again to abort" shows while a second press would abort. */
   const [interruptHint, setInterruptHint] = useState(false);
   const [queueHeld, setQueueHeld] = useState(false);
-  /** Esc closed the suggestions; typing opens them again. */
-  const [dismissed, setDismissed] = useState(false);
   /** The input has the focus: the keymap is in insert mode (UI-098), drawn as the gradient border (UI-172). */
   const [insert, setInsert] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -664,13 +593,16 @@ export const Composer = memo(function Composer({
   const mode = sendMode(busy, queueHeld);
   const other = alternative(mode);
   const commands = useThreadCommands(threadId, known);
-  const commandSuggestions = slashSuggestions(draft.text, commands);
-  /** The text and caret the last edit left: a `@` before the caret asks for files (UI-732). */
-  const [cursor, setCursor] = useState<Cursor>();
-  const mention = commandSuggestions.length > 0 ? undefined : mentionAt(draft.text, cursor);
-  const files = useFileSuggestions(useThreadSummary(threadId)?.workspaceId, threadId, mention?.query);
-  const completions = completionsOf(commandSuggestions, files);
-  const open = completions.length > 0 && !dismissed;
+  const pastes = usePastes(draft, setDraft, inputRef);
+  const completions = useCompletions({
+    inputRef,
+    value: draft.text,
+    commands: slashSuggestions(draft.text, commands),
+    workspaceId: useThreadSummary(threadId)?.workspaceId,
+    threadId,
+    onChange: pastes.onChange,
+    onCommand: (suggestion) => setDraft((previous) => ({ ...previous, text: complete(suggestion) })),
+  });
 
   const actions = useThreadActions();
   const reportError = useReportError();
@@ -747,14 +679,6 @@ export const Composer = memo(function Composer({
     input?.blur();
     nearestTranscript(input)?.focus();
   };
-  const pick = (completion: Completion) => {
-    if (completion.kind === "command") {
-      setDraft((previous) => ({ ...previous, text: complete(completion.suggestion) }));
-    } else if (mention !== undefined) {
-      setCursor(insertFile(inputRef.current, draft.text, mention, completion.path, pastes.onChange));
-    }
-    setDismissed(false);
-  };
 
   /** `Ctrl-C` (UI-063): clears a non-empty draft, kept for `u`; aborts an empty one (or on a second press within
    * {@link INTERRUPT_WINDOW_MS}) without putting the queued texts back. */
@@ -805,22 +729,18 @@ export const Composer = memo(function Composer({
     },
   });
 
-  const pastes = usePastes(draft, setDraft, inputRef);
   const history = usePromptHistory(threadId, draft, setDraft, inputRef);
   const typed = (value: string) => {
     pastes.onChange(value);
-    if (inputRef.current !== null) {
-      setCursor(cursorOf(inputRef.current));
-    }
+    completions.typed();
     // Typing ends a history walk; the recalled text stays as the draft (UI-362).
     history.end();
-    setDismissed(false);
     // Typing ends a `Ctrl-C` sequence: the next press clears what was typed rather than aborting (UI-063).
     lastInterrupt.current = undefined;
     setInterruptHint(false);
   };
   // `Ctrl-p` / `Ctrl-n` walk the prompt history at the first / last line, unless the suggestions are open (UI-760).
-  useLineKeys(inputRef, typed, draft.pastes, (direction) => !open && history.step(direction));
+  useLineKeys(inputRef, typed, draft.pastes, (direction) => !completions.open && history.step(direction));
   // Captured before React Aria's Autocomplete: while no suggestion list is open the text area keeps its own keys
   // (arrows move the caret), and the composer's bindings apply. Chords other than the send ones (Ctrl-C, Alt-a, …)
   // go on to the keymap (UI-095).
@@ -831,7 +751,7 @@ export const Composer = memo(function Composer({
     const modifiers = modifiersOf(event);
     pastes.onKeyDown(event, modifiers);
     setQueueHeld(queueModifier(modifiers));
-    if (open && completionKey(event, inputRef.current, completions, pick, () => setDismissed(true))) {
+    if (completions.onKeyDown(event, inputRef.current)) {
       return;
     }
     // Up on the first line, Down on the last line: the prompt history (UI-361, UI-362).
@@ -852,11 +772,7 @@ export const Composer = memo(function Composer({
       data-touch={touch || undefined}
       data-tight={tight || undefined}
       {...{ [SCOPE_ATTRIBUTE]: "composer" }}
-      onSelect={(event) => {
-        if (event.target === inputRef.current) {
-          setCursor(cursorOf(inputRef.current));
-        }
-      }}
+      onSelect={completions.onSelect}
       onSubmit={(event) => {
         event.preventDefault();
         send(mode);
@@ -892,13 +808,7 @@ export const Composer = memo(function Composer({
             }}
             onPaste={onPaste}
           />
-          <CompletionMenu
-            inputRef={inputRef}
-            completions={completions}
-            open={open}
-            onOpenChange={(isOpen) => setDismissed(!isOpen)}
-            pick={pick}
-          />
+          {completions.menu}
         </Autocomplete>
         <ComposerActions
           threadId={threadId}
@@ -935,27 +845,6 @@ function ActivityRow({
   onAbort: () => void;
 }) {
   const elapsed = useObservedElapsed(`activity/${threadId}/${activityKey}`, true) ?? 0;
-  const abort = short ? (
-    <IconButton
-      className="omfp-composer__activity-abort"
-      variant="danger"
-      label={text.abort}
-      icon={<Icon name="square" />}
-      data-testid="abort"
-      onPress={onAbort}
-    />
-  ) : (
-    <Button
-      className="omfp-composer__activity-abort"
-      variant="danger"
-      size="sm"
-      icon={<Icon name="square" />}
-      data-testid="abort"
-      onPress={onAbort}
-    >
-      {text.abort}
-    </Button>
-  );
   return (
     <div className="omfp-composer__activity" data-testid="composer-activity" data-kind={kind}>
       <StateMark state="running" label={text.activity.running} />
@@ -968,8 +857,19 @@ function ActivityRow({
       <span className="omfp-composer__activity-label" data-testid="activity-label">
         {label}
       </span>
-      {abort}
+      <AbortButton short={short} className="omfp-composer__activity-abort" onPress={onAbort} />
     </div>
+  );
+}
+
+/** Abort (UI-063): an icon in a short composer (UI-423, UI-481), else a labelled button. */
+function AbortButton({ short, ...props }: { short: boolean; className?: string; onPress: () => void }) {
+  return short ? (
+    <IconButton {...props} variant="danger" label={text.abort} icon={<Icon name="square" />} data-testid="abort" />
+  ) : (
+    <Button {...props} variant="danger" size="sm" icon={<Icon name="square" />} data-testid="abort">
+      {text.abort}
+    </Button>
   );
 }
 
@@ -1019,21 +919,7 @@ const ComposerActions = memo(function ComposerActions({
       }
     >
       <ThreadMicButton threadId={threadId} />
-      {showAbort &&
-        abortable &&
-        (short ? (
-          <IconButton
-            variant="danger"
-            label={text.abort}
-            icon={<Icon name="square" />}
-            data-testid="abort"
-            onPress={onAbort}
-          />
-        ) : (
-          <Button variant="danger" size="sm" icon={<Icon name="square" />} data-testid="abort" onPress={onAbort}>
-            {text.abort}
-          </Button>
-        ))}
+      {showAbort && abortable && <AbortButton short={short} onPress={onAbort} />}
       {other !== undefined && (
         <Button
           size="sm"

@@ -68,11 +68,10 @@ interface TranscriptIndex {
   readonly results: ReadonlyMap<string, ToolResultMessage>;
 }
 
-const TRANSCRIPT_INDEXES = new WeakMap<readonly TranscriptEntry[], TranscriptIndex>();
+const TRANSCRIPT_INDEXES = new WeakMap<readonly TranscriptEntry[], Derived<TranscriptIndex>>();
 
 function transcriptIndex(transcript: readonly TranscriptEntry[]): TranscriptIndex {
-  let index = TRANSCRIPT_INDEXES.get(transcript);
-  if (index === undefined) {
+  return derive(TRANSCRIPT_INDEXES, transcript, [], () => {
     const called = new Set<string>();
     const results = new Map<string, ToolResultMessage>();
     for (const { message } of transcript) {
@@ -90,28 +89,28 @@ function transcriptIndex(transcript: readonly TranscriptEntry[]): TranscriptInde
         results.set(message.toolCallId, message);
       }
     }
-    index = { called, results };
-    TRANSCRIPT_INDEXES.set(transcript, index);
-  }
-  return index;
+    return { called, results };
+  });
 }
 
-const RUN_INDEXES = new WeakMap<readonly ToolRun[], ReadonlyMap<string, ToolRun>>();
+const RUN_INDEXES = new WeakMap<readonly ToolRun[], Derived<ReadonlyMap<string, ToolRun>>>();
 
 /** The first run of each tool call id. */
 function runsById(tools: readonly ToolRun[]): ReadonlyMap<string, ToolRun> {
-  let runs = RUN_INDEXES.get(tools);
-  if (runs === undefined) {
+  return derive(RUN_INDEXES, tools, [], () => {
     const byId = new Map<string, ToolRun>();
     for (const run of tools) {
       if (!byId.has(run.tool_call_id)) {
         byId.set(run.tool_call_id, run);
       }
     }
-    runs = byId;
-    RUN_INDEXES.set(tools, runs);
-  }
-  return runs;
+    return byId;
+  });
+}
+
+/** The run and the result of the tool call `id`. */
+function callInputs(state: ThreadState, id: string): [ToolRun | undefined, ToolResultMessage | undefined] {
+  return [runsById(state.tools).get(id), transcriptIndex(state.transcript).results.get(id)];
 }
 
 /** The last item list built for a transcript array, with the notices and streaming flags it was built for. */
@@ -358,17 +357,9 @@ const JOINED = new WeakMap<AgentMessage, Derived<MessageView>>();
 
 /** The run and the result of each tool call of `message`: what its view depends on besides the message itself. */
 function toolInputs(state: ThreadState, message: AgentMessage): unknown[] {
-  if (message.role !== "assistant") {
-    return [];
-  }
-  const inputs: unknown[] = [];
-  for (const block of message.content ?? []) {
-    if (block.type === "toolCall") {
-      const id = block.id ?? "";
-      inputs.push(runsById(state.tools).get(id), transcriptIndex(state.transcript).results.get(id));
-    }
-  }
-  return inputs;
+  return message.role === "assistant"
+    ? (message.content ?? []).flatMap((block) => (block.type === "toolCall" ? callInputs(state, block.id ?? "") : []))
+    : [];
 }
 
 /** The view of `state.transcript[index]`; the same object while the message, its tool runs and results stay. */
@@ -452,8 +443,7 @@ function assistantBlocks(state: ThreadState, message: AssistantMessage, messageI
         ];
       case "toolCall": {
         const id = block.id ?? "";
-        const run = runsById(state.tools).get(id);
-        const result = transcriptIndex(state.transcript).results.get(id);
+        const [run, result] = callInputs(state, id);
         return [
           derive(BLOCKS, block, [run, result, calledAt], () => ({
             type: "tool",

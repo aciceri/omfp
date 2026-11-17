@@ -5,7 +5,7 @@
  */
 
 import type { ThreadView } from "@omfp/client";
-import type { AskUiRequest, ConfirmUiRequest, EditorUiRequest, InputUiRequest, SelectUiRequest } from "@omfp/core";
+import type { AskUiRequest, ConfirmUiRequest, SelectUiRequest } from "@omfp/core";
 import type { InteractionResponse } from "@omfp/protocol";
 import {
   Button,
@@ -163,8 +163,7 @@ function InteractionCard({ threadId, request, first }: { threadId: string; reque
       )}
       {request.method === "select" && <SelectBody request={request} {...body} />}
       {request.method === "confirm" && <ConfirmBody request={request} {...body} />}
-      {request.method === "input" && <InputBody request={request} {...body} />}
-      {request.method === "editor" && <EditorBody request={request} {...body} />}
+      {(request.method === "input" || request.method === "editor") && <TextBody request={request} {...body} />}
       {request.method === "ask" && (
         <AskBody formKey={interactionKey(threadId, request.id)} request={request} {...body} />
       )}
@@ -275,41 +274,22 @@ function submitted(event: FormEvent, respond: () => void): void {
   respond();
 }
 
-function InputBody({ request, disabled, onRespond }: BodyProps<InputUiRequest>) {
-  const [value, setValue] = useState("");
+/** An `input` request's line (a password field when secret) or an `editor` request's text, sent with Submit. */
+function TextBody({ request, disabled, onRespond }: BodyProps<Extract<Dialog, { method: "input" | "editor" }>>) {
+  const [value, setValue] = useState(request.method === "editor" ? (request.prefill ?? "") : "");
+  const field = { label: request.title, hideLabel: true, value, onChange: setValue, isDisabled: disabled };
   return (
     <form className="omfp-interaction__form" onSubmit={(event) => submitted(event, () => onRespond({ value }))}>
-      <TextField
-        label={request.title}
-        hideLabel
-        value={value}
-        onChange={setValue}
-        isDisabled={disabled}
-        {...(request.placeholder === undefined ? {} : { placeholder: request.placeholder })}
-        type={request.secret === true ? "password" : "text"}
-        inputProps={testId("interaction-input")}
-      />
-      <Button type="submit" variant="primary" data-testid="interaction-submit" isDisabled={disabled}>
-        {text.submit}
-      </Button>
-      <DismissButton disabled={disabled} onRespond={onRespond} />
-    </form>
-  );
-}
-
-function EditorBody({ request, disabled, onRespond }: BodyProps<EditorUiRequest>) {
-  const [value, setValue] = useState(request.prefill ?? "");
-  return (
-    <form className="omfp-interaction__form" onSubmit={(event) => submitted(event, () => onRespond({ value }))}>
-      <TextArea
-        label={request.title}
-        hideLabel
-        rows={8}
-        value={value}
-        onChange={setValue}
-        isDisabled={disabled}
-        inputProps={testId("interaction-editor")}
-      />
+      {request.method === "editor" ? (
+        <TextArea {...field} rows={8} inputProps={testId("interaction-editor")} />
+      ) : (
+        <TextField
+          {...field}
+          {...(request.placeholder === undefined ? {} : { placeholder: request.placeholder })}
+          type={request.secret === true ? "password" : "text"}
+          inputProps={testId("interaction-input")}
+        />
+      )}
       <Button type="submit" variant="primary" data-testid="interaction-submit" isDisabled={disabled}>
         {text.submit}
       </Button>

@@ -97,18 +97,12 @@ function wordAfter(value: string, at: number): number {
 
 const caret = (at: number): LineEdit => ({ kind: "select", start: at, end: at });
 
-/** Removes `from..to` into the kill buffer; a selection is removed instead when there is one. */
-function kill(state: FieldState, from: number, to: number): LineEdit {
+/** Removes `from..to`, into the kill buffer when `killing`; a selection is removed instead when there is one. */
+function remove(state: FieldState, from: number, to: number, killing = false): LineEdit {
   const [start, end] = state.start === state.end ? [Math.min(from, to), Math.max(from, to)] : [state.start, state.end];
   if (start === end) return caret(start);
-  return { kind: "edit", from: start, to: end, insert: "", caret: start, kill: state.value.slice(start, end) };
-}
-
-/** Removes `from..to` without touching the kill buffer; a selection is removed instead when there is one. */
-function remove(state: FieldState, from: number, to: number): LineEdit {
-  const [start, end] = state.start === state.end ? [Math.min(from, to), Math.max(from, to)] : [state.start, state.end];
-  if (start === end) return caret(start);
-  return { kind: "edit", from: start, to: end, insert: "", caret: start };
+  const edit: LineEdit = { kind: "edit", from: start, to: end, insert: "", caret: start };
+  return killing ? { ...edit, kill: state.value.slice(start, end) } : edit;
 }
 
 /** The same column (clamped) on the line starting at `start`, never between the halves of a surrogate pair. */
@@ -152,14 +146,14 @@ export function lineEdit(command: LineEditCommand, state: FieldState, killed: st
     case "composer.killLineEnd": {
       const stop = lineEnd(value, start);
       // At the end of a line the line break goes, as in Emacs.
-      return kill(state, start, stop === start ? charAfter(value, start) : stop);
+      return remove(state, start, stop === start ? charAfter(value, start) : stop, true);
     }
     case "composer.killLineStart":
-      return kill(state, lineStart(value, start), start);
+      return remove(state, lineStart(value, start), start, true);
     case "composer.killWordBack":
-      return kill(state, wordBefore(value, start), start);
+      return remove(state, wordBefore(value, start), start, true);
     case "composer.killWordForward":
-      return kill(state, start, wordAfter(value, start));
+      return remove(state, start, wordAfter(value, start), true);
     case "composer.yank":
       if (killed === "" && !selected) return caret(start);
       return { kind: "edit", from: start, to: end, insert: killed, caret: start + killed.length };

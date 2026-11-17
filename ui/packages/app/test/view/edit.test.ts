@@ -25,7 +25,7 @@ describe("add", () => {
       "row",
       { sizes: [3, 1] },
       ["col", {}, "omfp:header", MAIN_TABS],
-      ["tabs", { id: "side" }, "omfp:workspace", "omfp:changes", "omfp:background", "user:charts"],
+      ["tabs", { id: "side" }, "omfp:workspace", "omfp:changes", "omfp:background", "omfp:mcp", "user:charts"],
     ]);
     expect(addWidget(["row", { sizes: [1, 3] }, "a", "b"], "./widgets/tests")).toEqual([
       "row",
@@ -59,7 +59,15 @@ describe("manifest to write", () => {
               "row",
               { sizes: [3, 1] },
               ["col", {}, "omfp:header", MAIN_TABS],
-              ["tabs", { id: "side" }, "omfp:workspace", "omfp:changes", "omfp:background", "omfp:transcript"],
+              [
+                "tabs",
+                { id: "side" },
+                "omfp:workspace",
+                "omfp:changes",
+                "omfp:background",
+                "omfp:mcp",
+                "omfp:transcript",
+              ],
             ],
           },
         },

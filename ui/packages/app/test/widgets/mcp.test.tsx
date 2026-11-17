@@ -169,9 +169,9 @@ describe("omfp:mcp", () => {
   });
 
   // spec: UI-290, UI-300
-  test("a built-in `:widget add` offers, not in the default view", () => {
+  test("a built-in `:widget add` offers, in the default view as the side tab after Background", () => {
     expect(BUILTIN_WIDGETS.has("omfp:mcp")).toBe(true);
-    expect(JSON.stringify(DEFAULT_MANIFEST)).not.toContain("omfp:mcp");
+    expect(JSON.stringify(DEFAULT_MANIFEST)).toContain('"omfp:background","omfp:mcp"]');
   });
 
   // spec: UI-348

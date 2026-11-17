@@ -399,7 +399,7 @@ mod tests {
         assert_eq!(placed.reference, "./widgets/deploy");
         let side = &placed.manifest["views"]["default"]["layout"][3];
         assert_eq!(
-            side[5],
+            side[6],
             json!(["./widgets/deploy", { "env": "prod", "instance": "deploy" }])
         );
     }

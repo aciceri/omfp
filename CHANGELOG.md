@@ -14,6 +14,8 @@ The version's section is also the source of the GitHub release notes.
   `Jobs (N)` and `Archived (N)`, each toggled on its own. `Jobs (N)` replaces the job counts after the workspace
   name: it marks running and failing jobs and an invalid `jobs.json` at its right end, and expanded lists the jobs
   with their state or next time, a press opening that job in `omfp:jobs`, with Run or Stop on hover.
+- The default view has the MCP servers (`omfp:mcp`) as a side tab after Background. Workspaces that already have a
+  `.omfp/views.json` keep it: `:widget add omfp:mcp` adds the tab there.
 
 ## 0.2.1 — 2026-11-17
 

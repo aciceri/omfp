@@ -36,7 +36,10 @@ const stub =
   (props: WidgetProps) => <p data-testid="stub">{typeof props.repo === "string" ? `${name} ${props.repo}` : name}</p>;
 
 const registry: WidgetRegistry = new Map<string, WidgetComponent>(
-  ["header", "chat", "workspace", "changes", "background", "mcp", "file"].map((name) => [`omfp:${name}`, stub(name)]),
+  ["header", "chat", "workspace", "changes", "background", "mcp", "todos", "file"].map((name) => [
+    `omfp:${name}`,
+    stub(name),
+  ]),
 );
 
 const BASE = "/widgets/test";
@@ -399,11 +402,11 @@ describe("views of init files in the window", () => {
   ];
   const EDITABLE = { default: "default", views: { default: { title: "Default", layout: DEFAULT_LAYOUT } } };
 
-  /** The user's init file of the docs: the MCP servers as the last side tab of the default view. */
+  /** The user's init file of the docs: the todos as the last side tab of the default view. */
   const userInit = (omfp: InitApi) => {
     omfp.views.transform((views) => {
       views.update("default", (layout) => {
-        layout.addTab("side", "omfp:mcp");
+        layout.addTab("side", "omfp:todos");
       });
     });
   };
@@ -413,7 +416,7 @@ describe("views of init files in the window", () => {
     const test = setup({ [USER_URL]: { default: userInit } }, { manifest: EDITABLE, user: "u1" });
     await settle(test);
     const tabs = () => screen.getAllByTestId("view-tab").map((tab) => tab.textContent);
-    expect(tabs().slice(-4)).toEqual(["Workspace", "Changes", "Background", "MCP servers"]);
+    expect(tabs().slice(-4)).toEqual(["Workspace", "Changes", "Background", "Todos"]);
 
     // The widget goes to views.json's side tabs, without the tab the user's file added.
     await command("widget add omfp:header");
@@ -431,6 +434,6 @@ describe("views of init files in the window", () => {
     test.flush();
     await settle(test);
     expect(test.host.init.getSnapshot().views?.manifest).toBe(pushed);
-    expect(tabs().slice(-5)).toEqual(["Workspace", "Changes", "Background", "Header", "MCP servers"]);
+    expect(tabs().slice(-5)).toEqual(["Workspace", "Changes", "Background", "Header", "Todos"]);
   });
 });

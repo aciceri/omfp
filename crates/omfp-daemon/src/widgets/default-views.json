@@ -30,7 +30,8 @@
           },
           "omfp:workspace",
           "omfp:changes",
-          "omfp:background"
+          "omfp:background",
+          "omfp:mcp"
         ]
       ],
       "title": "Default"

@@ -287,14 +287,14 @@ async fn the_user_adds_a_widget_and_replaces_a_built_in_with_a_copy() -> anyhow:
         serde_json::from_str(&std::fs::read_to_string(folder.join(".omfp/views.json"))?)?;
     assert_eq!(
         references(&written["views"]["default"]["layout"]).join(" "),
-        "omfp:header omfp:chat omfp:workspace omfp:changes omfp:background"
+        "omfp:header omfp:chat omfp:workspace omfp:changes omfp:background omfp:mcp"
     );
 
     // `:widget add` puts a widget in the view: the last tab of the side tabs, written to views.json.
     journey.command("widget add omfp:todos").await?;
     let layout = written_layout(&journey, &folder, "the added todos", |layout| {
         references(layout).join(" ")
-            == "omfp:header omfp:chat omfp:workspace omfp:changes omfp:background omfp:todos"
+            == "omfp:header omfp:chat omfp:workspace omfp:changes omfp:background omfp:mcp omfp:todos"
     })
     .await?;
     assert_eq!(
@@ -303,7 +303,7 @@ async fn the_user_adds_a_widget_and_replaces_a_built_in_with_a_copy() -> anyhow:
             "row",
             { "sizes": [3, 1] },
             ["col", {}, "omfp:header", ["tabs", { "id": "main" }, "omfp:chat"]],
-            ["tabs", { "id": "side" }, "omfp:workspace", "omfp:changes", "omfp:background", "omfp:todos"]
+            ["tabs", { "id": "side" }, "omfp:workspace", "omfp:changes", "omfp:background", "omfp:mcp", "omfp:todos"]
         ])
     );
     journey

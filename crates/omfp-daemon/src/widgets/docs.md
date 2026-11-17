@@ -7,9 +7,9 @@ lists, reloads a widget as soon as one of its files changes, and shows any error
 
 - `<workspace>/.omfp/views.json` — the views of the window (schema: `omfp://schemas/views.json`). Without it the window
   shows the default view:
-  `["row", { "sizes": [3, 1] }, ["col", {}, "omfp:header", ["tabs", { "id": "main" }, "omfp:chat"]], ["tabs", { "id": "side" }, "omfp:workspace", "omfp:changes", "omfp:background"]]`.
+  `["row", { "sizes": [3, 1] }, ["col", {}, "omfp:header", ["tabs", { "id": "main" }, "omfp:chat"]], ["tabs", { "id": "side" }, "omfp:workspace", "omfp:changes", "omfp:background", "omfp:mcp"]]`.
   A workspace that has its own `views.json` keeps it as it is (omfp never rewrites it): a widget the default view
-  gained later, such as `omfp:background`, comes in with `:widget add omfp:background` there, or an agent's
+  gained later, such as `omfp:mcp`, comes in with `:widget add omfp:mcp` there, or an agent's
   `omfp_ui_mount`. `:view-reset` replaces the whole file with the default view (after a confirmation), losing every
   view and mount the workspace added.
 - `<workspace>/.omfp/widgets/<name>/index.tsx` (or `index.ts`, `index.jsx`, `index.js`) — a workspace widget,
@@ -262,12 +262,12 @@ init). Everything is window-local: only `:widget add` and agents (`omfp_ui_mount
 an init file that read it runs again with the new file.
 
 ```ts
-// ~/.config/omfp/init.ts: every workspace gets the MCP tab.
+// ~/.config/omfp/init.ts: every workspace gets the Todos tab.
 import type { InitApi } from "omfp/sdk";
 
 export default function init(omfp: InitApi) {
   omfp.views.transform((views) => {
-    views.update("default", (layout) => layout.addTab("side", "omfp:mcp"));
+    views.update("default", (layout) => layout.addTab("side", "omfp:todos"));
   });
 }
 ```

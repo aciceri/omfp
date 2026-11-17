@@ -66,6 +66,15 @@ export {
   type ThreadActivity,
 } from "../vm/composer.ts";
 export {
+  type DebugBreakpointRow,
+  type DebugFrameRow,
+  type DebugLocation,
+  type DebugStop,
+  type DebugVariableRow,
+  type DebugView,
+  debugView,
+} from "../vm/debug.ts";
+export {
   closeTab,
   type FileTab,
   type FileTabs,

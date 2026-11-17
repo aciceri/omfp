@@ -13,6 +13,10 @@ The version's section is also the source of the GitHub release notes.
   `/model` (the header's model list, also `:model`), `/compact`, `/fork`, `/copy`, `/export`, `/new`, `/hotkeys` and
   `/resume` run omfp's own equivalent, and the others (`/settings`, `/quit`, `/tree`, …) are listed greyed out in the
   `/` suggestions with the reason and not sent. When omp refuses a command it runs, an error now says why.
+- The built-in **`omfp:debug`** widget (`:widget add omfp:debug`) shows the selected thread's debug session when the
+  agent runs a program under a debugger: its status, where it stopped, the stack and variables the agent last read
+  there, and the breakpoints; each place opens the file at its line. It only shows: oh-my-pi lets the agent, not the
+  UI, drive the debugger.
 - `:copy` copies the selected thread's conversation to the clipboard as Markdown (with a message focused in the
   transcript, only that message), and `:export` saves it as a `.md` file named after the thread: the browser
   downloads it, the desktop window saves it in the Downloads folder. Messages go under their author, tool calls are

@@ -1049,7 +1049,8 @@
   /* The subagent roster of omfp:background (UI-271, UI-490): a row per subagent (state mark, name, status, duration,
    * task, activity), the opened one's transcript in a border box (UI-187) under it with its steer field. */
   .omfp-subagents,
-  .omfp-todos {
+  .omfp-todos,
+  .omfp-debug {
     display: flex;
     flex-direction: column;
     gap: var(--omfp-s3);
@@ -1384,6 +1385,60 @@
     max-inline-size: 100%;
     max-block-size: 100%;
     object-fit: contain;
+  }
+
+  /* omfp:debug (UI-946..UI-950): a border box per part of the session; places are path links, values in code. */
+  .omfp-debug__meta,
+  .omfp-debug__stop,
+  .omfp-debug__empty {
+    margin: 0;
+    font-size: var(--omfp-fs-sm);
+  }
+
+  .omfp-debug__meta,
+  .omfp-debug__empty,
+  .omfp-debug__type,
+  .omfp-debug__condition {
+    color: var(--omfp-on-surface-variant);
+  }
+
+  .omfp-debug__list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--omfp-s1);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--omfp-fs-sm);
+  }
+
+  .omfp-debug__name {
+    font-weight: 600;
+  }
+
+  .omfp-debug__vars {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--omfp-s1) var(--omfp-s3);
+    margin: 0;
+    font-size: var(--omfp-fs-sm);
+  }
+
+  .omfp-debug__vars > div {
+    display: contents;
+  }
+
+  .omfp-debug__vars dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .omfp-debug__unverified {
+    color: var(--omfp-warn);
+  }
+
+  .omfp-debug__session[data-status="stopped"] .omfp-bbox__end {
+    color: var(--omfp-primary);
   }
 
   /* omfp:tree (UI-083): one row per conversation entry, indented per branch (`--depth`), the branch the transcript

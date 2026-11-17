@@ -1258,6 +1258,12 @@ requirements = [
   "UI-871",
   "UI-872",
   "UI-873",
+  # omfp:debug, the agent's debug (DAP) session from its debug tool results (#146)
+  "UI-946",
+  "UI-947",
+  "UI-948",
+  "UI-949",
+  "UI-950",
 ]
 
 [M18]

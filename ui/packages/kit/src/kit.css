@@ -93,6 +93,45 @@
     }
   }
 
+  /* Bare buttons and button rows: no border, background or outline of their own. */
+  .omfp-card__toggle,
+  .omfp-search__clear,
+  .omfp-disclosure__trigger,
+  .omfp-wsection__toggle,
+  .omfp-row,
+  .omfp-thread-row,
+  .omfp-nested-row__select,
+  .omfp-strip__thread,
+  .omfp-areabar__item,
+  .omfp-sheet__row,
+  .omfp-reasoning__head {
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    outline: none;
+  }
+
+  /* One line of text, cut with an ellipsis. */
+  .omfp-card__title,
+  .omfp-path-field__name,
+  .omfp-path-field__meta,
+  .omfp-option__meta,
+  .omfp-menu__label,
+  .omfp-option__label,
+  .omfp-live__line,
+  .omfp-web-frame__url,
+  .omfp-tool__arg,
+  .omfp-resolved__question,
+  .omfp-wsection__name,
+  .omfp-row__title,
+  .omfp-thread-row__snippet,
+  .omfp-chat-header__title,
+  .omfp-queue-chip__text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   /* Button (UI-149) */
   .omfp-button {
     position: relative;
@@ -208,7 +247,10 @@
     color: var(--omfp-on-surface-variant);
   }
 
-  .omfp-button[data-variant="quiet"]:is([data-hovered], .is-hover) {
+  .omfp-button[data-variant="quiet"]:is([data-hovered], .is-hover),
+  .omfp-search__clear[data-hovered],
+  .omfp-disclosure__trigger[data-hovered],
+  .omfp-reasoning__head:is([data-hovered], .is-hover) {
     color: var(--omfp-on-surface);
     background: var(--omfp-hover);
   }
@@ -233,7 +275,11 @@
     background: var(--omfp-error);
   }
 
-  .omfp-button[data-disabled] {
+  .omfp-button[data-disabled],
+  :is(.omfp-listbox__item, .omfp-menu__item)[data-disabled],
+  .omfp-tabs__tab[data-disabled],
+  :is(.omfp-checkbox, .omfp-radio)[data-disabled],
+  .omfp-compose[data-disabled] {
     opacity: var(--omfp-disabled);
     cursor: not-allowed;
   }
@@ -282,9 +328,6 @@
   .omfp-card__title {
     flex: 1;
     min-inline-size: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     font-weight: var(--omfp-fw-strong);
   }
 
@@ -295,14 +338,10 @@
     gap: var(--omfp-s2);
     min-inline-size: 0;
     padding: 0;
-    border: 0;
     border-radius: var(--omfp-r-row);
     font: inherit;
     color: inherit;
     text-align: start;
-    background: transparent;
-    cursor: pointer;
-    outline: none;
   }
 
   .omfp-card__actions {
@@ -389,7 +428,9 @@
     transition: border-color var(--omfp-dur-1) var(--omfp-ease);
   }
 
-  .omfp-input-box > .omfp-ic {
+  .omfp-input-box > .omfp-ic,
+  .omfp-select__button .omfp-ic,
+  :is(.omfp-listbox__item, .omfp-menu__item) .omfp-ic {
     inline-size: var(--omfp-ic-sm);
     block-size: var(--omfp-ic-sm);
     color: var(--omfp-on-surface-variant);
@@ -407,11 +448,6 @@
 
   .omfp-field[data-invalid] .omfp-input-box {
     border-color: var(--omfp-error);
-  }
-
-  .omfp-field[data-disabled] .omfp-input-box {
-    opacity: var(--omfp-disabled);
-    cursor: not-allowed;
   }
 
   .omfp-input {
@@ -471,17 +507,8 @@
     inline-size: calc(var(--omfp-ctl-h) - var(--omfp-s2));
     block-size: calc(var(--omfp-ctl-h) - var(--omfp-s2));
     padding: 0;
-    border: 0;
     border-radius: var(--omfp-r-row);
     color: var(--omfp-on-surface-variant);
-    background: transparent;
-    cursor: pointer;
-    outline: none;
-  }
-
-  .omfp-search__clear[data-hovered] {
-    color: var(--omfp-on-surface);
-    background: var(--omfp-hover);
   }
 
   .omfp-search[data-empty] .omfp-search__clear {
@@ -506,7 +533,8 @@
     max-block-size: 18rem;
   }
 
-  .omfp-path-field__header {
+  .omfp-path-field__header,
+  .omfp-menu__header {
     padding: var(--omfp-s1) var(--omfp-s2) 0;
     font-size: var(--omfp-fs-2xs);
     color: var(--omfp-on-surface-variant);
@@ -515,14 +543,12 @@
   .omfp-path-field__name {
     flex: 1;
     min-inline-size: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     font-family: var(--omfp-font-code);
     font-size: var(--omfp-fs-xs);
   }
 
-  .omfp-path-field__name b {
+  .omfp-path-field__name b,
+  .omfp-option__label b {
     font-weight: var(--omfp-fw-strong);
     color: var(--omfp-primary);
   }
@@ -535,9 +561,6 @@
   .omfp-option__meta {
     flex: none;
     max-inline-size: 50%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     font-size: var(--omfp-fs-2xs);
     color: var(--omfp-on-surface-variant);
   }
@@ -577,12 +600,6 @@
       border-color var(--omfp-dur-1) var(--omfp-ease);
   }
 
-  .omfp-select__button .omfp-ic {
-    inline-size: var(--omfp-ic-sm);
-    block-size: var(--omfp-ic-sm);
-    color: var(--omfp-on-surface-variant);
-  }
-
   .omfp-select__prefix,
   .omfp-select__value[data-placeholder] {
     color: var(--omfp-on-surface-variant);
@@ -604,6 +621,7 @@
     border-color: var(--omfp-focus-color);
   }
 
+  .omfp-field[data-disabled] .omfp-input-box,
   .omfp-select[data-disabled] .omfp-select__button {
     opacity: var(--omfp-disabled);
     cursor: not-allowed;
@@ -673,24 +691,18 @@
       color var(--omfp-dur-1) var(--omfp-ease);
   }
 
-  :is(.omfp-listbox__item, .omfp-menu__item) .omfp-ic {
-    inline-size: var(--omfp-ic-sm);
-    block-size: var(--omfp-ic-sm);
-    color: var(--omfp-on-surface-variant);
-  }
-
-  :is(.omfp-listbox__item, .omfp-menu__item):is([data-hovered], [data-focused], [data-open], .is-hover) {
+  :is(.omfp-listbox__item, .omfp-menu__item):is([data-hovered], [data-focused], [data-open], .is-hover),
+  button.omfp-tool__head:not(.omfp-bbox__head):is([data-hovered], .is-hover),
+  .omfp-wsection__head:is(:hover, .is-hover),
+  .omfp-row:is(:hover, [data-hovered], .is-hover):not([data-selected], .omfp-hint-row),
+  .omfp-strip__thread:is([data-hovered], .is-hover),
+  .omfp-sheet__row:is([data-hovered], [data-pressed]) {
     background: var(--omfp-hover);
   }
 
   .omfp-listbox__item[data-selected] {
     color: var(--omfp-sel-fg);
     background: var(--omfp-sel-bg);
-  }
-
-  :is(.omfp-listbox__item, .omfp-menu__item)[data-disabled] {
-    opacity: var(--omfp-disabled);
-    cursor: not-allowed;
   }
 
   .omfp-menu__item[data-danger],
@@ -702,14 +714,6 @@
   .omfp-option__label {
     flex: 1;
     min-inline-size: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .omfp-option__label b {
-    font-weight: var(--omfp-fw-strong);
-    color: var(--omfp-primary);
   }
 
   .omfp-option__check {
@@ -720,12 +724,6 @@
 
   :where(.omfp-listbox__item) .omfp-option__check .omfp-ic {
     color: var(--omfp-primary);
-  }
-
-  .omfp-menu__header {
-    padding: var(--omfp-s1) var(--omfp-s2) 0;
-    font-size: var(--omfp-fs-2xs);
-    color: var(--omfp-on-surface-variant);
   }
 
   .omfp-separator {
@@ -870,11 +868,6 @@
     display: none;
   }
 
-  .omfp-tabs__tab[data-disabled] {
-    opacity: var(--omfp-disabled);
-    cursor: not-allowed;
-  }
-
   .omfp-tabs__panel {
     flex: 1;
     min-block-size: 0;
@@ -957,29 +950,29 @@
     border-color: var(--omfp-on-surface);
   }
 
-  :is(.omfp-checkbox, .omfp-radio)[data-disabled] {
-    opacity: var(--omfp-disabled);
-    cursor: not-allowed;
-  }
-
   .omfp-radio-group {
     gap: var(--omfp-s1);
   }
 
   /* Chips, badges and marks (UI-157) */
-  .omfp-chip {
+  .omfp-chip,
+  .omfp-badge,
+  .omfp-state-badge {
     display: inline-flex;
     align-items: center;
     gap: var(--omfp-s1);
     box-sizing: border-box;
     max-inline-size: 100%;
-    block-size: var(--omfp-ctl-h-sm);
     padding: 0 var(--omfp-s2);
-    border: var(--omfp-bw) solid color-mix(in oklab, var(--omfp-primary) 30%, var(--omfp-rule));
     border-radius: var(--omfp-r-chip);
     font-size: var(--omfp-fs-xs);
-    color: var(--omfp-on-surface);
     white-space: nowrap;
+  }
+
+  .omfp-chip {
+    block-size: var(--omfp-ctl-h-sm);
+    border: var(--omfp-bw) solid color-mix(in oklab, var(--omfp-primary) 30%, var(--omfp-rule));
+    color: var(--omfp-on-surface);
   }
 
   .omfp-chip:has(.omfp-chip__remove) {
@@ -1037,25 +1030,19 @@
     }
   }
 
-  :where(.omfp-chip, .omfp-queue-chip, .omfp-thread, .omfp-nested-row) .omfp-icon-button .omfp-ic {
+  :where(.omfp-chip, .omfp-queue-chip, .omfp-thread, .omfp-nested-row) .omfp-icon-button .omfp-ic,
+  .omfp-kind .omfp-ic,
+  .omfp-request__countdown .omfp-ic,
+  .omfp-modeline__segment .omfp-ic {
     inline-size: 0.75rem;
     block-size: 0.75rem;
   }
 
   .omfp-badge,
   .omfp-state-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--omfp-s1);
-    box-sizing: border-box;
-    max-inline-size: 100%;
     block-size: calc(var(--omfp-fs-xs) * 1.9);
-    padding: 0 var(--omfp-s2);
     border: var(--omfp-bw) solid color-mix(in oklab, currentColor 45%, transparent);
-    border-radius: var(--omfp-r-chip);
-    font-size: var(--omfp-fs-xs);
     line-height: 1;
-    white-space: nowrap;
     color: var(--omfp-on-surface-variant);
     background: transparent;
   }
@@ -1171,11 +1158,6 @@
     gap: var(--omfp-s1);
     font-size: var(--omfp-fs-2xs);
     color: var(--omfp-on-surface-variant);
-  }
-
-  .omfp-kind .omfp-ic {
-    inline-size: 0.75rem;
-    block-size: 0.75rem;
   }
 
   .omfp-kind[data-kind="worktree"] {
@@ -1464,9 +1446,6 @@
 
   .omfp-live__line {
     margin: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     color: var(--omfp-on-surface);
   }
 
@@ -1756,19 +1735,10 @@
     gap: var(--omfp-s1);
     min-block-size: var(--omfp-row-h);
     padding: 0 var(--omfp-s2) 0 var(--omfp-s1);
-    border: 0;
     border-radius: var(--omfp-r-row);
     font: inherit;
     font-size: var(--omfp-fs-xs);
     color: var(--omfp-on-surface-variant);
-    background: transparent;
-    cursor: pointer;
-    outline: none;
-  }
-
-  .omfp-disclosure__trigger[data-hovered] {
-    color: var(--omfp-on-surface);
-    background: var(--omfp-hover);
   }
 
   .omfp-disclosure__panel {
@@ -1810,9 +1780,6 @@
   .omfp-web-frame__url {
     flex: 1 1 auto;
     min-inline-size: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .omfp-web-frame__hint {
@@ -2143,10 +2110,6 @@
     cursor: pointer;
   }
 
-  button.omfp-tool__head:not(.omfp-bbox__head):is([data-hovered], .is-hover) {
-    background: var(--omfp-hover);
-  }
-
   .omfp-tool__label {
     display: flex;
     flex: 1 1 auto;
@@ -2173,24 +2136,25 @@
   .omfp-tool__arg {
     flex: 0 1 auto;
     min-inline-size: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     font-family: var(--omfp-font-code);
     font-size: var(--omfp-fs-xs);
     color: var(--omfp-on-surface-variant);
   }
 
-  .omfp-tool__meta {
+  .omfp-tool__meta,
+  .omfp-request__meta {
     display: inline-flex;
-    flex: none;
     align-items: center;
     gap: var(--omfp-s2);
-    margin-inline-start: auto;
     font-size: var(--omfp-fs-2xs);
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
     color: var(--omfp-on-surface-variant);
+  }
+
+  .omfp-tool__meta {
+    flex: none;
+    margin-inline-start: auto;
   }
 
   .omfp-tool__body {
@@ -2287,25 +2251,10 @@
     color: var(--omfp-warn);
   }
 
-  .omfp-request__meta {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--omfp-s2);
-    font-size: var(--omfp-fs-2xs);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-    color: var(--omfp-on-surface-variant);
-  }
-
   .omfp-request__countdown {
     display: inline-flex;
     align-items: center;
     gap: var(--omfp-s1);
-  }
-
-  .omfp-request__countdown .omfp-ic {
-    inline-size: 0.75rem;
-    block-size: 0.75rem;
   }
 
   .omfp-request__countdown[data-low] {
@@ -2373,9 +2322,6 @@
 
   .omfp-resolved__question {
     min-inline-size: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .omfp-resolved__answer {
@@ -2456,15 +2402,11 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .omfp-modeline__segment + .omfp-modeline__segment::before {
+  .omfp-modeline__segment + .omfp-modeline__segment::before,
+  .omfp-modeline__view + .omfp-modeline__view::before {
     content: "·";
     margin-inline-end: var(--omfp-s2);
     color: var(--omfp-rule-strong);
-  }
-
-  .omfp-modeline__segment .omfp-ic {
-    inline-size: 0.75rem;
-    block-size: 0.75rem;
   }
 
   .omfp-modeline__segment[data-kind="title"] {
@@ -2594,12 +2536,6 @@
     cursor: pointer;
   }
 
-  .omfp-modeline__view + .omfp-modeline__view::before {
-    content: "·";
-    margin-inline-end: var(--omfp-s2);
-    color: var(--omfp-rule-strong);
-  }
-
   .omfp-modeline__view:hover {
     color: var(--omfp-on-surface);
   }
@@ -2645,7 +2581,8 @@
     min-inline-size: 0;
   }
 
-  .omfp-cmdmenu__title {
+  .omfp-cmdmenu__title,
+  .omfp-whichkey__title {
     padding: 0 var(--omfp-s2) var(--omfp-s1);
     font-size: var(--omfp-fs-2xs);
     color: var(--omfp-primary);
@@ -2702,7 +2639,8 @@
     color: var(--omfp-on-surface-variant);
   }
 
-  .omfp-cmdmenu__foot {
+  .omfp-cmdmenu__foot,
+  .omfp-whichkey__foot {
     display: flex;
     align-items: center;
     gap: var(--omfp-s1);
@@ -2723,12 +2661,6 @@
     inline-size: min(52rem, 92%);
     min-inline-size: 0;
     font-size: var(--omfp-fs-xs);
-  }
-
-  .omfp-whichkey__title {
-    padding: 0 var(--omfp-s2) var(--omfp-s1);
-    font-size: var(--omfp-fs-2xs);
-    color: var(--omfp-primary);
   }
 
   .omfp-whichkey__title::before {
@@ -2798,17 +2730,6 @@
     color: var(--omfp-on-surface-variant);
   }
 
-  .omfp-whichkey__foot {
-    display: flex;
-    align-items: center;
-    gap: var(--omfp-s1);
-    margin-block-start: var(--omfp-s1);
-    padding: var(--omfp-s1) var(--omfp-s2) 0;
-    border-block-start: var(--omfp-bw) solid var(--omfp-rule);
-    font-size: var(--omfp-fs-2xs);
-    color: var(--omfp-on-surface-variant);
-  }
-
   /* Help panel (UI-198): a modal border box (UI-187) on the pop surface; the filter stays, the sections scroll. */
   .omfp-help-modal {
     display: flex;
@@ -2817,7 +2738,9 @@
     overflow: hidden;
   }
 
-  .omfp-help-dialog {
+  .omfp-help-dialog,
+  .omfp-sheet-modal,
+  .omfp-sheet {
     display: flex;
     flex: 1;
     min-inline-size: 0;
@@ -2957,30 +2880,19 @@
     color: var(--omfp-on-surface-variant);
   }
 
-  .omfp-wsection__head:is(:hover, .is-hover) {
-    background: var(--omfp-hover);
-  }
-
   .omfp-wsection__toggle {
     flex: none;
     padding: 0;
-    border: 0;
     border-radius: var(--omfp-r-chip);
-    background: transparent;
     color: var(--omfp-primary);
     font: inherit;
-    cursor: pointer;
-    outline: none;
   }
 
   .omfp-wsection__name {
     flex: 0 1 auto;
     min-inline-size: 0;
     margin: 0;
-    overflow: hidden;
     font-size: inherit;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     font-weight: var(--omfp-fw-strong);
     color: var(--omfp-on-surface);
   }
@@ -3056,19 +2968,11 @@
     inline-size: 100%;
     block-size: var(--omfp-row-h);
     padding: 0 var(--omfp-s2);
-    border: 0;
     border-radius: var(--omfp-r-row);
     font: inherit;
     font-size: var(--omfp-fs-sm);
     color: var(--omfp-on-surface);
     text-align: start;
-    background: transparent;
-    cursor: pointer;
-    outline: none;
-  }
-
-  .omfp-row:is(:hover, [data-hovered], .is-hover):not([data-selected], .omfp-hint-row) {
-    background: var(--omfp-hover);
   }
 
   .omfp-row[data-selected] {
@@ -3089,9 +2993,6 @@
   .omfp-row__title {
     flex: 1;
     min-inline-size: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .omfp-row[data-selected] .omfp-row__title {
@@ -3124,14 +3025,6 @@
     display: none;
   }
 
-  .omfp-thread:is(:hover, :focus-within, .is-hover, .is-focus) .omfp-row__delete {
-    display: inline-flex;
-  }
-
-  .omfp-thread:is(:hover, :focus-within, .is-hover, .is-focus):has(.omfp-row__delete) .omfp-row__meta {
-    display: none;
-  }
-
   /* A thread row (UI-442): the select button fills it; unread titles are bold, placeholder titles italic; archived
      rows are small, muted and indented; a filter match adds its snippet on a second line. A nested row's button
      (a job under `Jobs (N)`) is alike. */
@@ -3144,13 +3037,9 @@
     gap: var(--omfp-s2);
     min-inline-size: 0;
     padding: 0;
-    border: 0;
-    background: transparent;
     color: inherit;
     font: inherit;
     text-align: start;
-    cursor: pointer;
-    outline: none;
   }
 
   .omfp-thread[data-unread] .omfp-row__title {
@@ -3180,11 +3069,8 @@
 
   .omfp-thread-row__snippet {
     inline-size: 100%;
-    overflow: hidden;
     color: var(--omfp-on-surface-variant);
     font-size: var(--omfp-fs-2xs);
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   /* Screens without hover (UI-205, UI-415): the section's actions (after its count) and a row's delete or actions are
@@ -3198,18 +3084,12 @@
       margin-inline-start: 0;
     }
 
-    .omfp-thread .omfp-row__delete {
-      display: inline-flex;
-    }
-
-    .omfp-thread:has(.omfp-row__delete) .omfp-row__meta {
-      display: none;
-    }
-
+    .omfp-thread .omfp-row__delete,
     .omfp-nested-row .omfp-nested-row__actions {
       display: inline-flex;
     }
 
+    .omfp-thread:has(.omfp-row__delete) .omfp-row__meta,
     .omfp-nested-row:has(.omfp-nested-row__actions) .omfp-row__meta {
       display: none;
     }
@@ -3223,7 +3103,8 @@
     }
   }
 
-  .omfp-action-row {
+  .omfp-action-row,
+  .omfp-toggle-row {
     font-size: var(--omfp-fs-xs);
     color: var(--omfp-on-surface-variant);
   }
@@ -3236,11 +3117,6 @@
 
   /* A row toggling the rows under it (`Jobs (N)`, `Archived (N)`): muted, its `▾`/`▸` where a thread row has its
    * state mark, marks or counts flush right. */
-  .omfp-toggle-row {
-    font-size: var(--omfp-fs-xs);
-    color: var(--omfp-on-surface-variant);
-  }
-
   .omfp-toggle-row__glyph {
     flex: none;
     color: var(--omfp-primary);
@@ -3263,10 +3139,12 @@
     gap: var(--omfp-s1);
   }
 
+  .omfp-thread:is(:hover, :focus-within, .is-hover, .is-focus) .omfp-row__delete,
   .omfp-nested-row:is(:hover, :focus-within, .is-hover, .is-focus) .omfp-nested-row__actions {
     display: inline-flex;
   }
 
+  .omfp-thread:is(:hover, :focus-within, .is-hover, .is-focus):has(.omfp-row__delete) .omfp-row__meta,
   .omfp-nested-row:is(:hover, :focus-within, .is-hover, .is-focus):has(.omfp-nested-row__actions) .omfp-row__meta {
     display: none;
   }
@@ -3378,16 +3256,8 @@
     inline-size: var(--omfp-ctl-h);
     block-size: var(--omfp-ctl-h);
     padding: 0;
-    border: 0;
     border-radius: var(--omfp-r-row);
-    background: transparent;
     font: inherit;
-    cursor: pointer;
-    outline: none;
-  }
-
-  .omfp-strip__thread:is([data-hovered], .is-hover) {
-    background: var(--omfp-hover);
   }
 
   .omfp-strip__thread[data-selected] {
@@ -3414,13 +3284,9 @@
     gap: var(--omfp-s1);
     min-block-size: var(--omfp-areabar-h);
     padding: var(--omfp-s1);
-    border: 0;
-    background: transparent;
     color: var(--omfp-on-surface-variant);
     font-family: var(--omfp-font-ui);
     font-size: var(--omfp-fs-2xs);
-    cursor: pointer;
-    outline: none;
   }
 
   .omfp-areabar__item .omfp-icon {
@@ -3458,15 +3324,6 @@
     display: flex;
     block-size: var(--vvh, 100%);
     animation: omfp-fade var(--omfp-dur-2) var(--omfp-ease);
-  }
-
-  .omfp-sheet-modal,
-  .omfp-sheet {
-    flex: 1;
-    display: flex;
-    min-inline-size: 0;
-    min-block-size: 0;
-    outline: none;
   }
 
   .omfp-sheet__frame {
@@ -3531,18 +3388,10 @@
     inline-size: 100%;
     min-block-size: var(--omfp-touch);
     padding: var(--omfp-s1) var(--omfp-s3);
-    border: 0;
-    background: transparent;
     color: var(--omfp-on-surface);
     font-family: var(--omfp-font-ui);
     font-size: var(--omfp-fs-sm);
     text-align: start;
-    cursor: pointer;
-    outline: none;
-  }
-
-  .omfp-sheet__row:is([data-hovered], [data-pressed]) {
-    background: var(--omfp-hover);
   }
 
   .omfp-sheet__text {
@@ -3633,9 +3482,6 @@
     min-inline-size: 0;
     max-inline-size: 100%;
     margin: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
     font-size: var(--omfp-fs-lg);
     font-weight: var(--omfp-fw-strong);
   }
@@ -3748,19 +3594,10 @@
     gap: var(--omfp-s1);
     block-size: var(--omfp-row-h);
     padding: 0 var(--omfp-s2) 0 var(--omfp-s1);
-    border: 0;
     border-radius: var(--omfp-r-row);
     font: inherit;
     font-size: var(--omfp-fs-xs);
     color: var(--omfp-on-surface-variant);
-    background: transparent;
-    cursor: pointer;
-    outline: none;
-  }
-
-  .omfp-reasoning__head:is([data-hovered], .is-hover) {
-    color: var(--omfp-on-surface);
-    background: var(--omfp-hover);
   }
 
   .omfp-reasoning__glyph {
@@ -3800,11 +3637,6 @@
     background:
       linear-gradient(var(--omfp-app-bg), var(--omfp-app-bg)) padding-box,
       var(--omfp-grad) border-box;
-  }
-
-  .omfp-compose[data-disabled] {
-    opacity: var(--omfp-disabled);
-    cursor: not-allowed;
   }
 
   /* Its text and caret start where the bar's first chip does (the bar's inline padding, UI-337). */
@@ -3914,9 +3746,6 @@
 
   .omfp-queue-chip__text {
     min-inline-size: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   /* Busy while an action on it waits for an answer (UI-445). */
@@ -3962,7 +3791,8 @@
 
   /* PDF documents (UI-543..UI-546): a toolbar over the pages, which scroll in their own region on the code background.
      A page keeps its box at the zoom's size whether or not it is drawn; pdf.js paints the paper itself. */
-  .omfp-pdf {
+  .omfp-pdf,
+  .omfp-image {
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
@@ -3979,7 +3809,8 @@
     color: var(--omfp-error);
   }
 
-  .omfp-pdf__bar {
+  .omfp-pdf__bar,
+  .omfp-image__bar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -4090,21 +3921,6 @@
 
   /* Images (UI-549..UI-555): a toolbar over one viewport, or two side by side; script places the image at its scale
      on a stage as large as the view or the zoomed image. Dragging pans, so touch gestures are the viewer's. */
-  .omfp-image {
-    display: flex;
-    flex: 1 1 auto;
-    flex-direction: column;
-    gap: var(--omfp-s2);
-    min-block-size: 0;
-  }
-
-  .omfp-image__bar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--omfp-s1);
-  }
-
   .omfp-image__zoom {
     min-inline-size: 5ch;
     font-family: var(--omfp-font-ui);

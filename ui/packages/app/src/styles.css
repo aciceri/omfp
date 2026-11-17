@@ -26,7 +26,13 @@
     font-family: var(--omfp-font-code);
   }
 
-  .omfp-muted {
+  .omfp-muted,
+  .omfp-debug__meta,
+  .omfp-debug__empty,
+  .omfp-debug__type,
+  .omfp-debug__condition,
+  .omfp-mcp__server[data-disabled] .omfp-bbox__label,
+  .omfp-mcp__tools {
     color: var(--omfp-on-surface-variant);
   }
 
@@ -422,17 +428,12 @@
   }
 
   /* Views (UI-024, UI-100). */
-  .omfp-view {
-    flex: 1 1 auto;
-    display: flex;
-    min-block-size: 0;
-    min-inline-size: 0;
-  }
-
+  .omfp-view,
   .omfp-view__row,
-  .omfp-view__col {
-    display: flex;
+  .omfp-view__col,
+  .omfp-view__panel {
     flex: 1 1 auto;
+    display: flex;
     min-block-size: 0;
     min-inline-size: 0;
   }
@@ -575,7 +576,8 @@
     max-inline-size: 100%;
   }
 
-  .omfp-thread-header__workspace-label {
+  .omfp-thread-header__workspace-label,
+  .omfp-thread-header__lineage-label {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -589,12 +591,6 @@
     min-inline-size: 0;
     font-size: var(--omfp-fs-2xs);
     color: var(--omfp-on-surface-variant);
-  }
-
-  .omfp-thread-header__lineage-label {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   /* The full header (UI-202) keeps two rows: its workspace chip gives way (ellipsis) to the session controls instead
@@ -635,13 +631,6 @@
     display: flex;
     flex-direction: column;
     flex: 1 1 auto;
-    min-block-size: 0;
-    min-inline-size: 0;
-  }
-
-  .omfp-view__panel {
-    flex: 1 1 auto;
-    display: flex;
     min-block-size: 0;
     min-inline-size: 0;
   }
@@ -725,16 +714,18 @@
     opacity: 1;
   }
 
-  .omfp-file-tab__close:hover {
+  .omfp-file-tab__close:hover,
+  .omfp-floating-file__grip:hover,
+  .omfp-workspace__kind-options .omfp-radio[data-hovered] {
     color: var(--omfp-on-surface);
     background: var(--omfp-hover);
   }
 
   /* Files in a view without a `main` slot float over the view as tabs, moved, resized and minimised (UI-115), opening
      below the view's top bars (UI-454). */
-  .omfp-floating-file {
+  .omfp-floating-file,
+  .omfp-floating-widget {
     position: absolute;
-    inset: calc(var(--panel-top, 0px) + var(--omfp-s4)) var(--omfp-s4) calc(var(--omfp-s4) + var(--omfp-row-h));
     z-index: 2;
     display: flex;
     flex-direction: column;
@@ -745,11 +736,16 @@
     box-shadow: var(--omfp-pop-shadow);
   }
 
+  .omfp-floating-file {
+    inset: calc(var(--panel-top, 0px) + var(--omfp-s4)) var(--omfp-s4) calc(var(--omfp-s4) + var(--omfp-row-h));
+  }
+
   .omfp-floating-file[data-minimised] {
     inset-block-end: auto;
   }
 
-  .omfp-floating-file__tabs {
+  .omfp-floating-file__tabs,
+  .omfp-floating-file__body {
     flex: 1 1 auto;
     display: flex;
     flex-direction: column;
@@ -765,7 +761,8 @@
     border-block-end: var(--omfp-bw) solid var(--omfp-rule);
   }
 
-  .omfp-floating-file[data-minimised] .omfp-floating-file__bar {
+  .omfp-floating-file[data-minimised] .omfp-floating-file__bar,
+  .omfp-floating-widget[data-minimised] .omfp-floating-file__bar {
     border-block-end: none;
   }
 
@@ -784,18 +781,6 @@
     font: inherit;
     cursor: move;
     touch-action: none;
-  }
-
-  .omfp-floating-file__grip:hover {
-    color: var(--omfp-on-surface);
-    background: var(--omfp-hover);
-  }
-
-  .omfp-floating-file__body {
-    flex: 1 1 auto;
-    display: flex;
-    flex-direction: column;
-    min-block-size: 0;
   }
 
   /* A file not selected, or every file and the tab list of a minimised panel, stays mounted, hidden (UI-401). */
@@ -825,7 +810,6 @@
     --panel-top: 0px;
     --panel-column: 0;
     --panel-row: 0;
-    position: absolute;
     inset-block-start: calc(
       var(--panel-top) +
       var(--omfp-s4) +
@@ -839,9 +823,6 @@
         calc(100% - var(--omfp-float-w))
       )
     );
-    z-index: 2;
-    display: flex;
-    flex-direction: column;
     inline-size: var(--omfp-float-w);
     block-size: min(
       16rem,
@@ -855,19 +836,10 @@
         var(--omfp-row-h)
       )
     );
-    min-inline-size: 15rem;
-    border: var(--omfp-bw) solid var(--omfp-pop-border);
-    border-radius: var(--omfp-r-card);
-    background: var(--omfp-pop-bg);
-    box-shadow: var(--omfp-pop-shadow);
   }
 
   .omfp-floating-widget[data-minimised] {
     block-size: auto;
-  }
-
-  .omfp-floating-widget[data-minimised] .omfp-floating-file__bar {
-    border-block-end: none;
   }
 
   .omfp-floating-widget > [hidden] {
@@ -875,7 +847,8 @@
   }
 
   /* One widget node: its edit-mode toolbar above the widget. */
-  .omfp-view__item {
+  .omfp-view__item,
+  .omfp-widget {
     flex: 1 1 auto;
     display: flex;
     flex-direction: column;
@@ -884,11 +857,6 @@
   }
 
   .omfp-widget {
-    flex: 1 1 auto;
-    display: flex;
-    flex-direction: column;
-    min-block-size: 0;
-    min-inline-size: 0;
     overflow: auto;
   }
 
@@ -1050,7 +1018,10 @@
    * task, activity), the opened one's transcript in a border box (UI-187) under it with its steer field. */
   .omfp-subagents,
   .omfp-todos,
-  .omfp-debug {
+  .omfp-debug,
+  .omfp-browser,
+  .omfp-mcp,
+  .omfp-changes {
     display: flex;
     flex-direction: column;
     gap: var(--omfp-s3);
@@ -1058,7 +1029,11 @@
     font-family: var(--omfp-font-code);
   }
 
-  .omfp-subagents__list {
+  .omfp-subagents__list,
+  .omfp-tree__rows,
+  .omfp-activity__list,
+  .omfp-changes__files,
+  .omfp-workspace ul {
     display: flex;
     flex-direction: column;
     margin: 0;
@@ -1066,12 +1041,11 @@
     list-style: none;
   }
 
-  .omfp-subagents__row {
+  .omfp-subagents__row,
+  .omfp-jobs__row {
     display: grid;
-    grid-template-columns: auto auto auto 1fr;
     align-items: baseline;
     column-gap: var(--omfp-s2);
-    inline-size: 100%;
     padding: var(--omfp-s1) var(--omfp-s2);
     border: 0;
     border-radius: var(--omfp-r-card);
@@ -1083,8 +1057,14 @@
     cursor: pointer;
   }
 
+  .omfp-subagents__row {
+    grid-template-columns: auto auto auto 1fr;
+    inline-size: 100%;
+  }
+
   /* omfp:background (UI-271, UI-490): a row and its stop or cancel button side by side, a subagent's detail under them. */
-  .omfp-background__item {
+  .omfp-background__item,
+  .omfp-jobs__item {
     display: flex;
     flex-direction: column;
     gap: var(--omfp-s1);
@@ -1147,12 +1127,6 @@
     list-style: none;
   }
 
-  .omfp-jobs__item {
-    display: flex;
-    flex-direction: column;
-    gap: var(--omfp-s1);
-  }
-
   .omfp-jobs__head,
   .omfp-jobs__run-head {
     display: flex;
@@ -1162,29 +1136,21 @@
   }
 
   .omfp-jobs__row {
-    display: grid;
     flex: 1;
     grid-template-columns: auto 1fr;
-    align-items: baseline;
-    column-gap: var(--omfp-s2);
     min-inline-size: 0;
-    padding: var(--omfp-s1) var(--omfp-s2);
-    border: 0;
-    border-radius: var(--omfp-r-card);
-    background: transparent;
-    color: var(--omfp-on-surface);
-    font: inherit;
-    font-size: var(--omfp-fs-xs);
-    text-align: start;
-    cursor: pointer;
   }
 
   .omfp-jobs__row:hover,
-  .omfp-jobs__row[aria-expanded="true"] {
+  .omfp-jobs__row[aria-expanded="true"],
+  .omfp-subagents__row:hover,
+  .omfp-subagents__row[aria-expanded="true"],
+  .omfp-tree__row:hover {
     background: var(--omfp-hover);
   }
 
-  .omfp-jobs__name {
+  .omfp-jobs__name,
+  .omfp-subagents__name {
     font-weight: var(--omfp-fw-strong);
     color: var(--omfp-primary);
   }
@@ -1200,7 +1166,13 @@
 
   .omfp-jobs__trigger,
   .omfp-jobs__last,
-  .omfp-jobs__muted {
+  .omfp-jobs__muted,
+  .omfp-background__use,
+  .omfp-subagents__status,
+  .omfp-subagents__meta,
+  .omfp-subagents__activity,
+  .omfp-subagents__empty,
+  .omfp-subagents__tool {
     font-size: var(--omfp-fs-2xs);
     color: var(--omfp-on-surface-variant);
   }
@@ -1253,26 +1225,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: var(--omfp-on-surface-variant);
-  }
-
-  .omfp-subagents__row:hover,
-  .omfp-subagents__row[aria-expanded="true"] {
-    background: var(--omfp-hover);
-  }
-
-  .omfp-subagents__name {
-    font-weight: var(--omfp-fw-strong);
-    color: var(--omfp-primary);
-  }
-
-  .omfp-background__use,
-  .omfp-subagents__status,
-  .omfp-subagents__meta,
-  .omfp-subagents__activity,
-  .omfp-subagents__empty,
-  .omfp-subagents__tool {
-    font-size: var(--omfp-fs-2xs);
     color: var(--omfp-on-surface-variant);
   }
 
@@ -1343,14 +1295,6 @@
 
   /* omfp:browser (UI-870..UI-872): a note, then a border box per tab (UI-187): its address and last action on one
    * line each, cut with an ellipsis, then its latest screenshot as a 10rem thumbnail that opens at full size. */
-  .omfp-browser {
-    display: flex;
-    flex-direction: column;
-    gap: var(--omfp-s3);
-    padding: var(--omfp-s2) var(--omfp-s3) var(--omfp-s3);
-    font-family: var(--omfp-font-code);
-  }
-
   .omfp-browser__note,
   .omfp-browser__meta {
     margin: 0;
@@ -1393,13 +1337,6 @@
   .omfp-debug__empty {
     margin: 0;
     font-size: var(--omfp-fs-sm);
-  }
-
-  .omfp-debug__meta,
-  .omfp-debug__empty,
-  .omfp-debug__type,
-  .omfp-debug__condition {
-    color: var(--omfp-on-surface-variant);
   }
 
   .omfp-debug__list {
@@ -1448,14 +1385,6 @@
     font-family: var(--omfp-font-code);
   }
 
-  .omfp-tree__rows {
-    display: flex;
-    flex-direction: column;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
   .omfp-tree__row {
     display: flex;
     flex-wrap: wrap;
@@ -1470,10 +1399,6 @@
 
   .omfp-tree__row[data-active] {
     color: var(--omfp-on-surface);
-  }
-
-  .omfp-tree__row:hover {
-    background: var(--omfp-hover);
   }
 
   .omfp-tree__glyph {
@@ -1542,14 +1467,6 @@
     justify-content: flex-end;
   }
 
-  .omfp-activity__list {
-    display: flex;
-    flex-direction: column;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
   .omfp-activity__row {
     display: flex;
     flex-wrap: wrap;
@@ -1602,14 +1519,6 @@
 
   /* omfp:mcp (UI-290..UI-292): the status line and its buttons, then a border box per server (UI-187): its state mark,
    * state and tool count on the top border, transport and command, the error line, the config file and Reconnect. */
-  .omfp-mcp {
-    display: flex;
-    flex-direction: column;
-    gap: var(--omfp-s3);
-    padding: var(--omfp-s2) var(--omfp-s3) var(--omfp-s3);
-    font-family: var(--omfp-font-code);
-  }
-
   .omfp-mcp .omfp-empty__hint {
     max-inline-size: 100%;
     overflow-wrap: anywhere;
@@ -1642,14 +1551,6 @@
 
   .omfp-mcp__server[data-state="failed"] .omfp-bbox__end {
     color: var(--omfp-error);
-  }
-
-  .omfp-mcp__server[data-disabled] .omfp-bbox__label {
-    color: var(--omfp-on-surface-variant);
-  }
-
-  .omfp-mcp__tools {
-    color: var(--omfp-on-surface-variant);
   }
 
   .omfp-mcp__target,
@@ -1712,14 +1613,6 @@
   /* omfp:changes (UI-080): per repository a head (name, branch, ahead/behind, summary) on one line (UI-343), then file
    * rows (status letter, path, `+n −m`) that expand to the file's diff card (UI-165); the clean repositories in one
    * disclosure at the bottom (UI-342). */
-  .omfp-changes {
-    display: flex;
-    flex-direction: column;
-    gap: var(--omfp-s3);
-    padding: var(--omfp-s2) var(--omfp-s3) var(--omfp-s3);
-    font-family: var(--omfp-font-code);
-  }
-
   .omfp-changes__bar {
     display: flex;
     justify-content: flex-end;
@@ -1850,14 +1743,6 @@
     padding-block-end: 0;
   }
 
-  .omfp-changes__files {
-    display: flex;
-    flex-direction: column;
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
   .omfp-changes__file .omfp-disclosure__trigger {
     gap: var(--omfp-s2);
     inline-size: 100%;
@@ -1951,14 +1836,6 @@
     font-size: var(--omfp-fs-2xs);
     font-weight: var(--omfp-fw-regular);
     color: var(--omfp-primary);
-  }
-
-  .omfp-workspace ul {
-    display: flex;
-    flex-direction: column;
-    margin: 0;
-    padding: 0;
-    list-style: none;
   }
 
   .omfp-workspace__current,
@@ -2145,11 +2022,6 @@
 
   .omfp-workspace__kind-options .omfp-radio__dot {
     display: none;
-  }
-
-  .omfp-workspace__kind-options .omfp-radio[data-hovered] {
-    color: var(--omfp-on-surface);
-    background: var(--omfp-hover);
   }
 
   .omfp-workspace__kind-options .omfp-radio[data-selected] {

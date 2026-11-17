@@ -48,10 +48,7 @@
     gap: var(--omfp-s2);
   }
 
-  .omfp-thread-header__editor {
-    flex: 1 1 auto;
-  }
-
+  .omfp-thread-header__editor,
   .omfp-thread-header__editor .omfp-field {
     flex: 1 1 auto;
   }
@@ -323,7 +320,8 @@
     display: none;
   }
 
-  .omfp-tool-card__path {
+  .omfp-tool-card__path,
+  .omfp-tool-card__target {
     display: inline-flex;
     align-items: center;
     min-inline-size: 0;
@@ -346,12 +344,6 @@
   }
 
   /* A read's path and its selector in a read group (UI-765): `src/lib.rs:10-20`, the selector muted. */
-  .omfp-tool-card__target {
-    display: inline-flex;
-    align-items: center;
-    min-inline-size: 0;
-  }
-
   .omfp-tool-card__selector {
     flex: none;
     font-family: var(--omfp-font-code);
@@ -863,12 +855,8 @@
     padding-block-start: var(--omfp-s1);
   }
 
-  /* The live voice panel over the queue and the composer (UI-182). */
-  .omfp-composer-area > .omfp-live {
-    margin-block-end: var(--omfp-s2);
-  }
-
-  /* The kit's queue list (UI-445) over the composer. */
+  /* The live voice panel (UI-182) over the queue, and the kit's queue list (UI-445), over the composer. */
+  .omfp-composer-area > .omfp-live,
   .omfp-composer-area > .omfp-queue {
     margin-block-end: var(--omfp-s2);
   }
@@ -956,7 +944,8 @@
     max-block-size: calc(var(--vvh, 100dvh) / 4);
   }
 
-  .omfp-composer__attachments {
+  .omfp-composer__attachments,
+  .omfp-composer__pastes {
     display: flex;
     flex-wrap: wrap;
     gap: var(--omfp-s2);
@@ -984,15 +973,6 @@
   }
 
   /* Large pastes as chips (UI-357): a row like the images, each chip's text opening below it at full width. */
-  .omfp-composer__pastes {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--omfp-s2);
-    margin: 0;
-    padding: var(--omfp-s2) var(--omfp-s2) 0;
-    list-style: none;
-  }
-
   .omfp-composer__paste:has(.omfp-composer__paste-text) {
     flex-basis: 100%;
   }

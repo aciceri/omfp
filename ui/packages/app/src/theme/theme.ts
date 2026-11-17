@@ -8,7 +8,7 @@
  * scales); `[ui.fonts]` set `--omfp-font-prose|ui|code` inline on `<html>`, which beats any stylesheet, user theme
  * included. The user theme is the daemon's (global, `theme.get`/`theme.set`) and shows only while `[ui] theme` is
  * `matugen`: the page loads it first through `<link rel="stylesheet" href="/theme.css" data-omfp-theme>` (so it applies
- * before the socket connects), then once the `index` topic is live `<style data-omfp-theme>` replaces that link in the
+ * before the socket connects; the daemon serves it empty under any other theme, DMN-075), then once the `index` topic is live `<style data-omfp-theme>` replaces that link in the
  * same place, holding the user theme while the theme is `matugen` and nothing otherwise, and follows both
  * (`theme_changed`, `settings_changed`) without asking the daemon again. The tokens and the built-in themes live in
  * `@layer omfp-tokens`, so the unlayered user theme always wins over them. The contrast guard (guard.ts, UI-196) then

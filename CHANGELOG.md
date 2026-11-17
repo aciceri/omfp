@@ -40,6 +40,11 @@ The version's section is also the source of the GitHub release notes.
   when one failed, which stays visible while the group is collapsed; open, it lists each read with its path (and line
   range), which opens the file, and each read opens to its output.
 
+### Fixed
+
+- Opening or reloading a window no longer flashes the user theme (`theme.css`) when the chosen theme is not
+  `matugen`: the daemon now serves `/theme.css` empty under any other theme (#154).
+
 ## 0.2.1 — 2026-11-17
 
 ### Fixed

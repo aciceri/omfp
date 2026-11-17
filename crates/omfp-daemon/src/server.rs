@@ -22,6 +22,7 @@ use axum::extract::{self, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
+use omfp_protocol::BuiltinTheme;
 use subtle::ConstantTimeEq;
 use tokio::sync::{Semaphore, watch};
 
@@ -78,10 +79,15 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
         .with_state(state)
 }
 
-/// The user's theme CSS (DMN-075): empty when none is set, never cached (a change must show on reload), and served
-/// without the token like the bundle.
+/// The user's theme CSS (DMN-075): served only while `[ui] theme` is `matugen` (DMN-240), so a window loading under
+/// another theme never shows it; empty otherwise or when none is set, never cached (a change must show on reload), and
+/// served without the token like the bundle.
 async fn theme_css(State(state): State<Arc<AppState>>) -> Response {
-    let css = state.services.theme().css.unwrap_or_default();
+    let css = if state.services.settings().ui.theme == Some(BuiltinTheme::Matugen) {
+        state.services.theme().css.unwrap_or_default()
+    } else {
+        String::new()
+    };
     (
         [
             (header::CONTENT_TYPE, "text/css; charset=utf-8"),

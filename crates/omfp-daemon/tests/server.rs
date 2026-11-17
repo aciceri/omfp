@@ -1268,6 +1268,8 @@ async fn a_theme_set_by_one_client_reaches_every_client_and_theme_css() {
     let mut desktop = daemon.client("omfp/desktop").await;
     let index = desktop.ok("subscribe", json!({ "topic": "index" })).await;
     assert_eq!(index["state"]["theme"], json!({ "css": null }));
+    web.ok("settings.set", json!({ "ui": { "theme": "matugen" } }))
+        .await;
     assert_eq!(theme_css(&daemon).await, "");
     let css = ":root { --omfp-primary: #6750a4; }";
 
@@ -1295,6 +1297,35 @@ async fn a_theme_set_by_one_client_reaches_every_client_and_theme_css() {
     assert_eq!(theme_css(&daemon).await, "");
 }
 
+// spec: DMN-075, DMN-240
+#[tokio::test(flavor = "multi_thread")]
+async fn theme_css_serves_the_user_theme_only_while_the_theme_is_matugen() {
+    let daemon = daemon(&[]).await;
+    let mut client = daemon.client("omfp/web").await;
+    let css = ":root { --omfp-primary: #6750a4; }";
+    client.ok("theme.set", json!({ "css": css })).await;
+    assert_eq!(
+        theme_css(&daemon).await,
+        "",
+        "the default theme (Synth) does not show the user theme"
+    );
+
+    client
+        .ok("settings.set", json!({ "ui": { "theme": "matugen" } }))
+        .await;
+    assert_eq!(theme_css(&daemon).await, css);
+
+    client
+        .ok("settings.set", json!({ "ui": { "theme": "nord" } }))
+        .await;
+    assert_eq!(theme_css(&daemon).await, "");
+    assert_eq!(
+        client.ok("theme.get", json!({})).await,
+        json!({ "css": css }),
+        "the stored theme is kept"
+    );
+}
+
 /// Replaces `file`'s content at once (a new file renamed over it), as editors and theme generators save: a plain
 /// `std::fs::write` truncates the file first, so the daemon's poll could read it half-written and push that.
 fn replace_file(file: &std::path::Path, content: &str) {
@@ -1311,6 +1342,9 @@ async fn the_theme_file_is_read_at_startup_and_its_changes_are_pushed() {
     std::fs::write(&file, "body { color: red; }").unwrap();
     let daemon = daemon(&["--theme-file", file.to_str().unwrap()]).await;
     let mut client = daemon.client("test").await;
+    client
+        .ok("settings.set", json!({ "ui": { "theme": "matugen" } }))
+        .await;
     let index = client.ok("subscribe", json!({ "topic": "index" })).await;
     assert_eq!(
         index["state"]["theme"],

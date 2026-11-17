@@ -24,7 +24,8 @@
  *   full mutation gate remains visible but non-blocking.
  * - TST-092: one job on a macOS runner runs `just test-desktop` and `just package` on pushes to master, by hand and on
  *   pull requests labeled `ci/macos` only; `ci.yml` runs by hand, and `ci-macos-label.yml` runs it on the branch of a
- *   pull request that gets that label (and only that one).
+ *   pull request that gets that label (and only that one). In a run by hand that job reports itself as the commit
+ *   status `macOS (ci/macos)` (pending first, its result last), with `statuses: write` on that job only.
  * - ENV-060: `release.yml` runs on `v*` tags and by hand; its jobs build the packages in the dev shell (`just
  *   package-linux` and `just package-flatpak` on Linux, `just package-macos` on macOS); only its job that runs on tags
  *   alone may write the repository's contents, the workflow reads them.
@@ -94,6 +95,12 @@ const REQUIRED_GATE = "required";
 const REQUIRED_JOBS = ["check", "test-ts", "test-contract", "test-e2e", "test-desktop", "package", "cov"];
 const REQUIRED_RUN = `jq -e 'all(.[]; .result == "success")' <<<"$RESULTS"`;
 
+/** TST-092: the step of the macOS job reporting a run by hand as a commit status of its commit, the state in `STATE`. */
+const MACOS_STATUS_RUN =
+  'gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state="$STATE" -f context="macOS (ci/macos)" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"';
+const BY_HAND = "github.event_name == 'workflow_dispatch'";
+const isMacosStatus = (step: Step) => step.run?.trim() === MACOS_STATUS_RUN;
+
 /** The recipe a step runs (`nix develop -c just <recipe>`), if it is one. */
 const recipeOf = (step: Step) => RUN.exec(step.run?.trim() ?? "")?.[1];
 
@@ -121,7 +128,7 @@ function checkRecipes({ workflow, recipes, ci }: Inputs, ranBy: Map<string, stri
       problems.push(`job ${id} does not use ${SETUP_USES}`);
     }
     for (const step of steps) {
-      if (step.run === undefined) continue;
+      if (step.run === undefined || isMacosStatus(step)) continue;
       const recipe = recipeOf(step);
       if (recipe === undefined) {
         problems.push(`job ${id} runs \`${step.run.trim()}\`, not \`nix develop -c just <recipe>\``);
@@ -375,6 +382,30 @@ function checkMacos({ workflow, macosLabel }: Inputs, problems: string[]) {
   }
   if (!workflow.on || !("workflow_dispatch" in workflow.on)) {
     problems.push(`${WORKFLOW} must run by hand (workflow_dispatch) for the ci/macos label`);
+  }
+  // The pull request's own run shows the job skipped; the run by hand the label starts is no check of the pull
+  // request, so the job reports that run on its commit, the pull request's head.
+  const status = (step: Step | undefined, condition: string, state: string) =>
+    step !== undefined &&
+    isMacosStatus(step) &&
+    step.if === condition &&
+    step.env?.STATE === state &&
+    step.env.GH_TOKEN === expression("github.token");
+  const RESULT = expression("job.status == 'success' && 'success' || job.status == 'cancelled' && 'error' || 'failure'");
+  const reports = macos.some((job) => {
+    const steps = job.steps ?? [];
+    return (
+      job.if === MACOS_IF &&
+      job.permissions?.statuses === "write" &&
+      status(steps[0], BY_HAND, "pending") &&
+      status(steps.at(-1), `always() && ${BY_HAND}`, RESULT)
+    );
+  });
+  const writers = Object.values(workflow.jobs).filter((job) => job.permissions?.statuses === "write");
+  if (!reports || writers.length !== 1 || workflow.permissions?.statuses !== undefined) {
+    problems.push(
+      'the macOS job must report a run by hand as the commit status "macOS (ci/macos)" of its commit, pending first and its result last, with statuses: write on that job only',
+    );
   }
   const triggers = Object.keys(macosLabel.on ?? {});
   const types = macosLabel.on?.pull_request?.types ?? [];

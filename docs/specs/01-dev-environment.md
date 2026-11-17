@@ -178,7 +178,7 @@ Its jobs run in parallel on `ubuntu-latest`, each `nix develop -c just <recipe>`
 | `check` | `just check`: lints, version pins, spec-trace, `cargo deny`, the workflow itself (`actionlint`) |
 | `test`, `test-ts`, `test-contract` | `just test`, `just test-ts`, `just test-contract` (the pinned omp of the dev shell, the fake LLM) |
 | `test-e2e`, `test-desktop` | after `web`, on its artifact (`OMFP_WEB_BUNDLE`): `just test-e2e` (headless Chromium), `just test-desktop` (`xvfb-run`) |
-| `macos` | pushes to `master`, runs by hand and pull requests labeled `ci/macos` only (adding the label runs `ci.yml` by hand on the branch: `ci-macos-label.yml`), `macos-15`, after `web`: `just test-desktop` (WKWebView, the menu bar item) and `just package` (the darwin packages and `omfp.app`); advisory, not in `required` (TST-092, ENV-042) |
+| `macos` | pushes to `master`, runs by hand and pull requests labeled `ci/macos` only (adding the label runs `ci.yml` by hand on the branch: `ci-macos-label.yml`; that run reports the job as the commit status `macOS (ci/macos)` of the pull request's head), `macos-15`, after `web`: `just test-desktop` (WKWebView, the menu bar item) and `just package` (the darwin packages and `omfp.app`); advisory, not in `required` (TST-092, ENV-042) |
 | `package` | `just package`: `nix build .#omfp .#omfp-headless` (ENV-030..ENV-033) |
 | `mutants`, `cov` | `just mutants-gate`, `just cov`: the mutation and coverage gates of TST-050 |
 | `required` | no recipe or dev shell: after every blocking Linux job, fails unless all succeeded; branch protection requires its stable `required CI` status while `mutants` remains non-blocking (TST-118) |

@@ -2,6 +2,8 @@
 # pull request's later pushes run that job in their own CI runs while the label stays. ci.yml does not listen to
 # `labeled` itself: a run there for any other label would cancel the running CI (one concurrency group per pull request)
 # or add a skipped `required CI` check, which branch protection counts as passed.
+# The run by hand is no check of the pull request: its `macos` job reports itself as the commit status
+# `macOS (ci/macos)` of the branch's head, so the pull request shows that job's state.
 name: CI on the macOS label
 
 on:

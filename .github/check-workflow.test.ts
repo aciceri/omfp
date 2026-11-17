@@ -321,4 +321,35 @@ describe("check-workflow", () => {
     );
     expect(everyPush).toContain(message);
   });
+
+  // spec: TST-092
+  test("a run by hand reports the macOS job as a commit status of the pull request's head", () => {
+    const message =
+      'the macOS job must report a run by hand as the commit status "macOS (ci/macos)" of its commit, pending first and its result last, with statuses: write on that job only';
+    const noResult = check(
+      withWorkflow((workflow) => {
+        workflow.jobs.macos?.steps?.pop();
+      }),
+    );
+    expect(noResult).toContain(message);
+    const noPending = check(
+      withWorkflow((workflow) => {
+        workflow.jobs.macos?.steps?.shift();
+      }),
+    );
+    expect(noPending).toContain(message);
+    const noPermission = check(
+      withWorkflow((workflow) => {
+        const macos = workflow.jobs.macos;
+        if (macos !== undefined) delete macos.permissions;
+      }),
+    );
+    expect(noPermission).toContain(message);
+    const everyJob = check(
+      withWorkflow((workflow) => {
+        workflow.permissions = { contents: "read", statuses: "write" };
+      }),
+    );
+    expect(everyJob).toContain(message);
+  });
 });

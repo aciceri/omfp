@@ -135,16 +135,26 @@ jobs:
   # TST-092: the macOS desktop (WKWebView, the menu bar item; TST-090, TST-091) and the darwin packages (ENV-041) on
   # GitHub's arm64 macOS runner, whose GUI session is logged in. On pushes to master, by hand and on pull requests
   # labeled `ci/macos` only: macOS minutes cost ten Linux minutes; its cachix daemon pushes the darwin closure (omp
-  # built from source) for the next run and for Macs. Advisory: `required CI` does not wait for it.
+  # built from source) for the next run and for Macs. Advisory: `required CI` does not wait for it. A run by hand (the
+  # label's) is no check of the pull request, whose own run shows this job skipped: there the job reports itself as the
+  # commit status `macOS (ci/macos)` of its commit, the pull request's head (pending, then its result).
   macos:
     name: macOS desktop and packages
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci/macos')
     needs: web
     runs-on: macos-15
     timeout-minutes: 120
+    permissions:
+      contents: read
+      statuses: write
     env:
       OMFP_WEB_BUNDLE: ${{ github.workspace }}/../web-bundle
     steps:
+      - if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATE: pending
+        run: gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state="$STATE" -f context="macOS (ci/macos)" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
       - uses: actions/checkout@v7
       - uses: actions/download-artifact@v8
         with:
@@ -155,6 +165,11 @@ jobs:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - run: nix develop -c just test-desktop
       - run: nix develop -c just package
+      - if: always() && github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATE: ${{ job.status == 'success' && 'success' || job.status == 'cancelled' && 'error' || 'failure' }}
+        run: gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state="$STATE" -f context="macOS (ci/macos)" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
   package:
     name: Nix packages

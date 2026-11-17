@@ -125,7 +125,11 @@ function lastScreenshot(
   return undefined;
 }
 
-/** The `eval` calls of the thread in order, each with its result (or its latest partial result while it runs). */
+/**
+ * The `eval` calls of the thread in order, each with its result (or its latest partial result while it runs). Runs
+ * the transcript does not call are added only while in flight: a finished one belongs to a branch the session left
+ * (`history` replaces the transcript, not the runs).
+ */
 function evalResults(state: Pick<ThreadState, "transcript" | "tools">): JsonValue[] {
   const results = new Map<string, unknown>();
   const called: string[] = [];
@@ -147,7 +151,10 @@ function evalResults(state: Pick<ThreadState, "transcript" | "tools">): JsonValu
     }
   }
   const seen = new Set(called);
-  const ids = [...called, ...[...runs.keys()].filter((id) => !seen.has(id))];
+  const inFlight = [...runs.values()].filter(
+    (run) => !seen.has(run.tool_call_id) && (run.status === "running" || run.status === "pending"),
+  );
+  const ids = [...called, ...inFlight.map((run) => run.tool_call_id)];
   return ids.flatMap((id) => {
     const run = runs.get(id);
     const result = results.get(id) ?? run?.result ?? run?.partial_result ?? null;

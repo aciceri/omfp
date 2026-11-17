@@ -47,6 +47,38 @@ describe("browserView", () => {
   });
 
   // spec: UI-871
+  test("after a branch navigation, only the restored branch's calls count, not the runs the state still holds", () => {
+    const events = browserSession();
+    const before = events.slice(
+      0,
+      events.findIndex((event) => JSON.stringify(event).includes("call_eval_5")),
+    );
+    const branch = events
+      .slice(
+        0,
+        events.findIndex((event) => JSON.stringify(event).includes("call_eval_2")),
+      )
+      .flatMap((event) => {
+        const frame = event.kind === "omp" ? (event.frame as { type?: unknown; message?: unknown } | null) : null;
+        return frame?.type === "message_end" ? [frame.message] : [];
+      });
+    const history = {
+      kind: "history",
+      messages: branch,
+      session: { resumed: true, session_file: "/s/branch.jsonl", session_id: "s" },
+    } as ThreadEvent;
+    expect(tabs([...before, history])).toEqual([
+      { name: "main", url: "https://example.com/", action: "main.screenshot()", closed: false, screenshot: "main-1" },
+    ]);
+    // A call in flight that the transcript does not hold yet still counts.
+    const [, ...inFlight] = runningEvalCall("call_eval_6", [{ op: "browser", detail: "open side https://c.test/" }]);
+    expect(tabs([...before, history, ...inFlight]).map(({ name, url }) => [name, url])).toEqual([
+      ["side", "https://c.test/"],
+      ["main", "https://example.com/"],
+    ]);
+  });
+
+  // spec: UI-871
   test("close all closes every tab; a tab used again opens; an unknown close, tabs and errors list nothing", () => {
     expect(
       tabs([

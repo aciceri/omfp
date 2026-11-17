@@ -877,7 +877,7 @@
     },
     {
       "id": "window.theme",
-      "title": "Colour scheme (system, light, dark) and built-in theme (synth, catppuccin, gruvbox, …)",
+      "title": "Colour scheme (system, light, dark) and theme (synth, catppuccin, gruvbox, …; matugen: the user theme file, Synth without one)",
       "aliases": [
         "theme"
       ]

@@ -3,7 +3,7 @@
 [matugen](https://github.com/InioX/matugen) generates a Material 3 color scheme (from a wallpaper or a color);
 `omfp.css` here is a matugen template that turns it into an omfp theme: CSS overriding the `--omfp-*` color tokens
 for light and dark (UI-091). The theme is global to omfp and kept by the daemon, so every window (browser or desktop,
-local or remote) picks it up live.
+local or remote) picks it up live while the `matugen` theme is selected.
 
 ## Setup
 
@@ -11,6 +11,10 @@ local or remote) picks it up live.
 2. Merge `config.toml` into `~/.config/matugen/config.toml` (the `[config.custom_colors]` entries are required: the
    template uses `success` and `warning`).
 3. Run matugen, e.g. `matugen image ~/wallpaper.png` or `matugen color hex "#6750a4"`.
+4. Select the `matugen` theme once: `:theme matugen` in a window (or `:set theme=matugen`, or `theme = "matugen"`
+   under `[ui]` in `~/.config/omfp/config.toml`). With any other theme the daemon keeps the generated theme but the
+   windows do not show it; selecting `matugen` again shows the latest one. Without a generated theme, `matugen` is
+   Synth.
 
 Shells that run matugen for you and add your templates to theirs (DankMaterialShell and its forks, with "Run user
 templates") use absolute paths in `input_path`/`output_path` and do not pass `[config.custom_colors]` to user templates:
@@ -25,13 +29,14 @@ Where the theme goes:
 - **Remote daemon**: uncomment the `post_hook`, which runs `omfp theme set <file> --daemon <url> --token <token>`
   after each generation (the daemon stores it like `theme.set`; `--daemon`/`--token` default to the local daemon).
 
-`omfp theme set` works with any CSS file, so a hand-written theme overriding a few tokens is fine too. An empty theme
-(an empty file, or `theme.set` with `css: null`) leaves the built-in themes in effect.
+`omfp theme set` works with any CSS file, so a hand-written theme overriding a few tokens is fine too; it shows with
+the `matugen` theme as well. An empty theme (an empty file, or `theme.set` with `css: null`) makes `matugen` show
+Synth.
 
 ## How it overrides
 
-The built-in tokens live in `@layer omfp-tokens` (`ui/packages/kit/src/tokens.css`); the template is unlayered, so its
-declarations always win. It uses the same selectors as the built-in themes, so the color-scheme switch (`:theme
+With the `matugen` theme the windows put the theme over Synth's tokens, which live in `@layer omfp-tokens`
+(`ui/packages/kit/src/tokens.css`); the template is unlayered, so its declarations always win. It uses the same selectors as the built-in themes, so the color-scheme switch (`:theme
 light|dark|system`) keeps working:
 
 | Rule | Scheme |

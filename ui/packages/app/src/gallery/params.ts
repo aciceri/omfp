@@ -1,17 +1,17 @@
 /**
- * The `/kit` gallery's parameters (UI-173, UI-514): `?scheme=light|dark`, `?theme=` a built-in theme (UI-510:
- * `synth`, `catppuccin`, …, `accent`) or a fixture user theme (`matugen-forest`, `dux-solarized`), `?accent=` the system
- * accent `accent` derives from (`#rrggbb`, default macOS's blue), `?density=`, `?motion=` and `?fs=` (the root size in
- * px). Unknown values keep the app's defaults.
+ * The `/kit` gallery's parameters (UI-173, UI-514): `?scheme=light|dark`, `?theme=` a theme (UI-510: `synth`,
+ * `catppuccin`, …, `accent`, and `matugen` with the matugen-forest fixture as the user theme) or the fixture user theme
+ * `dux-solarized`, `?accent=` the system accent `accent` derives from (`#rrggbb`, default macOS's blue), `?density=`,
+ * `?motion=` and `?fs=` (the root size in px). Unknown values keep the app's defaults.
  */
 import type { BuiltinTheme, Density, Motion } from "@omfp/protocol";
 import { DENSITIES, MOTIONS, SCHEMES, THEMES } from "../frame/set.ts";
 import { type ColorScheme, DEFAULT_DENSITY, DEFAULT_FONT_SIZE, DEFAULT_MOTION, DEFAULT_THEME } from "../sdk/index.ts";
 
-/** The fixture user themes over Synth: the matugen output, and the user preset the contrast guard fixes (UI-196). */
-export type GalleryFixture = "matugen-forest" | "dux-solarized";
+/** The fixture user theme over Synth besides `matugen`'s: the user preset the contrast guard fixes (UI-196). */
+export type GalleryFixture = "dux-solarized";
 
-/** A built-in theme, or a fixture user theme. */
+/** A theme of the setting, or the fixture user theme. */
 export type GalleryTheme = BuiltinTheme | GalleryFixture;
 
 export interface GalleryParams {
@@ -24,8 +24,8 @@ export interface GalleryParams {
   readonly fontSize: number;
 }
 
-const FIXTURES: readonly GalleryFixture[] = ["matugen-forest", "dux-solarized"];
-/** Every theme the gallery shows, its picker's order: the built-in themes, then the fixtures. */
+const FIXTURES: readonly GalleryFixture[] = ["dux-solarized"];
+/** Every theme the gallery shows, its picker's order: the themes of the setting, then the fixture. */
 export const GALLERY_THEMES: readonly GalleryTheme[] = [...THEMES, ...FIXTURES];
 /** macOS's default accent, blue (`NSColor.controlAccentColor` with the multicolour setting). */
 export const DEFAULT_ACCENT = "#007aff";
@@ -37,7 +37,7 @@ function pick<T extends string>(value: string | null, allowed: readonly T[], fal
   return allowed.find((candidate) => candidate === value) ?? fallback;
 }
 
-/** The built-in theme `theme` is, or `undefined` for a fixture user theme. */
+/** The theme of the setting `theme` is, or `undefined` for the fixture user theme. */
 export function builtinTheme(theme: GalleryTheme): BuiltinTheme | undefined {
   return THEMES.find((candidate) => candidate === theme);
 }

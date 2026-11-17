@@ -112,8 +112,8 @@ describe("help panel", () => {
     expect(rows("commands", "window.theme")).toEqual([
       [
         ":theme",
-        "system | light | dark | synth | catppuccin | gruvbox | tokyo-night | nord | solarized | rose-pine | accent",
-        "Colour scheme (system, light, dark) and built-in theme (synth, catppuccin, gruvbox, …)",
+        "system | light | dark | synth | catppuccin | gruvbox | tokyo-night | nord | solarized | rose-pine | accent | matugen",
+        "Colour scheme (system, light, dark) and theme (synth, catppuccin, gruvbox, …; matugen: the user theme file, Synth without one)",
       ],
     ]);
     await user.keyboard("{Escape}");

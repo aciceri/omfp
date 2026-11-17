@@ -127,8 +127,9 @@ export type BtwParams = {
 };
 
 /**
- * A built-in colour theme of the UI (UI-510, PRT-143): an official palette mapped onto the Material 3 roles in light
- * and dark, or (`accent`) one derived from the system accent colour where the web view exposes it (UI-512).
+ * A colour theme of the UI (UI-510, PRT-143): an official palette mapped onto the Material 3 roles in light and dark,
+ * one derived from the system accent colour where the web view exposes it (`accent`, UI-512), or the user theme
+ * (`matugen`, DMN-075).
  */
 export type BuiltinTheme =
   /** omfp's own palette, cyan to indigo (UI-139; default). */
@@ -146,7 +147,9 @@ export type BuiltinTheme =
   /** Rosé Pine: Dawn in light, the main variant in dark. */
   | "rose-pine"
   /** Follows the system accent colour (macOS); elsewhere Synth. */
-  | "accent";
+  | "accent"
+  /** The user theme (DMN-075: `theme.set`, the theme file matugen writes) over Synth; Synth without one. */
+  | "matugen";
 
 /** `windows.check_widget` params (PRT-124). */
 export type CheckWidgetParams = {
@@ -1854,7 +1857,10 @@ export type UiSettings = {
   notifications?: NotificationMode | null;
   /** Show informational xdev notices in the transcript (UI-043); absent or false hides them, without dropping events. */
   showXdevNotices?: boolean | null;
-  /** The built-in colour theme (UI-510); absent is Synth, omfp's own. A user theme (`/theme.css`) still wins. */
+  /**
+   * The colour theme (UI-510); absent is Synth, omfp's own. The windows apply the user theme (`/theme.css`) only
+   * with `matugen`.
+   */
   theme?: BuiltinTheme | null;
 };
 

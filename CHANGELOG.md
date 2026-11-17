@@ -21,6 +21,13 @@ The version's section is also the source of the GitHub release notes.
 
 ### Changed
 
+- The user theme (the matugen template's `~/.config/omfp/theme.css`, `omfp theme set` or `theme.set`) now has its own
+  theme name, `matugen`, and the windows show it only while that theme is selected (`:theme matugen`, `:set
+  theme=matugen`, `theme = "matugen"` under `[ui]`; the `/kit` picker shows it with the matugen fixture). With any
+  other theme the built-in palette shows and the daemon keeps the user theme, still updated live, for when `matugen`
+  is selected again; `matugen` without a user theme is Synth. **Migration**: if you use a matugen or hand-written
+  theme, select `matugen` once (`:theme matugen`) to see it again. The `/kit` gallery's `?theme=matugen-forest` is
+  now `?theme=matugen`.
 - The left column's workspace sections are tidier: the thread count sits at the right end of the header, with the
   menu and delete buttons appearing in its place on hover; `+ thread` follows the threads; then two collapsed rows,
   `Jobs (N)` and `Archived (N)`, each toggled on its own. `Jobs (N)` replaces the job counts after the workspace

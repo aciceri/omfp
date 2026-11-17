@@ -2025,7 +2025,7 @@ async fn without_a_config_file_settings_live_in_memory() {
     assert_eq!(client.ok("settings.get", json!({})).await, set);
 }
 
-// spec: DMN-239, DMN-240, UI-510
+// spec: DMN-239, DMN-240, UI-510, DMN-238
 #[tokio::test(flavor = "multi_thread")]
 async fn the_built_in_theme_is_a_ui_setting_written_back_and_independent_of_the_user_theme() {
     let config = tempfile::tempdir().unwrap();
@@ -2050,12 +2050,18 @@ async fn the_built_in_theme_is_a_ui_setting_written_back_and_independent_of_the_
         std::fs::read_to_string(&file).unwrap(),
         "[ui]\ntheme = \"rose-pine\" # cold\n"
     );
-    // The user theme stays: it is applied over whichever built-in theme the windows draw.
+    // The user theme stays, kept for `matugen`, the theme that applies it.
+    assert_eq!(web.ok("theme.get", json!({})).await, json!({ "css": css }));
+    let set = web
+        .ok("settings.set", json!({ "ui": { "theme": "matugen" } }))
+        .await;
+    assert_eq!(set["ui"], json!({ "theme": "matugen" }));
+    assert_eq!(next_settings(&mut desktop).await["ui"], set["ui"]);
     assert_eq!(web.ok("theme.get", json!({})).await, json!({ "css": css }));
     web.ok("theme.set", json!({ "css": null })).await;
     assert_eq!(
         web.ok("settings.get", json!({})).await["ui"],
-        json!({ "theme": "rose-pine" })
+        json!({ "theme": "matugen" })
     );
     let error = web
         .call("settings.set", json!({ "ui": { "theme": "dracula" } }))

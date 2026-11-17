@@ -2,16 +2,17 @@
  * Theme, density, motion and fonts on the document (UI-091, UI-094, UI-097, UI-145). The built-in light and dark
  * tokens follow `prefers-color-scheme` unless `<html data-color-scheme="light|dark">` (window-local) overrides it;
  * `data-theme` is the daemon's `[ui] theme` (UI-510), a built-in theme of `@omfp/kit/themes.css` over Synth's tokens
- * (`accent` only where the host gives the system accent, UI-512, else Synth); `data-density` (the daemon's
- * `[ui] density`) picks compact or normal spacing; `data-motion` is the effective motion level, the daemon's `[ui] motion` capped at `none` while the system asks for reduced motion, so stylesheets and
+ * (`accent` only where the host gives the system accent, UI-512, else Synth; `matugen` is Synth under the user theme);
+ * `data-density` (the daemon's `[ui] density`) picks compact or normal spacing; `data-motion` is the effective motion level, the daemon's `[ui] motion` capped at `none` while the system asks for reduced motion, so stylesheets and
  * script effects read one attribute; `[ui] font_size` is `<html>`'s inline `font-size` (so every rem-based token
  * scales); `[ui.fonts]` set `--omfp-font-prose|ui|code` inline on `<html>`, which beats any stylesheet, user theme
- * included. The user theme is the daemon's (global, `theme.get`/`theme.set`): the page loads it first through
- * `<link rel="stylesheet" href="/theme.css" data-omfp-theme>` (so it applies before the socket connects), then the
- * `index` topic's `theme` replaces that link with `<style data-omfp-theme>` in the same place and keeps it current
- * (`theme_changed`). The tokens and the built-in themes live in `@layer omfp-tokens`, so the unlayered user theme always
- * wins over them. The contrast guard (guard.ts, UI-196) then keeps the theme's text roles readable: it runs with the
- * appearance.
+ * included. The user theme is the daemon's (global, `theme.get`/`theme.set`) and shows only while `[ui] theme` is
+ * `matugen`: the page loads it first through `<link rel="stylesheet" href="/theme.css" data-omfp-theme>` (so it applies
+ * before the socket connects), then once the `index` topic is live `<style data-omfp-theme>` replaces that link in the
+ * same place, holding the user theme while the theme is `matugen` and nothing otherwise, and follows both
+ * (`theme_changed`, `settings_changed`) without asking the daemon again. The tokens and the built-in themes live in
+ * `@layer omfp-tokens`, so the unlayered user theme always wins over them. The contrast guard (guard.ts, UI-196) then
+ * keeps the theme's text roles readable: it runs with the appearance.
  */
 
 import { type BuiltinTheme, type Density, type FontSettings, INDEX_TOPIC, type Motion } from "@omfp/protocol";
@@ -53,10 +54,14 @@ export interface Appearance {
 }
 
 /**
- * The theme `root` shows for the setting `theme` (UI-512): `accent` only with a system accent from the host and a
- * browser that derives colours from it, else Synth; any other theme as it is.
+ * The built-in theme `root` shows for the setting `theme` (UI-510, UI-512): `accent` only with a system accent from the
+ * host and a browser that derives colours from it, else Synth; `matugen` Synth, under the user theme (`userTheme`);
+ * any other theme as it is.
  */
 export function effectiveTheme(root: HTMLElement, theme: BuiltinTheme): BuiltinTheme {
+  if (theme === "matugen") {
+    return DEFAULT_THEME;
+  }
   if (theme !== "accent") {
     return theme;
   }
@@ -81,6 +86,14 @@ export function applyAppearance(
       root.style.setProperty(`--omfp-font-${role}`, family);
     }
   }
+}
+
+/**
+ * The user theme a window shows for the setting `theme` (UI-510, DMN-240): the daemon's `css` with `matugen`, none with
+ * any other theme, while the daemon keeps it.
+ */
+export function userTheme(theme: BuiltinTheme, css: string | null): string | null {
+  return theme === "matugen" ? css : null;
 }
 
 /** Puts `css` (`null`: no user theme) in the page's `<style data-omfp-theme>`, which replaces the bundle's `<link>`. */
@@ -135,12 +148,17 @@ export function useAppearance(root: HTMLElement = document.documentElement): voi
   useEffect(() => installContrastGuard(root.ownerDocument, root), [root]);
 }
 
-/** Applies the daemon's theme once the `index` topic is live, and every change after (`theme_changed`). */
+/**
+ * Applies the daemon's user theme once the `index` topic is live, while `[ui] theme` is `matugen` (`userTheme`), and
+ * every change after: of the user theme (`theme_changed`) and of the theme (`settings_changed`).
+ */
 export function useUserTheme(): void {
   const live = useSnapshot((snapshot) =>
     snapshot.topics.some((topic) => topic.topic === INDEX_TOPIC && topic.sync.kind === "live"),
   );
-  const css = useSnapshot((snapshot) => snapshot.index.theme.css);
+  const theme = useSettings().ui.theme ?? DEFAULT_THEME;
+  const stored = useSnapshot((snapshot) => snapshot.index.theme.css);
+  const css = userTheme(theme, stored);
   useEffect(() => {
     if (live) {
       applyUserTheme(document, css);

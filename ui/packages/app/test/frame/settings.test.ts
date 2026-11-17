@@ -60,6 +60,7 @@ describe(":set", () => {
   test("`theme=` takes a built-in theme's name, completes every one and refuses others", () => {
     expect(parseSet("theme=rose-pine")).toEqual({ ok: true, patch: { ui: { theme: "rose-pine" } } });
     expect(parseSet("theme = synth")).toEqual({ ok: true, patch: { ui: { theme: "synth" } } });
+    expect(parseSet("theme=matugen")).toEqual({ ok: true, patch: { ui: { theme: "matugen" } } });
     expect(parseSet("theme=dracula")).toEqual({ ok: false, error: "Invalid value for theme: dracula" });
     expect(SET_KEYS.filter((key) => key.startsWith("theme="))).toEqual([
       "theme=synth",
@@ -70,6 +71,7 @@ describe(":set", () => {
       "theme=solarized",
       "theme=rose-pine",
       "theme=accent",
+      "theme=matugen",
     ]);
   });
 
@@ -79,6 +81,7 @@ describe(":set", () => {
     expect(parseTheme(["nord"])).toEqual({ ok: true, theme: "nord" });
     expect(parseTheme(["tokyo-night", "light"])).toEqual({ ok: true, scheme: "light", theme: "tokyo-night" });
     expect(parseTheme(["system", "accent"])).toEqual({ ok: true, scheme: "system", theme: "accent" });
+    expect(parseTheme(["matugen", "dark"])).toEqual({ ok: true, scheme: "dark", theme: "matugen" });
     expect(parseTheme(["dracula"])).toEqual({ ok: false, error: "Unknown colour scheme or theme: dracula" });
     expect(parseTheme([])).toEqual({ ok: false, error: expect.stringContaining("Usage: :theme") });
     expect(parseTheme(["dark", "light"])).toEqual({ ok: false, error: expect.stringContaining("Usage: :theme") });
@@ -95,6 +98,7 @@ describe(":set", () => {
       "solarized",
       "rose-pine",
       "accent",
+      "matugen",
     ]);
     expect(themeArgs(["catppuccin"])).toEqual(["system", "light", "dark"]);
     expect(themeArgs(["dark"])).toEqual([
@@ -106,6 +110,7 @@ describe(":set", () => {
       "solarized",
       "rose-pine",
       "accent",
+      "matugen",
     ]);
     expect(themeArgs(["dark", "nord"])).toEqual([]);
   });

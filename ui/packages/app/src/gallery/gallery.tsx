@@ -20,7 +20,6 @@ import forestTheme from "./matugen-forest.css" with { type: "text" };
 import {
   builtinTheme,
   GALLERY_THEMES,
-  type GalleryFixture,
   type GalleryParams,
   type GalleryTheme,
   galleryParams,
@@ -29,17 +28,17 @@ import {
 import { HelpPanels, LeftColumn, ModeLines, ResponsiveParts } from "./shell.tsx";
 import { DensityStrip, Glyphs, Logo, TokenSheet } from "./tokens.tsx";
 
-/** The fixture user themes of `?theme=` (UI-173), over Synth. */
-const FIXTURE_CSS: ReadonlyMap<GalleryTheme, string> = new Map<GalleryFixture, string>([
-  ["matugen-forest", forestTheme as string],
+/** The fixture user themes of `?theme=` (UI-173, UI-514) over Synth: matugen's output as `matugen`'s, the Dux preset. */
+const FIXTURE_CSS: ReadonlyMap<GalleryTheme, string> = new Map<GalleryTheme, string>([
+  ["matugen", forestTheme as string],
   ["dux-solarized", duxTheme as string],
 ]);
 
 /**
  * Puts the query's appearance and theme on the document — a built-in theme (`accent` from the query's accent, as the
- * desktop window gives the system's, UI-512), or Synth under a fixture user theme, which replaces the user theme — and
- * runs the contrast guard (UI-196), before the first render, so what the page measures is in its final colors.
- * Returns what the guard overrode.
+ * desktop window gives the system's, UI-512), or Synth under a fixture user theme (`matugen`'s or the Dux preset),
+ * which replaces the user theme — and runs the contrast guard (UI-196), before the first render, so what the page
+ * measures is in its final colors. Returns what the guard overrode.
  */
 function applyGalleryParams(params: GalleryParams): Adjustment[] {
   const root = document.documentElement;

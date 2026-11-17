@@ -8,8 +8,8 @@ use std::path::Path;
 
 use e2e::Journey;
 use fake_llm::{Reply, Step, ToolCall};
-use omfp_protocol::Theme;
-use omfp_protocol::method::ThemeSet;
+use omfp_protocol::method::{SettingsSet, ThemeSet};
+use omfp_protocol::{BuiltinTheme, SetSettingsParams, Theme, UiSettings};
 use omfp_testkit::TempRepo;
 use serde_json::json;
 use thirtyfour::prelude::*;
@@ -92,9 +92,19 @@ fn matugen_theme() -> anyhow::Result<String> {
     Ok(css)
 }
 
-/// Sets the daemon's theme (UI-091) and waits until the page's `--omfp-primary` is `primary`.
+/// Sets the daemon's user theme (UI-091), shown with the `matugen` theme (UI-510), and waits until the page's
+/// `--omfp-primary` is `primary`.
 async fn push_theme(journey: &Journey, css: Option<String>, primary: &str) -> anyhow::Result<()> {
     let mut connection = journey.connect().await?;
+    connection
+        .call::<SettingsSet>(SetSettingsParams {
+            ui: Some(UiSettings {
+                theme: Some(BuiltinTheme::Matugen),
+                ..UiSettings::default()
+            }),
+            keymap: None,
+        })
+        .await?;
     connection.call::<ThemeSet>(Theme { css }).await?;
     connection.close().await?;
     until_primary(journey, primary).await

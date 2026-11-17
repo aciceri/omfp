@@ -1,6 +1,6 @@
 //! The `/kit` gallery (UI-173, UI-174, UI-514) at motion `none`, 17 px, compact, in light and dark for every built-in
-//! theme (UI-510: Synth, the six palettes, and `accent` from macOS's blue, yellow and graphite accents, UI-512), the
-//! matugen fixture theme and the Dux Solarized preset (whose tertiary and secondary sit on the surface at 1.14:1 until
+//! theme (UI-510: Synth, the six palettes, and `accent` from macOS's blue, yellow and graphite accents, UI-512),
+//! `matugen` with the matugen fixture theme as the user theme, and the Dux Solarized preset (whose tertiary and secondary sit on the surface at 1.14:1 until
 //! the contrast guard, UI-196, moves them): every text role, status color and gradient stop the page measures reaches
 //! WCAG AA, the guard overrides nothing but in the Dux preset, and elsewhere the item focus (UI-132) stays visible: its
 //! bar at 3:1, its tint apart from the other states. Full-page shots land in the run's screenshot directory
@@ -26,7 +26,7 @@ const THEMES: [(&str, &str); 13] = [
     ("accent-yellow", "theme=accent&accent=%23ffc600"),
     ("accent-graphite", "theme=accent&accent=%238c8c8c"),
     ("accent-green", "theme=accent&accent=%2362ba46"),
-    ("matugen-forest", "theme=matugen-forest"),
+    ("matugen", "theme=matugen"),
     ("dux-solarized", "theme=dux-solarized"),
 ];
 /// The one theme the contrast guard must correct; it leaves every other as it is.
@@ -117,7 +117,7 @@ async fn the_kit_gallery_text_reaches_aa_in_every_theme() -> anyhow::Result<()> 
             let shown = journey.attr("html", "data-theme").await?;
             let expected = if theme.starts_with("accent") {
                 "accent"
-            } else if theme == GUARDED_THEME || theme == "matugen-forest" {
+            } else if theme == GUARDED_THEME || theme == "matugen" {
                 "synth"
             } else {
                 theme

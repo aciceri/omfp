@@ -696,7 +696,7 @@ export const shell = {
       "Usage: :set <key>=<value> (density, font_size, motion, notifications, show_xdev_notices, theme, fonts.prose|ui|code, keymap[.<mode>].<keys>)",
     unknownKey: (key: string) => `Unknown setting: ${key}`,
     themeUsage:
-      "Usage: :theme [system|light|dark] [<theme>] (synth, catppuccin, gruvbox, tokyo-night, nord, solarized, rose-pine, accent)",
+      "Usage: :theme [system|light|dark] [<theme>] (synth, catppuccin, gruvbox, tokyo-night, nord, solarized, rose-pine, accent, matugen: the user theme file, Synth without one)",
     unknownTheme: (word: string) => `Unknown colour scheme or theme: ${word}`,
     invalidValue: (key: string, value: string) => `Invalid value for ${key}: ${value === "" ? "(empty)" : value}`,
     error: (message: string) => `The config file is invalid, the previous settings stay: ${message}`,
@@ -802,7 +802,8 @@ export const shell = {
     jobEnable: "Enable a job of the current workspace in .omfp/jobs.json (:job-enable <name>)",
     jobDisable: "Disable a job of the current workspace in .omfp/jobs.json (:job-disable <name>)",
     jobList: "Show the jobs of the current workspace (omfp:jobs)",
-    theme: "Colour scheme (system, light, dark) and built-in theme (synth, catppuccin, gruvbox, …)",
+    theme:
+      "Colour scheme (system, light, dark) and theme (synth, catppuccin, gruvbox, …; matugen: the user theme file, Synth without one)",
     density: "Density (compact, normal)",
     set: "Change a setting (:set key=value)",
     cmdline: "Open the command line",

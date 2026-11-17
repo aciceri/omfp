@@ -17,7 +17,10 @@ export const SCHEMES: readonly ColorScheme[] = ["system", "light", "dark"];
 export const DENSITIES: readonly Density[] = ["compact", "normal"];
 export const MOTIONS: readonly Motion[] = ["full", "reduced", "none"];
 const NOTIFICATIONS: readonly NotificationMode[] = ["background", "always", "never"];
-/** The built-in themes (UI-510): Synth (the default), the six palettes and the system accent's. */
+/**
+ * The themes (UI-510): Synth (the default), the six palettes, the system accent's and `matugen`, the user theme
+ * (DMN-075) over Synth.
+ */
 export const THEMES: readonly BuiltinTheme[] = [
   "synth",
   "catppuccin",
@@ -27,6 +30,7 @@ export const THEMES: readonly BuiltinTheme[] = [
   "solarized",
   "rose-pine",
   "accent",
+  "matugen",
 ];
 const FONT_ROLES: readonly FontRole[] = ["prose", "ui", "code"];
 const MODES: readonly Mode[] = ["normal", "insert", "cmdline"];

@@ -133,6 +133,7 @@ font_size = 17                 # px, 10–28
 motion = "full"                # full | reduced | none
 notifications = "background"   # background | always | never
 theme = "synth"                # synth | catppuccin | gruvbox | tokyo-night | nord | solarized | rose-pine | accent
+                               # | matugen (the user theme below)
 show_xdev_notices = false      # informational MCP mount/unmount rows in the transcript
 
 [ui.fonts]                     # prose, ui, code: CSS font families
@@ -144,8 +145,9 @@ prose = "Literata, serif"
 ```
 
 `[ui]` and `[keymap]` apply live; a change to `[daemon]` needs a daemon restart. A user theme is the CSS file
-`~/.config/omfp/theme.css` next to it, followed live and above the built-in themes (the matugen template in
-`contrib/matugen` makes one); `omfp theme set <file>` pushes a theme to a running daemon instead.
+`~/.config/omfp/theme.css` next to it, followed live (the matugen template in `contrib/matugen` makes one); `omfp
+theme set <file>` pushes a theme to a running daemon instead. The windows show it with the `matugen` theme (`:theme
+matugen`), over Synth; any other theme leaves it stored but unused.
 
 Informational MCP mount/unmount notices are hidden in new and existing transcripts by default. Run
 `:set show_xdev_notices=true` to reveal retained notices immediately; `:set show_xdev_notices=false` hides them

@@ -777,6 +777,22 @@ async fn the_vim_keymap_moves_focuses_and_runs_the_command_line() -> anyhow::Res
     journey.finish("keymap").await
 }
 
+/// Selects the theme with `settings.set` (DMN-239): `matugen` is the one that shows the user theme (UI-510).
+async fn set_theme(journey: &Journey, theme: omfp_protocol::BuiltinTheme) -> anyhow::Result<()> {
+    let mut connection = journey.connect().await?;
+    connection
+        .call::<omfp_protocol::method::SettingsSet>(omfp_protocol::SetSettingsParams {
+            ui: Some(omfp_protocol::UiSettings {
+                theme: Some(theme),
+                ..omfp_protocol::UiSettings::default()
+            }),
+            keymap: None,
+        })
+        .await?;
+    connection.close().await?;
+    Ok(())
+}
+
 // spec: UI-091
 #[tokio::test(flavor = "multi_thread")]
 async fn a_theme_set_from_the_command_line_reaches_the_open_page_live() -> anyhow::Result<()> {
@@ -784,6 +800,7 @@ async fn a_theme_set_from_the_command_line_reaches_the_open_page_live() -> anyho
     journey.connected().await?;
     let built_in = journey.token("--omfp-primary").await?;
     assert!(!built_in.is_empty(), "the built-in theme sets the token");
+    set_theme(&journey, omfp_protocol::BuiltinTheme::Matugen).await?;
     // A marker on `window` tells a reload apart from a live update.
     journey
         .eval("window.omfpE2eMarker = 'kept';", Vec::new())
@@ -837,6 +854,15 @@ async fn until_theme(journey: &Journey, theme: &str) -> anyhow::Result<()> {
         .await
 }
 
+/// Waits until the page's `--omfp-primary` is `primary`, the theme's `whose`.
+async fn until_primary(journey: &Journey, whose: &str, primary: &str) -> anyhow::Result<()> {
+    journey
+        .until(&format!("{whose} primary"), async |page| {
+            Ok((page.token("--omfp-primary").await? == primary).then_some(()))
+        })
+        .await
+}
+
 /// The built-in themes with their official background in light and dark (`--omfp-surface`, UI-511).
 const THEME_SURFACES: [(&str, &str, &str); 7] = [
     ("synth", "#faf8ff", "#12131a"),
@@ -848,9 +874,9 @@ const THEME_SURFACES: [(&str, &str, &str); 7] = [
     ("rose-pine", "#faf4ed", "#191724"),
 ];
 
-// spec: E2E-44, UI-510, UI-511, UI-512, UI-513, DMN-239
+// spec: E2E-44, UI-510, UI-511, UI-512, UI-513, DMN-239, DMN-240
 #[tokio::test(flavor = "multi_thread")]
-async fn a_built_in_theme_is_chosen_with_theme_kept_by_the_daemon_and_under_the_user_theme()
+async fn a_built_in_theme_is_chosen_with_theme_kept_by_the_daemon_and_the_user_theme_with_matugen()
 -> anyhow::Result<()> {
     let journey = Journey::start(Vec::new()).await?;
     journey.connected().await?;
@@ -905,28 +931,40 @@ async fn a_built_in_theme_is_chosen_with_theme_kept_by_the_daemon_and_under_the_
         .await?;
     until_theme(&journey, "synth").await?;
 
-    // A user theme still wins over a built-in one; clearing it shows the built-in theme again.
-    journey.command("theme gruvbox light").await?;
+    journey.scheme("light").await?;
+    let synth = journey.token("--omfp-primary").await?;
+
+    // The user theme shows only with `matugen`, over Synth; under another theme the daemon keeps it and the window
+    // follows its changes without showing them (DMN-240). Without a user theme `matugen` is Synth.
+    journey.command("theme gruvbox").await?;
     until_theme(&journey, "gruvbox").await?;
     let gruvbox = journey.token("--omfp-primary").await?;
-    connection
-        .call::<omfp_protocol::method::ThemeSet>(omfp_protocol::Theme {
-            css: Some(":root { --omfp-primary: #0b6e4f; }".to_owned()),
-        })
-        .await?;
-    journey
-        .until("the user theme's primary", async |page| {
-            Ok((page.token("--omfp-primary").await? == "#0b6e4f").then_some(()))
-        })
-        .await?;
+    for (primary, css) in [
+        ("#0b6e4f", ":root { --omfp-primary: #0b6e4f; }"),
+        ("#6750a4", ":root { --omfp-primary: #6750a4; }"),
+    ] {
+        connection
+            .call::<omfp_protocol::method::ThemeSet>(omfp_protocol::Theme {
+                css: Some(css.to_owned()),
+            })
+            .await?;
+        journey.command("theme matugen").await?;
+        until_theme(&journey, "synth").await?;
+        until_primary(&journey, "the user theme's", primary).await?;
+        journey.command("theme gruvbox").await?;
+        until_theme(&journey, "gruvbox").await?;
+        until_primary(&journey, "Gruvbox's", &gruvbox).await?;
+    }
+    journey.command("theme matugen").await?;
+    until_primary(&journey, "the user theme's", "#6750a4").await?;
     connection
         .call::<omfp_protocol::method::ThemeSet>(omfp_protocol::Theme { css: None })
         .await?;
-    journey
-        .until("the built-in theme's primary", async |page| {
-            Ok((page.token("--omfp-primary").await? == gruvbox).then_some(()))
-        })
-        .await?;
+    until_primary(&journey, "Synth's", &synth).await?;
+    assert_eq!(
+        journey.attr("html", "data-theme").await?.as_deref(),
+        Some("synth")
+    );
     connection.close().await?;
     journey.finish("built-in themes").await
 }
@@ -1323,7 +1361,9 @@ async fn code_follows_the_theme(journey: &Journey) -> anyhow::Result<()> {
     let dark = keywords_follow_the_theme(journey).await?;
     assert_ne!(light, dark, "keywords change color with the scheme");
     journey.screenshot("m5-code-dark").await?;
-    // A color that reaches AA on the dark surfaces, so the contrast guard (UI-196) keeps it as given.
+    // A color that reaches AA on the dark surfaces, so the contrast guard (UI-196) keeps it as given, shown with
+    // `matugen` (UI-510).
+    set_theme(journey, omfp_protocol::BuiltinTheme::Matugen).await?;
     let mut connection = journey.connect().await?;
     connection
         .call::<omfp_protocol::method::ThemeSet>(omfp_protocol::Theme {

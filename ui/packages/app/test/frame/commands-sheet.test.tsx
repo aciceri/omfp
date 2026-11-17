@@ -191,6 +191,7 @@ describe("commands sheet", () => {
       "theme solarized",
       "theme rose-pine",
       "theme accent",
+      "theme matugen",
     ]);
   });
 });

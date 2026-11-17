@@ -1,7 +1,7 @@
 /** L1: the `/kit` gallery's parameters (UI-173). */
 
 import { describe, expect, test } from "bun:test";
-import { GALLERY_THEMES, galleryParams, gallerySearch, isGalleryPath } from "../../src/gallery/params.ts";
+import { builtinTheme, GALLERY_THEMES, galleryParams, gallerySearch, isGalleryPath } from "../../src/gallery/params.ts";
 
 describe("gallery parameters", () => {
   // spec: UI-173
@@ -22,9 +22,9 @@ describe("gallery parameters", () => {
       motion: "full",
       fontSize: 17,
     });
-    expect(galleryParams("?scheme=dark&theme=matugen-forest&density=normal&motion=none&fs=15")).toEqual({
+    expect(galleryParams("?scheme=dark&theme=matugen&density=normal&motion=none&fs=15")).toEqual({
       scheme: "dark",
-      theme: "matugen-forest",
+      theme: "matugen",
       accent: "#007aff",
       density: "normal",
       motion: "none",
@@ -46,7 +46,7 @@ describe("gallery parameters", () => {
   });
 
   // spec: UI-514, UI-510
-  test("every built-in theme is a gallery theme, then the fixtures; `accent` takes the query's accent", () => {
+  test("every theme of the setting is a gallery theme, then the Dux fixture; `accent` takes the query's accent", () => {
     expect(GALLERY_THEMES).toEqual([
       "synth",
       "catppuccin",
@@ -56,11 +56,12 @@ describe("gallery parameters", () => {
       "solarized",
       "rose-pine",
       "accent",
-      "matugen-forest",
+      "matugen",
       "dux-solarized",
     ]);
     expect(GALLERY_THEMES.filter((theme) => galleryParams(`?theme=${theme}`).theme !== theme)).toEqual([]);
     expect(galleryParams("?theme=accent&accent=%23FFC600")).toMatchObject({ theme: "accent", accent: "#ffc600" });
+    expect([builtinTheme("matugen"), builtinTheme("dux-solarized")]).toEqual(["matugen", undefined]);
   });
 
   // spec: UI-514

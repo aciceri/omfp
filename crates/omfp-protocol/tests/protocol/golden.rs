@@ -2047,6 +2047,7 @@ fn built_in_themes_are_named_in_kebab_case_and_unknown_names_are_refused() {
         (BuiltinTheme::Solarized, "solarized"),
         (BuiltinTheme::RosePine, "rose-pine"),
         (BuiltinTheme::Accent, "accent"),
+        (BuiltinTheme::Matugen, "matugen"),
     ];
     for (theme, name) in names {
         assert_eq!(serde_json::to_value(theme).unwrap(), json!(name));

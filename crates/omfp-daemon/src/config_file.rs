@@ -16,6 +16,7 @@
 //! motion = "full"               # full | reduced | none
 //! notifications = "background"  # background | always | never
 //! theme = "catppuccin"          # synth | catppuccin | gruvbox | tokyo-night | nord | solarized | rose-pine | accent
+//!                               # | matugen (the user theme, theme.css)
 //! show_xdev_notices = false     # show informational MCP mount/unmount notices in the transcript
 //!
 //! [ui.fonts]
@@ -347,6 +348,7 @@ fn theme_name(theme: BuiltinTheme) -> &'static str {
         BuiltinTheme::Solarized => "solarized",
         BuiltinTheme::RosePine => "rose-pine",
         BuiltinTheme::Accent => "accent",
+        BuiltinTheme::Matugen => "matugen",
     }
 }
 
@@ -462,6 +464,33 @@ prose = "Literata, serif"
             let error = ConfigFile::parse(text).unwrap_err();
             assert!(error.contains(named), "{text}: {error}");
         }
+    }
+
+    // spec: DMN-238, UI-510
+    #[test]
+    fn matugen_is_a_theme_read_and_written_back() {
+        assert_eq!(
+            ConfigFile::parse("[ui]\ntheme = \"matugen\"")
+                .unwrap()
+                .ui
+                .theme,
+            Some(BuiltinTheme::Matugen)
+        );
+        let text = write_back(
+            FILE,
+            &SetSettingsParams {
+                ui: Some(UiSettings {
+                    theme: Some(BuiltinTheme::Matugen),
+                    ..UiSettings::default()
+                }),
+                keymap: None,
+            },
+        )
+        .unwrap();
+        assert!(text.contains("theme = \"matugen\"\n"), "{text}");
+        let mut expected = ConfigFile::parse(FILE).unwrap();
+        expected.ui.theme = Some(BuiltinTheme::Matugen);
+        assert_eq!(ConfigFile::parse(&text).unwrap(), expected);
     }
 
     // spec: DMN-009

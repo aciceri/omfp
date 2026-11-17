@@ -623,8 +623,8 @@ comes back from a hide as it was, so an unsaved file edit survives showing anoth
 (UI-400..UI-403, E2E-35). Built-in themes: Catppuccin, Gruvbox, Tokyo Night, Nord, Solarized and Rosé Pine map
 their official palettes onto the roles in light and dark, and `accent` follows the macOS desktop window's system
 accent (UI-510..UI-512); `[ui] theme` keeps the choice daemon-wide (DMN-238..DMN-240, PRT-143), `:theme <theme>
-[<scheme>]` sets it (UI-513), the gallery shows and contrast-checks every theme (UI-514), and a user theme still wins
-(E2E-44).
+[<scheme>]` sets it (UI-513), the gallery shows and contrast-checks every theme (UI-514), and the user theme shows
+with the theme `matugen` (E2E-44, DMN-240).
 
 Acceptance: a workspace `init.ts` written after the window opened adds a view, a command and its binding, and a syntax
 error shows the banner until the fix (E2E-22); `init.ts` views computed from the repositories and a TSX view render and

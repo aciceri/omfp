@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import type { CallMethod } from "@omfp/client";
-import type { Settings, ThreadSummary, ViewsState } from "@omfp/protocol";
+import type { BuiltinTheme, Settings, ThreadSummary, ViewsState } from "@omfp/protocol";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Frame, type FrameProps } from "../../src/frame/frame.tsx";
@@ -364,6 +364,7 @@ describe("frame", () => {
       "theme solarized",
       "theme rose-pine",
       "theme accent",
+      "theme matugen",
     ]);
     await user.type(input, "d{Enter}");
     expect(screen.queryByTestId("command-line")).toBeNull();
@@ -402,6 +403,21 @@ describe("frame", () => {
     expect(client.callsTo("settings.set").length).toBe(1);
   });
 
+  // spec: UI-513, UI-510
+  test("`:theme matugen` selects the user theme, Synth without one", async () => {
+    const { client, flush, user } = setup();
+    client.indexEvents({ kind: "settings_changed", settings: { ui: { theme: "nord" }, keymap: [], error: null } });
+    flush();
+    expect(document.documentElement.dataset.theme).toBe("nord");
+    press(":");
+    await user.type(screen.getByTestId("command-line-input"), "theme matugen{Enter}");
+    expect(client.callsTo("settings.set").map((call) => call.params)).toEqual([{ ui: { theme: "matugen" } }]);
+    client.indexEvents({ kind: "settings_changed", settings: { ui: { theme: "matugen" }, keymap: [], error: null } });
+    flush();
+    expect(document.documentElement.dataset.theme).toBe("synth");
+    expect(document.head.querySelector("style[data-omfp-theme]")?.textContent).toBe("");
+  });
+
   // spec: UI-526, UI-527
   test("the `:` line runs `window.theme` by its id, its alias and its former id `theme.set`", async () => {
     const { user } = setup();
@@ -427,7 +443,7 @@ describe("frame", () => {
       await user.type(screen.getByTestId("command-line-input"), "theme ");
       expect(scrolled).toEqual([]);
       await user.keyboard("{ArrowDown}{ArrowDown}{ArrowUp}{ArrowUp}");
-      expect(scrolled).toEqual(["theme system", "theme light", "theme system", "theme accent"]);
+      expect(scrolled).toEqual(["theme system", "theme light", "theme system", "theme matugen"]);
     } finally {
       scroll.mockRestore();
     }
@@ -550,7 +566,7 @@ describe("frame", () => {
     expect(host.window.get(SELECTED_THREAD)).toBeUndefined();
   });
 
-  // spec: UI-091
+  // spec: UI-091, UI-510, DMN-240
   test("the daemon's theme replaces the bundle's link once the index is live, and follows theme_changed", () => {
     const link = document.createElement("link");
     link.setAttribute("data-omfp-theme", "");
@@ -558,13 +574,45 @@ describe("frame", () => {
     const { client, flush } = setup({}, false);
     expect(document.head.querySelector("link[data-omfp-theme]") === link).toBe(true);
     client.connected();
-    client.index({ theme: { css: ":root { --omfp-primary: red; }" } });
+    const settings = (theme: BuiltinTheme): Settings => ({ ui: { theme }, keymap: [], error: null });
+    client.index({ theme: { css: ":root { --omfp-primary: red; }" }, settings: settings("matugen") });
     flush();
     expect(document.head.querySelector("link[data-omfp-theme]")).toBeNull();
     expect(document.head.querySelector("style[data-omfp-theme]")?.textContent).toBe(":root { --omfp-primary: red; }");
     client.indexEvents({ kind: "theme_changed", theme: { css: null } });
     flush();
     expect(document.head.querySelector("style[data-omfp-theme]")?.textContent).toBe("");
+  });
+
+  // spec: UI-091, UI-510, DMN-240
+  test("the user theme shows only while the theme is `matugen`, and follows theme_changed under any theme", () => {
+    const link = document.createElement("link");
+    link.setAttribute("data-omfp-theme", "");
+    document.head.append(link);
+    const { client, flush } = setup({}, false);
+    client.connected();
+    const settings = (theme: BuiltinTheme): Settings => ({ ui: { theme }, keymap: [], error: null });
+    const shown = () => document.head.querySelector("style[data-omfp-theme]")?.textContent;
+    const red = ":root { --omfp-primary: red; }";
+    const blue = ":root { --omfp-primary: blue; }";
+    client.index({ theme: { css: red }, settings: settings("nord") });
+    flush();
+    expect([document.head.querySelector("link[data-omfp-theme]"), shown()]).toEqual([null, ""]);
+    client.indexEvents({ kind: "settings_changed", settings: settings("matugen") });
+    flush();
+    expect([document.documentElement.dataset.theme, shown()]).toEqual(["synth", red]);
+    client.indexEvents({ kind: "settings_changed", settings: settings("gruvbox") });
+    flush();
+    expect([document.documentElement.dataset.theme, shown()]).toEqual(["gruvbox", ""]);
+    client.indexEvents({ kind: "theme_changed", theme: { css: blue } });
+    flush();
+    expect(shown()).toBe("");
+    client.indexEvents({ kind: "settings_changed", settings: settings("matugen") });
+    flush();
+    expect(shown()).toBe(blue);
+    client.indexEvents({ kind: "theme_changed", theme: { css: red } });
+    flush();
+    expect(shown()).toBe(red);
   });
 
   // spec: UI-092

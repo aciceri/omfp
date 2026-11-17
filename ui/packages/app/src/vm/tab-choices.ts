@@ -88,17 +88,17 @@ export function chooseTab(
   return next === views ? choices : withViews(choices, owner, next);
 }
 
-/** `views` with every selection of `from` moved to `to` (none: dropped); the same object when none selected it. */
-function withTabReplaced(views: ViewTabs, from: string, to: string | undefined): ViewTabs {
+/** `views` with every selection `matches` accepts moved to `to` (none: dropped); the same object when none matched. */
+function withTabReplaced(views: ViewTabs, matches: (selected: string) => boolean, to: string | undefined): ViewTabs {
   let changed = false;
   const kept = Object.entries(views).map(([viewId, containers]): [string, ContainerTabs] => {
     const entries = Object.entries(containers);
-    if (!entries.some(([, selected]) => selected === from)) {
+    if (!entries.some(([, selected]) => matches(selected))) {
       return [viewId, containers];
     }
     changed = true;
     const replaced = entries.flatMap(([container, selected]): [string, string][] =>
-      selected !== from ? [[container, selected]] : to === undefined ? [] : [[container, to]],
+      !matches(selected) ? [[container, selected]] : to === undefined ? [] : [[container, to]],
     );
     return [viewId, Object.fromEntries(replaced)];
   });
@@ -109,7 +109,8 @@ function withTabReplaced(views: ViewTabs, from: string, to: string | undefined):
  * `choices` with the selections of the opened tab `from` by the draft thread of `workspaceId` and by the threads
  * `inWorkspace` says are of it moved to the tab `to` (a missing path's tab showing the file it names, UI-117), or,
  * without `to` (the tab closed), dropped: they go back to their container's first tab, and a tab opened again later
- * is not selected by them. The same object when none selected `from`.
+ * is not selected by them. A selection is `from`'s when `normalize` makes it `from` (a file's tab id kept with another
+ * spelling of its path, UI-119). The same object when none selected `from`.
  */
 export function replaceTab(
   choices: TabChoices,
@@ -117,13 +118,15 @@ export function replaceTab(
   inWorkspace: (threadId: string) => boolean,
   from: string,
   to: string | undefined,
+  normalize: (tabId: string) => string = (tabId) => tabId,
 ): TabChoices {
+  const matches = (selected: string) => normalize(selected) === from;
   let changed = false;
   const threads = choices.threads.map((entry) => {
     if (!inWorkspace(entry.threadId)) {
       return entry;
     }
-    const views = withTabReplaced(entry.views, from, to);
+    const views = withTabReplaced(entry.views, matches, to);
     if (views === entry.views) {
       return entry;
     }
@@ -131,7 +134,7 @@ export function replaceTab(
     return { threadId: entry.threadId, views };
   });
   const draft = own(choices.drafts, workspaceId);
-  const draftViews = draft === undefined ? draft : withTabReplaced(draft, from, to);
+  const draftViews = draft === undefined ? draft : withTabReplaced(draft, matches, to);
   const drafts =
     draftViews === draft ? choices.drafts : { ...choices.drafts, [workspaceId]: draftViews ?? NO_VIEW_TABS };
   return changed || drafts !== choices.drafts ? { threads: changed ? threads : choices.threads, drafts } : choices;

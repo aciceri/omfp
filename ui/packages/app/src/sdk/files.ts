@@ -168,7 +168,9 @@ export function closeOpened(
   const selected = shown !== undefined && chosen !== undefined && workspaceTabId(folder, chosen) === id;
   host.window.set(OPEN_FILES, (files) => ({ ...files, [workspaceId]: closeOpenedTab(tabs, id) }));
   host.window.set(TAB_CHOICES, (choices) =>
-    replaceTab(choices, workspaceId, threadsOf(host, workspaceId), id, undefined),
+    replaceTab(choices, workspaceId, threadsOf(host, workspaceId), id, undefined, (kept) =>
+      workspaceTabId(folder, kept),
+    ),
   );
   if (selected) {
     selectTab(host, shown, MAIN_SLOT, neighbourTab(tabs, id));
@@ -247,7 +249,9 @@ export function chooseFile(
   }));
   if (tabbed) {
     host.window.set(TAB_CHOICES, (choices) =>
-      replaceTab(choices, workspaceId, threadsOf(host, workspaceId), fileTabId(from), fileTabId(to)),
+      replaceTab(choices, workspaceId, threadsOf(host, workspaceId), fileTabId(from), fileTabId(to), (kept) =>
+        workspaceTabId(folder, kept),
+      ),
     );
   } else {
     selectOpenedTab(host, workspaceId, fileTabId(to));
@@ -318,17 +322,24 @@ export interface FileTabsState extends FileTabs {
   closeTab(id: string): void;
 }
 
+/** The folder of `workspaceId` by the live index, which its file tabs are relative to (UI-119); `undefined` until the
+ * index has it. */
+export function useWorkspaceFolder(workspaceId: string | undefined): string | undefined {
+  return useSnapshot((snapshot) =>
+    workspaceId === undefined ? undefined : snapshot.index.workspaces.get(workspaceId)?.path,
+  );
+}
+
 /** `workspaceId`'s opened tabs, their paths as `openFile` keeps them (tabs kept before UI-119 included). */
 export function useFileTabs(workspaceId: string | undefined): FileTabsState {
   const host = useHost();
   const [files] = useWindowState(OPEN_FILES);
   const [shown] = useWindowState(SHOWN_VIEW);
   const [chosen, select] = useChosenTab(shown?.viewId, MAIN_SLOT);
-  const folder = useSnapshot((snapshot) =>
-    workspaceId === undefined ? undefined : snapshot.index.workspaces.get(workspaceId)?.path,
-  );
+  const folder = useWorkspaceFolder(workspaceId);
   const stored = workspaceId === undefined ? NO_FILE_TABS : (files[workspaceId] ?? NO_FILE_TABS);
   const tabs = useMemo(() => normalizeTabs(stored, folder), [stored, folder]);
+  // A selection kept with another spelling of a file's path (UI-119) selects that file's tab.
   const active = chosen === undefined ? undefined : workspaceTabId(folder, chosen);
   return useMemo(
     () => ({

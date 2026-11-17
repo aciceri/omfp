@@ -9,6 +9,7 @@ import { AgentFiles } from "../../src/frame/agent-files.tsx";
 import { Frame } from "../../src/frame/frame.tsx";
 import { closeOpened } from "../../src/sdk/files.ts";
 import {
+  chooseFile,
   EDITOR_MODE,
   FILE_PICKER,
   type KeyValueStorage,
@@ -204,6 +205,52 @@ describe("file tabs in the main slot", () => {
     expect(shownFile()).toEqual({ path: "fe/src/lib.rs", line: 9, jump: 1 });
     const kept = decodeOpenFiles(JSON.parse(storage.getItem("omfp.openFiles") ?? "{}"));
     expect(kept?.w1?.tabs.map((tab) => tab.path)).toEqual(["fe/src/lib.rs", "fe/README.md"]);
+  });
+
+  // spec: UI-119, UI-372
+  test("a selection kept with the absolute spelling selects that tab, and moves when the missing path's tab is replaced", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(
+      "omfp.openFiles",
+      JSON.stringify({ w1: { tabs: [{ path: "/work/w1/theme.ts", line: 3 }, { path: "fe/README.md" }], widgets: [] } }),
+    );
+    storage.setItem(
+      "omfp.tabChoices",
+      JSON.stringify({ threads: [{ threadId: "t1", views: { default: { main: "file:/work/w1/theme.ts" } } }] }),
+    );
+    const test = setup(undefined, storage);
+    expect(tabs()).toEqual(["Chat", "theme.ts", "README.md"]);
+    expect(shownFile()).toEqual({ path: "theme.ts", line: 3, jump: 0 });
+    // The missing path's tab shows the file it names: the kept selection moves with it.
+    act(() => chooseFile(test.host, "w1", "theme.ts", "lib/theme.ts"));
+    expect(storedTab(storage, "default")).toBe(fileTabId("lib/theme.ts"));
+    expect(shownFile()).toEqual({ path: "lib/theme.ts", line: 3, jump: 1 });
+  });
+
+  // spec: UI-119, UI-372
+  test("closing a tab drops the selections kept with its absolute spelling", () => {
+    const storage = new MemoryStorage();
+    storage.setItem(
+      "omfp.openFiles",
+      JSON.stringify({ w1: { tabs: [{ path: "fe/README.md" }, { path: "/work/w1/fe/src/lib.rs" }], widgets: [] } }),
+    );
+    const old = "file:/work/w1/fe/src/lib.rs/";
+    storage.setItem(
+      "omfp.tabChoices",
+      JSON.stringify({
+        threads: [{ threadId: "t1", views: { default: { main: old } } }],
+        drafts: { w1: { default: { main: old } } },
+      }),
+    );
+    const test = setup(undefined, storage);
+    expect(shownFile()).toEqual({ path: "fe/src/lib.rs", jump: 0 });
+    act(() => closeOpened(test.host, "w1", fileTabId("fe/src/lib.rs")));
+    expect(tabs()).toEqual(["Chat", "README.md"]);
+    expect(storedTab(storage, "default")).toBe(fileTabId("fe/README.md"));
+    expect(shownFile()).toEqual({ path: "fe/README.md", jump: 0 });
+    // The draft thread of the workspace, not shown, goes back to the first tab.
+    const choices = decodeTabChoices(JSON.parse(storage.getItem("omfp.tabChoices") ?? "{}")) ?? NO_TAB_CHOICES;
+    expect(chosenTab(choices, { kind: "draft", workspaceId: "w1" }, "default", "main")).toBeUndefined();
   });
 
   // spec: UI-365

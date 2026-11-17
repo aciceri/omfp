@@ -9,7 +9,7 @@
 import { Tab, TabList, TabPanel, Tabs } from "@omfp/kit";
 import type { ViewsState } from "@omfp/protocol";
 import { Fragment, memo, type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { closeOpened } from "../sdk/files.ts";
+import { closeOpened, useWorkspaceFolder } from "../sdk/files.ts";
 import {
   type FileTabsState,
   fileName,
@@ -22,6 +22,7 @@ import {
 } from "../sdk/index.ts";
 import { useChosenTab } from "../sdk/tab-choices.ts";
 import { strings } from "../strings/index.ts";
+import { workspaceTabId } from "../vm/files.ts";
 import { resizeSizes } from "./edit.ts";
 import {
   type Area,
@@ -281,7 +282,10 @@ function TabsNode({
   const main = tree.props.id === MAIN_SLOT;
   const host = useHost();
   const files = useFileTabs(scope.workspaceId);
-  const [chosen, select] = useChosenTab(scope.viewId, main ? MAIN_SLOT : path);
+  const folder = useWorkspaceFolder(scope.workspaceId);
+  const [kept, select] = useChosenTab(scope.viewId, main ? MAIN_SLOT : path);
+  // A file's tab selected with another spelling of its path (UI-119) is that file's tab.
+  const chosen = main && kept !== undefined ? workspaceTabId(folder, kept) : kept;
   // Closing an opened tab selects its neighbour here, in this view or floating panel (UI-366, UI-372).
   const closeTab = (id: string) => {
     if (scope.workspaceId !== undefined) {

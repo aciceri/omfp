@@ -78,6 +78,25 @@ describe("tab choices", () => {
     expect(chosenTab(moved, T2, "work", "main")).toBe("file:a.rs");
   });
 
+  // spec: UI-119, UI-372
+  test("a selection kept with another spelling of the tab id is replaced once normalized", () => {
+    let choices = chooseTab(NO_TAB_CHOICES, T1, "work", "main", "file:/work/w1/a.rs");
+    choices = chooseTab(choices, DRAFT, "work", "main", "file:./a.rs");
+    choices = chooseTab(choices, T1, "work", "0.1", "0.1.1");
+    const inW1 = (threadId: string) => threadId === "t1";
+    const normalize = (tabId: string) =>
+      tabId === "file:/work/w1/a.rs" || tabId === "file:./a.rs" ? "file:a.rs" : tabId;
+    // Compared as given, the old spellings are missed.
+    expect(replaceTab(choices, "w1", inW1, "file:a.rs", "file:src/a.rs")).toBe(choices);
+    const moved = replaceTab(choices, "w1", inW1, "file:a.rs", "file:src/a.rs", normalize);
+    expect(chosenTab(moved, T1, "work", "main")).toBe("file:src/a.rs");
+    expect(chosenTab(moved, DRAFT, "work", "main")).toBe("file:src/a.rs");
+    expect(chosenTab(moved, T1, "work", "0.1")).toBe("0.1.1");
+    const dropped = replaceTab(choices, "w1", inW1, "file:a.rs", undefined, normalize);
+    expect(chosenTab(dropped, T1, "work", "main")).toBeUndefined();
+    expect(chosenTab(dropped, DRAFT, "work", "main")).toBeUndefined();
+  });
+
   // spec: UI-372
   test("the draft thread keeps its own tabs per workspace; the thread it becomes takes them, discarding drops them", () => {
     let choices = chooseTab(NO_TAB_CHOICES, DRAFT, "work", "0.1", "0.1.2");

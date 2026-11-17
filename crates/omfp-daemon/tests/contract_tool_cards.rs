@@ -290,7 +290,7 @@ async fn write_tool_calls() {
 // spec: TST-012, UI-051
 #[tokio::test(flavor = "multi_thread")]
 async fn search_tool_calls() {
-    // omp 18.18.6 advertises `grep` and `glob`; `find` and `ast_grep` are not offered to the model.
+    // omp 18.22.0 advertises `grep` and `glob`; `find` and `ast_grep` are not offered to the model.
     let harness = Harness::new(vec![
         call(
             "call_grep_1",

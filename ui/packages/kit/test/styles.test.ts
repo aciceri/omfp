@@ -340,7 +340,6 @@ describe("kit styles", () => {
     expect(rule("completed", " .omfp-todo__mark")).toEqual({ color: "var(--omfp-ok)" });
     expect(rule("in_progress")).toEqual({ color: "var(--omfp-primary)" });
     expect(rule("in_progress", " .omfp-todo__mark")).toEqual({ color: "var(--omfp-primary)" });
-    expect(rule("blocked", " .omfp-todo__mark")).toEqual({ color: "var(--omfp-warn)" });
     expect(rule("abandoned", " .omfp-todo__text")).toEqual({ "text-decoration": "line-through" });
     const todo = /\.omfp-todo(?:__|(?![\w-]))/;
     const elsewhere = [

@@ -404,7 +404,8 @@ fn dialog_id(request: &ExtensionUiRequest) -> Option<&str> {
 }
 
 /// The phases a successful, state-changing `todo` result committed (omp's `committedTodoPhases`): `None` for other
-/// messages, failed calls, `view` reads and phases that do not decode.
+/// messages, failed calls, `view` reads and phases that do not decode. A task of an older omp's `blocked` status
+/// (gone since 18.19) reads as `pending`, as omp restores it.
 fn committed_todo_phases(message: &AgentMessage) -> Option<Vec<TodoPhase>> {
     let AgentMessage::ToolResult(result) = message else {
         return None;
@@ -416,7 +417,20 @@ fn committed_todo_phases(message: &AgentMessage) -> Option<Vec<TodoPhase>> {
     if details.get("op").and_then(Value::as_str) == Some("view") {
         return None;
     }
-    serde_json::from_value(details.get("phases")?.clone()).ok()
+    let mut phases = details.get("phases")?.clone();
+    for phase in phases.as_array_mut().into_iter().flatten() {
+        let tasks = phase.get_mut("tasks").and_then(Value::as_array_mut);
+        for status in tasks
+            .into_iter()
+            .flatten()
+            .filter_map(|task| task.get_mut("status"))
+        {
+            if status == "blocked" {
+                *status = Value::from("pending");
+            }
+        }
+    }
+    serde_json::from_value(phases).ok()
 }
 
 /// The background job of an omp tool result or partial result (`{ content, details: { async: { state, jobId },

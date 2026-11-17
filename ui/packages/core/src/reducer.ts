@@ -273,7 +273,8 @@ function endMessage(state: ThreadState, frame: Record<string, unknown>): ThreadS
 
 /**
  * The phases a successful, state-changing `todo` result committed (omp's `committedTodoPhases`): `undefined` for other
- * messages, failed calls, `view` reads and phases that do not decode.
+ * messages, failed calls, `view` reads and phases that do not decode. A task of an older omp's `blocked` status (gone
+ * since 18.19) reads as `pending`, as omp restores it.
  */
 function committedTodoPhases(message: AgentMessage): TodoPhase[] | undefined {
   if (message.role !== "toolResult" || message.toolName !== "todo" || message.isError === true) {
@@ -283,7 +284,19 @@ function committedTodoPhases(message: AgentMessage): TodoPhase[] | undefined {
   if (!isObject(details) || details.op === "view") {
     return undefined;
   }
-  return decodeOrUndefined(arrayOf(todoPhase), details.phases);
+  return decodeOrUndefined(arrayOf(todoPhase), withoutBlocked(details.phases));
+}
+
+/** `phases` with every task's legacy `blocked` status as `pending`; anything else as is. */
+function withoutBlocked(phases: unknown): unknown {
+  if (!Array.isArray(phases)) return phases;
+  return phases.map((phase) => {
+    if (!isObject(phase) || !Array.isArray(phase.tasks)) return phase;
+    const tasks = phase.tasks.map((task) =>
+      isObject(task) && task.status === "blocked" ? { ...task, status: "pending" } : task,
+    );
+    return { ...phase, tasks };
+  });
 }
 
 /** One line per role and turn; a later frame replaces the text until the final one (PRT-052). */

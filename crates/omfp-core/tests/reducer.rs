@@ -4,7 +4,8 @@ mod common;
 
 use common::{assistant_text, event, message_text, omp, streaming_text};
 use omfp_core::wire::{
-    AssistantContent, ExtensionUiRequest, NotifyType, PromptStatus, SubagentLifecycleStatus,
+    AssistantContent, ExtensionUiRequest, NotifyType, PromptStatus, SelectUiRequestSelectionMarker,
+    SubagentLifecycleStatus,
 };
 use omfp_core::{
     BackgroundJob, JobState, NoticeFrame, NotifyRequest, OpenFileRequest, ProcessState, QueueState,
@@ -148,6 +149,30 @@ fn agent_start_unsettles_and_session_settled_settles() {
     ]);
     assert!(!settled.settled, "agent_end alone does not settle");
     let mut state = settled;
+    state.apply(&omp(json!({ "type": "session_settled" })));
+    assert!(state.settled);
+}
+
+// spec: TST-010
+#[test]
+fn a_paused_run_and_its_late_terminal_end_settle_only_on_session_settled() {
+    // omp 18.21+: a run paused on a background job ends with a terminal `agent_end` and no `agent_start` before it
+    // when the job goes away without resuming it.
+    let paused = json!({
+        "type": "agent_end", "messages": [], "isTerminal": false, "yielded": true, "awaitingAsyncWork": true,
+    });
+    let ended = json!({ "type": "agent_end", "messages": [], "isTerminal": true, "yielded": true });
+    let mut state = replay(&[
+        process(json!({ "state": "running" })),
+        omp(json!({ "type": "agent_start" })),
+        omp(paused),
+    ]);
+    assert!(!state.settled, "a paused run is busy");
+    state.apply(&omp(ended));
+    assert!(
+        !state.settled,
+        "the terminal agent_end alone does not settle"
+    );
     state.apply(&omp(json!({ "type": "session_settled" })));
     assert!(state.settled);
 }
@@ -732,6 +757,31 @@ fn dialog_requests_become_pending_interactions_in_order() {
     assert_eq!(interaction_ids(&state), ["s", "c", "i", "e", "a"]);
 }
 
+// spec: TST-010, DMN-050
+#[test]
+fn a_select_request_keeps_omps_selection_fields() {
+    let state = replay(&[ui_request(json!({
+        "id": "s",
+        "method": "select",
+        "title": "Context\n\nWhich?",
+        "options": ["a", "b", "Done selecting"],
+        "initialIndex": 1,
+        "selectionMarker": "checkbox",
+        "checkedIndices": [0],
+        "markableCount": 2,
+    }))]);
+    let [ExtensionUiRequest::Select(select)] = state.interactions.as_slice() else {
+        panic!("not one select: {:?}", state.interactions);
+    };
+    assert_eq!(select.initial_index, Some(1));
+    assert_eq!(
+        select.selection_marker,
+        Some(SelectUiRequestSelectionMarker::Checkbox)
+    );
+    assert_eq!(select.checked_indices, Some(vec![0]));
+    assert_eq!(select.markable_count, Some(2));
+}
+
 // spec: TST-010, DMN-051
 #[test]
 fn interaction_resolved_closes_the_matching_request() {
@@ -975,6 +1025,28 @@ fn todo_phases_are_the_last_committed_todo_result_of_the_transcript() {
     let mut empty = state;
     empty.apply(&history(json!([user_message("before the list")])));
     assert_eq!(empty.todo_phases, Vec::new());
+}
+
+// spec: TST-010, PRT-057
+#[test]
+fn a_blocked_task_of_an_older_omp_reads_as_pending() {
+    // omp 18.19 dropped the `blocked` status; sessions recorded before still hold it, in history and in new frames.
+    let blocked = json!({ "content": "Ship", "status": "blocked", "blocker": "review" });
+    let read = json!({ "content": "Read", "status": "completed" });
+    let expected = [
+        ("Read".to_owned(), "completed".to_owned()),
+        ("Ship".to_owned(), "pending".to_owned()),
+    ];
+    let state = replay(&[todo_result("t1", "init", false, &json!([read, blocked]))]);
+    assert_eq!(todo_contents(&state), expected);
+
+    let restored = json!({
+        "role": "toolResult", "toolCallId": "h1", "toolName": "todo", "isError": false, "timestamp": 0,
+        "content": [], "details": { "op": "init", "phases": [{ "name": "Old", "tasks": [read, blocked] }] },
+    });
+    let mut reloaded = ThreadState::default();
+    reloaded.apply(&history(json!([restored])));
+    assert_eq!(todo_contents(&reloaded), expected);
 }
 
 // spec: TST-010, PRT-056

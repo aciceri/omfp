@@ -26,7 +26,7 @@ pub fn omp_bin() -> String {
     std::env::var("OMFP_OMP_BIN").unwrap_or_else(|_| "omp".to_owned())
 }
 
-/// Version printed by `omp --version` (`omp/18.18.6` → `18.18.6`).
+/// Version printed by `omp --version` (`omp/18.22.0` → `18.22.0`).
 pub fn omp_version() -> anyhow::Result<String> {
     let output = Command::new(omp_bin())
         .arg("--version")

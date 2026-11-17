@@ -210,7 +210,7 @@ omp is pinned in four places that must agree (checked by `cargo xtask check-vers
 tag, the `omp-rpc` git tag in `Cargo.toml`, `omfp_core::OMP_VERSION` and the release assets' tag in
 `contrib/release/omp.sha256`. To upgrade, follow the playbook in `docs/specs/01-dev-environment.md` (ENV-020).
 
-## omp facts learned the hard way (omp 18.18.6)
+## omp facts learned the hard way (omp 18.22.0)
 
 - Launch with `omp --mode rpc-ui --session-dir <dir> --continue --add-dir …`: `--add-dir` roots (and their
   `AGENTS.md`) are lost if the session is switched later with `open_session` (S-07). `open_session` on the same dir is
@@ -222,6 +222,18 @@ tag, the `omp-rpc` git tag in `Cargo.toml`, `omfp_core::OMP_VERSION` and the rel
 - `--session-dir <dir> --continue` resumes the newest session of that directory whatever the cwd, so a thread keeps
   its session when it moves to another workspace folder (migration 3).
 - The `ask` tool takes one HTML `<form>` and walks it with `select`/`input`/`editor` dialogs, not the RPC `ask` dialog.
+  Since 18.20 its `select`s carry `selectionMarker` (`radio`/`checkbox`), `initialIndex`, `markableCount` (every option
+  but "Done selecting", "Other" included) and, for checkboxes, `checkedIndices`: a checkbox group is a loop of
+  `select`s titled `(<n> selected) <question>` after the first toggle, re-sent after every toggle with
+  `checkedIndices` authoritative (picking a checked option unchecks it), ended by "✔ Done selecting". A form's
+  context text (paragraphs, lists, tables) comes in the title before the question, which is on the last line.
+- Run lifecycle over RPC (18.21): the session's internal `agent_pause` reaches RPC hosts as `agent_end` with
+  `isTerminal: false` (plus `awaitingAsyncWork: true` when only a background job, a running child agent or a peer
+  message can resume the run); every run ends with exactly one terminal `agent_end`, also when that outside work goes
+  away without resuming it (then with no `agent_start` before it). `prompt_result` comes at the yield;
+  `session_settled` only after the run's terminal `agent_end`, so a thread stays busy while anything that can still
+  resume its run is alive. The reducer reads busy/settled from `agent_start`/`session_settled` only, never `agent_end`.
+- Todo tasks have no `blocked` status since 18.19 (omp-rpc's `TodoStatus` lost `Blocked` and `TodoItem.blocker`).
 - At startup omp always fetches its model catalog (`catalog.stencil.so` + keyless providers) and no setting disables
   it: contract tests run omp behind `DenyProxy` and fail on hosts outside `KNOWN_DISCOVERY_HOSTS`.
 - omp reads project config from its cwd (the workspace folder) and loads a repo's `AGENTS.md` only when the repo is an

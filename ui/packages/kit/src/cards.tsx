@@ -164,12 +164,10 @@ export function ToolCard({
 
 export interface TodoItem {
   readonly text: ReactNode;
-  /** omp's status: `pending`, `in_progress`, `completed`, `blocked`, `abandoned`, or another it may add. */
+  /** omp's status: `pending`, `in_progress`, `completed`, `abandoned`, or another it may add. */
   readonly status: string;
   /** The status in words, for assistive technology (visually hidden). */
   readonly statusLabel?: string;
-  /** What a blocked task waits on, under its text. */
-  readonly blocker?: ReactNode;
 }
 
 export interface TodoListProps extends Omit<HTMLAttributes<HTMLUListElement>, "children"> {
@@ -180,7 +178,7 @@ export interface TodoListProps extends Omit<HTMLAttributes<HTMLUListElement>, "c
 
 /**
  * A todo list (UI-163, UI-447): a `●` per task in omp's statuses, completed in ok and struck through, in progress in
- * primary, blocked with a warn mark and its blocker, abandoned muted and struck through.
+ * primary, abandoned muted and struck through.
  */
 export function TodoList({ items, itemTestId, className, ...props }: TodoListProps) {
   return (
@@ -191,10 +189,7 @@ export function TodoList({ items, itemTestId, className, ...props }: TodoListPro
           <span className="omfp-todo__mark" aria-hidden="true">
             ●
           </span>
-          <span className="omfp-todo__text">
-            {item.text}
-            {item.blocker !== undefined && <span className="omfp-todo__blocker">{item.blocker}</span>}
-          </span>
+          <span className="omfp-todo__text">{item.text}</span>
           {item.statusLabel !== undefined && <span className="omfp-visually-hidden">{item.statusLabel}</span>}
         </li>
       ))}

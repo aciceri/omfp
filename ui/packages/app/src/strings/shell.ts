@@ -404,9 +404,7 @@ export const shell = {
       in_progress: "in progress",
       completed: "done",
       abandoned: "abandoned",
-      blocked: "blocked",
     } as Readonly<Record<string, string>>,
-    blocked: (blocker: string) => `blocked: ${blocker}`,
   },
   /** `omfp:tree` (UI-083). */
   tree: {

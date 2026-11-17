@@ -1,5 +1,5 @@
 //! Integration tests (L2) of the MCP server over HTTP (DMN-155..158, AGT-050..053): a daemon on port 0 with the fake
-//! launcher, spoken to as an MCP client of the legacy revision (an `initialize` session, as omp 18.18.6 does) and of
+//! launcher, spoken to as an MCP client of the legacy revision (an `initialize` session, as omp 18.22.0 does) and of
 //! the current one (stateless, `_meta` and headers on every request).
 
 mod client;

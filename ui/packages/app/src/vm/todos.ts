@@ -9,13 +9,12 @@ import { strings } from "../strings/index.ts";
 
 const text = strings.shell.todos;
 
-/** One task: omp's status (`pending`, `in_progress`, `completed`, `abandoned`, `blocked`) and what blocks it. */
+/** One task with omp's status (`pending`, `in_progress`, `completed`, `abandoned`). */
 export interface TodoRow {
   readonly content: string;
   readonly status: string;
   /** The status in words, for assistive technology. */
   readonly statusLabel: string;
-  readonly blocker: string | undefined;
 }
 
 export interface TodoPhaseView {
@@ -66,7 +65,6 @@ export function todosView(state: Pick<ThreadState, "goal" | "todo_phases">): Tod
         content: task.content,
         status: task.status,
         statusLabel: text.taskStatus[task.status] ?? task.status,
-        blocker: task.status === "blocked" ? task.blocker : undefined,
       })),
       progress: progress(phase.tasks),
     }));

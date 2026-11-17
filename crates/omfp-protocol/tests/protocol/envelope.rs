@@ -699,7 +699,9 @@ fn a_report_without_window_state_still_decodes() {
 // spec: TST-012
 #[test]
 fn every_recorded_thread_event_survives_an_event_frame() {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fixtures/threads/18.18.6");
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../fixtures/threads")
+        .join(omfp_core::OMP_VERSION);
     let mut files: Vec<_> = std::fs::read_dir(&dir)
         .expect("fixture directory")
         .map(|entry| entry.expect("fixture entry").path())

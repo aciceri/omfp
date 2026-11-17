@@ -45,7 +45,6 @@ export function TodosWidget(_props: WidgetProps): ReactNode {
                 text: task.content,
                 status: task.status,
                 statusLabel: task.statusLabel,
-                ...(task.blocker === undefined ? {} : { blocker: text.blocked(task.blocker) }),
               }))}
             />
           </BorderBox>

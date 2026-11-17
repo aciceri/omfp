@@ -1,7 +1,7 @@
 //! Thread titles from the conversation (DMN-073): an immediate placeholder, then bounded print-mode
 //! generations as meaningful new conversation accumulates.
 //!
-//! omp 18.18.6 forces `PI_NO_TITLE=1` in its RPC modes (`packages/coding-agent/src/main.ts`), so a thread's own omp
+//! omp 18.22.0 forces `PI_NO_TITLE=1` in its RPC modes (`packages/coding-agent/src/main.ts`), so a thread's own omp
 //! never names its session; the daemon does it through [`crate::agent::AgentLauncher::generate_title`] and then sends
 //! `set_session_name`.
 

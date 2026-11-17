@@ -428,7 +428,7 @@ describe("ask card", () => {
     expect(texts(await open(streaming("ask_answered", "call_ask_1")), "ask-answer")).toEqual([]);
     cleanup();
     const element = await open(card("ask_answered", "call_ask_1"));
-    expect(texts(element, "ask-question")).toEqual(["Which database?SQLite", "Which features?no answer"]);
+    expect(texts(element, "ask-question")).toEqual(["Which database?SQLite", "Which features?Auth, Search"]);
   });
 
   // spec: UI-050, UI-051, UI-052

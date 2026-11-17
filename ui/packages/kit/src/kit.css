@@ -2240,24 +2240,12 @@
     color: var(--omfp-primary);
   }
 
-  .omfp-todo__item[data-status="blocked"] .omfp-todo__mark {
-    color: var(--omfp-warn);
-  }
-
   .omfp-todo__item[data-status="abandoned"] {
     color: var(--omfp-on-surface-variant);
   }
 
   .omfp-todo__item[data-status="abandoned"] .omfp-todo__text {
     text-decoration: line-through;
-  }
-
-  /* What a blocked task waits on, on its own line under the task. */
-  .omfp-todo__blocker {
-    display: block;
-    font-size: var(--omfp-fs-2xs);
-    font-variant-numeric: tabular-nums;
-    color: var(--omfp-warn);
   }
 
   /* Approval and ask cards (UI-164): a dashed warn border box (UI-187), `◆` before the title on the border, the step

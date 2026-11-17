@@ -40,4 +40,4 @@ export type * from "./wire.ts";
  * The omp release whose RPC protocol this build speaks; equals `omfp_core::OMP_VERSION`. The golden-state test replays
  * the fixtures recorded for this version.
  */
-export const OMP_VERSION = "18.18.6";
+export const OMP_VERSION = "18.22.0";

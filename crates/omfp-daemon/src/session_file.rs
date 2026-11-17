@@ -1,7 +1,7 @@
 //! A thread's omp session read from its file, without omp (DMN-337): when omp cannot start (its saved model cannot be
 //! restored, say), the transcript of the session's current branch stays readable and the model it saved is known.
 //!
-//! omp 18.18.6 writes a session as JSONL (`session/session-manager.ts`): an optional `title` slot, the `session` header
+//! omp 18.22.0 writes a session as JSONL (`session/session-manager.ts`): an optional `title` slot, the `session` header
 //! (its `id` is the session id), then entries with `id` and `parentId` forming a tree. The current branch runs from the
 //! leaf the last entry selects (its `activeLeafId` when it has one, else itself) up to the root, as omp's
 //! `resolveSessionLeafId` and `buildSessionContext` read it; its messages are what `get_messages` answers after a resume.

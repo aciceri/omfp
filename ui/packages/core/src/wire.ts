@@ -1,5 +1,5 @@
 /**
- * The subset of omp's RPC wire types (omp-rpc `wire.rs`, omp 18.18.6) the reducer reads or keeps, in their JSON form.
+ * The subset of omp's RPC wire types (omp-rpc `wire.rs`, omp 18.22.0) the reducer reads or keeps, in their JSON form.
  *
  * omp-rpc has two kinds of records. Closed structs (events, UI requests) decode their declared fields and drop every
  * other key: the reducer keeps them through the decoders below, so they serialize like Rust. Open records (messages,
@@ -416,13 +416,11 @@ export const goalUpdatedEvent = record<GoalUpdatedEvent>({
   ),
 });
 
-export type TodoStatus = "pending" | "in_progress" | "completed" | "abandoned" | "blocked";
+export type TodoStatus = "pending" | "in_progress" | "completed" | "abandoned";
 
 export interface TodoItem {
   content: string;
   status: TodoStatus;
-  /** What a `blocked` task is waiting on. */
-  blocker?: string;
   details?: string;
   notes?: string[];
 }
@@ -437,8 +435,7 @@ export const todoPhase = record<TodoPhase>({
   tasks: arrayOf(
     record<TodoItem>({
       content: str,
-      status: oneOf(["pending", "in_progress", "completed", "abandoned", "blocked"]),
-      blocker: optional(str),
+      status: oneOf(["pending", "in_progress", "completed", "abandoned"]),
       details: optional(str),
       notes: optional(arrayOf(str)),
     }),
@@ -595,11 +592,21 @@ export interface SelectOptionDetail {
   [key: string]: unknown;
 }
 
+export type SelectionMarker = "radio" | "checkbox";
+
 export interface SelectUiRequest {
   id: string;
   title: string;
   options: string[];
   optionDetails?: SelectOptionDetail[];
+  /** Index into `options` to focus first. */
+  initialIndex?: number;
+  /** Marker style for the first `markableCount` options. */
+  selectionMarker?: SelectionMarker;
+  /** For `checkbox`: indices into `options` currently checked; authoritative. */
+  checkedIndices?: number[];
+  /** Leading options that get a marker; trailing ones are actions. All options when absent and `selectionMarker` set. */
+  markableCount?: number;
   timeout?: number;
 }
 
@@ -756,6 +763,10 @@ const UI_REQUESTS: { [M in ExtensionUiRequest["method"]]: Decoder<Extract<Extens
       title: str,
       options: arrayOf(str),
       optionDetails: optional(arrayOf(selectOptionDetail)),
+      initialIndex: optional(int),
+      selectionMarker: optional(oneOf(["radio", "checkbox"])),
+      checkedIndices: optional(arrayOf(int)),
+      markableCount: optional(int),
       timeout: optional(int),
     }),
   ),

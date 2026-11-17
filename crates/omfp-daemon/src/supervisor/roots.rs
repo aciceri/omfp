@@ -1,6 +1,6 @@
 //! The local commands of a root sync (DMN-029): `/add-dir` and `/remove-dir`, whose one `command_output` answers the
 //! daemon and stays out of the thread's log. The frames carry no id, so an output is the command's only when its text
-//! is one omp 18.18.6 writes for that command and path (`slash-commands/builtin-lifecycle.ts`); any other output, such
+//! is one omp 18.22.0 writes for that command and path (`slash-commands/builtin-lifecycle.ts`); any other output, such
 //! as a background `/mcp reauth`'s, goes on to the log meanwhile (DMN-200, DMN-202).
 
 use std::path::{Path, PathBuf};

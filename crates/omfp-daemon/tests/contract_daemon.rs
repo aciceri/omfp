@@ -455,7 +455,7 @@ async fn approval_reconnects_crash_and_restart_with_history() {
     harness.assert_no_stray_network();
 }
 
-/// omp 18.18.6's `--approval-mode` values (`packages/coding-agent/src/tools/approval.ts`).
+/// omp 18.22.0's `--approval-mode` values (`packages/coding-agent/src/tools/approval.ts`).
 const APPROVAL_MODES: [&str; 4] = ["always-ask", "always-ask-cached", "write", "yolo"];
 
 // spec: DMN-210, TST-106
@@ -513,8 +513,9 @@ async fn every_approval_mode_starts_a_working_thread_and_other_values_are_refuse
     harness.assert_no_stray_network();
 }
 
-/// Answer for the form fallback's `select` dialogs (see contract scenario `ask_answered`).
-fn choose(select: &SelectUiRequest, picked_before: usize) -> String {
+/// Answer for the form fallback's `select` dialogs (see contract scenario `ask_answered`): SQLite for the radio
+/// group; for the checkbox loop, the first of Auth and Search not checked yet (`checkedIndices`), then Done.
+fn choose(select: &SelectUiRequest) -> String {
     let option = |needle: &str| {
         select
             .options
@@ -524,13 +525,22 @@ fn choose(select: &SelectUiRequest, picked_before: usize) -> String {
             .unwrap_or_else(|| panic!("no `{needle}` option in {:?}", select.options))
     };
     if select.title.contains("database") {
-        option("SQLite")
-    } else {
-        option(["Auth", "Search", "Done"][picked_before.min(2)])
+        return option("SQLite");
     }
+    let checked: Vec<&str> = select
+        .checked_indices
+        .iter()
+        .flatten()
+        .map(|index| select.options[usize::try_from(*index).unwrap()].as_str())
+        .collect();
+    let next = ["Auth", "Search"]
+        .into_iter()
+        .find(|wanted| !checked.contains(wanted))
+        .unwrap_or("Done");
+    option(next)
 }
 
-// spec: DMN-054, DMN-051
+// spec: DMN-054, DMN-051, DMN-050
 #[tokio::test(flavor = "multi_thread")]
 async fn ask_dialogs_round_trip_through_the_protocol() {
     let form = r#"<form>
@@ -565,7 +575,7 @@ async fn ask_dialogs_round_trip_through_the_protocol() {
     let mut view = Follower::snapshot(&mut client, &thread, None).await;
 
     let prompt_id = prompt(&mut client, &thread, "set it up").await;
-    let mut titles: Vec<String> = Vec::new();
+    let mut selects: Vec<SelectUiRequest> = Vec::new();
     loop {
         view.until(&mut client, |state| {
             pending_select(state).is_some() || settled_after(&prompt_id)(state)
@@ -574,26 +584,41 @@ async fn ask_dialogs_round_trip_through_the_protocol() {
         let Some(select) = pending_select(&view.state) else {
             break;
         };
-        let picked_before = titles
-            .iter()
-            .filter(|title| **title == select.title)
-            .count();
-        let choice = choose(&select, picked_before);
-        titles.push(select.title.clone());
-        respond(&mut client, &thread, &select.id, &choice)
+        respond(&mut client, &thread, &select.id, &choose(&select))
             .await
             .unwrap();
         view.until(&mut client, |state| {
             pending_select(state).is_none_or(|pending| pending.id != select.id)
         })
         .await;
+        selects.push(select);
     }
 
-    assert_eq!(titles.first().map(String::as_str), Some("Which database?"));
-    let second = harness.fake.requests()[1].to_string().to_lowercase();
-    assert!(
-        second.contains("sqlite") && second.contains("search") && second.contains("auth"),
-        "answers reach the model: {second}"
+    assert_eq!(
+        selects.first().map(|select| select.title.as_str()),
+        Some("Which database?")
+    );
+    // omp's checkbox state reaches the window through the daemon (DMN-050).
+    assert_eq!(
+        selects
+            .iter()
+            .map(|select| select.checked_indices.clone())
+            .collect::<Vec<_>>(),
+        [None, Some(vec![]), Some(vec![0]), Some(vec![0, 2])]
+    );
+    let answers = view
+        .state
+        .tools
+        .iter()
+        .find(|run| run.tool_call_id == "call_ask_1")
+        .and_then(|run| run.result.as_ref())
+        .map(|result| result["details"]["answers"].clone());
+    assert_eq!(
+        answers,
+        Some(json!([
+            { "answer": "SQLite", "name": "db", "question": "Which database?" },
+            { "answer": "Auth, Search", "name": "features", "question": "Which features?" },
+        ]))
     );
     daemon.handle.shutdown().await.unwrap();
     harness.assert_no_stray_network();

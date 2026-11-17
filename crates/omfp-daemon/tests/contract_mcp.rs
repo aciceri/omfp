@@ -20,7 +20,7 @@ use omp_rpc::PromptStatus;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-/// omp 18.18.6's MCP `clientInfo.name`.
+/// omp 18.22.0's MCP `clientInfo.name`.
 const OMP_CLIENT: &str = "omp-coding-agent";
 
 /// A daemon on the fake launcher: the omp under test is the only real one.
@@ -65,7 +65,7 @@ fn tool_result(request: &Value, call_id: &str) -> String {
         )
 }
 
-/// omp 18.18.6 mounts MCP tools as `xd://` devices: the model calls one with `write { path, content: <JSON args> }`.
+/// omp 18.22.0 mounts MCP tools as `xd://` devices: the model calls one with `write { path, content: <JSON args> }`.
 fn device_call(id: &str, tool: &str, arguments: &Value) -> ToolCall {
     ToolCall::new(
         id,

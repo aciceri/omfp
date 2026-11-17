@@ -32,6 +32,12 @@ The version's section is also the source of the GitHub release notes.
   file per reply, as long as nothing else shows between the reads: it spins while any read runs and is marked failed
   when one failed, which stays visible while the group is collapsed; open, it lists each read with its path (and line
   range), which opens the file, and each read opens to its output.
+- omfp now runs oh-my-pi 18.22.0 (was 18.18.6); install that version when you bring your own `omp`.
+
+### Removed
+
+- Todo lists no longer show a `blocked` status with its blocker: oh-my-pi 18.19 removed blocked tasks, and a blocked
+  task of an older session shows as pending.
 
 ## 0.2.1 — 2026-11-17
 

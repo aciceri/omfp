@@ -117,6 +117,21 @@ describe("reducer", () => {
     expect(reduce(settled, omp({ type: "session_settled" })).settled).toBe(true);
   });
 
+  // spec: TST-010
+  test("a paused run and its late terminal end settle only on session_settled", () => {
+    // omp 18.21+: a run paused on a background job ends with a terminal `agent_end` and no `agent_start` before it
+    // when the job goes away without resuming it.
+    const paused = replay([
+      processEvent({ state: "running" }),
+      omp({ type: "agent_start" }),
+      omp({ type: "agent_end", messages: [], isTerminal: false, yielded: true, awaitingAsyncWork: true }),
+    ]);
+    expect(paused.settled).toBe(false);
+    const ended = reduce(paused, omp({ type: "agent_end", messages: [], isTerminal: true, yielded: true }));
+    expect(ended.settled).toBe(false);
+    expect(reduce(ended, omp({ type: "session_settled" })).settled).toBe(true);
+  });
+
   // spec: TST-010, DMN-035
   test("leaving running settles and cancels pending interactions", () => {
     const running = [
@@ -449,6 +464,22 @@ describe("reducer", () => {
     expect(interactionIds(state)).toEqual(["s", "c", "i", "e", "a"]);
   });
 
+  // spec: TST-010, DMN-050
+  test("a select request keeps omp's selection fields", () => {
+    const fields = {
+      id: "s",
+      method: "select" as const,
+      title: "Context\n\nWhich?",
+      options: ["a", "b", "Done selecting"],
+      initialIndex: 1,
+      selectionMarker: "checkbox" as const,
+      checkedIndices: [0],
+      markableCount: 2,
+    };
+    const state = replay([uiRequest(fields)]);
+    expect(state.interactions).toEqual([{ type: "extension_ui_request", ...fields }]);
+  });
+
   // spec: TST-010, DMN-051
   test("interaction_resolved closes the matching request", () => {
     const state = replay([
@@ -575,6 +606,42 @@ describe("reducer", () => {
       ["Read", "completed"],
     ]);
     expect(reduce(state, history([userMessage("before the list")])).todo_phases).toEqual([]);
+  });
+
+  // spec: TST-010, PRT-057
+  test("a blocked task of an older omp reads as pending", () => {
+    // omp 18.19 dropped the `blocked` status; sessions recorded before still hold it, in history and in new frames.
+    const todo: JsonObject = {
+      role: "toolResult",
+      toolCallId: "t1",
+      toolName: "todo",
+      isError: false,
+      timestamp: 0,
+      content: [],
+      details: {
+        op: "init",
+        phases: [
+          {
+            name: "Old",
+            tasks: [
+              { content: "Read", status: "completed" },
+              { content: "Ship", status: "blocked", blocker: "review" },
+            ],
+          },
+        ],
+      },
+    };
+    const expected = [
+      {
+        name: "Old",
+        tasks: [
+          { content: "Read", status: "completed" as const },
+          { content: "Ship", status: "pending" as const },
+        ],
+      },
+    ];
+    expect(replay([messageEnd("t1", todo)]).todo_phases).toEqual(expected);
+    expect(replay([history([todo])]).todo_phases).toEqual(expected);
   });
 
   // spec: TST-010, PRT-056

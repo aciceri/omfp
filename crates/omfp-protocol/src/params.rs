@@ -288,7 +288,7 @@ pub enum ThreadWorkspace {
 }
 
 /// omp's `--approval-mode` (`tools.approvalMode`): which tool calls omp asks the user to approve (DMN-074, DMN-210).
-/// omp 18.18.6 exits at startup on any other value.
+/// omp 18.22.0 exits at startup on any other value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum ApprovalMode {

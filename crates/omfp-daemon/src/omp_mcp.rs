@@ -1,4 +1,4 @@
-//! The MCP servers omp loads for a workspace (M13): the config files omp 18.18.6 reads, parsed by the daemon in omp's
+//! The MCP servers omp loads for a workspace (M13): the config files omp 18.22.0 reads, parsed by the daemon in omp's
 //! precedence order (DMN-190), and the reply of omp's `/mcp test <name>`, the one check of a server omp offers over
 //! RPC (DMN-191).
 //!

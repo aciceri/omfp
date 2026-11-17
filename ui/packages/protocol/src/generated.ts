@@ -51,7 +51,7 @@ export type AnswerWindowParams = {
 
 /**
  * omp's `--approval-mode` (`tools.approvalMode`): which tool calls omp asks the user to approve (DMN-074, DMN-210).
- * omp 18.18.6 exits at startup on any other value.
+ * omp 18.22.0 exits at startup on any other value.
  */
 export type ApprovalMode =
   /** Runs read tools; asks before write and exec tools. */

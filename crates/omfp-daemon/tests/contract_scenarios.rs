@@ -9,7 +9,8 @@ use fake_llm::{Reply, Step, ToolCall};
 use omfp_core::{Resolution, ThreadEvent};
 use omp_rpc::{
     AbortAndRestoreQueueCommand, ExtensionUiRequest, ExtensionUiResponse, FollowUpCommand,
-    PromptStatus, RpcInbound, RpcNotification, SelectUiRequest, ValueUiResponse,
+    PromptStatus, RpcAgentEvent, RpcInbound, RpcNotification, SelectUiRequest,
+    SelectUiRequestSelectionMarker, ValueUiResponse,
 };
 use serde_json::json;
 
@@ -17,9 +18,9 @@ fn settled(count: usize) -> impl Fn(&[ThreadEvent]) -> bool {
     move |events| Recorder::count(events, "session_settled") >= count
 }
 
-/// Answer for the form fallback's `select` dialogs: SQLite for the radio group; Auth, then Search, then Done for
-/// the checkbox loop (`picked_before` = answers already given to this field).
-fn choose(select: &SelectUiRequest, picked_before: usize) -> String {
+/// Answer for the form fallback's `select` dialogs: SQLite for the radio group; for the checkbox loop, the first of
+/// Auth and Search not checked yet, then Done, as omp reports the checked options (`checkedIndices`, omp 18.20).
+fn choose(select: &SelectUiRequest) -> String {
     let option = |needle: &str| {
         select
             .options
@@ -29,10 +30,24 @@ fn choose(select: &SelectUiRequest, picked_before: usize) -> String {
             .unwrap_or_else(|| panic!("no `{needle}` option in {:?}", select.options))
     };
     if select.title.contains("database") {
-        option("SQLite")
-    } else {
-        option(["Auth", "Search", "Done"][picked_before.min(2)])
+        return option("SQLite");
     }
+    let checked = checked_options(select);
+    let next = ["Auth", "Search"]
+        .into_iter()
+        .find(|wanted| !checked.contains(&(*wanted).to_owned()))
+        .unwrap_or("Done");
+    option(next)
+}
+
+/// The options of `select` its `checkedIndices` name.
+fn checked_options(select: &SelectUiRequest) -> Vec<String> {
+    select
+        .checked_indices
+        .iter()
+        .flatten()
+        .map(|index| select.options[usize::try_from(*index).unwrap()].clone())
+        .collect()
 }
 
 /// The first pending dialog request of `events` matching `pick`.
@@ -240,10 +255,10 @@ async fn approval_requested_and_granted() {
     harness.assert_no_stray_network();
 }
 
-// spec: TST-012, DMN-054
+// spec: TST-012, DMN-050, DMN-054
 #[tokio::test(flavor = "multi_thread")]
 async fn ask_answered() {
-    // omp 18.18.6's `ask` takes one HTML form; RPC hosts receive it as `ask` questions (set_ask_dialog).
+    // omp 18.22.0's `ask` takes one HTML form and walks it with `select` dialogs over RPC (not the `ask` dialog).
     let form = r#"<form>
   <fieldset><legend>Which database?</legend>
     <label><input type="radio" name="db" value="postgres"> Postgres</label>
@@ -266,14 +281,15 @@ async fn ask_answered() {
     .await;
     let spec = harness.spec(&[]);
 
-    let (recorder, titles) = tokio::task::spawn_blocking(move || {
+    let (recorder, selects) = tokio::task::spawn_blocking(move || {
         let (mut process, startup) = start(&spec);
         let recorder = Recorder::attach(&mut process, &startup);
         process.client().call(&prompt("set it up")).unwrap();
-        // omp 18.18.6 walks the form field by field with `select` dialogs (it does not use the RPC `ask` dialog):
-        // the radio group, then the checkbox group as a loop that ends with "Done selecting".
+        // omp 18.22.0 walks the form field by field with `select` dialogs (it does not use the RPC `ask` dialog):
+        // the radio group, then the checkbox group as a loop that ends with "Done selecting", sent again after every
+        // toggle with the options checked so far.
         let mut answered: Vec<String> = Vec::new();
-        let mut titles = Vec::new();
+        let mut selects = Vec::new();
         loop {
             recorder.wait_until("a new select or the end of the turn", |events| {
                 Recorder::count(events, "session_settled") >= 1
@@ -292,42 +308,80 @@ async fn ask_answered() {
                 _ => None,
             });
             let Some(select) = next else { break };
-            let picked_before = titles
-                .iter()
-                .filter(|title| **title == select.title)
-                .count();
-            let choice = choose(&select, picked_before);
-            titles.push(select.title.clone());
             process
                 .client()
                 .send(&RpcInbound::ExtensionUiResponse(
                     ExtensionUiResponse::ValueUiResponse(ValueUiResponse {
                         id: select.id.clone(),
-                        value: choice,
+                        value: choose(&select),
                     }),
                 ))
                 .unwrap();
             recorder.push(resolved(&select.id));
-            answered.push(select.id);
+            answered.push(select.id.clone());
+            selects.push(select);
         }
         recorder.wait_until("session_settled", settled(1));
-        (recorder, titles)
+        (recorder, selects)
     })
     .await
     .unwrap();
 
-    assert_eq!(titles.first().map(String::as_str), Some("Which database?"));
-    assert!(
-        titles.iter().any(|title| title.contains("features")),
-        "{titles:?}"
+    assert_form_selects(&selects);
+    let answers = recorder.events().iter().find_map(|event| match event {
+        ThreadEvent::Omp {
+            frame: RpcNotification::RpcAgentEvent(RpcAgentEvent::ToolExecutionEnd(end)),
+        } if end.tool_name == "ask" => end.result.clone(),
+        _ => None,
+    });
+    assert_eq!(
+        answers.as_ref().map(|result| &result["details"]["answers"]),
+        Some(&json!([
+            { "answer": "SQLite", "name": "db", "question": "Which database?" },
+            { "answer": "Auth, Search", "name": "features", "question": "Which features?" },
+        ])),
+        "{answers:#?}"
     );
-    let second = harness.fake.requests()[1].to_string().to_lowercase();
+    let second = harness.fake.requests()[1].to_string();
     assert!(
-        second.contains("sqlite") && second.contains("search") && second.contains("auth"),
+        second.contains("User answers:") && second.contains(r#"\"search\""#),
         "answers reach the model: {second}"
     );
     recorder.record(&harness, "ask_answered");
     harness.assert_no_stray_network();
+}
+
+/// The `select` dialogs of `ask_answered`'s form, with the selection fields of omp 18.20: a radio group, then the
+/// checkbox loop (Auth checked, then Search, then Done), each select naming what is checked.
+fn assert_form_selects(selects: &[SelectUiRequest]) {
+    let (database, features) = selects.split_first().expect("a select per field");
+    assert_eq!(database.title, "Which database?");
+    assert_eq!(
+        database.selection_marker,
+        Some(SelectUiRequestSelectionMarker::Radio)
+    );
+    assert_eq!(
+        features.iter().map(checked_options).collect::<Vec<_>>(),
+        [
+            vec![],
+            vec!["Auth".to_owned()],
+            vec!["Auth".to_owned(), "Search".to_owned()]
+        ],
+        "{features:#?}"
+    );
+    for select in features {
+        assert!(
+            select.title.ends_with("Which features?"),
+            "{}",
+            select.title
+        );
+        assert_eq!(
+            select.selection_marker,
+            Some(SelectUiRequestSelectionMarker::Checkbox)
+        );
+        // Every option but "Done selecting" gets a marker, "Other" included.
+        assert_eq!(select.markable_count, Some(4), "{:?}", select.options);
+    }
 }
 
 // spec: TST-012

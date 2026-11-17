@@ -19,7 +19,7 @@ describe("todosView", () => {
   });
 
   // spec: UI-082, PRT-056
-  test("the goal with its token use; blocked tasks say why; abandoned ones do not count", () => {
+  test("the goal with its token use; abandoned tasks do not count", () => {
     const view = todosView({
       goal: {
         id: "g",
@@ -35,7 +35,7 @@ describe("todosView", () => {
         {
           name: "Build",
           tasks: [
-            { content: "Widgets", status: "blocked", blocker: "the reducer" },
+            { content: "Widgets", status: "in_progress" },
             { content: "Old idea", status: "abandoned" },
             { content: "Reducer", status: "completed" },
           ],
@@ -50,7 +50,7 @@ describe("todosView", () => {
       usage: "12.3k / 50k tokens",
     });
     expect(view.phases.map((phase) => phase.name)).toEqual(["Build"]);
-    expect(view.phases[0]?.tasks[0]?.blocker).toBe("the reducer");
+    expect(view.phases[0]?.tasks[0]).toEqual({ content: "Widgets", status: "in_progress", statusLabel: "in progress" });
     expect(view.progress).toBe("1/2");
   });
 });

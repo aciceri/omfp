@@ -2,7 +2,7 @@
 //! loopback (Streamable HTTP, two tools): omp checks its own servers with `/mcp test` (DMN-191) and a reconnect
 //! restarts the thread, which connects them again (DMN-192).
 //!
-//! Spike (07-roadmap, M13): omp 18.18.6 exposes no MCP state over RPC; `/mcp test <name>` over `prompt` is a local
+//! Spike (07-roadmap, M13): omp 18.22.0 exposes no MCP state over RPC; `/mcp test <name>` over `prompt` is a local
 //! command answering one `command_output` frame, `/mcp reconnect` is refused outside the TUI and `/mcp reload` does
 //! not reconnect (the stub sees no new `initialize`).
 

@@ -282,7 +282,7 @@ describe("ask card", () => {
   test("success: each question with the given answer", () => {
     expect(view(card("ask_answered", "call_ask_1"), "ask").questions).toEqual([
       { question: "Which database?", answer: "SQLite" },
-      { question: "Which features?", answer: "" },
+      { question: "Which features?", answer: "Auth, Search" },
     ]);
   });
 

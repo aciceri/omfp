@@ -4,7 +4,7 @@
 use omfp_core::ThreadState;
 use omp_rpc::{AgentMessage, AssistantContent, MessageContent, UserContent};
 
-/// omp's bundled live prompt, copied verbatim from omp 18.18.6
+/// omp's bundled live prompt, copied verbatim from omp 18.22.0
 /// `packages/coding-agent/src/live/prompts/live-instructions.md`; re-synced on every omp upgrade (ENV-020). omp
 /// renders the instructions it gets with the same Handlebars variables (`{{firstName}}`, `{{username}}`).
 const BUNDLED_PROMPT: &str = include_str!("live_instructions.txt");

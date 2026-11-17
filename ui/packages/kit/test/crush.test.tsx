@@ -785,7 +785,9 @@ describe("shell", () => {
     const section = screen.getByTestId("section");
     expect([section.dataset.expanded, section.dataset.current]).toEqual(["true", "true"]);
     const toggle = screen.getByRole("button", { name: "Collapse omfp" });
-    expect([toggle.getAttribute("data-testid"), toggle.textContent]).toEqual(["toggle", "▾"]);
+    // The glyph is drawn by the stylesheet (UI-796): the toggle holds only its empty, hidden glyph box.
+    expect([toggle.getAttribute("data-testid"), toggle.textContent]).toEqual(["toggle", ""]);
+    expect(toggle.querySelector(".omfp-wsection__glyph")?.getAttribute("aria-hidden")).toBe("true");
     const name = screen.getByRole("heading", { level: 2 });
     expect([name.getAttribute("data-testid"), name.textContent, name.classList.contains("omfp-grad-text")]).toEqual([
       "name",
@@ -795,11 +797,11 @@ describe("shell", () => {
     expect([name.getAttribute("title"), name.getAttribute("aria-description")]).toEqual(["~/ws/omfp", "~/ws/omfp"]);
     expect(section.getAttribute("aria-labelledby")).toBe(name.id);
     const head = section.querySelector(".omfp-wsection__head");
-    expect(head?.textContent).toBe("▾omfp (current)3Remove");
+    expect(head?.textContent).toBe("omfp (current)3Remove");
     expect(head?.querySelector(".omfp-wsection__actions")?.textContent).toBe("Remove");
     await user.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.getByRole("button", { name: "Expand omfp" }).textContent).toBe("▸");
+    expect(screen.getByRole("button", { name: "Expand omfp" }).getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByTestId("rows")).toBeNull();
   });
 
@@ -821,7 +823,7 @@ describe("shell", () => {
     );
     const toggle = screen.getByTestId("toggle");
     expect([...toggle.children].map((child) => [child.className, child.textContent])).toEqual([
-      ["omfp-toggle-row__glyph", "▸"],
+      ["omfp-toggle-row__glyph", ""],
       ["omfp-row__title", "Jobs (3)"],
       ["omfp-toggle-row__end", "●1"],
     ]);
@@ -830,7 +832,7 @@ describe("shell", () => {
     await user.click(toggle);
     expect(onPress).toHaveBeenCalledTimes(1);
     rerender(<ToggleRow expanded data-testid="toggle" />);
-    expect([toggle.getAttribute("aria-expanded"), toggle.textContent]).toEqual(["true", "▾"]);
+    expect([toggle.getAttribute("aria-expanded"), toggle.textContent]).toEqual(["true", ""]);
   });
 
   // spec: UI-169, UI-442
@@ -895,7 +897,7 @@ describe("shell", () => {
       </>,
     );
     const [first, next] = [screen.getByTestId("first"), screen.getByTestId("next")];
-    expect([first.tagName, first.querySelector(".omfp-msg__name")?.textContent]).toEqual(["ARTICLE", "◆ Assistant"]);
+    expect([first.tagName, first.querySelector(".omfp-msg__name")?.textContent]).toEqual(["ARTICLE", "Assistant"]);
     expect([next.tagName, next.querySelectorAll(".omfp-msg__name").length, next.textContent]).toEqual([
       "DIV",
       0,

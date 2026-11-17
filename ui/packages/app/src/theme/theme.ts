@@ -1,8 +1,10 @@
 /**
- * Theme, density, motion and fonts on the document (UI-091, UI-094, UI-097, UI-145). The built-in light and dark
+ * Theme, skin, density, motion and fonts on the document (UI-091, UI-094, UI-097, UI-145, UI-794). The built-in light and dark
  * tokens follow `prefers-color-scheme` unless `<html data-color-scheme="light|dark">` (window-local) overrides it;
  * `data-theme` is the daemon's `[ui] theme` (UI-510), a built-in theme of `@omfp/kit/themes.css` over Synth's tokens
  * (`accent` only where the host gives the system accent, UI-512, else Synth; `matugen` is Synth under the user theme);
+ * `data-skin` is the daemon's `[ui] skin` (UI-794: `crush` or `boring`, whose stylesheets override Crush's under
+ * `[data-skin="boring"]`, whatever the theme);
  * `data-density` (the daemon's `[ui] density`) picks compact or normal spacing; `data-motion` is the effective motion level, the daemon's `[ui] motion` capped at `none` while the system asks for reduced motion, so stylesheets and
  * script effects read one attribute; `[ui] font_size` is `<html>`'s inline `font-size` (so every rem-based token
  * scales); `[ui.fonts]` set `--omfp-font-prose|ui|code` inline on `<html>`, which beats any stylesheet, user theme
@@ -15,7 +17,14 @@
  * keeps the theme's text roles readable: it runs with the appearance.
  */
 
-import { type BuiltinTheme, type Density, type FontSettings, INDEX_TOPIC, type Motion } from "@omfp/protocol";
+import {
+  type BuiltinTheme,
+  type Density,
+  type FontSettings,
+  INDEX_TOPIC,
+  type Motion,
+  type Skin,
+} from "@omfp/protocol";
 import { useEffect, useSyncExternalStore } from "react";
 import {
   COLOR_SCHEME,
@@ -23,6 +32,7 @@ import {
   DEFAULT_DENSITY,
   DEFAULT_FONT_SIZE,
   DEFAULT_MOTION,
+  DEFAULT_SKIN,
   DEFAULT_THEME,
   useSettings,
   useSnapshot,
@@ -46,6 +56,7 @@ const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 export interface Appearance {
   readonly scheme: ColorScheme;
   readonly theme: BuiltinTheme;
+  readonly skin: Skin;
   readonly density: Density;
   readonly fontSize: number;
   /** The effective level (UI-145): the setting, or `none` while the system asks for reduced motion. */
@@ -71,10 +82,11 @@ export function effectiveTheme(root: HTMLElement, theme: BuiltinTheme): BuiltinT
 
 export function applyAppearance(
   root: HTMLElement,
-  { scheme, theme, density, fontSize, motion, fonts }: Appearance,
+  { scheme, theme, skin, density, fontSize, motion, fonts }: Appearance,
 ): void {
   root.dataset.colorScheme = scheme;
   root.dataset.theme = effectiveTheme(root, theme);
+  root.dataset.skin = skin;
   root.dataset.density = density;
   root.dataset.motion = motion;
   root.style.fontSize = `${fontSize}px`;
@@ -128,7 +140,7 @@ function useSystemReducedMotion(): boolean {
 }
 
 /**
- * Keeps `<html>`'s colour scheme (window state), built-in theme, density, motion, font size and fonts (daemon settings)
+ * Keeps `<html>`'s colour scheme (window state), built-in theme, skin, density, motion, font size and fonts (daemon settings)
  * current, and
  * the contrast guard (UI-196) on it.
  */
@@ -137,13 +149,14 @@ export function useAppearance(root: HTMLElement = document.documentElement): voi
   const { ui } = useSettings();
   const systemReduced = useSystemReducedMotion();
   const theme = ui.theme ?? DEFAULT_THEME;
+  const skin = ui.skin ?? DEFAULT_SKIN;
   const density = ui.density ?? DEFAULT_DENSITY;
   const fontSize = ui.fontSize ?? DEFAULT_FONT_SIZE;
   const motion = systemReduced ? "none" : (ui.motion ?? DEFAULT_MOTION);
   const { fonts } = ui;
   useEffect(
-    () => applyAppearance(root, { scheme, theme, density, fontSize, motion, fonts }),
-    [root, scheme, theme, density, fontSize, motion, fonts],
+    () => applyAppearance(root, { scheme, theme, skin, density, fontSize, motion, fonts }),
+    [root, scheme, theme, skin, density, fontSize, motion, fonts],
   );
   useEffect(() => installContrastGuard(root.ownerDocument, root), [root]);
 }

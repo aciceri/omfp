@@ -135,6 +135,7 @@ notifications = "background"   # background | always | never
 theme = "synth"                # synth | catppuccin | gruvbox | tokyo-night | nord | solarized | rose-pine | accent
                                # | matugen (the user theme below)
 show_xdev_notices = false      # informational MCP mount/unmount rows in the transcript
+skin = "crush"                 # crush | boring: the calm, neutral look (`:set skin=boring`), with any theme
 
 [ui.fonts]                     # prose, ui, code: CSS font families
 prose = "Literata, serif"

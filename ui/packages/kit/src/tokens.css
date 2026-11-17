@@ -127,6 +127,8 @@
     --omfp-font-prose: "IBM Plex Serif", ui-serif, Georgia, serif;
     --omfp-font-code: "Commit Mono", ui-monospace, monospace;
     --omfp-font-ui: var(--omfp-font-code);
+    /* The system sans-serif: the boring skin's chrome and prose (UI-795); Crush uses none. */
+    --omfp-font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", sans-serif;
 
     /* Type scale (UI-126) */
     --omfp-fs-2xs: 0.6875rem;

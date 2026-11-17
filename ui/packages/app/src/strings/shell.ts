@@ -693,7 +693,7 @@ export const shell = {
   },
   settings: {
     setUsage:
-      "Usage: :set <key>=<value> (density, font_size, motion, notifications, show_xdev_notices, theme, fonts.prose|ui|code, keymap[.<mode>].<keys>)",
+      "Usage: :set <key>=<value> (density, font_size, motion, notifications, show_xdev_notices, theme, skin, fonts.prose|ui|code, keymap[.<mode>].<keys>)",
     unknownKey: (key: string) => `Unknown setting: ${key}`,
     themeUsage:
       "Usage: :theme [system|light|dark] [<theme>] (synth, catppuccin, gruvbox, tokyo-night, nord, solarized, rose-pine, accent, matugen: the user theme file, Synth without one)",

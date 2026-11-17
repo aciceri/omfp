@@ -132,7 +132,8 @@ expression: snapshot
         "code": "\"JetBrains Mono\", monospace"
       },
       "theme": "rose-pine",
-      "showXdevNotices": true
+      "showXdevNotices": true,
+      "skin": "boring"
     },
     "keymap": [
       {

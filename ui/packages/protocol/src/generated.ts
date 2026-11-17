@@ -1490,6 +1490,13 @@ export type Settings = {
   ui: UiSettings;
 };
 
+/** The look of the whole UI (UI-794, PRT-213): Crush (default) or the opt-in boring skin. Any palette works with either. */
+export type Skin =
+  /** omfp's own look (UI-120): monospace chrome, box-drawing glyphs, gradients and motion (default). */
+  | "crush"
+  /** Calm and neutral (UI-795): system sans-serif, gray chrome, light borders, no decorative motion. */
+  | "boring";
+
 /** `jobs.start` params (DMN-080, DMN-215). */
 export type StartJobParams = {
   /** Run as `sh -c <command>` in the workspace folder. */
@@ -1857,6 +1864,8 @@ export type UiSettings = {
   notifications?: NotificationMode | null;
   /** Show informational xdev notices in the transcript (UI-043); absent or false hides them, without dropping events. */
   showXdevNotices?: boolean | null;
+  /** The skin (UI-794): `crush` (absent, the default) or the opt-in `boring`; independent of `theme`. */
+  skin?: Skin | null;
   /**
    * The colour theme (UI-510); absent is Synth, omfp's own. The windows apply the user theme (`/theme.css`) only
    * with `matugen`.

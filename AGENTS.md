@@ -151,7 +151,9 @@ ui/packages/core      @omfp/core: the reducer ported from omfp-core, checked aga
 ui/packages/client    @omfp/client: WebSocket transport, session (hello, subscriptions, reconnect), model
 ui/packages/kit       @omfp/kit: React Aria Components wrappers styled by token CSS (tokens.css: every `--omfp-*` token;
                       themes.css: the built-in themes besides Synth, on `<html data-theme>`;
-                      kit.css: the Crush components and the motion catalogue; the bundled fonts and their licences
+                      kit.css: the Crush components and the motion catalogue; boring.css: the opt-in boring skin,
+                      Crush's overrides under `<html data-skin="boring">` (the app's src/boring.css has the frame's
+                      and the built-in widgets'); the bundled fonts and their licences
                       in fonts/, served at /fonts/ by the bundle); icons.tsx holds the Lucide icons as data
                       (lucide-LICENSE.txt), motion.ts the effective motion level; marks.tsx (state marks, badges,
                       counts, meter), logo.tsx (wordmark, mark and icon from the generated logo-paths.ts),

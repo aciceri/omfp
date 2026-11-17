@@ -877,6 +877,17 @@ the daemon requests it on its own loopback. The SSRF guard accepts only the exac
 (port and path of the `redirect_uri`) of a sign-in omp opened and still waits on. Not reproduced end to end against a
 real provider: the relay is checked against a stand-in listener.
 
+## The boring skin
+
+M17 adds an opt-in look beside Crush, the default (#152, UI-794..797, PRT-213): `[ui] skin = "boring"` (`:set
+skin=boring`) puts `<html data-skin="boring">`, and one more stylesheet for the kit and one for the app and its built-in
+widgets override, under that attribute only, what Crush draws its own way: the system sans-serif for chrome and prose,
+neutral gray chrome with the accent kept for focus, links and progress, solid colors, light borders, a gray bubble
+for the user's messages and plain replies, plain chevrons and box titles, a ring spinner, no decorative motion
+(Linear's chrome, claude.ai's conversation, Notion's typography). Any theme works with either skin. To make that
+possible without component variants, Crush's decorative glyphs moved from the kit's markup into its stylesheet
+(UI-796); Crush looks the same. Widgets built from kit components follow the skin; a widget's own styles do not.
+
 ## Later (noted, not scheduled)
 
 - Helix-style modal editing in the composer (UI-095 keeps a keymap with modes, so it fits later).

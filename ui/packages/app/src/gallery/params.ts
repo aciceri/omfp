@@ -1,12 +1,20 @@
 /**
  * The `/kit` gallery's parameters (UI-173, UI-514): `?scheme=light|dark`, `?theme=` a theme (UI-510: `synth`,
  * `catppuccin`, …, `accent`, and `matugen` with the matugen-forest fixture as the user theme) or the fixture user theme
- * `dux-solarized`, `?accent=` the system accent `accent` derives from (`#rrggbb`, default macOS's blue), `?density=`,
- * `?motion=` and `?fs=` (the root size in px). Unknown values keep the app's defaults.
+ * `dux-solarized`, `?accent=` the system accent `accent` derives from (`#rrggbb`, default macOS's blue), `?skin=`
+ * (UI-794: `crush`, `boring`), `?density=`, `?motion=` and `?fs=` (the root size in px). Unknown values keep the app's
+ * defaults.
  */
-import type { BuiltinTheme, Density, Motion } from "@omfp/protocol";
-import { DENSITIES, MOTIONS, SCHEMES, THEMES } from "../frame/set.ts";
-import { type ColorScheme, DEFAULT_DENSITY, DEFAULT_FONT_SIZE, DEFAULT_MOTION, DEFAULT_THEME } from "../sdk/index.ts";
+import type { BuiltinTheme, Density, Motion, Skin } from "@omfp/protocol";
+import { DENSITIES, MOTIONS, SCHEMES, SKINS, THEMES } from "../frame/set.ts";
+import {
+  type ColorScheme,
+  DEFAULT_DENSITY,
+  DEFAULT_FONT_SIZE,
+  DEFAULT_MOTION,
+  DEFAULT_SKIN,
+  DEFAULT_THEME,
+} from "../sdk/index.ts";
 
 /** The fixture user theme over Synth besides `matugen`'s: the user preset the contrast guard fixes (UI-196). */
 export type GalleryFixture = "dux-solarized";
@@ -19,6 +27,7 @@ export interface GalleryParams {
   readonly theme: GalleryTheme;
   /** The system accent `accent` derives from (`#rrggbb`). */
   readonly accent: string;
+  readonly skin: Skin;
   readonly density: Density;
   readonly motion: Motion;
   readonly fontSize: number;
@@ -56,6 +65,7 @@ export function galleryParams(search: string): GalleryParams {
     scheme: pick(query.get("scheme"), SCHEMES, "system"),
     theme: pick(query.get("theme"), GALLERY_THEMES, DEFAULT_THEME),
     accent: /^#[0-9a-f]{6}$/.test(accent) ? accent : DEFAULT_ACCENT,
+    skin: pick(query.get("skin"), SKINS, DEFAULT_SKIN),
     density: pick(query.get("density"), DENSITIES, DEFAULT_DENSITY),
     motion: pick(query.get("motion"), MOTIONS, DEFAULT_MOTION),
     fontSize: Number.isInteger(size) && size >= MIN_FONT_SIZE && size <= MAX_FONT_SIZE ? size : DEFAULT_FONT_SIZE,
@@ -68,6 +78,7 @@ export function gallerySearch(params: GalleryParams, change: Partial<GalleryPara
   const query = new URLSearchParams({
     scheme: next.scheme,
     theme: next.theme,
+    skin: next.skin,
     density: next.density,
     motion: next.motion,
     fs: String(next.fontSize),

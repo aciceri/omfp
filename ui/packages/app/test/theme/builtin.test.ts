@@ -73,6 +73,7 @@ describe("the accent theme on <html>", () => {
   const root = document.documentElement;
   const appearance = {
     scheme: "system",
+    skin: "crush",
     density: "compact",
     fontSize: 17,
     motion: "full",
@@ -82,6 +83,7 @@ describe("the accent theme on <html>", () => {
   afterEach(() => {
     root.style.removeProperty(SYSTEM_ACCENT);
     delete root.dataset.theme;
+    delete root.dataset.skin;
   });
 
   // spec: UI-512, UI-510
@@ -105,6 +107,16 @@ describe("the accent theme on <html>", () => {
     applyAppearance(root, { ...appearance, theme: "rose-pine" });
     expect(root.dataset.theme).toBe("rose-pine");
   });
+
+  // spec: UI-794
+  test("the skin is data-skin, independent of the theme", () => {
+    applyAppearance(root, { ...appearance, theme: "nord" });
+    expect([root.dataset.skin, root.dataset.theme]).toEqual(["crush", "nord"]);
+    applyAppearance(root, { ...appearance, theme: "nord", skin: "boring" });
+    expect([root.dataset.skin, root.dataset.theme]).toEqual(["boring", "nord"]);
+    applyAppearance(root, { ...appearance, theme: "gruvbox", skin: "boring" });
+    expect([root.dataset.skin, root.dataset.theme]).toEqual(["boring", "gruvbox"]);
+  });
 });
 
 describe("the matugen theme", () => {
@@ -112,6 +124,7 @@ describe("the matugen theme", () => {
 
   afterEach(() => {
     delete root.dataset.theme;
+    delete root.dataset.skin;
   });
 
   // spec: UI-510, DMN-240
@@ -119,6 +132,7 @@ describe("the matugen theme", () => {
     applyAppearance(root, {
       scheme: "system",
       theme: "matugen",
+      skin: "crush",
       density: "compact",
       fontSize: 17,
       motion: "full",

@@ -234,7 +234,7 @@ describe("revealed widgets as tabs of the main slot", () => {
     test.flush();
     const detail = screen.getByTestId("background-subagent");
     await waitFor(() =>
-      expect(within(detail).getAllByTestId("subagent-line")[0]?.textContent).toBe("▸ taskCount the functions"),
+      expect(within(detail).getAllByTestId("subagent-line")[0]?.textContent).toBe("taskCount the functions"),
     );
     expect(tabs()).toEqual([]);
     expect(screen.queryAllByTestId("floating-widget").length).toBe(0);

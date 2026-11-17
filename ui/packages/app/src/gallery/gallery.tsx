@@ -2,11 +2,12 @@
  * The `/kit` gallery (UI-173): every kit component of 09-design in every state it lists, side by side, with sizes and
  * both densities, the glyph vocabulary and a token sheet with measured contrast. Hover, pressed and focus are forced
  * with the kit's state classes (`is-hover`, `is-pressed`, `is-focus`), so the page is deterministic; the query picks
- * the scheme, theme, density, motion and root size (params.ts), and the header's picker links every theme and scheme
- * (UI-514). The screenshot test (UI-174) waits for `[data-ready=true]` and reads the contrast rows.
+ * the scheme, theme, skin, density, motion and root size (params.ts), and the header's picker links every theme, scheme
+ * and skin (UI-514, UI-797). The screenshot test (UI-174) waits for `[data-ready=true]` and reads the contrast rows.
  */
 import "./gallery.css";
 import { useEffect, useState } from "react";
+import { SKINS } from "../frame/set.ts";
 import type { Adjustment } from "../theme/contrast.ts";
 import { applyContrastGuard, cssColorReader } from "../theme/guard.ts";
 import { applyAppearance, applyUserTheme, SYSTEM_ACCENT } from "../theme/theme.ts";
@@ -47,6 +48,7 @@ function applyGalleryParams(params: GalleryParams): Adjustment[] {
   applyAppearance(root, {
     scheme: params.scheme,
     theme: builtin ?? "synth",
+    skin: params.skin,
     density: params.density,
     fontSize: params.fontSize,
     motion: params.motion,
@@ -57,7 +59,10 @@ function applyGalleryParams(params: GalleryParams): Adjustment[] {
   return applyContrastGuard(root, cssColorReader(document));
 }
 
-/** The header's picker (UI-514): every theme, then both schemes, as links to this page with the other parameters kept. */
+/**
+ * The header's picker (UI-514, UI-797): every theme, then both schemes, then both skins, as links to this page with the
+ * other parameters kept.
+ */
 function ThemePicker({ params }: { params: GalleryParams }) {
   const link = (key: string, label: string, change: Partial<GalleryParams>, current: boolean) => (
     <a
@@ -71,9 +76,10 @@ function ThemePicker({ params }: { params: GalleryParams }) {
     </a>
   );
   return (
-    <nav className="omfp-gallery__picker" aria-label="Themes and schemes">
+    <nav className="omfp-gallery__picker" aria-label="Themes, schemes and skins">
       {GALLERY_THEMES.map((theme) => link(theme, theme, { theme }, theme === params.theme))}
       {(["light", "dark"] as const).map((scheme) => link(scheme, scheme, { scheme }, scheme === params.scheme))}
+      {SKINS.map((skin) => link(`skin-${skin}`, skin, { skin }, skin === params.skin))}
     </nav>
   );
 }
@@ -115,7 +121,7 @@ export function Gallery({ search }: { search: string }) {
       <header className="omfp-gallery__top">
         <h1 className="omfp-gallery__page-title omfp-grad-text omfp-grad-flow">◆ omfp kit</h1>
         <span className="omfp-gallery__note">
-          Crush · {params.theme}
+          {params.skin === "boring" ? "Boring" : "Crush"} · {params.theme}
           {params.theme === "accent" ? ` ${params.accent}` : ""} · {params.scheme} · {params.density} · motion{" "}
           {params.motion} · {params.fontSize}px
         </span>

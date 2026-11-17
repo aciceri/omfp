@@ -1228,6 +1228,12 @@ requirements = [
   "DMN-342",
   "PRT-212",
   "UI-761",
+  # The opt-in boring skin (#152)
+  "UI-794",
+  "UI-795",
+  "UI-796",
+  "UI-797",
+  "PRT-213",
 ]
 
 [M18]

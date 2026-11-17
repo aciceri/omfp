@@ -108,10 +108,10 @@ describe("jobs in the left column", () => {
     expect(inSection("w2", "jobs-toggle")).toBeNull();
     const toggle = inSection("w1", "jobs-toggle");
     expect([
-      toggle?.querySelector(".omfp-toggle-row__glyph")?.textContent,
+      toggle?.querySelector(".omfp-toggle-row__glyph")?.getAttribute("aria-hidden"),
       toggle?.querySelector(".omfp-row__title")?.textContent,
       toggle?.getAttribute("aria-expanded"),
-    ]).toEqual(["▸", "Jobs (3)", "false"]);
+    ]).toEqual(["true", "Jobs (3)", "false"]);
     expect(inSection("w1", "jobs-list")).toBeNull();
     const marks = inSection("w1", "job-counts");
     const label = "3 jobs: 1 service, 1 scheduled, 1 manual · 1 running · 1 failed";

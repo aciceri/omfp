@@ -18,6 +18,7 @@
 //! theme = "catppuccin"          # synth | catppuccin | gruvbox | tokyo-night | nord | solarized | rose-pine | accent
 //!                               # | matugen (the user theme, theme.css)
 //! show_xdev_notices = false     # show informational MCP mount/unmount notices in the transcript
+//! skin = "crush"                # crush | boring
 //!
 //! [ui.fonts]
 //! prose = "Literata, serif"
@@ -35,7 +36,7 @@ use std::path::{Path, PathBuf};
 
 use omfp_protocol::{
     BuiltinTheme, Density, FontSettings, KeymapEntry, KeymapMode, Motion, NotificationMode,
-    SetSettingsParams, Settings, UiSettings,
+    SetSettingsParams, Settings, Skin, UiSettings,
 };
 use serde::Deserialize;
 use toml_edit::{DocumentMut, Item, Table};
@@ -109,6 +110,7 @@ struct RawUi {
     fonts: Option<RawFonts>,
     theme: Option<BuiltinTheme>,
     show_xdev_notices: Option<bool>,
+    skin: Option<Skin>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -156,6 +158,7 @@ impl ConfigFile {
                 fonts,
                 theme: raw.ui.theme,
                 show_xdev_notices: raw.ui.show_xdev_notices,
+                skin: raw.ui.skin,
             },
             keymap: keymap(&raw.keymap)?,
         })
@@ -259,6 +262,9 @@ pub fn write_back(text: &str, update: &SetSettingsParams) -> Result<String, Stri
         if let Some(visible) = ui.show_xdev_notices {
             set(table, "show_xdev_notices", visible);
         }
+        if let Some(skin) = ui.skin {
+            set(table, "skin", skin_name(skin));
+        }
         if let Some(fonts) = &ui.fonts {
             let table = child(table, "fonts")?;
             for (key, value) in [
@@ -338,6 +344,13 @@ fn notifications_name(mode: NotificationMode) -> &'static str {
     }
 }
 
+fn skin_name(skin: Skin) -> &'static str {
+    match skin {
+        Skin::Crush => "crush",
+        Skin::Boring => "boring",
+    }
+}
+
 fn theme_name(theme: BuiltinTheme) -> &'static str {
     match theme {
         BuiltinTheme::Synth => "synth",
@@ -379,6 +392,38 @@ mod tests {
         }
         assert!(ConfigFile::parse("[ui]\nshow_xdev_notices = \"true\"").is_err());
     }
+
+    // spec: UI-794, DMN-009
+    #[test]
+    fn the_skin_round_trips_without_changing_other_settings() {
+        assert_eq!(ConfigFile::parse(FILE).unwrap().ui.skin, None);
+        assert_eq!(
+            ConfigFile::parse("[ui]\nskin = \"boring\"")
+                .unwrap()
+                .ui
+                .skin,
+            Some(Skin::Boring)
+        );
+        let mut text = FILE.to_owned();
+        for skin in [Skin::Boring, Skin::Crush] {
+            text = write_back(
+                &text,
+                &SetSettingsParams {
+                    ui: Some(UiSettings {
+                        skin: Some(skin),
+                        ..UiSettings::default()
+                    }),
+                    keymap: None,
+                },
+            )
+            .unwrap();
+            let mut expected = ConfigFile::parse(FILE).unwrap();
+            expected.ui.skin = Some(skin);
+            assert_eq!(ConfigFile::parse(&text).unwrap(), expected);
+        }
+        assert!(text.contains("skin = \"crush\""), "{text}");
+    }
+
     const FILE: &str = r#"# My omfp.
 [daemon]
 max_processes = 4 # enough
@@ -428,6 +473,7 @@ prose = "Literata, serif"
                 }),
                 theme: Some(BuiltinTheme::Gruvbox),
                 show_xdev_notices: None,
+                skin: None,
             }
         );
         assert_eq!(
@@ -452,6 +498,7 @@ prose = "Literata, serif"
             ("[ui]\nmotion = \"slow\"", "slow"),
             ("[ui]\ntheme = \"dracula\"", "dracula"),
             ("[ui]\ntheme = \"tokyo_night\"", "tokyo_night"),
+            ("[ui]\nskin = \"orca\"", "orca"),
             ("[ui]\nfont_size = 9", "ui.font_size"),
             ("[ui]\nfont_size = 29", "ui.font_size"),
             ("[ui]\nfont_size = \"big\"", "font_size"),
@@ -532,6 +579,7 @@ prose = "Literata, serif"
                 }),
                 theme: Some(BuiltinTheme::TokyoNight),
                 show_xdev_notices: None,
+                skin: Some(Skin::Boring),
             }),
             keymap: Some(vec![
                 entry(KeymapMode::Normal, "Space t", "density.set"),
@@ -554,6 +602,7 @@ font_size = 18
 motion = "none"
 theme = "tokyo-night"
 notifications = "never"
+skin = "boring"
 [ui.fonts]
 prose = "Literata, serif"
 code = '"Iosevka", monospace'

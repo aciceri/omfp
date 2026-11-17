@@ -35,7 +35,7 @@ export function Section({
       data-testid="kit-section"
     >
       <header className="omfp-gallery__head">
-        <h2 className="omfp-gallery__title omfp-grad-text omfp-grad-flow">╭─ {title}</h2>
+        <h2 className="omfp-gallery__title omfp-grad-text omfp-grad-flow">{title}</h2>
         {note !== undefined && <span className="omfp-gallery__note">{note}</span>}
       </header>
       <div className="omfp-gallery__body">{children}</div>

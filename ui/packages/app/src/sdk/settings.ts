@@ -1,10 +1,18 @@
 /**
  * UI settings kept by the daemon (DMN-009, UI-097): `[ui]` density, font size, motion, notifications, xdev notice
- * visibility, fonts and theme (UI-510), and `[keymap]` entries, pushed on `index` so windows apply changes live.
+ * visibility, fonts, theme (UI-510) and skin (UI-794), and `[keymap]` entries, pushed on `index` so windows apply changes live.
  * `settings.set` merges a patch into the config file.
  */
 
-import type { BuiltinTheme, Density, Motion, NotificationMode, SetSettingsParams, Settings } from "@omfp/protocol";
+import type {
+  BuiltinTheme,
+  Density,
+  Motion,
+  NotificationMode,
+  SetSettingsParams,
+  Settings,
+  Skin,
+} from "@omfp/protocol";
 import { useMemo } from "react";
 import { reportError } from "./actions.ts";
 import { useSnapshot } from "./hooks.ts";
@@ -23,6 +31,8 @@ export const DEFAULT_MOTION: Motion = "full";
 export const DEFAULT_NOTIFICATIONS: NotificationMode = "background";
 /** Without a `[ui]` theme: Synth, omfp's own palette (UI-139, UI-510). */
 export const DEFAULT_THEME: BuiltinTheme = "synth";
+/** Without a `[ui]` skin: Crush, omfp's own look (UI-120, UI-794). */
+export const DEFAULT_SKIN: Skin = "crush";
 
 /** The daemon's settings (defaults until the `index` snapshot). */
 export function useSettings(): Settings {

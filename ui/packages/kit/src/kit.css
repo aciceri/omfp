@@ -315,7 +315,9 @@
     border-block-start: var(--omfp-bw) solid var(--omfp-rule);
   }
 
-  /* Disclosures (UI-122): `▸` closed, `▾` open, in primary; no chevron icon. */
+  /* Disclosures (UI-122): `▸` closed, `▾` open, in primary; no chevron icon. The glyphs are generated here, never
+     written in the markup, so a skin can draw its own (UI-796): cards, disclosures, workspace sections, toggle rows and
+     thinking blocks. */
   .omfp-card__chevron,
   .omfp-disclosure__chevron {
     flex: none;
@@ -324,12 +326,16 @@
   }
 
   .omfp-card__chevron::before,
-  .omfp-disclosure__chevron::before {
+  .omfp-disclosure__chevron::before,
+  .omfp-wsection__glyph::before,
+  .omfp-toggle-row__glyph::before,
+  .omfp-reasoning__glyph::before {
     content: "▸";
   }
 
   .omfp-card[data-expanded="true"] .omfp-card__chevron::before,
-  .omfp-disclosure[data-expanded] .omfp-disclosure__chevron::before {
+  .omfp-disclosure[data-expanded] .omfp-disclosure__chevron::before,
+  [aria-expanded="true"] > :is(.omfp-wsection__glyph, .omfp-toggle-row__glyph, .omfp-reasoning__glyph)::before {
     content: "▾";
   }
 
@@ -2652,6 +2658,10 @@
     color: var(--omfp-primary);
   }
 
+  .omfp-cmdmenu__title::before {
+    content: "╭─ ";
+  }
+
   .omfp-cmdmenu__item {
     display: flex;
     align-items: center;
@@ -2726,6 +2736,10 @@
     padding: 0 var(--omfp-s2) var(--omfp-s1);
     font-size: var(--omfp-fs-2xs);
     color: var(--omfp-primary);
+  }
+
+  .omfp-whichkey__title::before {
+    content: "╭─ ";
   }
 
   .omfp-whichkey__groups {
@@ -3689,6 +3703,15 @@
     align-self: flex-start;
     font-size: var(--omfp-fs-xs);
     font-weight: var(--omfp-fw-strong);
+  }
+
+  /* The name's glyph (UI-122): `▸` for the user, `◆` for the assistant, inside the gradient text. */
+  .omfp-msg > .omfp-msg__name::before {
+    content: "▸ ";
+  }
+
+  .omfp-msg[data-author="assistant"] > .omfp-msg__name::before {
+    content: "◆ ";
   }
 
   .omfp-msg[data-author="user"] .omfp-msg__name {

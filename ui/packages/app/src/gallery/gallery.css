@@ -94,6 +94,19 @@
     font-weight: var(--omfp-fw-strong);
   }
 
+  .omfp-gallery__title::before {
+    content: "╭─ ";
+  }
+
+  /* The boring skin (UI-794): section titles without `╭─`, the picker's links as small boxes. */
+  :root[data-skin="boring"] .omfp-gallery__title::before {
+    content: none;
+  }
+
+  :root[data-skin="boring"] .omfp-gallery__pick {
+    border-radius: var(--omfp-r-chip);
+  }
+
   .omfp-gallery__note,
   .omfp-gallery__label {
     font-size: var(--omfp-fs-2xs);

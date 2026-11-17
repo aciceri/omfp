@@ -473,10 +473,10 @@ describe("transcript", () => {
     expect(block.dataset.expanded).toBe("false");
     expect(within(block).queryByText("secret plan")).toBeNull();
     const head = within(block).getByTestId("thinking-head");
-    expect(head.textContent).toBe("▸Thought");
+    expect([head.textContent, head.getAttribute("aria-expanded")]).toEqual(["Thought", "false"]);
     await userEvent.click(head);
     expect(block.dataset.expanded).toBe("true");
-    expect(head.textContent).toBe("▾Thought");
+    expect([head.textContent, head.getAttribute("aria-expanded")]).toEqual(["Thought", "true"]);
     expect(within(block).getByText("secret plan").closest("[hidden]")).toBeNull();
   });
 
@@ -494,7 +494,7 @@ describe("transcript", () => {
     const live = screen.getByTestId("thinking");
     expect([live.dataset.live, live.dataset.expanded]).toEqual(["true", "false"]);
     const liveHead = within(live).getByTestId("thinking-head");
-    expect(liveHead.textContent).toBe("▸Thinking…");
+    expect(liveHead.textContent).toBe("Thinking…");
     await userEvent.click(liveHead);
     client.threadEvents(
       THREAD,
@@ -516,7 +516,7 @@ describe("transcript", () => {
     flush();
     const settled = screen.getByTestId("thinking");
     expect([settled.dataset.live, settled.dataset.expanded]).toEqual([undefined, "true"]);
-    expect(within(settled).getByTestId("thinking-head").textContent).toBe("▾Thought");
+    expect(within(settled).getByTestId("thinking-head").getAttribute("aria-expanded")).toBe("true");
   });
 
   // spec: UI-050

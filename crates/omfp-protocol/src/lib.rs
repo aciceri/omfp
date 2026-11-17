@@ -34,7 +34,7 @@ pub use dto::{
     JobRuns, JobState, JobStatus, JobStream, JobTrigger, JobView, JobViewStatus, JobsState,
     KeymapEntry, KeymapMode, MissedPolicy, Motion, NotificationMode, PathEntry, PromptThread,
     Provenance, RepoKind, RepoStatus, RestartPolicy, RestartReason, RunInfo, RunTrigger,
-    SeenRepository, Settings, TerminalCursor, TerminalInfo, TerminalScreen, TerminalState,
+    SeenRepository, Settings, Skin, TerminalCursor, TerminalInfo, TerminalScreen, TerminalState,
     TerminalStatus, Theme, ThreadSummary, TitleSource, UiSettings, ViewsState, WidgetInfo,
     WidgetSource, Workspace, WorkspaceBinding, WorkspaceRepo,
 };

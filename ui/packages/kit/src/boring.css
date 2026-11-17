@@ -1,0 +1,522 @@
+/*
+ * The boring skin (UI-794, UI-795): an opt-in alternative to Crush, on `<html data-skin="boring">`, in the manner of
+ * Linear's chrome, claude.ai's conversation and Notion's typography. Every rule is scoped under
+ * `:root[data-skin="boring"]` and overrides only what differs from Crush (kit.css), in the same sections; whatever it
+ * does not cover stays Crush. Only `var(--omfp-*)` tokens, no color literals (UI-091); any theme (UI-510) or user theme
+ * (UI-091) works with it, and `[ui] fonts` (inline on `<html>`) still win over its fonts.
+ * The look: the system sans-serif everywhere but code; chrome in neutral roles only (surfaces, text, muted text,
+ * borders), the accent kept for focus, links, the selected tab's marker and progress, never for fills; inverted neutral
+ * primary buttons, outlined secondary ones, gray hover and selection; inputs with soft borders and a focus ring; very light borders, subtle shadows, calm whitespace; no gradients, no
+ * box-drawing titles or `▸` marks, plain chevrons, a ring spinner, no decorative or entrance motion (state indicators
+ * and transitions stay, and `data-motion` still caps them, UI-145).
+ */
+@layer omfp-tokens, omfp-kit;
+
+@layer omfp-tokens {
+  :root[data-skin="boring"] {
+    /* Fonts (UI-795): the system sans-serif for chrome and prose, calm prose; code keeps the code family. */
+    --omfp-font-ui: var(--omfp-font-sans);
+    --omfp-font-prose: var(--omfp-font-sans);
+    --omfp-fs-prose: 1rem;
+    --omfp-lh-prose: 1.6;
+
+    /* Whitespace between messages. */
+    --omfp-msg-gap: calc(1.75rem * var(--omfp-density));
+
+    /* No gradients: every gradient token is one solid color, the accent where Crush shows progress and markers. */
+    --omfp-grad: linear-gradient(var(--omfp-primary), var(--omfp-primary));
+    --omfp-grad-loop: linear-gradient(var(--omfp-primary), var(--omfp-primary));
+    --omfp-grad-soft: linear-gradient(var(--omfp-sel-bg), var(--omfp-sel-bg));
+
+    /* Neutral states: hover, press and selection are gray; focus is a gray step further, with the primary bar
+       (UI-132): each state at least 6 % of on-surface from the others, apart on every palette. */
+    --omfp-hover: color-mix(in oklab, var(--omfp-on-surface) 4%, transparent);
+    --omfp-press: color-mix(in oklab, var(--omfp-on-surface) 9%, transparent);
+    --omfp-sel-bg: color-mix(in oklab, var(--omfp-on-surface) 6%, transparent);
+    --omfp-focus-bg: color-mix(in oklab, var(--omfp-on-surface) 12%, transparent);
+
+    /* Quiet surfaces: a gray sidebar, gray cards, very light borders, a subtle neutral shadow on what floats. */
+    --omfp-side-bg: var(--omfp-surface-container-low);
+    --omfp-card-bg: var(--omfp-surface-container-low);
+    --omfp-rule: color-mix(in oklab, var(--omfp-outline-variant) 55%, transparent);
+    --omfp-pop-border: var(--omfp-rule);
+    --omfp-pop-shadow: 0 var(--omfp-s1) var(--omfp-s5) color-mix(in oklab, var(--omfp-shadow) 14%, transparent);
+  }
+}
+
+@layer omfp-kit {
+  /* Gradient text (UI-123) is plain text. */
+  :root[data-skin="boring"] .omfp-grad-text {
+    color: var(--omfp-on-surface);
+    background: none;
+    -webkit-background-clip: border-box;
+    background-clip: border-box;
+  }
+
+  /* Key chips (UI-148): small muted chips in the interface family. */
+  :root[data-skin="boring"] .omfp-kbd {
+    font-family: var(--omfp-font-ui);
+    color: var(--omfp-on-surface-variant);
+    border-color: var(--omfp-rule);
+  }
+
+  /* Commands and their arguments read as interface text: a command palette, not a terminal. */
+  :root[data-skin="boring"]
+    :is(.omfp-cmd, .omfp-cmdmenu__command, .omfp-whichkey__args, .omfp-help__args, .omfp-option-text__label) {
+    font-family: var(--omfp-font-ui);
+  }
+
+  /* Button (UI-149): primary is inverted neutral (the text color as its fill), secondary a light gray, quiet gray on
+     hover; the pressed shift stays. */
+  :root[data-skin="boring"] .omfp-button[data-variant="primary"] {
+    color: var(--omfp-inverse-on-surface);
+    background: var(--omfp-inverse-surface);
+  }
+
+  :root[data-skin="boring"] .omfp-button[data-variant="primary"]:is([data-hovered], .is-hover) {
+    background: color-mix(in oklab, var(--omfp-inverse-surface), var(--omfp-inverse-on-surface) 12%);
+  }
+
+  :root[data-skin="boring"] .omfp-button[data-variant="primary"]:is([data-pressed], .is-pressed) {
+    background: color-mix(in oklab, var(--omfp-inverse-surface), var(--omfp-inverse-on-surface) 22%);
+  }
+
+  :root[data-skin="boring"] .omfp-button[data-variant="secondary"]:is([data-hovered], .is-hover) {
+    background: var(--omfp-hover);
+  }
+
+  :root[data-skin="boring"] .omfp-icon-button[aria-pressed="true"],
+  :root[data-skin="boring"] .omfp-pdf__bar .omfp-button[aria-pressed="true"],
+  :root[data-skin="boring"] .omfp-image__bar .omfp-button[aria-pressed="true"] {
+    color: var(--omfp-on-surface);
+    border-color: var(--omfp-rule);
+    background: var(--omfp-press);
+  }
+
+  /* Fields (UI-150): a soft border and, focused, a soft accent ring around it. */
+  :root[data-skin="boring"] :is(.omfp-input-box:focus-within, .omfp-field.is-focus .omfp-input-box) {
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--omfp-primary) 22%, transparent);
+  }
+
+  /* Card (UI-162): a quiet gray card with a light border. */
+  :root[data-skin="boring"] .omfp-card__body {
+    padding: var(--omfp-s3) var(--omfp-s4);
+  }
+
+  /* Disclosures: a plain muted chevron drawn by two borders, right when closed, down when open. */
+  :root[data-skin="boring"]
+    :is(
+      .omfp-card__chevron,
+      .omfp-disclosure__chevron,
+      .omfp-wsection__glyph,
+      .omfp-toggle-row__glyph,
+      .omfp-reasoning__glyph
+    ) {
+    display: inline-grid;
+    place-items: center;
+    inline-size: var(--omfp-ic-sm);
+    color: var(--omfp-on-surface-variant);
+  }
+
+  :root[data-skin="boring"]
+    :is(
+      .omfp-card__chevron,
+      .omfp-disclosure__chevron,
+      .omfp-wsection__glyph,
+      .omfp-toggle-row__glyph,
+      .omfp-reasoning__glyph
+    )::before {
+    content: "";
+    box-sizing: border-box;
+    inline-size: calc(var(--omfp-ic-sm) * 0.45);
+    block-size: calc(var(--omfp-ic-sm) * 0.45);
+    border: solid currentColor;
+    border-width: 0 calc(var(--omfp-bw) * 1.5) calc(var(--omfp-bw) * 1.5) 0;
+    transform: rotate(-45deg);
+  }
+
+  :root[data-skin="boring"] .omfp-card[data-expanded="true"] .omfp-card__chevron::before,
+  :root[data-skin="boring"] .omfp-disclosure[data-expanded] .omfp-disclosure__chevron::before,
+  :root[data-skin="boring"]
+    [aria-expanded="true"]
+    > :is(.omfp-wsection__glyph, .omfp-toggle-row__glyph, .omfp-reasoning__glyph)::before {
+    transform: rotate(45deg);
+  }
+
+  /* Popovers, dialogs, toasts and sheets appear without an entrance. */
+  :root[data-skin="boring"]
+    :is(
+      .omfp-popover,
+      .omfp-modal-overlay,
+      .omfp-dialog,
+      .omfp-toast,
+      .omfp-sheet-overlay,
+      .omfp-queue-chip,
+      .omfp-modeline__notice,
+      .omfp-modeline__segment
+    ) {
+    animation: none;
+  }
+
+  /* Tabs (UI-154): no `▸` (nor its reserved space); the selected tab in on-surface over its accent underline. */
+  :root[data-skin="boring"] .omfp-tabs__tab::before {
+    content: none;
+  }
+
+  :root[data-skin="boring"] .omfp-tabs__tab[data-selected] {
+    font-weight: var(--omfp-fw-medium);
+    color: var(--omfp-on-surface);
+  }
+
+  /* Chips, badges and marks (UI-157): counts are muted numbers. */
+  :root[data-skin="boring"] .omfp-count {
+    color: var(--omfp-on-surface-variant);
+    background: none;
+  }
+
+  /* State marks (UI-216): running is a ring turning, on threads and tool cards alike; it rests at motion `none`. */
+  :root[data-skin="boring"] .omfp-state-mark[data-state="running"]::before,
+  :root[data-skin="boring"] .omfp-state-mark[data-state="running"][data-spinner="status"]::before {
+    content: "";
+    box-sizing: border-box;
+    inline-size: calc(var(--omfp-ic) * 0.8);
+    block-size: calc(var(--omfp-ic) * 0.8);
+    border: 2px solid color-mix(in oklab, currentColor 25%, transparent);
+    border-block-start-color: currentColor;
+    border-radius: 50%;
+    animation: omfp-spin 0.8s linear infinite;
+  }
+
+  /* The other state marks are dots: filled for done, failed, unread and awaiting, a ring for idle. */
+  :root[data-skin="boring"] .omfp-state-mark::before {
+    content: "";
+    box-sizing: border-box;
+    inline-size: calc(var(--omfp-ic) * 0.55);
+    block-size: calc(var(--omfp-ic) * 0.55);
+    border: calc(var(--omfp-bw) * 1.5) solid currentColor;
+    border-radius: 50%;
+  }
+
+  :root[data-skin="boring"]
+    .omfp-state-mark:is(
+      [data-state="failed"],
+      [data-state="unread"],
+      [data-state="done"],
+      [data-state="awaiting"]
+    )::before {
+    background: currentColor;
+  }
+
+  /* `◆` written in the markup (an approval or ask card's title, the mode-line notice, the message log) is a dot. */
+  :root[data-skin="boring"]
+    :is(.omfp-request__glyph, .omfp-modeline__notice-mark, .omfp-messages__kind > [aria-hidden]) {
+    display: inline-block;
+    inline-size: calc(var(--omfp-ic) * 0.55);
+    block-size: calc(var(--omfp-ic) * 0.55);
+    margin-inline-end: var(--omfp-s1);
+    overflow: hidden;
+    border-radius: 50%;
+    color: transparent;
+    background: var(--omfp-on-surface-variant);
+  }
+
+  :root[data-skin="boring"] .omfp-request__glyph {
+    background: var(--omfp-warn);
+  }
+
+  :root[data-skin="boring"] .omfp-modeline__notice-mark {
+    background: var(--notice-tone);
+  }
+
+  /* Progress and meter (UI-158): solid accent fills; an indeterminate bar still travels. */
+  :root[data-skin="boring"] .omfp-progress__fill {
+    animation: none;
+  }
+
+  :root[data-skin="boring"] .omfp-progress:not([aria-valuenow]) .omfp-progress__fill {
+    animation: omfp-indeterminate 1.4s var(--omfp-ease) infinite;
+  }
+
+  /* Border boxes (UI-187): a quiet box with a light border; its title sits in a head row inside it. */
+  :root[data-skin="boring"] .omfp-bbox {
+    overflow: clip;
+    border: var(--omfp-bw) var(--bbox-style) var(--bbox-line);
+    border-radius: var(--omfp-r-card);
+    background: var(--bbox-bg);
+  }
+
+  :root[data-skin="boring"] .omfp-bbox__head {
+    display: flex;
+    align-items: center;
+    gap: var(--omfp-s2);
+    padding: 0 var(--omfp-s3);
+  }
+
+  :root[data-skin="boring"] .omfp-bbox__head::before,
+  :root[data-skin="boring"] .omfp-bbox__head::after {
+    content: none;
+  }
+
+  :root[data-skin="boring"] .omfp-bbox__line {
+    flex: 1;
+    align-self: auto;
+    margin: 0;
+    border: 0;
+    background: none;
+  }
+
+  :root[data-skin="boring"] :is(.omfp-bbox__label, .omfp-bbox__end) {
+    padding: var(--omfp-s1);
+    background: none;
+  }
+
+  :root[data-skin="boring"] .omfp-bbox__label {
+    color: var(--omfp-on-surface);
+  }
+
+  :root[data-skin="boring"] .omfp-bbox__body {
+    border: 0;
+    border-block-start: var(--omfp-bw) var(--bbox-style) var(--bbox-line);
+    border-radius: 0;
+    background: none;
+  }
+
+  :root[data-skin="boring"] .omfp-bbox__rule::before {
+    content: none;
+  }
+
+  :root[data-skin="boring"] .omfp-bbox__rule-label {
+    padding-inline: max(var(--bbox-pad-x), var(--omfp-s3)) var(--omfp-s2);
+  }
+
+  /* Live voice (UI-182): the user's meter in solid tertiary. */
+  :root[data-skin="boring"] .omfp-voice-meter[data-voice="user"] .omfp-voice-meter__fill {
+    background: var(--omfp-tertiary);
+  }
+
+  /* Code (UI-166): a subtle gray surface without a frame; inline code plain on gray. */
+  :root[data-skin="boring"] .omfp-code--block {
+    border: 0;
+  }
+
+  :root[data-skin="boring"] :is(.omfp-dialog code, code.omfp-code, .omfp-markdown :not(pre) > code) {
+    color: var(--omfp-on-surface);
+    background: var(--omfp-surface-container);
+  }
+
+  /* Tool cards (UI-163): quiet gray cards, the status a small mark; the head hovers gray, no shimmer or breathe. */
+  :root[data-skin="boring"] .omfp-tool:is([data-status="running"], [data-status="failed"]) {
+    --bbox-line: var(--omfp-card-border);
+  }
+
+  :root[data-skin="boring"] button.omfp-tool__head:is([data-hovered], .is-hover) {
+    background: var(--omfp-hover);
+  }
+
+  :root[data-skin="boring"] button.omfp-tool__head:is([data-hovered], .is-hover) .omfp-tool__label.omfp-bbox__label {
+    background: none;
+  }
+
+  :root[data-skin="boring"] .omfp-tool__name {
+    font-weight: var(--omfp-fw-medium);
+    color: var(--omfp-on-surface);
+  }
+
+  /* Approval and ask cards (UI-164): a calm card; the `◆` before the title keeps the warn color. */
+  :root[data-skin="boring"] .omfp-request {
+    --bbox-line: var(--omfp-card-border);
+    --bbox-style: solid;
+    --bbox-bg: var(--omfp-card-bg);
+  }
+
+  :root[data-skin="boring"] .omfp-request__body {
+    --bbox-pad-x: var(--omfp-s4);
+    padding-block: var(--omfp-s3);
+  }
+
+  /* Mode line (UI-167) and command line (UI-168): an app's status bar under a plain rule, segments apart by space,
+     a small neutral lowercase mode badge; the `:` line a rounded command field without its prompt. */
+  :root[data-skin="boring"]
+    :is(.omfp-modeline__segment + .omfp-modeline__segment, .omfp-modeline__view + .omfp-modeline__view)::before {
+    content: none;
+  }
+
+  :root[data-skin="boring"] .omfp-modeline__segments {
+    column-gap: var(--omfp-s4);
+  }
+
+  :root[data-skin="boring"] .omfp-cmd {
+    align-self: stretch;
+    margin-block: var(--omfp-s1);
+    padding-inline: var(--omfp-s2);
+    border-radius: var(--omfp-r-ctl);
+    background: var(--omfp-surface-container);
+  }
+
+  :root[data-skin="boring"] .omfp-cmd__prompt {
+    display: none;
+  }
+
+  :root[data-skin="boring"] .omfp-modeline::before {
+    background: var(--omfp-rule);
+    opacity: 1;
+  }
+
+  :root[data-skin="boring"] .omfp-mode-pill {
+    border-radius: var(--omfp-r-chip);
+    font-weight: var(--omfp-fw-medium);
+    letter-spacing: normal;
+    text-transform: lowercase;
+  }
+
+  :root[data-skin="boring"] .omfp-mode-pill[data-mode="insert"] {
+    color: var(--omfp-inverse-on-surface);
+    background: var(--omfp-inverse-surface);
+  }
+
+  :root[data-skin="boring"] .omfp-mode-pill[data-mode="command"] {
+    color: var(--omfp-on-secondary-container);
+    background: var(--omfp-secondary-container);
+  }
+
+  :root[data-skin="boring"] .omfp-modeline__view[data-current] {
+    font-weight: var(--omfp-fw-medium);
+    color: var(--omfp-on-surface);
+  }
+
+  :root[data-skin="boring"] .omfp-cmd__input {
+    caret-color: var(--omfp-on-surface);
+  }
+
+  /* Box titles (`╭─ commands`, `╭─ spc`, a popover dialog's) are plain small muted headings. */
+  :root[data-skin="boring"] :is(.omfp-cmdmenu__title, .omfp-whichkey__title, .omfp-popdialog__title)::before {
+    content: none;
+  }
+
+  :root[data-skin="boring"] :is(.omfp-cmdmenu__title, .omfp-whichkey__title, .omfp-popdialog__title) {
+    font-family: var(--omfp-font-ui);
+    font-weight: var(--omfp-fw-medium);
+    color: var(--omfp-on-surface-variant);
+  }
+
+  :root[data-skin="boring"] .omfp-cmdmenu__command::before {
+    content: none;
+  }
+
+  :root[data-skin="boring"]
+    :is(.omfp-cmdmenu__command b, .omfp-whichkey__item[data-kind="prefix"] .omfp-whichkey__description) {
+    color: var(--omfp-on-surface);
+  }
+
+  /* Left column (UI-169, UI-170): plain rows on the gray sidebar, gray hover and selection without a bar, muted icons
+     and counts; the current workspace's name is plain. */
+  :root[data-skin="boring"] .omfp-wsection__toggle {
+    color: var(--omfp-on-surface-variant);
+  }
+
+  :root[data-skin="boring"] .omfp-row[data-selected]::before {
+    content: none;
+  }
+
+  :root[data-skin="boring"] .omfp-row[data-selected] .omfp-row__title {
+    font-weight: var(--omfp-fw-medium);
+    color: var(--omfp-on-surface);
+  }
+
+  :root[data-skin="boring"] :is(.omfp-toggle-row__glyph, .omfp-action-row .omfp-ic) {
+    color: var(--omfp-on-surface-variant);
+  }
+
+  /* Splitter (UI-208): a neutral bar. */
+  :root[data-skin="boring"] .omfp-splitter::after,
+  :root[data-skin="boring"] .omfp-splitter[aria-orientation="vertical"]::after {
+    background: var(--omfp-outline);
+  }
+
+  /* Chat (UI-171), like a chat assistant's: a plain rule under the header, no glyphs; small muted names; the user's
+     message in a soft gray rounded bubble across the column, the assistant's reply plain text; thinking quiet. */
+  :root[data-skin="boring"] .omfp-chat-header::after {
+    background: var(--omfp-rule);
+  }
+
+  :root[data-skin="boring"] .omfp-chat-header__title::before,
+  :root[data-skin="boring"] .omfp-msg > .omfp-msg__name::before {
+    content: none;
+  }
+
+  :root[data-skin="boring"] .omfp-chat-header__title {
+    font-weight: var(--omfp-fw-medium);
+  }
+
+  :root[data-skin="boring"] .omfp-msg__name,
+  :root[data-skin="boring"] .omfp-msg[data-author="user"] .omfp-msg__name {
+    font-size: var(--omfp-fs-2xs);
+    font-weight: var(--omfp-fw-regular);
+    color: var(--omfp-on-surface-variant);
+  }
+
+  :root[data-skin="boring"] .omfp-msg[data-author="user"] .omfp-msg__body {
+    padding: var(--omfp-s3) var(--omfp-s4);
+    border: 0;
+    border-radius: calc(var(--omfp-unit) * 3);
+    background: var(--omfp-surface-container-high);
+  }
+
+  :root[data-skin="boring"] .omfp-reasoning__text {
+    margin-inline-start: var(--omfp-s5);
+    padding-inline-start: 0;
+    border-inline-start: 0;
+  }
+
+  :root[data-skin="boring"] .omfp-caret,
+  :root[data-skin="boring"] .omfp-caret-trail > .omfp-markdown:last-child > :last-child:not(ul, ol)::after,
+  :root[data-skin="boring"]
+    .omfp-caret-trail
+    > .omfp-markdown:last-child
+    > :is(ul, ol):last-child
+    > li:last-child::after {
+    box-shadow: none;
+  }
+
+  /* Composer (UI-172): a rounded box with a light border, a neutral one in insert mode. */
+  :root[data-skin="boring"] .omfp-compose {
+    border-color: var(--omfp-rule);
+    border-radius: calc(var(--omfp-unit) * 3);
+  }
+
+  :root[data-skin="boring"] .omfp-compose[data-mode="insert"] {
+    border-color: var(--omfp-outline);
+    background: var(--omfp-field-bg);
+  }
+
+  /* Motion (UI-146): none of the catalogue's flows, shimmer, breathe, slide-ins, glow, flash, bounce or pops; the
+     spinners, the indeterminate progress and the stream caret stay. Each selector mirrors kit.css's at the same
+     specificity, later, so it wins at every motion level. */
+  :root[data-skin="boring"] :is(.omfp-chat-header__title, .omfp-wsection__name.omfp-grad-text, .omfp-grad-flow),
+  :root[data-skin="boring"] .omfp-tool[data-status="running"]:not(.omfp-bbox),
+  :root[data-skin="boring"] :is(.omfp-msg, .omfp-tool:not([data-status="running"]), .omfp-request, .omfp-resolved),
+  :root[data-skin="boring"] .omfp-cmdmenu__item,
+  :root[data-skin="boring"] .omfp-compose[data-mode="insert"],
+  :root[data-skin="boring"] .omfp-thread[data-fresh],
+  :root[data-skin="boring"] .omfp-thread[data-fresh] .omfp-state-mark,
+  :root[data-skin="boring"] .omfp-state-badge[data-fresh],
+  :root[data-skin="boring"] .omfp-mode-pill,
+  :root[data-skin="boring"] .omfp-modeline__notice-mark {
+    animation: none;
+  }
+
+  :root[data-skin="boring"] .omfp-tool.omfp-bbox[data-status="running"] > .omfp-tool__body {
+    animation: none;
+    clip-path: none;
+  }
+
+  :root[data-skin="boring"] .omfp-tool[data-status="running"]:not(.omfp-bbox) .omfp-tool__head,
+  :root[data-skin="boring"] .omfp-tool.omfp-bbox[data-status="running"] .omfp-tool__label {
+    background: none;
+    animation: none;
+  }
+
+  :root[data-skin="boring"] .omfp-row:is(:hover, [data-hovered], .is-hover):not([data-selected], .omfp-hint-row) {
+    background: var(--omfp-hover);
+  }
+}

@@ -18,6 +18,12 @@ The version's section is also the source of the GitHub release notes.
   address into the new **Paste the address your browser ended on** field under the URL's chat card or toast, and the
   daemon hands it to oh-my-pi on its own host (`oauth.callback`, also open to agents). Only the exact callback
   oh-my-pi is waiting on is accepted.
+- An opt-in **boring** skin, a calm and modern alternative to the default Crush look (in the manner of Linear,
+  Notion and claude.ai): `:set skin=boring` (or `skin = "boring"` under `[ui]` in the config file) switches every
+  window to the system sans-serif (monospace only for code), neutral gray chrome with the theme's accent kept for
+  focus, links and progress, light borders, the user's messages in a gray bubble and replies as plain text, plain
+  chevrons, a simple spinner and no decorative animation. It works with every theme; `:set skin=crush` goes back.
+  The `/kit` gallery has a skin picker next to the themes.
 
 ### Changed
 

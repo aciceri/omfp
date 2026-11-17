@@ -1,6 +1,7 @@
 /**
  * @omfp/kit: thin React Aria Components wrappers styled by token CSS (UI-091, UI-093). Import the styles once:
- * `@omfp/kit/tokens.css` (design tokens, `@layer omfp-tokens`) then `@omfp/kit/kit.css` (`@layer omfp-kit`).
+ * `@omfp/kit/tokens.css` (design tokens, `@layer omfp-tokens`) then `@omfp/kit/kit.css` (`@layer omfp-kit`), and
+ * `@omfp/kit/boring.css` after them for the opt-in boring skin on `<html data-skin="boring">` (UI-794).
  * Every component forwards `id`, `className`, `data-*` and `aria-*` to its root element.
  */
 /** React Aria's unstyled `Autocomplete` (filters a collection from a field; the composer's slash commands use it). */

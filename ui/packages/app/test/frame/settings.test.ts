@@ -131,6 +131,14 @@ describe(":set", () => {
     });
   });
 
+  // spec: UI-794, UI-097
+  test("`skin=` takes crush or boring, completes both and refuses others", () => {
+    expect(parseSet("skin=boring")).toEqual({ ok: true, patch: { ui: { skin: "boring" } } });
+    expect(parseSet("skin = crush")).toEqual({ ok: true, patch: { ui: { skin: "crush" } } });
+    expect(parseSet("skin=orca")).toEqual({ ok: false, error: "Invalid value for skin: orca" });
+    expect(SET_KEYS.filter((key) => key.startsWith("skin="))).toEqual(["skin=crush", "skin=boring"]);
+  });
+
   // spec: UI-097, UI-145
   test("unknown keys and invalid values are refused", () => {
     expect(parseSet("density")).toEqual({ ok: false, error: expect.stringContaining("Usage: :set") });

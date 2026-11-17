@@ -78,12 +78,7 @@ export function Message({
   const Element = continues ? "div" : "article";
   return (
     <Element {...props} className={cx("omfp-msg", className)} data-author={author}>
-      {!continues && (
-        <div className={cx("omfp-msg__name", author === "assistant" && "omfp-grad-text")}>
-          {author === "assistant" ? "◆ " : "▸ "}
-          {name}
-        </div>
-      )}
+      {!continues && <div className={cx("omfp-msg__name", author === "assistant" && "omfp-grad-text")}>{name}</div>}
       {actions !== undefined && <div className="omfp-msg__actions">{actions}</div>}
       <div className="omfp-msg__body">{children}</div>
       {error !== undefined && (
@@ -137,9 +132,7 @@ export function Thinking({
         onPress={() => onExpandedChange?.(!expanded)}
         data-testid="thinking-head"
       >
-        <span className="omfp-reasoning__glyph" aria-hidden="true">
-          {expanded ? "▾" : "▸"}
-        </span>
+        <span className="omfp-reasoning__glyph" aria-hidden="true" />
         <span className="omfp-reasoning__label">{label}</span>
         {meta !== undefined && <span className="omfp-reasoning__meta">{meta}</span>}
       </AriaButton>

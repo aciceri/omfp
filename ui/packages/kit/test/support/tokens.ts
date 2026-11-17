@@ -30,7 +30,7 @@ export const STATUS_TOKENS: readonly string[] = ["success", "on-success", "warni
 
 export const COLOR_TOKENS: readonly string[] = [...ROLE_TOKENS, ...STATUS_TOKENS];
 
-export const FONT_TOKENS: readonly string[] = ["font-prose", "font-ui", "font-code"];
+export const FONT_TOKENS: readonly string[] = ["font-prose", "font-ui", "font-code", "font-sans"];
 
 /** The type scale (UI-126): rem values, the same in both densities. */
 export const TYPE_SCALE: Readonly<Record<string, string>> = {

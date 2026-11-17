@@ -1,8 +1,9 @@
 //! One name line per turn and a tool result's images (E2E-40), against a daemon on the fake launcher: a thread whose
 //! history has a turn of two tool calls (a `read` of a PNG whose result carries the image, then an `eval`) and a reply,
-//! then a second user message and its answer. Headless Chromium shows `◆ Assistant` once per turn (UI-470, UI-471)
-//! and the PNG as a decoded thumbnail under the collapsed `read` card (UI-472, UI-473); Enter on the thumbnail opens
-//! it at full size and Escape closes it, back to the thumbnail (UI-474).
+//! then a second user message and its answer. Headless Chromium shows the `Assistant` name line (its `◆` drawn by the
+//! stylesheet, UI-796) once per turn (UI-470, UI-471) and the PNG as a decoded thumbnail under the collapsed `read`
+//! card (UI-472, UI-473); Enter on the thumbnail opens it at full size and Escape closes it, back to the thumbnail
+//! (UI-474).
 
 use e2e::Journey;
 use omfp_core::wire::AgentMessage;
@@ -100,7 +101,7 @@ async fn a_turn_shows_one_assistant_name_line_and_a_tool_results_image_opens_ful
         journey
             .texts(&format!("{ASSISTANT} .omfp-msg__name"))
             .await?,
-        ["◆ Assistant", "◆ Assistant"]
+        ["Assistant", "Assistant"]
     );
     assert_eq!(
         journey.attrs(ASSISTANT, "data-continues").await?,

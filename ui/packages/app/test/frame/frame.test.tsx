@@ -38,6 +38,7 @@ afterEach(() => {
   delete document.documentElement.dataset.colorScheme;
   delete document.documentElement.dataset.density;
   delete document.documentElement.dataset.motion;
+  delete document.documentElement.dataset.skin;
   document.documentElement.removeAttribute("style");
 });
 
@@ -416,6 +417,25 @@ describe("frame", () => {
     flush();
     expect(document.documentElement.dataset.theme).toBe("synth");
     expect(document.head.querySelector("style[data-omfp-theme]")?.textContent).toBe("");
+  });
+
+  // spec: UI-794, UI-097
+  test("`:set skin=boring` goes to the daemon; `<html data-skin>` follows the setting, whatever the theme", async () => {
+    const { client, flush, user } = setup();
+    expect(document.documentElement.dataset.skin).toBe("crush");
+    press(":");
+    await user.type(screen.getByTestId("command-line-input"), "set skin=boring{Enter}");
+    expect(client.callsTo("settings.set").map((call) => call.params)).toEqual([{ ui: { skin: "boring" } }]);
+    expect(document.documentElement.dataset.skin).toBe("crush");
+    client.indexEvents({
+      kind: "settings_changed",
+      settings: { ui: { skin: "boring", theme: "nord" }, keymap: [], error: null },
+    });
+    flush();
+    expect([document.documentElement.dataset.skin, document.documentElement.dataset.theme]).toEqual(["boring", "nord"]);
+    client.indexEvents({ kind: "settings_changed", settings: { ui: {}, keymap: [], error: null } });
+    flush();
+    expect(document.documentElement.dataset.skin).toBe("crush");
   });
 
   // spec: UI-526, UI-527

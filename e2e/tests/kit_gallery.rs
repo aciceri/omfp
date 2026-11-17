@@ -1,10 +1,12 @@
-//! The `/kit` gallery (UI-173, UI-174, UI-514) at motion `none`, 17 px, compact, in light and dark for every built-in
-//! theme (UI-510: Synth, the six palettes, and `accent` from macOS's blue, yellow and graphite accents, UI-512),
-//! `matugen` with the matugen fixture theme as the user theme, and the Dux Solarized preset (whose tertiary and secondary sit on the surface at 1.14:1 until
-//! the contrast guard, UI-196, moves them): every text role, status color and gradient stop the page measures reaches
-//! WCAG AA, the guard overrides nothing but in the Dux preset, and elsewhere the item focus (UI-132) stays visible: its
-//! bar at 3:1, its tint apart from the other states. Full-page shots land in the run's screenshot directory
-//! (`e2e::screenshot_dir`) as `omfp-kit-<theme>-<scheme>.png` for a look by eye; nothing compares them.
+//! The `/kit` gallery (UI-173, UI-174, UI-514, UI-797) at motion `none`, 17 px, compact, in light and dark for every
+//! built-in theme (UI-510: Synth, the six palettes, and `accent` from macOS's blue, yellow and graphite accents,
+//! UI-512), `matugen` with the matugen fixture theme as the user theme, and the Dux Solarized preset (whose tertiary and
+//! secondary sit on the surface at 1.14:1 until the contrast guard, UI-196, moves them), in both skins (UI-794: Crush
+//! and boring): every text role, status color and gradient stop the page measures reaches WCAG AA, the guard
+//! overrides nothing but in the Dux preset, and elsewhere the item focus (UI-132) stays visible: its bar at 3:1, its
+//! tint apart from the other states. Full-page shots land in the run's screenshot directory (`e2e::screenshot_dir`)
+//! as `omfp-kit-<theme>-<scheme>.png` (Crush) and `omfp-kit-boring-<theme>-<scheme>.png` for a look by eye; nothing
+//! compares them.
 
 use anyhow::{Context, bail};
 use e2e::Journey;
@@ -32,15 +34,17 @@ const THEMES: [(&str, &str); 13] = [
 /// The one theme the contrast guard must correct; it leaves every other as it is.
 const GUARDED_THEME: &str = "dux-solarized";
 const SCHEMES: [&str; 2] = ["light", "dark"];
+/// The skins (UI-794): each one's shot prefix after `omfp-kit-`.
+const SKINS: [(&str, &str); 2] = [("crush", ""), ("boring", "boring-")];
 
-/// Opens the gallery with `theme` (its query) and `scheme` and waits until it says it is ready (fonts loaded, contrast
-/// measured).
-async fn open(journey: &Journey, theme: &str, scheme: &str) -> anyhow::Result<()> {
+/// Opens the gallery with `theme` (its query), `scheme` and `skin` and waits until it says it is ready (fonts loaded,
+/// contrast measured).
+async fn open(journey: &Journey, theme: &str, scheme: &str, skin: &str) -> anyhow::Result<()> {
     let base = format!("http://{}", journey.daemon().addr());
     journey
         .driver
         .goto(format!(
-            "{base}/kit?scheme={scheme}&{theme}&motion=none&density=compact&fs=17"
+            "{base}/kit?scheme={scheme}&{theme}&skin={skin}&motion=none&density=compact&fs=17"
         ))
         .await?;
     journey
@@ -106,56 +110,64 @@ async fn focus_measures(journey: &Journey) -> anyhow::Result<Vec<(bool, String)>
     Ok(serde_json::from_value(value)?)
 }
 
-// spec: UI-173, UI-174, UI-132, UI-135, UI-140, UI-196, UI-337, UI-338, UI-510, UI-512, UI-514, UI-736
+// spec: UI-173, UI-174, UI-132, UI-135, UI-140, UI-196, UI-337, UI-338, UI-510, UI-512, UI-514, UI-736, UI-794, UI-797
 #[tokio::test(flavor = "multi_thread")]
-async fn the_kit_gallery_text_reaches_aa_in_every_theme() -> anyhow::Result<()> {
+async fn the_kit_gallery_text_reaches_aa_in_every_theme_and_skin() -> anyhow::Result<()> {
     let journey = Journey::start(Vec::new()).await?;
     let mut problems = Vec::new();
-    for (theme, query) in THEMES {
-        for scheme in SCHEMES {
-            open(&journey, query, scheme).await?;
-            let shown = journey.attr("html", "data-theme").await?;
-            let expected = if theme.starts_with("accent") {
-                "accent"
-            } else if theme == GUARDED_THEME || theme == "matugen" {
-                "synth"
-            } else {
-                theme
-            };
-            if shown.as_deref() != Some(expected) {
-                problems.push(format!("{theme} {scheme}: data-theme {shown:?}"));
-            }
-            assert_eq!(
-                journey.attr("html", "data-motion").await?.as_deref(),
-                Some("none"),
-                "the gallery runs at motion none"
-            );
-            for failure in contrast_failures(&journey).await? {
-                problems.push(format!("{theme} {scheme}: under AA: {failure}"));
-            }
-            let guarded = journey.attr("html", "data-contrast-guard").await?;
-            if (theme == GUARDED_THEME) != guarded.is_some() {
-                problems.push(format!(
-                    "{theme} {scheme}: contrast guard overrides {guarded:?}"
-                ));
-            }
-            for (passes, measure) in focus_measures(&journey).await? {
-                eprintln!("focus {theme} {scheme}: {measure}");
-                if !passes && theme != GUARDED_THEME {
-                    problems.push(format!("{theme} {scheme}: focus not visible: {measure}"));
+    for (skin, prefix) in SKINS {
+        for (theme, query) in THEMES {
+            for scheme in SCHEMES {
+                open(&journey, query, scheme, skin).await?;
+                let shown = journey.attr("html", "data-skin").await?;
+                if shown.as_deref() != Some(skin) {
+                    problems.push(format!("{skin} {theme} {scheme}: data-skin {shown:?}"));
                 }
-            }
-            // The gallery's four composers start their text where their bars' chips start.
-            anyhow::ensure!(
-                journey
-                    .composer_aligned("[data-testid=kit-gallery]")
-                    .await?
-                    == 4
-            );
-            if let Some(dir) = e2e::screenshot_dir() {
-                let path = dir.join(format!("omfp-kit-{theme}-{scheme}.png"));
-                std::fs::write(&path, full_page(&journey).await?)?;
-                eprintln!("screenshot: {}", path.display());
+                let shown = journey.attr("html", "data-theme").await?;
+                let expected = if theme.starts_with("accent") {
+                    "accent"
+                } else if theme == GUARDED_THEME || theme == "matugen" {
+                    "synth"
+                } else {
+                    theme
+                };
+                if shown.as_deref() != Some(expected) {
+                    problems.push(format!("{skin} {theme} {scheme}: data-theme {shown:?}"));
+                }
+                assert_eq!(
+                    journey.attr("html", "data-motion").await?.as_deref(),
+                    Some("none"),
+                    "the gallery runs at motion none"
+                );
+                for failure in contrast_failures(&journey).await? {
+                    problems.push(format!("{skin} {theme} {scheme}: under AA: {failure}"));
+                }
+                let guarded = journey.attr("html", "data-contrast-guard").await?;
+                if (theme == GUARDED_THEME) != guarded.is_some() {
+                    problems.push(format!(
+                        "{skin} {theme} {scheme}: contrast guard overrides {guarded:?}"
+                    ));
+                }
+                for (passes, measure) in focus_measures(&journey).await? {
+                    eprintln!("focus {skin} {theme} {scheme}: {measure}");
+                    if !passes && theme != GUARDED_THEME {
+                        problems.push(format!(
+                            "{skin} {theme} {scheme}: focus not visible: {measure}"
+                        ));
+                    }
+                }
+                // The gallery's four composers start their text where their bars' chips start.
+                anyhow::ensure!(
+                    journey
+                        .composer_aligned("[data-testid=kit-gallery]")
+                        .await?
+                        == 4
+                );
+                if let Some(dir) = e2e::screenshot_dir() {
+                    let path = dir.join(format!("omfp-kit-{prefix}{theme}-{scheme}.png"));
+                    std::fs::write(&path, full_page(&journey).await?)?;
+                    eprintln!("screenshot: {}", path.display());
+                }
             }
         }
     }
@@ -170,7 +182,7 @@ async fn the_kit_gallery_text_reaches_aa_in_every_theme() -> anyhow::Result<()> 
 #[tokio::test(flavor = "multi_thread")]
 async fn code_scrolls_without_moving_its_label_or_covering_its_last_line() -> anyhow::Result<()> {
     let journey = Journey::start(Vec::new()).await?;
-    open(&journey, "theme=synth", "dark").await?;
+    open(&journey, "theme=synth", "dark", "crush").await?;
     let failures = journey
         .eval(
             r"

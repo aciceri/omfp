@@ -213,7 +213,7 @@ export function CommandMenu({
   return (
     <div {...props} className={cx("omfp-popover omfp-cmdmenu", className)}>
       <div className="omfp-cmdmenu__title" aria-hidden="true">
-        ╭─ {title}
+        {title}
       </div>
       <div role="listbox" {...listProps}>
         {children}
@@ -345,7 +345,7 @@ export function WorkspaceSection({
           aria-label={toggleLabel}
           onClick={() => onExpandedChange?.(!expanded)}
         >
-          <span aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+          <span className="omfp-wsection__glyph" aria-hidden="true" />
         </button>
         {editor ?? (
           <h2
@@ -524,9 +524,7 @@ export function ToggleRow({ expanded, end, className, children, ...props }: Togg
       className={withClass("omfp-row omfp-toggle-row", className)}
       data-expanded={expanded}
     >
-      <span className="omfp-toggle-row__glyph" aria-hidden="true">
-        {expanded ? "▾" : "▸"}
-      </span>
+      <span className="omfp-toggle-row__glyph" aria-hidden="true" />
       <span className="omfp-row__title">{children}</span>
       {end !== undefined && <span className="omfp-toggle-row__end">{end}</span>}
     </AriaButton>
@@ -723,7 +721,7 @@ export function WhichKey({ keys, label, footer, className, children, ...props }:
   return (
     <section {...props} aria-label={label} className={cx("omfp-popover omfp-whichkey", className)}>
       <div className="omfp-whichkey__title" aria-hidden="true">
-        ╭─ <Kbd>{keys}</Kbd>
+        <Kbd>{keys}</Kbd>
       </div>
       <div className="omfp-whichkey__groups">{children}</div>
       {footer !== undefined && <div className="omfp-whichkey__foot">{footer}</div>}

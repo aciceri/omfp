@@ -2011,7 +2011,7 @@ fn a_discovered_repository_carries_its_kind_inline() {
     assert_eq!(link["sharedWith"], json!([workspace().id]));
 }
 
-// spec: UI-097, PRT-143
+// spec: UI-097, PRT-143, PRT-213
 #[test]
 fn settings_omit_defaults_and_null_the_error() {
     assert_eq!(
@@ -2024,6 +2024,7 @@ fn settings_omit_defaults_and_null_the_error() {
     assert_eq!(wire["ui"]["motion"], "reduced");
     assert_eq!(wire["ui"]["notifications"], "always");
     assert_eq!(wire["ui"]["theme"], "rose-pine");
+    assert_eq!(wire["ui"]["skin"], "boring");
     assert_eq!(
         wire["ui"]["fonts"],
         json!({ "prose": "Literata, serif", "code": "\"JetBrains Mono\", monospace" })
@@ -2058,6 +2059,18 @@ fn built_in_themes_are_named_in_kebab_case_and_unknown_names_are_refused() {
     }
     assert!(serde_json::from_value::<BuiltinTheme>(json!("dracula")).is_err());
     assert!(serde_json::from_value::<BuiltinTheme>(json!("tokyo_night")).is_err());
+}
+
+// spec: PRT-213, UI-794
+#[test]
+fn skins_are_named_in_snake_case_and_unknown_names_are_refused() {
+    use omfp_protocol::Skin;
+    for (skin, name) in [(Skin::Crush, "crush"), (Skin::Boring, "boring")] {
+        assert_eq!(serde_json::to_value(skin).unwrap(), json!(name));
+        assert_eq!(serde_json::from_value::<Skin>(json!(name)).unwrap(), skin);
+    }
+    assert!(serde_json::from_value::<Skin>(json!("Boring")).is_err());
+    assert!(serde_json::from_value::<Skin>(json!("orca")).is_err());
 }
 
 // spec: DMN-024

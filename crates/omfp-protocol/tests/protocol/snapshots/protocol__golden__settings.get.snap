@@ -36,6 +36,7 @@ expression: golden
         "motion": "reduced",
         "notifications": "always",
         "showXdevNotices": true,
+        "skin": "boring",
         "theme": "rose-pine"
       }
     },

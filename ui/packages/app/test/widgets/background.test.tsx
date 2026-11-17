@@ -170,9 +170,9 @@ describe("omfp:background", () => {
           .getAllByTestId("subagent-line")
           .map((line) => [line.dataset.role, line.textContent]),
       ).toEqual([
-        ["user", "▸ taskCount the functions in src/lib.rs"],
+        ["user", "taskCount the functions in src/lib.rs"],
         ["tool", "→ read: Reading the library"],
-        ["assistant", "◆ subagentsrc/lib.rs defines 2 functions."],
+        ["assistant", "subagentsrc/lib.rs defines 2 functions."],
       ]),
     );
     // A finished subagent cannot be steered.

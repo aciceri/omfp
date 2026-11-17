@@ -1,0 +1,86 @@
+/*
+ * The boring skin (UI-794, UI-795) of the frame and the built-in widgets: what styles.css and widgets/chat/chat.css
+ * draw their own way, overridden under `:root[data-skin="boring"]`, in their sections; the kit's part is
+ * `@omfp/kit/boring.css`. Only tokens (UI-091, UI-125). A widget copied into a workspace keeps its own CSS as it is.
+ */
+@layer omfp-tokens, omfp-kit, omfp-widgets;
+
+@layer omfp-widgets {
+  /* styles.css: banners are a quiet gray row; the `◆` before them, a widget's error or a file notice is a dot in the
+     tone's color. */
+  :root[data-skin="boring"] :is(.omfp-banner, .omfp-banner[data-tone="warning"], .omfp-banner[data-tone="error"]) {
+    border-block-end-color: var(--omfp-rule);
+    background: var(--omfp-surface-container);
+  }
+
+  :root[data-skin="boring"]
+    :is(
+      .omfp-banner,
+      .omfp-banner[data-tone="warning"],
+      .omfp-widget__error > strong,
+      .omfp-file__notice[data-tone]
+    )::before {
+    content: "";
+    display: inline-block;
+    inline-size: calc(var(--omfp-ic) * 0.55);
+    block-size: calc(var(--omfp-ic) * 0.55);
+    margin-inline-end: var(--omfp-s2);
+    border-radius: 50%;
+    vertical-align: middle;
+    background: currentColor;
+  }
+
+  /* styles.css: shell widgets whose chrome is in the code family take the interface family (sans); what they show
+     as code (commands, outputs, config paths) keeps the code family, like branches and paths already do. */
+  :root[data-skin="boring"]
+    :is(
+      .omfp-threads__spawned-filter,
+      .omfp-subagents,
+      .omfp-todos,
+      .omfp-jobs,
+      .omfp-tree,
+      .omfp-activity,
+      .omfp-mcp,
+      .omfp-changes,
+      .omfp-workspace,
+      .omfp-workspace__kind-options .omfp-radio
+    ) {
+    font-family: var(--omfp-font-ui);
+  }
+
+  :root[data-skin="boring"] :is(.omfp-jobs__action, .omfp-jobs__output, .omfp-mcp__command, .omfp-mcp__path) {
+    font-family: var(--omfp-font-code);
+  }
+
+  /* styles.css: the tree viewer's disclosure is the kit's plain chevron. */
+  :root[data-skin="boring"] button.omfp-file__key::before {
+    content: "";
+    display: inline-block;
+    box-sizing: border-box;
+    inline-size: calc(var(--omfp-ic-sm) * 0.45);
+    block-size: calc(var(--omfp-ic-sm) * 0.45);
+    margin-inline-end: var(--omfp-s2);
+    border: solid currentColor;
+    border-width: 0 calc(var(--omfp-bw) * 1.5) calc(var(--omfp-bw) * 1.5) 0;
+    vertical-align: middle;
+    transform: rotate(-45deg);
+  }
+
+  :root[data-skin="boring"] button.omfp-file__key[aria-expanded="true"]::before {
+    content: "";
+    transform: rotate(45deg);
+  }
+
+  /* widgets/chat/chat.css: the composer's live intent and a live thinking label are plain text, no shimmer. */
+  :root[data-skin="boring"]
+    :is(.omfp-composer__activity-label, .omfp-reasoning[data-live="true"] .omfp-reasoning__label) {
+    color: var(--omfp-on-surface);
+    background: none;
+    animation: none;
+  }
+
+  /* widgets/chat/chat.css: the activity's elapsed time and the composer's hints are chrome. */
+  :root[data-skin="boring"] :is(.omfp-composer__activity-duration, .omfp-composer__hint) {
+    font-family: var(--omfp-font-ui);
+  }
+}

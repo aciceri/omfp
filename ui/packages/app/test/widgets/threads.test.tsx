@@ -132,7 +132,7 @@ describe("omfp:threads", () => {
     const item = (index: number) => screen.getAllByTestId("thread-row")[index]?.closest("li") ?? document.body;
     expect([item(0).dataset.state, item(1).dataset.state]).toEqual(["idle", "awaiting"]);
     expect(within(item(1)).getByTestId("thread-status").getAttribute("aria-label")).toBe("awaiting input");
-    expect(within(section("w1")).getByTestId("workspace-collapse").textContent).toBe("▾");
+    expect(within(section("w1")).getByTestId("workspace-collapse").getAttribute("aria-expanded")).toBe("true");
     await user.click(screen.getAllByTestId("thread-row")[0] ?? document.body);
     expect(item(0).dataset.selected).toBe("true");
     expect(within(section("w1")).getByTestId("workspace-section-name").classList).toContain("omfp-grad-text");
@@ -239,9 +239,9 @@ describe("omfp:threads", () => {
       expect(toggle.classList.contains("omfp-toggle-row")).toBe(true);
       expect(toggle.querySelector(".omfp-ic")).toBeNull();
       expect([
-        toggle.querySelector(".omfp-toggle-row__glyph")?.textContent,
+        toggle.querySelector(".omfp-toggle-row__glyph")?.getAttribute("aria-hidden"),
         toggle.getAttribute("aria-expanded"),
-      ]).toEqual(["▸", "false"]);
+      ]).toEqual(["true", "false"]);
     }
     expect(jobsToggle.querySelector(".omfp-row__title")?.textContent).toBe("Jobs (2)");
     // Nothing runs, failed or is refused: no marks, the tooltip still spells the jobs out.
@@ -254,7 +254,6 @@ describe("omfp:threads", () => {
       "true",
       "false",
     ]);
-    expect(jobsToggle.querySelector(".omfp-toggle-row__glyph")?.textContent).toBe("▾");
     expect(within(section("w2")).getAllByTestId("jobs-list").length).toBe(1);
     expect(screen.queryAllByTestId("archived-list").length).toBe(0);
     await user.click(archivedToggle);

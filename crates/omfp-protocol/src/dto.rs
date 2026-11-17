@@ -243,6 +243,9 @@ pub struct UiSettings {
     /// Show informational xdev notices in the transcript (UI-043); absent or false hides them, without dropping events.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub show_xdev_notices: Option<bool>,
+    /// The skin (UI-794): `crush` (absent, the default) or the opt-in `boring`; independent of `theme`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skin: Option<Skin>,
 }
 
 /// Row height and spacing of the UI.
@@ -289,6 +292,16 @@ pub enum Motion {
     Reduced,
     /// No animation or transition.
     None,
+}
+
+/// The look of the whole UI (UI-794, PRT-213): Crush (default) or the opt-in boring skin. Any palette works with either.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum Skin {
+    /// omfp's own look (UI-120): monospace chrome, box-drawing glyphs, gradients and motion (default).
+    Crush,
+    /// Calm and neutral (UI-795): system sans-serif, gray chrome, light borders, no decorative motion.
+    Boring,
 }
 
 /// When the UI shows system notifications (UI-096).

@@ -8,7 +8,8 @@
     ".": "./src/index.ts",
     "./tokens.css": "./src/tokens.css",
     "./themes.css": "./src/themes.css",
-    "./kit.css": "./src/kit.css"
+    "./kit.css": "./src/kit.css",
+    "./boring.css": "./src/boring.css"
   },
   "dependencies": {
     "@xterm/addon-fit": "0.10.0",

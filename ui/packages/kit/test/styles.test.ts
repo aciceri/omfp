@@ -217,6 +217,15 @@ describe("kit styles", () => {
     expect(body.declarations.get("clip-path")).toBe("inset(0 -1.5rem -1.5rem)");
   });
 
+  // spec: UI-967
+  test("visually hidden text is anchored at its containing block's corner, so it never lengthens the page", () => {
+    const hidden = findRule(kitRules, [LAYER], ".omfp-visually-hidden");
+    expect(hidden.declarations.get("position")).toBe("absolute");
+    expect(hidden.declarations.get("inset-block-start")).toBe("0");
+    expect(hidden.declarations.get("inset-inline-start")).toBe("0");
+    expect(hidden.declarations.get("clip-path")).toBe("inset(50%)");
+  });
+
   // spec: UI-118
   test("CodeMirror scrolls in a layout root sized by its container; omfp:changes' text-sized diff opts out", () => {
     const view = findRule(kitRules, [LAYER], ".omfp-code-editor__view, .omfp-code-diff__view");

@@ -1264,6 +1264,8 @@ requirements = [
   "UI-948",
   "UI-949",
   "UI-950",
+  # The window itself never scrolls: visually hidden text anchored (#167)
+  "UI-967",
 ]
 
 [M18]

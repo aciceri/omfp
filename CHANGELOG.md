@@ -12,6 +12,11 @@ The version's section is also the source of the GitHub release notes.
 - With `skin = boring`, the key hint in buttons (`enter` in Send) is readable again: it takes the button's own text
   color instead of a muted gray that nearly vanished on the dark Send button, and with `theme = matugen`.
 
+### Fixed
+
+- Selecting a thread low in a long list of workspaces no longer scrolls the whole window up, leaving an empty band at
+  the bottom: only the left column scrolls (#167).
+
 ## 0.3.0 — 2026-11-17
 
 ### Added

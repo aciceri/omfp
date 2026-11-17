@@ -26,8 +26,13 @@
     background: color-mix(in oklab, var(--omfp-primary) 28%, transparent);
   }
 
+  /* Screen-reader-only text. Anchored at its containing block's top-left corner, never at its static position: with no
+     positioned ancestor that block is the page's, and a hidden span low in a scrolled list would otherwise lengthen
+     the document and scroll the whole window (UI-967). */
   .omfp-visually-hidden {
     position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 0;
     inline-size: 1px;
     block-size: 1px;
     margin: -1px;

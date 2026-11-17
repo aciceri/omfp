@@ -924,3 +924,78 @@ async fn a_long_reply_is_read_by_keyboard_before_the_focus_moves_on() -> anyhow:
 
     journey.finish("reading a long reply by keyboard").await
 }
+
+/// The window's own scroll: `[scrollY, scrollHeight, innerHeight]` of the document.
+const PAGE: &str = "const s = document.scrollingElement;
+return [scrollY, s.scrollHeight, innerHeight];";
+
+// spec: UI-967
+#[tokio::test(flavor = "multi_thread")]
+async fn selecting_a_thread_low_in_a_long_left_column_never_scrolls_the_window()
+-> anyhow::Result<()> {
+    let launcher = FakeLauncher::new();
+    let journey = Journey::start_fake(launcher).await?;
+    // More workspaces than the left column shows (QA: #167).
+    let mut connection = journey.connect().await?;
+    for index in 0..40 {
+        connection
+            .call::<ThreadsCreate>(CreateThreadParams {
+                title: None,
+                workspace: ThreadWorkspace::New(CreateWorkspaceParams {
+                    name: Some(format!("page-{index:02}")),
+                    link: None,
+                }),
+                model: None,
+                thinking_level: None,
+                approval_mode: None,
+                prompt: None,
+                images: Vec::new(),
+            })
+            .await?;
+    }
+    connection.close().await?;
+    let ids = journey
+        .until("every thread row", async |page| {
+            let ids = page.thread_ids().await?;
+            Ok((ids.len() == 40).then_some(ids))
+        })
+        .await?;
+    let last = ids.last().context("a thread row")?;
+
+    // The lowest row: the column scrolls to it, and its workspace becomes the current one, whose name carries the
+    // visually hidden "(current workspace)".
+    journey.click(&row(last)).await?;
+    journey.opened(last).await?;
+    journey
+        .until("the current workspace's hidden label", async |page| {
+            let count = page
+                .count(".omfp-wsection__name .omfp-visually-hidden")
+                .await?;
+            Ok((count == 1).then_some(()))
+        })
+        .await?;
+    let scrolled = journey
+        .eval(
+            "const r = document.querySelector(arguments[0]);
+             for (let e = r.parentElement; e; e = e.parentElement) if (e.scrollTop > 0) return true;
+             return false;",
+            vec![json!(row(last))],
+        )
+        .await?;
+    assert_eq!(scrolled, json!(true), "the left column scrolled to the row");
+    // A focus move or `scrollIntoView` reaching the current section must not scroll the window either.
+    journey
+        .eval(
+            "document.querySelector('.omfp-wsection__name .omfp-visually-hidden').scrollIntoView();",
+            Vec::new(),
+        )
+        .await?;
+    let [scroll_y, height, inner]: [f64; 3] =
+        serde_json::from_value(journey.eval(PAGE, Vec::new()).await?)?;
+    assert!(
+        scroll_y.abs() < 0.5 && height <= inner,
+        "the window never scrolls: scrollY {scroll_y}, scrollHeight {height}, innerHeight {inner}"
+    );
+
+    journey.finish("a long left column").await
+}

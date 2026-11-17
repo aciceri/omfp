@@ -21,9 +21,11 @@ pub(super) fn tool() -> AgentTool {
         name: THREAD_WAIT,
         label: "Wait for thread",
         description: "Waits until an omfp thread is done, instead of polling it: with promptId (from thread.prompt) \
-                      until that prompt's result arrived, else until the thread's last prompt finished and its \
-                      session settled. Answers JSON { threadId, status, prompt?, lastAssistantText }; status is done, \
-                      needs_attention (it waits for an answer: see interaction.respond), stopped, failed or timeout.",
+                      until that prompt's result arrived, else until the thread's last prompt, one still being sent \
+                      included, finished and its session settled (call it once thread.prompt answered, not in the \
+                      same batch of parallel tool calls). Answers JSON { threadId, status, prompt?, \
+                      lastAssistantText }; status is done, needs_attention (it waits for an answer: see \
+                      interaction.respond), stopped, failed or timeout.",
         parameters: json!({
             "type": "object",
             "properties": {
@@ -96,24 +98,36 @@ fn run(context: ToolContext, arguments: Map<String, Value>) -> ToolFuture {
             .thread_log(&wait.thread_id)
             .await
             .map_err(|error| error_text(&supervisor_error(error)))?;
+        let mut prompts = supervisor
+            .last_prompt(&wait.thread_id)
+            .await
+            .map_err(|error| error_text(&supervisor_error(error)))?;
         let explicit = wait.prompt_id.is_some();
-        let target = wait
-            .prompt_id
-            .clone()
-            .or_else(|| supervisor.last_prompt(&wait.thread_id));
         let mut events = log.listen();
         let deadline = tokio::time::Instant::now() + wait.timeout;
-        let answer = |status: &str| {
-            log.with_state(|state| answer(&wait.thread_id, status, target.as_deref(), state))
-        };
         loop {
-            let status = log.with_state(|state| status(state, target.as_deref(), explicit));
-            if let Some(status) = status {
+            let last = prompts.borrow_and_update().clone();
+            let target = wait.prompt_id.clone().or(last.id);
+            let answer = |status: &str| {
+                log.with_state(|state| answer(&wait.thread_id, status, target.as_deref(), state))
+            };
+            // Without promptId, a prompt still on its way to omp is about to be the thread's last one (DMN-152).
+            let sending = !explicit && last.sending > 0;
+            if !sending
+                && let Some(status) =
+                    log.with_state(|state| status(state, target.as_deref(), explicit))
+            {
                 return Ok(answer(status));
             }
             tokio::select! {
                 received = events.recv() => {
                     if let Err(RecvError::Closed) = received {
+                        return Ok(answer("stopped"));
+                    }
+                }
+                changed = prompts.changed() => {
+                    // The thread was forgotten: no prompt reaches it anymore.
+                    if changed.is_err() {
                         return Ok(answer("stopped"));
                     }
                 }
@@ -242,18 +256,102 @@ mod tests {
             self.launcher.push_run(FakeRun::fresh());
             self.services
                 .supervisor
-                .prompt(
-                    thread,
-                    omp_rpc::PromptCommand {
-                        message: "work".to_owned(),
-                        images: None,
-                        streaming_behavior: None,
-                    },
-                )
+                .prompt(thread, command("work"))
                 .await
                 .unwrap()
                 .prompt_id
         }
+    }
+
+    fn command(text: &str) -> omp_rpc::PromptCommand {
+        omp_rpc::PromptCommand {
+            message: text.to_owned(),
+            images: None,
+            streaming_behavior: None,
+        }
+    }
+
+    /// omp's frames of a whole turn answering prompt `id` with `text`.
+    fn turn(id: &str, text: &str) -> Vec<RpcNotification> {
+        frames(vec![
+            json!({ "type": "agent_start" }),
+            answered(text),
+            prompt_result(id, true),
+            json!({ "type": "agent_end", "messages": [] }),
+            json!({ "type": "session_settled" }),
+        ])
+    }
+
+    // spec: AGT-043, DMN-152
+    #[tokio::test]
+    async fn without_a_prompt_id_the_wait_follows_a_prompt_still_on_its_way_to_the_thread() {
+        let harness = Harness::new().await;
+        let worker = harness.worker();
+        let first = harness.prompt(&worker).await;
+        let process = harness.launcher.process(0);
+        process.emit(turn(&first, "First."));
+        let settled = wait(harness.context(), json!({ "threadId": worker }))
+            .await
+            .unwrap();
+        assert_eq!(settled["prompt"]["id"], first.as_str());
+
+        // `thread.prompt` and the wait side by side, as an agent's parallel tool calls run: omp has not admitted the
+        // second prompt yet when the wait starts.
+        let gate = harness.launcher.gate("prompt");
+        let sending = tokio::spawn({
+            let supervisor = harness.services.supervisor.clone();
+            let worker = worker.clone();
+            async move { supervisor.prompt(&worker, command("more work")).await }
+        });
+        gate.arrived(1).await;
+        let waiting = tokio::spawn(wait(harness.context(), json!({ "threadId": worker })));
+        // The wait checks the thread while omp holds the second prompt (the gate opens before any assertion, so a
+        // failure does not leave omp's call blocked).
+        for _ in 0..20 {
+            tokio::task::yield_now().await;
+        }
+        let answered_early = waiting.is_finished();
+        gate.open();
+        let second = sending.await.unwrap().unwrap().prompt_id;
+        assert!(
+            !answered_early,
+            "the prompt on its way is the thread's last"
+        );
+        process.emit(turn(&second, "Second."));
+
+        let answer = waiting.await.unwrap().unwrap();
+        assert_eq!(
+            answer,
+            json!({
+                "threadId": worker,
+                "status": "done",
+                "prompt": { "id": second, "status": "completed" },
+                "lastAssistantText": "Second."
+            })
+        );
+    }
+
+    // spec: AGT-043, DMN-152
+    #[tokio::test(start_paused = true)]
+    async fn a_prompt_that_never_reached_omp_does_not_hold_the_wait() {
+        let harness = Harness::new().await;
+        let worker = harness.worker();
+        harness.launcher.fail_next_launch("no model");
+        let refused = harness
+            .services
+            .supervisor
+            .prompt(&worker, command("work"))
+            .await;
+        assert!(refused.is_err(), "{refused:?}");
+
+        let answer = wait(
+            harness.context(),
+            json!({ "threadId": worker, "timeoutSeconds": 5 }),
+        )
+        .await
+        .unwrap();
+        // Not `timeout`: the refused prompt is no longer on its way, and the thread has no last prompt.
+        assert_eq!(answer["status"], "done", "{answer}");
     }
 
     // spec: AGT-043, DMN-152

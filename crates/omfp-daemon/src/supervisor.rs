@@ -310,6 +310,36 @@ struct VoiceSlot {
     owner: LiveOwner,
 }
 
+/// A thread's prompts as `omfp_thread_wait` follows them (DMN-152).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LastPrompt {
+    /// The id of the last prompt omp admitted with agent work, until the thread's next process starts.
+    pub id: Option<String>,
+    /// Prompts on their way to omp, not admitted yet: each may become the last one.
+    pub sending: usize,
+}
+
+/// A prompt on its way to omp, counted in [`LastPrompt::sending`] until it is admitted, fails or is dropped (DMN-152).
+struct Sending<'a>(&'a watch::Sender<LastPrompt>);
+
+impl<'a> Sending<'a> {
+    fn new(last: &'a watch::Sender<LastPrompt>) -> Self {
+        last.send_modify(|last| last.sending += 1);
+        Self(last)
+    }
+
+    /// omp admitted the prompt with agent work: it is the last prompt before it stops counting as on its way.
+    fn admitted(self, id: String) {
+        self.0.send_modify(|last| last.id = Some(id));
+    }
+}
+
+impl Drop for Sending<'_> {
+    fn drop(&mut self) {
+        self.0.send_modify(|last| last.sending -= 1);
+    }
+}
+
 /// One thread: its log, its process and who watches it.
 struct Actor {
     id: String,
@@ -336,8 +366,8 @@ struct Actor {
     voice: Mutex<Option<VoiceSlot>>,
     /// omp's `live_levels`, which bypass the log (DMN-110).
     levels: broadcast::Sender<LiveLevelsEvent>,
-    /// The id of the last prompt omp admitted with agent work, until the next process starts (DMN-152).
-    last_prompt: Mutex<Option<String>>,
+    /// The last prompt omp admitted with agent work and the prompts on their way to omp (DMN-152).
+    last_prompt: watch::Sender<LastPrompt>,
     /// Serializes the daemon's own local commands (`/mcp test`, root sync), whose `command_output` frames carry no id
     /// (DMN-029, DMN-191).
     local_commands: tokio::sync::Mutex<()>,
@@ -385,7 +415,7 @@ impl Actor {
             title_task: Mutex::new(None),
             voice: Mutex::new(None),
             levels: broadcast::channel(LEVELS_BUFFER).0,
-            last_prompt: Mutex::new(None),
+            last_prompt: watch::Sender::new(LastPrompt::default()),
             local_commands: tokio::sync::Mutex::new(()),
             mcp_check: Mutex::new(None),
             root_sync: Mutex::new(None),
@@ -705,11 +735,9 @@ impl Supervisor {
             .map_or_else(ThreadStatus::default, |actor| actor.status())
     }
 
-    /// The id of the last prompt omp admitted with agent work in the thread's current process (DMN-152).
-    #[must_use]
-    pub fn last_prompt(&self, id: &str) -> Option<String> {
-        self.lookup(id)
-            .and_then(|actor| lock(&actor.last_prompt).clone())
+    /// The thread's last prompt and the prompts on their way to it, as they change (DMN-152).
+    pub async fn last_prompt(&self, id: &str) -> Result<watch::Receiver<LastPrompt>> {
+        Ok(self.actor(id).await?.last_prompt.subscribe())
     }
 
     /// The model the thread's stored session restores, known from its session file after omp could not start
@@ -866,11 +894,12 @@ impl Supervisor {
     pub async fn prompt(&self, id: &str, command: PromptCommand) -> Result<PromptAdmission> {
         let actor = self.actor(id).await?;
         let message = command.message.clone();
+        let sending = Sending::new(&actor.last_prompt);
         let admission = self
             .deliver(&actor, move |process| process.prompt(command))
             .await?;
         if admission.agent_invoked {
-            *lock(&actor.last_prompt) = Some(admission.prompt_id.clone());
+            sending.admitted(admission.prompt_id.clone());
             self.consider_title(&actor, message).await;
         }
         Ok(admission)
@@ -1331,7 +1360,7 @@ impl Supervisor {
         // A new process starts a new epoch: positions of the old one cannot be replayed (PRT-022).
         actor.log.new_epoch(new_id());
         // omp numbers prompts per process (PRT-030, DMN-152).
-        lock(&actor.last_prompt).take();
+        actor.last_prompt.send_modify(|last| last.id = None);
         // omp's own history follows; it knows the session's model (`thread.state`).
         lock(&actor.session_model).take();
         for event in startup_events(&launched.startup) {

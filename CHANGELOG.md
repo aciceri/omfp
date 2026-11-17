@@ -13,17 +13,14 @@ The version's section is also the source of the GitHub release notes.
   color instead of a muted gray that nearly vanished on the dark Send button, and with `theme = matugen`.
 - A window no longer flashes the default Synth palette and Crush skin for a moment while it loads: the daemon serves
   the page with the configured `[ui]` theme, skin, density, motion and font size already applied.
-
-### Fixed
-
 - Selecting a thread low in a long list of workspaces no longer scrolls the whole window up, leaving an empty band at
   the bottom: only the left column scrolls (#167).
-
-### Fixed
-
 - `omfp:browser` no longer presents a tab's address as current after the agent clicked, went back or ran code in
   the page: oh-my-pi reports an address only when a tab is opened or sent somewhere with `goto`, so the box now says
   "It may have left this address since" with the call that may have moved it, until a later call reports one.
+- An agent's `omfp_thread_wait` without `promptId` no longer answers at once with the thread's previous prompt when
+  the agent's `thread.prompt` for that thread is still being sent (two tool calls in the same turn): it waits for the
+  new prompt instead. Its description now also says to call it once `thread.prompt` answered.
 
 ## 0.3.0 — 2026-11-17
 

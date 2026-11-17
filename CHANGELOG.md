@@ -7,6 +7,8 @@ The version's section is also the source of the GitHub release notes.
 
 ## Unreleased
 
+## 0.3.0 — 2026-11-17
+
 ### Added
 
 - omp's `/` commands that only work in its terminal UI no longer go to the model as plain text: `/login`, `/logout`,
@@ -88,6 +90,18 @@ The version's section is also the source of the GitHub release notes.
 - A manual compaction oh-my-pi skips (`Nothing to compact (session too small)`, `Already compacted`) shows as
   `Compaction skipped: <reason>` instead of a failed compaction, and a manual compaction over the protocol
   (`thread.compact`) waits up to 10 minutes for oh-my-pi's summary instead of failing after 30 seconds.
+
+### Release limitations
+
+- macOS downloads are signed ad-hoc and are not notarized unless the release explicitly says otherwise. On first
+  launch, allow the app in System Settings → Privacy & Security → Open Anyway. Updates may request microphone
+  permission again.
+- The Flatpak deliberately runs oh-my-pi, git and job commands on the host with your account's permissions; it is
+  not an isolation boundary. Keep workspaces under your home directory. On NixOS, use the Nix package or configure
+  a compatible `omp_bin`. Job processes left behind after their shell exits are not killed on the host.
+- Standalone downloads do not cover Windows, Intel Macs or ARM Linux.
+- Multi-select prompts of the `ask` tool do not show yet which choices are checked: oh-my-pi 18.22 sends that state,
+  but omfp's prompt card does not use it yet.
 
 ## 0.2.1 — 2026-11-17
 

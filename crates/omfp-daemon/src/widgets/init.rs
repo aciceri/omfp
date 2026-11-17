@@ -46,13 +46,8 @@ impl Widgets {
     /// module exporting `compileError` when it does not compile; `None` (404) when there is no such file.
     #[must_use]
     pub fn serve_init(&self, path: &Path) -> Option<String> {
-        if !path.is_file() {
-            return None;
-        }
-        let folder = path.parent()?;
-        let relative = Path::new(path.file_name()?);
         Some(
-            self.compile(folder, relative)
+            self.compile_init(path)?
                 .unwrap_or_else(|error| compile::stand_in(&error)),
         )
     }
@@ -61,12 +56,14 @@ impl Widgets {
     /// is no such file.
     #[must_use]
     pub fn check_init(&self, path: &Path) -> Option<Result<(), compile::CompileError>> {
+        Some(self.compile_init(path)?.map(drop))
+    }
+
+    fn compile_init(&self, path: &Path) -> Option<Result<String, compile::CompileError>> {
         if !path.is_file() {
             return None;
         }
-        let folder = path.parent()?;
-        let relative = Path::new(path.file_name()?);
-        Some(self.compile(folder, relative).map(drop))
+        Some(self.compile(path.parent()?, Path::new(path.file_name()?)))
     }
 }
 

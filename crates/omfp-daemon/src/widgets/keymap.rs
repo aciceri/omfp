@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use omfp_protocol::{KeymapMode, WorkspaceBinding};
 use serde_json::Value;
 
-use super::OMFP_DIR;
+use super::{OMFP_DIR, read_json};
 
 /// The JSON Schema of the workspace keymap, served as [`SCHEMA_URL`] (DMN-122).
 pub const SCHEMA: &str = include_str!("keymap.schema.json");
@@ -74,14 +74,9 @@ fn binding(entry: &Value, path: &str) -> Result<WorkspaceBinding, String> {
 /// The workspace keymap at `path` (DMN-120): `Ok(None)` without a file, the bindings when valid, else why it is
 /// refused (unreadable, not JSON, or the first rule it breaks).
 pub fn read(path: &Path) -> Result<Option<Vec<WorkspaceBinding>>, String> {
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(format!("cannot read .omfp/keymap.json: {error}")),
-    };
-    let keymap: Value = serde_json::from_str(&text)
-        .map_err(|error| format!(".omfp/keymap.json is not JSON: {error}"))?;
-    check(&keymap).map(Some)
+    read_json(path, "keymap.json")?
+        .map(|keymap| check(&keymap))
+        .transpose()
 }
 
 #[cfg(test)]

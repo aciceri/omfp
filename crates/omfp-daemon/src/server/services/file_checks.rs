@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use omfp_protocol::{ErrorBody, FileErrorKind, FileErrorReport, ViewErrors, WindowFileErrors};
 
-use super::widget_tools::{behind, location};
+use super::widget_tools::{behind, entry, location, window_title};
 use super::windows::Window;
 use super::{Services, blocking};
 use crate::widgets::compile::{self, CompileError};
@@ -194,24 +194,6 @@ fn examine_view(widgets: &Widgets, workspace: &Path, path: &str) -> Examined {
     }
 }
 
-/// Appends a report entry, its continuation lines indented.
-fn entry(text: &mut String, line: &str) {
-    let mut lines = line.lines();
-    let _ = writeln!(text, "- {}", lines.next().unwrap_or_default());
-    for line in lines {
-        let _ = writeln!(text, "  {line}");
-    }
-}
-
-/// `Window <id> (<client>)[, after waiting <s> s, <why>]`.
-fn window_title(window: &Window, unsettled: Option<&String>, waited: Duration) -> String {
-    let mut title = format!("Window {} ({})", window.id, window.client);
-    if let Some(why) = unsettled {
-        let _ = write!(title, ", after waiting {} s, {why}", waited.as_secs());
-    }
-    title
-}
-
 /// The windows' part of the check of `examined` (DMN-197).
 fn describe_windows(
     examined: &Examined,
@@ -244,7 +226,7 @@ fn describe_windows(
         reported = true;
         let _ = writeln!(text, "{title}:");
         for error in errors {
-            entry(&mut text, &error.message);
+            entry(&mut text, "", &error.message);
         }
     }
     if !reported {
@@ -279,6 +261,7 @@ fn describe_errors(windows: &[(Window, Option<String>)], waited: Duration) -> St
         for error in &window.report.file_errors {
             entry(
                 &mut text,
+                "",
                 &format!(
                     "{} ({}): {}",
                     file_name(&error.file),

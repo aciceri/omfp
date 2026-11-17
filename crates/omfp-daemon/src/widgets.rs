@@ -30,7 +30,7 @@ use tracing::warn;
 use crate::host_tools::WidgetHost;
 use crate::store::new_id;
 use compile::{CompileError, Exports};
-use folders::{files, is_widget_name};
+use folders::{checked_name, files, is_widget_name};
 
 /// The widget SDK and kit reference, served as [`DOCS_URL`] (AGT-025).
 pub const DOCS: &str = include_str!("widgets/docs.md");
@@ -107,13 +107,43 @@ pub fn write_default_manifest(workspace: &Path) -> std::io::Result<bool> {
     }
 }
 
-fn markdown(content: String) -> HostUriRead {
+/// The JSON file `.omfp/<name>` at `path`: `Ok(None)` without a file, else its value, or why it cannot be read or is
+/// not JSON.
+fn read_json(path: &Path, name: &str) -> Result<Option<Value>, String> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(format!("cannot read .omfp/{name}: {error}")),
+    };
+    serde_json::from_str(&text)
+        .map(Some)
+        .map_err(|error| format!(".omfp/{name} is not JSON: {error}"))
+}
+
+/// An `omfp://` read of `content`; `immutable` when it never changes while the daemon runs.
+fn host_read(
+    content: String,
+    content_type: HostUriResultContentType,
+    immutable: bool,
+) -> HostUriRead {
     HostUriRead {
         content,
-        content_type: Some(HostUriResultContentType::TextMarkdown),
-        immutable: Some(true),
+        content_type: Some(content_type),
+        immutable: Some(immutable),
         ..HostUriRead::default()
     }
+}
+
+fn markdown(content: String) -> HostUriRead {
+    host_read(content, HostUriResultContentType::TextMarkdown, true)
+}
+
+fn json(content: &str) -> HostUriRead {
+    host_read(
+        content.to_owned(),
+        HostUriResultContentType::ApplicationJson,
+        true,
+    )
 }
 
 /// What an `omfp://` URL reads (DMN-062, DMN-122, DMN-198, DMN-199): the docs and their index, the schemas, the
@@ -126,24 +156,9 @@ pub fn read_uri(url: &str, builtin: Option<&Path>) -> Result<HostUriRead, String
         DOCS_URL => Ok(markdown(DOCS.to_owned())),
         shell::SHELL_URL => Ok(markdown(shell::SHELL.to_owned())),
         shell::KEYMAP_URL => Ok(markdown(shell::render_keymap(&shell::Additions::default()))),
-        SCHEMA_URL => Ok(HostUriRead {
-            content: VIEWS_SCHEMA.to_owned(),
-            content_type: Some(HostUriResultContentType::ApplicationJson),
-            immutable: Some(true),
-            ..HostUriRead::default()
-        }),
-        keymap::SCHEMA_URL => Ok(HostUriRead {
-            content: keymap::SCHEMA.to_owned(),
-            content_type: Some(HostUriResultContentType::ApplicationJson),
-            immutable: Some(true),
-            ..HostUriRead::default()
-        }),
-        crate::jobs::file::SCHEMA_URL => Ok(HostUriRead {
-            content: crate::jobs::file::SCHEMA.to_owned(),
-            content_type: Some(HostUriResultContentType::ApplicationJson),
-            immutable: Some(true),
-            ..HostUriRead::default()
-        }),
+        SCHEMA_URL => Ok(json(VIEWS_SCHEMA)),
+        keymap::SCHEMA_URL => Ok(json(keymap::SCHEMA)),
+        crate::jobs::file::SCHEMA_URL => Ok(json(crate::jobs::file::SCHEMA)),
         BUILTIN_URL => Ok(markdown(list_builtins(builtin_folder(builtin)?))),
         _ => match url
             .strip_prefix(BUILTIN_URL)
@@ -180,12 +195,11 @@ pub fn read_keymap(
         return None;
     }
     let additions = host?.keymap_additions(workspace_id);
-    Some(Ok(HostUriRead {
-        content: shell::render_keymap(&additions),
-        content_type: Some(HostUriResultContentType::TextMarkdown),
-        immutable: Some(false),
-        ..HostUriRead::default()
-    }))
+    Some(Ok(host_read(
+        shell::render_keymap(&additions),
+        HostUriResultContentType::TextMarkdown,
+        false,
+    )))
 }
 
 /// `omfp://windows` read by a thread (AGT-081): the open windows showing the thread's workspace, as `omfp_windows`
@@ -204,12 +218,11 @@ pub fn read_windows(
             "this omfp daemon cannot describe its windows for this thread".to_owned(),
         ));
     };
-    Some(Ok(HostUriRead {
-        content: host.windows(workspace_id),
-        content_type: Some(HostUriResultContentType::TextPlain),
-        immutable: Some(false),
-        ..HostUriRead::default()
-    }))
+    Some(Ok(host_read(
+        host.windows(workspace_id),
+        HostUriResultContentType::TextPlain,
+        false,
+    )))
 }
 
 fn builtin_folder(builtin: Option<&Path>) -> Result<&Path, String> {
@@ -269,12 +282,11 @@ fn read_builtin(builtin: &Path, rest: &str) -> Result<HostUriRead, String> {
     if let Some(path) = path {
         let relative = relative_path(path)
             .ok_or_else(|| format!("{path:?} is not a path inside the widget's folder"))?;
-        return Ok(HostUriRead {
-            content: read(&relative)?,
-            content_type: Some(HostUriResultContentType::TextPlain),
-            immutable: Some(true),
-            ..HostUriRead::default()
-        });
+        return Ok(host_read(
+            read(&relative)?,
+            HostUriResultContentType::TextPlain,
+            true,
+        ));
     }
     let mut text = format!(
         "# omfp:{name}\n\nFiles (read one with {BUILTIN_URL}/{name}/<path>; write them into \
@@ -329,12 +341,7 @@ pub fn read_check(
     }
     Some(
         host.check_widget(workspace_id, name, &is_cancelled)
-            .map(|content| HostUriRead {
-                content,
-                content_type: Some(HostUriResultContentType::TextPlain),
-                immutable: Some(false),
-                ..HostUriRead::default()
-            }),
+            .map(|content| host_read(content, HostUriResultContentType::TextPlain, false)),
     )
 }
 
@@ -444,23 +451,13 @@ impl Widgets {
         if !is_widget_name(name) {
             return None;
         }
-        let folder = std::fs::canonicalize(library.join(name)).ok()?;
-        if !folder.is_dir() {
-            return None;
-        }
-        let file = resolve(&folder, &relative_path(path)?)?;
+        let (folder, file) = locate_file(&library.join(name), path)?;
         let is_entry = folders::entry(&folder)
             .and_then(|entry| std::fs::canonicalize(folder.join(entry)).ok())
             .is_some_and(|entry| entry == file);
-        if is_entry {
-            // The entry stands for the whole folder: the first file that does not compile replaces it.
-            let failure = files(&folder)
-                .into_iter()
-                .filter(|(relative, _)| compile::is_compiled(relative))
-                .find_map(|(relative, _)| self.compile(&folder, &relative).err());
-            if let Some(error) = failure {
-                return Some(Served::Module(compile::stand_in(&error)));
-            }
+        // The entry stands for the whole folder: the first file that does not compile replaces it.
+        if is_entry && let Some(error) = self.compile_errors(&folder).next() {
+            return Some(Served::Module(compile::stand_in(&error)));
         }
         self.served(&folder, file)
     }
@@ -470,11 +467,7 @@ impl Widgets {
     /// relative to `folder`. `None` (404) when the folder or the file does not exist or `path` leaves the folder.
     #[must_use]
     pub fn serve_view(&self, folder: &Path, path: &str) -> Option<Served> {
-        let folder = std::fs::canonicalize(folder).ok()?;
-        if !folder.is_dir() {
-            return None;
-        }
-        let file = resolve(&folder, &relative_path(path)?)?;
+        let (folder, file) = locate_file(folder, path)?;
         self.served(&folder, file)
     }
 
@@ -483,8 +476,7 @@ impl Widgets {
     /// `None` when the folder or the file does not exist or `path` leaves the folder.
     #[must_use]
     pub fn check_view(&self, folder: &Path, path: &str) -> Option<(PathBuf, Option<CompileError>)> {
-        let folder = std::fs::canonicalize(folder).ok()?;
-        let file = resolve(&folder, &relative_path(path)?)?;
+        let (folder, file) = locate_file(folder, path)?;
         let relative = file.strip_prefix(&folder).ok()?.to_owned();
         let error = compile::is_compiled(&relative)
             .then(|| self.compile(&folder, &relative).err())
@@ -533,11 +525,7 @@ impl Widgets {
             ]
         };
         for (source, folder_name, library) in &candidates {
-            if !is_widget_name(folder_name) {
-                return Err(format!(
-                    "invalid widget name {folder_name:?}: ASCII letters, digits, `_`, `-` and `.` (not first)"
-                ));
-            }
+            checked_name("widget name", folder_name)?;
             let folder = library.join(folder_name);
             if folder.is_dir() {
                 return Ok((*source, (*folder_name).to_owned(), folder));
@@ -556,11 +544,15 @@ impl Widgets {
     /// Every compile error of the compiled files of `folder` (DMN-063, DMN-085), in path order.
     #[must_use]
     pub fn check(&self, folder: &Path) -> Vec<CompileError> {
+        self.compile_errors(folder).collect()
+    }
+
+    /// The compile errors of the compiled files of `folder`, in path order, compiled one by one as they are taken.
+    fn compile_errors<'a>(&'a self, folder: &'a Path) -> impl Iterator<Item = CompileError> + 'a {
         files(folder)
             .into_iter()
             .filter(|(relative, _)| compile::is_compiled(relative))
-            .filter_map(|(relative, _)| self.compile(folder, &relative).err())
-            .collect()
+            .filter_map(move |(relative, _)| self.compile(folder, &relative).err())
     }
 
     /// The compiled file `relative` of `folder`, from the cache while its size and modification time stay.
@@ -623,11 +615,7 @@ impl Widgets {
         };
         let target = name.unwrap_or(source);
         for name in [source, target] {
-            if !is_widget_name(name) {
-                return Err(CopyError::BadRequest(format!(
-                    "invalid widget name {name:?}: ASCII letters, digits, `_`, `-` and `.` (not first)"
-                )));
-            }
+            checked_name("widget name", name).map_err(CopyError::BadRequest)?;
         }
         let from = library.join(source);
         if !from.is_dir() {
@@ -635,10 +623,10 @@ impl Widgets {
         }
         let widgets = workspace_widgets(workspace);
         let to = widgets.join(target);
+        let conflict =
+            || CopyError::Conflict(format!("the workspace already has a widget {target}"));
         if std::fs::symlink_metadata(&to).is_ok() {
-            return Err(CopyError::Conflict(format!(
-                "the workspace already has a widget {target}"
-            )));
+            return Err(conflict());
         }
         // Copied under a hidden name (never listed nor served), then renamed: nobody sees half a widget.
         let staging = widgets.join(format!(".{target}.{}.tmp", new_id()));
@@ -649,9 +637,7 @@ impl Widgets {
         if let Err(error) = copied {
             let _ = std::fs::remove_dir_all(&staging);
             if std::fs::symlink_metadata(&to).is_ok() {
-                return Err(CopyError::Conflict(format!(
-                    "the workspace already has a widget {target}"
-                )));
+                return Err(conflict());
             }
             return Err(io(error));
         }
@@ -689,6 +675,14 @@ fn relative_path(path: &str) -> Option<PathBuf> {
         }
     }
     (!relative.as_os_str().is_empty()).then_some(relative)
+}
+
+/// The canonical `folder` and the file `path` names in it ([`resolve`]); `None` when the folder or the file does not
+/// exist or `path` leaves the folder.
+fn locate_file(folder: &Path, path: &str) -> Option<(PathBuf, PathBuf)> {
+    let folder = std::fs::canonicalize(folder).ok()?;
+    let file = resolve(&folder, &relative_path(path)?)?;
+    Some((folder, file))
 }
 
 /// The file `relative` names in `folder` (canonical `folder`): itself, else, without extension, the first of

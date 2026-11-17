@@ -25,6 +25,17 @@ pub fn is_widget_name(name: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
 }
 
+/// `name` when it [`is_widget_name`], else why it is no valid `what` (`widget name`, `mount id`, …).
+pub fn checked_name<'a>(what: &str, name: &'a str) -> Result<&'a str, String> {
+    if is_widget_name(name) {
+        Ok(name)
+    } else {
+        Err(format!(
+            "invalid {what} {name:?}: ASCII letters, digits, `_`, `-` and `.` (not first)"
+        ))
+    }
+}
+
 /// The widget folders of `library`, by name; nothing when it does not exist.
 #[must_use]
 pub fn scan(library: &Path, source: WidgetSource) -> Vec<WidgetInfo> {
@@ -39,7 +50,7 @@ pub fn scan(library: &Path, source: WidgetSource) -> Vec<WidgetInfo> {
             (is_widget_name(&name) && folder.is_dir()).then(|| WidgetInfo {
                 source,
                 version: version(&folder),
-                entry: entry_name(&folder),
+                entry: self::entry(&folder).map(str::to_owned),
                 name,
             })
         })
@@ -54,10 +65,6 @@ pub fn entry(folder: &Path) -> Option<&'static str> {
     ENTRIES
         .into_iter()
         .find(|entry| folder.join(entry).is_file())
-}
-
-fn entry_name(folder: &Path) -> Option<String> {
-    entry(folder).map(str::to_owned)
 }
 
 /// Every file below `folder` with its metadata, by relative path. Symlinks to files count as files (with their

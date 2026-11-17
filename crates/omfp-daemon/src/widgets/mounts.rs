@@ -170,18 +170,6 @@ fn remove(manifest: &mut Value, id: &str, except: Option<&str>) -> Result<Remove
     Ok(removal)
 }
 
-/// Whether `node` holds a node of mount `id`.
-fn contains_mount(node: &Value, id: &str) -> bool {
-    is_mount(node, id)
-        || (layout::is_container(node)
-            && node
-                .as_array()
-                .into_iter()
-                .flatten()
-                .skip(2)
-                .any(|child| contains_mount(child, id)))
-}
-
 /// Whether `manifest` has the panel `id` or a node of mount `id`.
 fn is_mounted(manifest: &Value, id: &str) -> bool {
     manifest
@@ -195,13 +183,17 @@ fn is_mounted(manifest: &Value, id: &str) -> bool {
                 views
                     .values()
                     .filter_map(|view| view.get("layout"))
-                    .any(|layout| contains_mount(layout, id))
+                    .any(|layout| layout::shows(layout, id))
             })
 }
 
 fn checked(manifest: &Value) -> Result<(), MountError> {
     manifest::check(manifest)
         .map_err(|error| MountError::Invalid(format!("the result would be invalid: {error}")))
+}
+
+fn not_mounted(id: &str) -> MountError {
+    MountError::NotFound(format!("nothing is mounted with the id {id}"))
 }
 
 /// `manifest` (the workspace's valid manifest, `None` without a file: the default one) with `mount` placed (AGT-061):
@@ -227,12 +219,10 @@ pub fn mount(manifest: Option<&Value>, mount: &Mount<'_>) -> Result<Placed, Moun
             None
         }
         Target::View { view, place } => {
-            let view_id = match view {
-                Some(view) => view.to_owned(),
-                None => layout::manifest_default(&manifest)
-                    .or_else(|| view_ids(&manifest).into_iter().next())
-                    .ok_or_else(|| MountError::Invalid("views.json has no views".to_owned()))?,
-            };
+            let view_id = view
+                .map(str::to_owned)
+                .or_else(|| layout::default_view(&manifest))
+                .ok_or_else(|| MountError::Invalid("views.json has no views".to_owned()))?;
             let mut in_place = false;
             if let Some(layout) = manifest
                 .get_mut("views")
@@ -294,10 +284,7 @@ fn merge(node: &mut Value, props: &Map<String, Value>) {
 
 /// The reference of the widget node `node`.
 fn reference_of(node: &Value) -> String {
-    match node {
-        Value::String(reference) => reference.clone(),
-        _ => node[0].as_str().unwrap_or_default().to_owned(),
-    }
+    layout::reference_of(node).unwrap_or_default().to_owned()
 }
 
 /// `manifest` with `props` merged into the panel `id` and every node of mount `id` (AGT-062).
@@ -306,8 +293,7 @@ pub fn update(
     id: &str,
     props: &Map<String, Value>,
 ) -> Result<Placed, MountError> {
-    let not_found = || MountError::NotFound(format!("nothing is mounted with the id {id}"));
-    let mut manifest = manifest.cloned().ok_or_else(not_found)?;
+    let mut manifest = manifest.cloned().ok_or_else(|| not_mounted(id))?;
     let mut found: Option<(String, Option<String>)> = None;
     if let Some(panel) = manifest
         .get_mut("panels")
@@ -331,7 +317,7 @@ pub fn update(
             });
         }
     }
-    let (reference, view) = found.ok_or_else(not_found)?;
+    let (reference, view) = found.ok_or_else(|| not_mounted(id))?;
     checked(&manifest)?;
     Ok(Placed {
         manifest,
@@ -343,11 +329,10 @@ pub fn update(
 
 /// `manifest` without the panel `id` and the nodes of mount `id` (AGT-063).
 pub fn unmount(manifest: Option<&Value>, id: &str) -> Result<Removed, MountError> {
-    let not_found = || MountError::NotFound(format!("nothing is mounted with the id {id}"));
-    let mut manifest = manifest.cloned().ok_or_else(not_found)?;
+    let mut manifest = manifest.cloned().ok_or_else(|| not_mounted(id))?;
     let mut removal = remove(&mut manifest, id, None)?;
     if !removal.panel && removal.views.is_empty() && removal.removed_views.is_empty() {
-        return Err(not_found());
+        return Err(not_mounted(id));
     }
     checked(&manifest)?;
     removal.manifest = manifest;

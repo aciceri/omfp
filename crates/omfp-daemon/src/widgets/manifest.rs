@@ -8,6 +8,7 @@ use std::path::Path;
 use serde_json::{Map, Value};
 
 use super::folders::is_widget_name;
+use super::read_json;
 
 /// Layout containers (AGT-010).
 pub const CONTAINERS: [&str; 4] = ["row", "col", "tabs", "stack"];
@@ -147,17 +148,13 @@ fn check_sizes(sizes: &Value, children: usize, path: &str) -> Result<(), String>
 /// `(None, Some(error))` when it cannot be read, is not JSON or breaks AGT-010.
 #[must_use]
 pub fn read(path: &Path) -> (Option<Value>, Option<String>) {
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return (None, None),
-        Err(error) => return (None, Some(format!("cannot read .omfp/views.json: {error}"))),
-    };
-    let manifest: Value = match serde_json::from_str(&text) {
-        Ok(manifest) => manifest,
-        Err(error) => return (None, Some(format!(".omfp/views.json is not JSON: {error}"))),
-    };
-    match check(&manifest) {
-        Ok(()) => (Some(manifest), None),
+    let checked = read_json(path, "views.json").and_then(|manifest| {
+        manifest
+            .map(|manifest| check(&manifest).map(|()| manifest))
+            .transpose()
+    });
+    match checked {
+        Ok(manifest) => (manifest, None),
         Err(error) => (None, Some(error)),
     }
 }

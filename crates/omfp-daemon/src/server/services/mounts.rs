@@ -2,6 +2,7 @@
 //! (PRT-080..082) edit the workspace's `views.json` with [`crate::widgets::mounts`] and publish it as `views.set` does;
 //! `widgets.save` and `widgets.library` (PRT-083, PRT-084) work on the user library.
 
+use std::path::Path;
 use std::sync::{Arc, PoisonError};
 
 use omfp_protocol::{
@@ -14,11 +15,10 @@ use super::views::copy_error;
 use super::{Services, blocking};
 use crate::paths::replace_file;
 use crate::server::convert::{bad_request, internal};
-use crate::store::Store;
-use crate::widgets::folders::{ENTRIES, MOUNT_MARKER, is_widget_name};
+use crate::widgets::folders::{ENTRIES, MOUNT_MARKER, checked_name, is_widget_name};
 use crate::widgets::layout::Place;
 use crate::widgets::library::{self, Source};
-use crate::widgets::mounts::{self, Mount, MountError, Target};
+use crate::widgets::mounts::{self, Mount, MountError, Placed, Target};
 use crate::widgets::{Widgets, manifest, manifest_path, workspace_widgets};
 
 fn mount_error(error: MountError) -> ErrorBody {
@@ -30,14 +30,7 @@ fn mount_error(error: MountError) -> ErrorBody {
 
 /// `id` when it is a widget name (AGT-061).
 fn mount_id(id: &str) -> Result<&str, ErrorBody> {
-    let id = id.trim();
-    if is_widget_name(id) {
-        Ok(id)
-    } else {
-        Err(bad_request(format!(
-            "invalid mount id {id:?}: ASCII letters, digits, `_`, `-` and `.` (not first)"
-        )))
-    }
+    checked_name("mount id", id.trim()).map_err(bad_request)
 }
 
 /// A widget reference as the agent wrote it: a bare name means `./widgets/<name>` (AGT-061).
@@ -47,9 +40,9 @@ fn reference(widget: &str) -> Result<String, ErrorBody> {
         return Err(bad_request("`widget` is empty"));
     }
     Ok(
-        if widget.starts_with("./widgets/")
-            || widget.starts_with("user:")
-            || widget.starts_with("omfp:")
+        if ["./widgets/", "user:", "omfp:"]
+            .iter()
+            .any(|prefix| widget.starts_with(prefix))
         {
             widget.to_owned()
         } else {
@@ -66,17 +59,14 @@ fn place(place: MountPlace) -> Place {
     }
 }
 
-/// The valid manifest of the workspace at `id` (`None` without a file) and its folder; an invalid file is a
-/// `bad_request` naming its error (PRT-080).
-fn current(store: &Store, id: &str) -> Result<(std::path::PathBuf, Option<Value>), ErrorBody> {
-    let path = store.workspace(id)?.path;
-    let (manifest, error) = Widgets::manifest(&path);
-    if let Some(error) = error {
-        return Err(bad_request(format!(
-            ".omfp/views.json is invalid ({error}); fix it first (or ask the user to run `:view-reset`)"
-        )));
+fn mounted(id: String, placed: Placed, code_replaced: bool) -> Mounted {
+    Mounted {
+        id,
+        reference: placed.reference,
+        panel: placed.view.is_none(),
+        view: placed.view,
+        replaced: placed.replaced || code_replaced,
     }
-    Ok((path, manifest))
 }
 
 /// Whether the code of mount `id` may go to `.omfp/widgets/<id>/` of the workspace at `workspace` (DMN-183): not when
@@ -85,7 +75,7 @@ fn current(store: &Store, id: &str) -> Result<(std::path::PathBuf, Option<Value>
 /// `Ok(true)` when the mount's own folder exists: its code is replaced. `update` says the conflict as
 /// `views.mount_update`'s, which cannot choose another id.
 fn claim_folder(
-    workspace: &std::path::Path,
+    workspace: &Path,
     id: &str,
     builtins: &[String],
     update: bool,
@@ -125,29 +115,57 @@ fn claim_folder(
     }
 }
 
-/// Writes `.omfp/widgets/<id>/index.tsx` of the workspace at `workspace`, with the mount's marker.
-fn write_code(workspace: &std::path::Path, id: &str, code: &str) -> Result<(), ErrorBody> {
-    let folder = workspace_widgets(workspace).join(id);
-    let marker = folder.join(MOUNT_MARKER);
-    replace_file(
-        &marker,
-        format!("Written by views.mount `{id}`: its code (index.tsx) is replaced by the next mount with code.\n")
-            .as_bytes(),
-        None,
-    )
-    .map_err(|error| internal(format!("{}: {error}", marker.display())))?;
-    let file = folder.join("index.tsx");
-    replace_file(&file, code.as_bytes(), None)
+/// Replaces `file` with `bytes`; an error names the file.
+fn write(file: &Path, bytes: &[u8]) -> Result<(), ErrorBody> {
+    replace_file(file, bytes, None)
         .map_err(|error| internal(format!("{}: {error}", file.display())))
 }
 
-fn write_manifest(workspace: &std::path::Path, manifest: &Value) -> Result<(), ErrorBody> {
-    let file = manifest_path(workspace);
-    replace_file(&file, manifest::to_text(manifest).as_bytes(), None)
-        .map_err(|error| internal(format!("{}: {error}", file.display())))
+/// Writes `.omfp/widgets/<id>/index.tsx` of the workspace at `workspace`, with the mount's marker.
+fn write_code(workspace: &Path, id: &str, code: &str) -> Result<(), ErrorBody> {
+    let folder = workspace_widgets(workspace).join(id);
+    write(
+        &folder.join(MOUNT_MARKER),
+        format!("Written by views.mount `{id}`: its code (index.tsx) is replaced by the next mount with code.\n")
+            .as_bytes(),
+    )?;
+    write(&folder.join("index.tsx"), code.as_bytes())
+}
+
+fn write_manifest(workspace: &Path, manifest: &Value) -> Result<(), ErrorBody> {
+    write(
+        &manifest_path(workspace),
+        manifest::to_text(manifest).as_bytes(),
+    )
 }
 
 impl Services {
+    /// Runs `edit` on the folder and the valid manifest (`None` without a file) of workspace `workspace_id`, one edit
+    /// of a manifest at a time, then publishes the workspace's views; an invalid file is a `bad_request` naming its
+    /// error (PRT-080).
+    async fn edit_manifest<T: Send + 'static>(
+        &self,
+        workspace_id: &str,
+        edit: impl FnOnce(&Path, Option<Value>) -> Result<T, ErrorBody> + Send + 'static,
+    ) -> Result<T, ErrorBody> {
+        let _edit = self.manifest_edits.lock().await;
+        let store = Arc::clone(&self.store);
+        let id = workspace_id.to_owned();
+        let edited = blocking(move || {
+            let path = store.workspace(&id)?.path;
+            let (manifest, error) = Widgets::manifest(&path);
+            if let Some(error) = error {
+                return Err(bad_request(format!(
+                    ".omfp/views.json is invalid ({error}); fix it first (or ask the user to run `:view-reset`)"
+                )));
+            }
+            edit(&path, manifest)
+        })
+        .await?;
+        self.refresh_views(workspace_id).await;
+        Ok(edited)
+    }
+
     /// `views.mount` (PRT-080, AGT-061).
     pub async fn mount(&self, params: MountParams) -> Result<Mounted, ErrorBody> {
         let id = mount_id(&params.id)?.to_owned();
@@ -161,14 +179,11 @@ impl Services {
                 "a panel floats over every view: `view` and `place` do not apply",
             ));
         }
-        let _edit = self.manifest_edits.lock().await;
-        let store = Arc::clone(&self.store);
         let builtins = self.widgets.builtin_names();
         let workspace_id = params.workspace_id.clone();
-        let mounted = blocking(move || {
-            let (path, current) = current(&store, &workspace_id)?;
+        self.edit_manifest(&workspace_id, move |path, current| {
             let code_replaced = match params.code {
-                Some(_) => claim_folder(&path, &id, &builtins, false)?,
+                Some(_) => claim_folder(path, &id, &builtins, false)?,
                 None => false,
             };
             let view = params.view.as_deref().map(str::trim);
@@ -192,20 +207,12 @@ impl Services {
             .map_err(mount_error)?;
             // The code first: a window importing the new reference finds it.
             if let Some(code) = &params.code {
-                write_code(&path, &id, code)?;
+                write_code(path, &id, code)?;
             }
-            write_manifest(&path, &placed.manifest)?;
-            Ok(Mounted {
-                id,
-                reference: placed.reference,
-                panel: placed.view.is_none(),
-                view: placed.view,
-                replaced: placed.replaced || code_replaced,
-            })
+            write_manifest(path, &placed.manifest)?;
+            Ok(mounted(id, placed, code_replaced))
         })
-        .await?;
-        self.refresh_views(&params.workspace_id).await;
-        Ok(mounted)
+        .await
     }
 
     /// `views.mount_update` (PRT-081, AGT-062).
@@ -214,12 +221,9 @@ impl Services {
         if params.props.is_none() && params.code.is_none() {
             return Err(bad_request("give `props`, `code` or both"));
         }
-        let _edit = self.manifest_edits.lock().await;
-        let store = Arc::clone(&self.store);
         let builtins = self.widgets.builtin_names();
         let workspace_id = params.workspace_id.clone();
-        let mounted = blocking(move || {
-            let (path, current) = current(&store, &workspace_id)?;
+        self.edit_manifest(&workspace_id, move |path, current| {
             let props = params.props.unwrap_or_default();
             let placed = mounts::update(current.as_ref(), &id, &props).map_err(mount_error)?;
             if let Some(code) = &params.code {
@@ -230,44 +234,30 @@ impl Services {
                         placed.reference
                     )));
                 }
-                claim_folder(&path, &id, &builtins, true)?;
-                write_code(&path, &id, code)?;
+                claim_folder(path, &id, &builtins, true)?;
+                write_code(path, &id, code)?;
             }
             if current.as_ref() != Some(&placed.manifest) {
-                write_manifest(&path, &placed.manifest)?;
+                write_manifest(path, &placed.manifest)?;
             }
-            Ok(Mounted {
-                id,
-                reference: placed.reference,
-                panel: placed.view.is_none(),
-                view: placed.view,
-                replaced: true,
-            })
+            Ok(mounted(id, placed, true))
         })
-        .await?;
-        self.refresh_views(&params.workspace_id).await;
-        Ok(mounted)
+        .await
     }
 
     /// `views.unmount` (PRT-082, AGT-063).
     pub async fn unmount(&self, params: UnmountParams) -> Result<Unmounted, ErrorBody> {
         let id = params.id.trim().to_owned();
-        let _edit = self.manifest_edits.lock().await;
-        let store = Arc::clone(&self.store);
-        let workspace_id = params.workspace_id.clone();
-        let unmounted = blocking(move || {
-            let (path, current) = current(&store, &workspace_id)?;
+        self.edit_manifest(&params.workspace_id, move |path, current| {
             let removed = mounts::unmount(current.as_ref(), &id).map_err(mount_error)?;
-            write_manifest(&path, &removed.manifest)?;
+            write_manifest(path, &removed.manifest)?;
             Ok(Unmounted {
                 views: removed.views,
                 removed_views: removed.removed_views,
                 panel: removed.panel,
             })
         })
-        .await?;
-        self.refresh_views(&params.workspace_id).await;
-        Ok(unmounted)
+        .await
     }
 
     /// `widgets.save` (PRT-083, AGT-064): then every followed views topic lists the component.

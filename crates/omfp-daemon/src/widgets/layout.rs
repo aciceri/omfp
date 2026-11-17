@@ -4,7 +4,8 @@
 
 use serde_json::{Map, Value, json};
 
-use super::{default_manifest, manifest};
+use super::default_manifest;
+use super::manifest::{self, CONTAINERS};
 
 /// Where the widget goes in an existing view (`views.mount`'s `place`, PRT-080).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,8 +40,6 @@ pub struct Addition<'a> {
     pub place: Place,
 }
 
-const CONTAINERS: [&str; 4] = ["row", "col", "tabs", "stack"];
-
 /// Whether `node` is a container (`[kind, props, ...children]`) rather than a widget.
 pub(super) fn is_container(node: &Value) -> bool {
     node.as_array()
@@ -49,51 +48,50 @@ pub(super) fn is_container(node: &Value) -> bool {
         .is_some_and(|kind| CONTAINERS.contains(&kind))
 }
 
-/// The instance of a widget node (AGT-010): its `instance` prop when it is a string, else its reference.
-pub(super) fn instance_of(node: &Value) -> Option<String> {
+/// The children of `node` when it is a container; none for a widget.
+fn children(node: &Value) -> impl Iterator<Item = &Value> {
+    node.as_array()
+        .filter(|_| is_container(node))
+        .into_iter()
+        .flatten()
+        .skip(2)
+}
+
+/// Whether a widget node of `node` (itself when it is no container) passes `test`.
+fn any_widget(node: &Value, test: &impl Fn(&Value) -> bool) -> bool {
+    if is_container(node) {
+        children(node).any(|child| any_widget(child, test))
+    } else {
+        test(node)
+    }
+}
+
+/// The reference of a widget node: the node itself or its first item.
+pub(super) fn reference_of(node: &Value) -> Option<&str> {
     match node {
-        Value::String(reference) => Some(reference.clone()),
-        Value::Array(items) => {
-            let reference = items.first()?.as_str()?;
-            Some(
-                items
-                    .get(1)
-                    .and_then(|props| props.get("instance"))
-                    .and_then(Value::as_str)
-                    .unwrap_or(reference)
-                    .to_owned(),
-            )
-        }
+        Value::String(reference) => Some(reference),
+        Value::Array(items) => items.first()?.as_str(),
         _ => None,
     }
 }
 
-/// Every widget instance of `node`.
-fn instances(node: &Value, out: &mut Vec<String>) {
-    if is_container(node) {
-        for child in node.as_array().into_iter().flatten().skip(2) {
-            instances(child, out);
-        }
-    } else if let Some(instance) = instance_of(node) {
-        out.push(instance);
-    }
+/// The instance of a widget node (AGT-010): its `instance` prop when it is a string, else its reference.
+pub(super) fn instance_of(node: &Value) -> Option<String> {
+    let reference = reference_of(node)?;
+    Some(
+        node.get(1)
+            .and_then(|props| props.get("instance"))
+            .and_then(Value::as_str)
+            .unwrap_or(reference)
+            .to_owned(),
+    )
 }
 
-/// Whether `node` holds the widget `reference`.
-fn holds(node: &Value, reference: &str) -> bool {
-    if is_container(node) {
-        return node
-            .as_array()
-            .into_iter()
-            .flatten()
-            .skip(2)
-            .any(|child| holds(child, reference));
-    }
-    match node {
-        Value::String(name) => name == reference,
-        Value::Array(items) => items.first().and_then(Value::as_str) == Some(reference),
-        _ => false,
-    }
+/// Whether `node` shows the widget instance `instance`.
+pub(super) fn shows(node: &Value, instance: &str) -> bool {
+    any_widget(node, &|widget| {
+        instance_of(widget).as_deref() == Some(instance)
+    })
 }
 
 /// The ids of the views of `manifest` whose layout holds the widget `reference` (DMN-209), in the manifest's order.
@@ -105,30 +103,31 @@ pub fn views_using(manifest: &Value, reference: &str) -> Vec<String> {
         .into_iter()
         .flatten()
         .filter(|(_, view)| {
-            view.get("layout")
-                .is_some_and(|layout| holds(layout, reference))
+            view.get("layout").is_some_and(|layout| {
+                any_widget(layout, &|widget| reference_of(widget) == Some(reference))
+            })
         })
         .map(|(id, _)| id.clone())
         .collect()
 }
 
+/// Whether `node` is the `tabs` container whose `id` prop is `id`.
+fn is_slot(node: &Value, id: &str) -> bool {
+    is_container(node) && node[0] == "tabs" && node[1].get("id").and_then(Value::as_str) == Some(id)
+}
+
 /// The `tabs` container of `node` whose `id` prop is `id`.
 fn find_slot<'a>(node: &'a mut Value, id: &str) -> Option<&'a mut Value> {
+    if is_slot(node, id) {
+        return Some(node);
+    }
     if !is_container(node) {
         return None;
-    }
-    let is_slot = node[0] == "tabs" && node[1].get("id").and_then(Value::as_str) == Some(id);
-    if is_slot {
-        return Some(node);
     }
     node.as_array_mut()?
         .iter_mut()
         .skip(2)
         .find_map(|child| find_slot(child, id))
-}
-
-fn round(value: f64) -> f64 {
-    (value * 10_000.0).round() / 10_000.0
 }
 
 /// Appends `child` to the container `node`; with `sizes`, it weighs the mean of its siblings.
@@ -139,7 +138,8 @@ fn append(node: &mut Value, child: Value) {
         let mean = if weights.is_empty() {
             1.0
         } else {
-            round(weights.iter().sum::<f64>() / weights.len() as f64)
+            // Rounded to four decimals.
+            (weights.iter().sum::<f64>() / weights.len() as f64 * 10_000.0).round() / 10_000.0
         };
         // Whole weights stay integers, as the window writes them (`2`, not `2.0`).
         #[allow(clippy::cast_possible_truncation)]
@@ -165,12 +165,11 @@ pub fn add(manifest: Option<&Value>, addition: &Addition<'_>) -> Result<(Value, 
         json!([addition.reference, addition.props])
     };
     let instance = instance_of(&node).unwrap_or_default();
-    let view_id = match addition.view {
-        Some(view) => view.to_owned(),
-        None => manifest_default(&manifest)
-            .or_else(|| manifest.get("views")?.as_object()?.keys().min().cloned())
-            .ok_or("views.json has no views")?,
-    };
+    let view_id = addition
+        .view
+        .map(str::to_owned)
+        .or_else(|| default_view(&manifest))
+        .ok_or("views.json has no views")?;
     let views = manifest
         .get_mut("views")
         .and_then(Value::as_object_mut)
@@ -185,9 +184,7 @@ pub fn add(manifest: Option<&Value>, addition: &Addition<'_>) -> Result<(Value, 
         let layout = view
             .get_mut("layout")
             .ok_or_else(|| format!("view {view_id:?} has no layout"))?;
-        let mut shown = Vec::new();
-        instances(layout, &mut shown);
-        if shown.contains(&instance) {
+        if shows(layout, &instance) {
             return Err(format!(
                 "view {view_id:?} already shows {instance}; give the new one another `instance` prop to add a second \
                  one"
@@ -221,25 +218,21 @@ pub fn add(manifest: Option<&Value>, addition: &Addition<'_>) -> Result<(Value, 
     Ok((manifest, said))
 }
 
-/// The manifest's `default` view id when it names one of its views.
-pub(super) fn manifest_default(manifest: &Value) -> Option<String> {
-    let default = manifest.get("default")?.as_str()?;
+/// The view of `manifest` a widget goes to without a `view`: its `default` view when it names one of its views, else
+/// the first view id.
+pub(super) fn default_view(manifest: &Value) -> Option<String> {
+    let views = manifest.get("views")?.as_object()?;
     manifest
-        .get("views")?
-        .get(default)
-        .map(|_| default.to_owned())
+        .get("default")
+        .and_then(Value::as_str)
+        .filter(|default| views.contains_key(*default))
+        .or_else(|| views.keys().map(String::as_str).min())
+        .map(str::to_owned)
 }
 
 /// Whether `node` holds the `tabs` container whose `id` prop is `id`.
 fn has_slot(node: &Value, id: &str) -> bool {
-    is_container(node)
-        && ((node[0] == "tabs" && node[1].get("id").and_then(Value::as_str) == Some(id))
-            || node
-                .as_array()
-                .into_iter()
-                .flatten()
-                .skip(2)
-                .any(|child| has_slot(child, id)))
+    is_slot(node, id) || children(node).any(|child| has_slot(child, id))
 }
 
 /// Whether a view of `manifest` has the `main` slot, the `tabs` container with `"id": "main"` where files open

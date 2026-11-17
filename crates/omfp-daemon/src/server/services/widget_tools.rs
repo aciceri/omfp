@@ -115,13 +115,31 @@ pub(super) fn list(text: &mut String, title: &str, entries: &[String]) {
         return;
     }
     let _ = writeln!(text, "  {title}:");
-    for entry in entries {
-        let mut lines = entry.lines();
-        let _ = writeln!(text, "    - {}", lines.next().unwrap_or_default());
-        for line in lines {
-            let _ = writeln!(text, "      {line}");
-        }
+    for line in entries {
+        entry(text, "    ", line);
     }
+}
+
+/// Appends a report entry `<indent>- <line>`, its continuation lines indented below it.
+pub(super) fn entry(text: &mut String, indent: &str, line: &str) {
+    let mut lines = line.lines();
+    let _ = writeln!(text, "{indent}- {}", lines.next().unwrap_or_default());
+    for line in lines {
+        let _ = writeln!(text, "{indent}  {line}");
+    }
+}
+
+/// `Window <id> (<client>)[, after waiting <s> s, <why>]`.
+pub(super) fn window_title(
+    window: &Window,
+    unsettled: Option<&String>,
+    waited: Duration,
+) -> String {
+    let mut title = format!("Window {} ({})", window.id, window.client);
+    if let Some(why) = unsettled {
+        let _ = write!(title, ", after waiting {} s, {why}", waited.as_secs());
+    }
+    title
 }
 
 /// A view that holds the checked widget (DMN-209): its id and where it comes from, in words.
@@ -217,11 +235,11 @@ fn describe(
         return text;
     }
     for (window, unsettled) in windows {
-        let _ = write!(text, "Window {} ({})", window.id, window.client);
-        if let Some(why) = unsettled {
-            let _ = write!(text, ", after waiting {} s, {why}", waited.as_secs());
-        }
-        text.push_str(":\n");
+        let _ = writeln!(
+            text,
+            "{}:",
+            window_title(window, unsettled.as_ref(), waited)
+        );
         let instances = target.instances(window);
         if instances.is_empty() {
             let _ = writeln!(text, "- does not show {reference} in its current view");
@@ -402,10 +420,7 @@ impl Services {
                 compile: widgets.check(&folder),
                 native: native::scan_folder(&folder),
                 manifest_error,
-                keymap_error: crate::widgets::keymap::read(&crate::widgets::keymap::path(
-                    &workspace,
-                ))
-                .err(),
+                keymap_error: keymap::read(&keymap::path(&workspace)).err(),
                 main_missing: manifest
                     .as_ref()
                     .is_some_and(|manifest| !layout::has_main_slot(manifest)),

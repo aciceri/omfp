@@ -5,8 +5,8 @@ use std::path::Path;
 
 use omfp_protocol::{LibraryComponent, WidgetSource};
 
-use super::folders::{self, is_widget_name};
-use super::{CopyError, copy_dir};
+use super::folders::{self, checked_name};
+use super::{CopyError, compile, copy_dir};
 use crate::store::new_id;
 
 /// Longest description `widgets.library` gives, in characters (AGT-065).
@@ -29,11 +29,7 @@ pub fn save(
     source: Source<'_>,
     replace: bool,
 ) -> Result<(), CopyError> {
-    if !is_widget_name(name) {
-        return Err(CopyError::BadRequest(format!(
-            "invalid component name {name:?}: ASCII letters, digits, `_`, `-` and `.` (not first)"
-        )));
-    }
+    checked_name("component name", name).map_err(CopyError::BadRequest)?;
     if let Source::Folder(folder) = source
         && !folder.is_dir()
     {
@@ -99,13 +95,8 @@ pub fn list(library: &Path) -> Vec<LibraryComponent> {
             LibraryComponent {
                 reference: format!("user:{}", widget.name),
                 files: folders::files(&folder)
-                    .into_iter()
-                    .map(|(path, _)| {
-                        path.components()
-                            .map(|part| part.as_os_str().to_string_lossy())
-                            .collect::<Vec<_>>()
-                            .join("/")
-                    })
+                    .iter()
+                    .map(|(path, _)| compile::display(path))
                     .collect(),
                 name: widget.name,
                 entry: widget.entry,

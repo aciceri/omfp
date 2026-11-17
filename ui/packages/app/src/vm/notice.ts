@@ -90,12 +90,21 @@ export function noticeRow(frame: NoticeFrame): NoticeRow {
   }
 }
 
+/** A compaction's outcome; a skipped one (omp 18.22.0: `Nothing to compact (session too small)`, `Already compacted`)
+ * carries its reason in `errorMessage` but failed nothing (UI-911). */
 function compactionEnd(aborted: boolean, skipped: boolean | undefined, error: string | undefined): NoticeRow {
+  if (skipped === true) {
+    return row(
+      "compaction",
+      "info",
+      error === undefined ? text.compactionSkipped : text.compactionSkippedBecause(error),
+    );
+  }
   if (error !== undefined) {
     return row("compaction", "error", text.compactionFailed(error));
   }
   if (aborted) {
     return row("compaction", "warning", text.compactionAborted);
   }
-  return row("compaction", "info", skipped === true ? text.compactionSkipped : text.compacted);
+  return row("compaction", "info", text.compacted);
 }

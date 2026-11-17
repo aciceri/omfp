@@ -299,6 +299,23 @@ fn parse_lease(stdout: &[u8], session_id: &str) -> Result<Lease, StartError> {
     })
 }
 
+/// omp's `compact` with the deadline omp-rpc 18.22.0 gives `navigate_tree`, whose branch summary is the same kind of
+/// model call (DMN-910): the generated `CompactCommand` declares none, so the client's 30 s default would fail a
+/// manual compaction's call while omp still summarizes.
+#[derive(Serialize)]
+#[serde(transparent)]
+struct ManualCompact<'a>(&'a CompactCommand);
+
+impl omp_rpc::Command for ManualCompact<'_> {
+    const NAME: &'static str = <CompactCommand as omp_rpc::Command>::NAME;
+    const TIMEOUT_MS: Option<u64> = <NavigateTreeCommand as omp_rpc::Command>::TIMEOUT_MS;
+    type Output = <CompactCommand as omp_rpc::Command>::Output;
+
+    fn decode(data: Option<Value>) -> Result<Self::Output, serde_json::Error> {
+        <CompactCommand as omp_rpc::Command>::decode(data)
+    }
+}
+
 /// [`AgentProcess`] over a connected `omp-rpc` client; dropping the last handle closes omp.
 ///
 /// `omp-rpc` numbers requests itself and does not expose the numbers, yet a prompt's id is the id of its
@@ -369,7 +386,7 @@ impl AgentProcess for OmpAgent {
             OmpCall::Commands => self.run_as(&GetAvailableCommandsCommand {}, |commands| {
                 GetAvailableCommandsResult { commands }
             }),
-            OmpCall::Compact(command) => self.run(command),
+            OmpCall::Compact(command) => self.run(&ManualCompact(command)),
             OmpCall::Tree => self.run(&GetTreeCommand {}),
             OmpCall::NavigateTree(command) => self.run(command),
             OmpCall::Fork(command) => self.run(command),
@@ -440,5 +457,20 @@ mod tests {
             parse_lease(b"not json", "s1"),
             Err(StartError::LeaseCheck(_))
         ));
+    }
+
+    // spec: DMN-910
+    #[test]
+    fn a_manual_compaction_is_omps_compact_with_a_branch_summarys_deadline() {
+        use omp_rpc::Command as _;
+        let command = CompactCommand {
+            custom_instructions: Some("keep the API decisions".into()),
+        };
+        assert_eq!(
+            omp_rpc::encode_command("req_7", &ManualCompact(&command)).unwrap(),
+            omp_rpc::encode_command("req_7", &command).unwrap()
+        );
+        assert_eq!(CompactCommand::TIMEOUT_MS, None);
+        assert_eq!(ManualCompact::TIMEOUT_MS, Some(600_000));
     }
 }

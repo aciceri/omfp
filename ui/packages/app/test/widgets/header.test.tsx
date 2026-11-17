@@ -548,6 +548,47 @@ describe("copying and exporting from the header", () => {
   });
 });
 
+describe("compacting from the header", () => {
+  // spec: UI-912, UI-910, UI-911
+  test("the ⋯ popover compacts with the focus typed, closes and says how big the context was", async () => {
+    const test = setup();
+    test.client.answers.set("thread.compact", () => ({ summary: "s", firstKeptEntryId: "e1", tokensBefore: 4200 }));
+    await test.user.click(screen.getByTestId("header-more"));
+    const dialog = await screen.findByTestId("header-more-dialog");
+    await test.user.type(within(dialog).getByTestId("compaction-focus"), "the failing test");
+    await test.user.click(within(dialog).getByTestId("compact-context"));
+    await waitFor(() => expect(screen.queryByTestId("header-more-dialog")).toBeNull());
+    await waitFor(() =>
+      expect(test.host.window.get(SUCCESSES).map((success) => success.text)).toEqual([
+        "Compacted the context (it held 4.2k tokens)",
+      ]),
+    );
+    expect(test.client.callsTo("thread.compact").map((call) => call.params)).toEqual([
+      { threadId: "t1", instructions: "the failing test" },
+    ]);
+  });
+
+  // spec: UI-912, UI-910
+  test("while the thread works the popover's compaction is refused", async () => {
+    const test = setup(thread("t1", "checkout", "w1", { settled: false }));
+    await fromMore(test.user, "compact-context");
+    await waitFor(() =>
+      expect(test.host.window.get(ERRORS)).toEqual([
+        "The thread is working: compact it once its turn ends (Abort ends it now)",
+      ]),
+    );
+    expect(test.client.callsTo("thread.compact")).toEqual([]);
+  });
+
+  // spec: UI-912
+  test("an archived thread's popover offers no compaction", async () => {
+    const test = setup(thread("t1", "checkout", "w1", { archivedAt: 5 }));
+    await test.user.click(screen.getByTestId("header-more"));
+    const dialog = await screen.findByTestId("header-more-dialog");
+    expect(within(dialog).queryAllByTestId("compaction").length).toBe(0);
+  });
+});
+
 describe("a fork's header", () => {
   // spec: UI-664
   test("says where the thread comes from; the source's title shows it, a deleted source's title stays", async () => {

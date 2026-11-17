@@ -105,6 +105,7 @@ export const chat = {
     compactionFailed: (error: string) => `Compaction failed: ${error}`,
     compactionAborted: "Compaction aborted",
     compactionSkipped: "Compaction skipped",
+    compactionSkippedBecause: (reason: string) => `Compaction skipped: ${reason}`,
     compacted: "Context compacted",
     retrying: (attempt: number, max: number, seconds: number, error: string) =>
       `Retrying (${attempt}/${max}) in ${seconds.toFixed(1)} s: ${error}`,

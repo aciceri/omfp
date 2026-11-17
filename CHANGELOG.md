@@ -28,6 +28,11 @@ The version's section is also the source of the GitHub release notes.
   focus, links and progress, light borders, the user's messages in a gray bubble and replies as plain text, plain
   chevrons, a simple spinner and no decorative animation. It works with every theme; `:set skin=crush` goes back.
   The `/kit` gallery has a skin picker next to the themes.
+- `:compact [focus]` compacts the selected thread's context on demand, like oh-my-pi's `/compact`: oh-my-pi
+  summarizes the conversation so far, with the words after `:compact` as what the summary should focus on, and the
+  transcript shows the compaction as a notice; a toast says how big the context was. It is refused while the thread
+  works. The header's `⋯` offers it too, with a field for the focus. oh-my-pi's `/compact` modes (`soft`, `remote`,
+  `snapcompact`) are not offered: its RPC does not take them.
 
 ### Changed
 
@@ -60,6 +65,9 @@ The version's section is also the source of the GitHub release notes.
 
 - Opening or reloading a window no longer flashes the user theme (`theme.css`) when the chosen theme is not
   `matugen`: the daemon now serves `/theme.css` empty under any other theme (#154).
+- A manual compaction oh-my-pi skips (`Nothing to compact (session too small)`, `Already compacted`) shows as
+  `Compaction skipped: <reason>` instead of a failed compaction, and a manual compaction over the protocol
+  (`thread.compact`) waits up to 10 minutes for oh-my-pi's summary instead of failing after 30 seconds.
 
 ## 0.2.1 — 2026-11-17
 

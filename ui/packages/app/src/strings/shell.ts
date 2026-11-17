@@ -458,6 +458,15 @@ export const shell = {
     exported: (file: string) => `Exported \u201c${file}\u201d`,
     notLoaded: "The conversation has not loaded yet",
   },
+  /** Compacting a thread's context on demand (UI-910, UI-911, UI-912). */
+  compaction: {
+    focus: "Focus of the summary",
+    focusPlaceholder: "What to keep (optional)",
+    compact: "Compact context",
+    compacted: (tokensBefore: string | undefined) =>
+      tokensBefore === undefined ? "Compacted the context" : `Compacted the context (it held ${tokensBefore} tokens)`,
+    busy: "The thread is working: compact it once its turn ends (Abort ends it now)",
+  },
   /** `omfp:activity` (UI-241). */
   activity: {
     label: "Activity",
@@ -793,6 +802,10 @@ export const shell = {
     /** `:describe-command export` (UI-791). */
     exportDescription:
       "Saves the selected thread's conversation as a Markdown file, the same text :copy copies: the browser downloads it, the desktop window saves it in your Downloads folder.",
+    compact: "Compact the context (:compact [focus of the summary])",
+    /** `:describe-command compact` (UI-910). */
+    compactDescription:
+      "Has omp summarize the selected thread's conversation so far and continue from the summary, freeing context. Words after :compact tell the summary what to focus on. Refused while the thread works; the transcript shows the compaction as a notice.",
     nextAttention: "Next thread needing attention",
     /** The job commands (UI-745). */
     jobRun: "Run a job of the current workspace (:job-run <name>)",

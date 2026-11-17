@@ -4,6 +4,7 @@
  */
 
 import { CallError } from "@omfp/client";
+import { compactNumber } from "@omfp/kit";
 import type { CloseJobs, RunInfo } from "@omfp/protocol";
 import { useMemo } from "react";
 import { strings } from "../strings/index.ts";
@@ -60,6 +61,12 @@ export interface ThreadActions {
    * `thread.tree` by role and timestamp (UI-661); a message the branch lacks is reported.
    */
   forkAtMessage(threadId: string, message: { role: string; timestamp?: number | null }): Promise<string | undefined>;
+  /**
+   * Has omp compact the thread's context (`thread.compact`, UI-910), with `instructions` (trimmed; blank: none) as the
+   * focus of its summary, then shows a success toast. Refused with an error toast while the thread works (its summary
+   * is not settled); a failure is reported. Resolves to whether omp compacted.
+   */
+  compact(threadId: string, instructions?: string): Promise<boolean>;
 }
 
 /** The message of a failed call or any thrown value; a daemon error carrying omp's stderr tail (a failed start,
@@ -345,6 +352,7 @@ export function threadActions(host: OmfpHost): ThreadActions {
         return undefined;
       }
     },
+    compact: (threadId, instructions) => compactThread(host, threadId, instructions),
   };
 }
 
@@ -357,6 +365,29 @@ async function forkThread(host: OmfpHost, threadId: string, entryId: string | un
   } catch (error) {
     reportError(host, error);
     return undefined;
+  }
+}
+
+async function compactThread(host: OmfpHost, threadId: string, instructions: string | undefined): Promise<boolean> {
+  // omp would abort the running turn and resume it after the summary: the window leaves the turn alone (UI-910).
+  if (host.frames.getSnapshot().index.threads.get(threadId)?.settled === false) {
+    reportError(host, strings.shell.compaction.busy);
+    return false;
+  }
+  const focus = instructions?.trim() ?? "";
+  try {
+    const result = await host.client.call("thread.compact", {
+      threadId,
+      ...(focus === "" ? {} : { instructions: focus }),
+    });
+    // omp's `CompactionResult`: the context's size before it.
+    const before = isObject(result) ? result.tokensBefore : undefined;
+    const held = typeof before === "number" && before > 0 ? compactNumber(before) : undefined;
+    reportSuccess(host, strings.shell.compaction.compacted(held));
+    return true;
+  } catch (error) {
+    reportError(host, error);
+    return false;
   }
 }
 

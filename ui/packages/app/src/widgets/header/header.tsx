@@ -191,8 +191,8 @@ function ThreadHeader({ summary }: { summary: ThreadSummary }): ReactNode {
 
 /**
  * The header's `⋯` (UI-482): a popover with why the process failed, rename, archive and delete, copying and exporting
- * the conversation (UI-793); the compact header's (UI-202) adds stop or restart, the thinking level, the chips, context
- * usage and cost. An action closes it.
+ * the conversation (UI-793), compacting the context with an optional focus (UI-912); the compact header's (UI-202) adds
+ * stop or restart, the thinking level, the chips, context usage and cost. An action closes it.
  */
 function More({
   threadId,
@@ -230,6 +230,7 @@ function More({
             </div>
             <Lifecycle threadId={threadId} archived={view.archived} onDone={close} />
             <ConversationActions threadId={threadId} onDone={close} />
+            {!view.archived && <Compaction threadId={threadId} onDone={close} />}
             {compact && (
               <>
                 <ThinkingSelect threadId={threadId} view={view} onChanged={onChanged} />
@@ -835,6 +836,33 @@ function ConversationActions({ threadId, onDone }: { threadId: string; onDone: (
         {strings.shell.conversation.export}
       </Button>
     </div>
+  );
+}
+
+/** Compact the context, with the summary's focus when the field has one (UI-912), as `:compact` does (UI-910). */
+function Compaction({ threadId, onDone }: { threadId: string; onDone: () => void }): ReactNode {
+  const actions = useThreadActions();
+  const [focus, setFocus] = useState("");
+  const labels = strings.shell.compaction;
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    onDone();
+    void actions.compact(threadId, focus);
+  };
+  return (
+    <form className="omfp-thread-header__compaction" data-testid="compaction" onSubmit={submit}>
+      <TextField
+        label={labels.focus}
+        hideLabel
+        placeholder={labels.focusPlaceholder}
+        value={focus}
+        onChange={setFocus}
+        inputProps={{ "data-testid": "compaction-focus" }}
+      />
+      <Button type="submit" size="sm" icon={<Icon name="fold-vertical" />} data-testid="compact-context">
+        {labels.compact}
+      </Button>
+    </form>
   );
 }
 

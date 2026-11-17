@@ -29,6 +29,22 @@ describe("notice rows", () => {
     expect(skipped.text).toBe("Compaction skipped");
   });
 
+  // spec: UI-043, UI-911
+  test("a manual compaction omp skipped is an info row with its reason, not a failure", () => {
+    const start = noticeRow({ type: "manual_compaction_start", data: {} });
+    expect([start.kind, start.level, start.text]).toEqual(["compaction", "info", "Compacting the context"]);
+    const skipped = noticeRow({
+      type: "manual_compaction_end",
+      data: { aborted: false, skipped: true, errorMessage: "Nothing to compact (session too small)" },
+    });
+    expect([skipped.level, skipped.text]).toEqual([
+      "info",
+      "Compaction skipped: Nothing to compact (session too small)",
+    ]);
+    const done = noticeRow({ type: "manual_compaction_end", data: { aborted: false } });
+    expect([done.level, done.text]).toEqual(["info", "Context compacted"]);
+  });
+
   // spec: UI-043
   test("unknown frames get a generic row with their JSON", () => {
     const row = noticeRow({ type: "unknown", data: { type: "irc_card", from: "advisor" } });

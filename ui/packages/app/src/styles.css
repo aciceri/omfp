@@ -554,12 +554,19 @@
 
   .omfp-thread-header__more .omfp-thread-header__actions,
   .omfp-thread-header__more .omfp-thread-header__lifecycle,
-  .omfp-thread-header__more .omfp-thread-header__chips {
+  .omfp-thread-header__more .omfp-thread-header__chips,
+  .omfp-thread-header__more .omfp-thread-header__compaction {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--omfp-s2);
     margin: 0;
+  }
+
+  /* The summary's focus (UI-912) takes the row's room beside its button. */
+  .omfp-thread-header__compaction > .omfp-field {
+    flex: 1 1 12rem;
+    min-inline-size: 0;
   }
 
   /* The workspace chip (UI-340): one button, its label cut with an ellipsis when the bar is short. */

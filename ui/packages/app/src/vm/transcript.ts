@@ -25,13 +25,15 @@ import { isObject } from "../sdk/json.ts";
 import { strings } from "../strings/index.ts";
 import { type NoticeRow, noticeRow } from "./notice.ts";
 import { type SystemRow, systemMessage, systemNotice } from "./system.ts";
-import { oneLine, prettyJson, type ToolCard, toolCard } from "./tool.ts";
+import { type CardStatus, oneLine, prettyJson, type ToolCard, toolCard } from "./tool.ts";
 
 /**
  * What an item renders: `state.transcript[index]`, `state.notices[index]` or `state.streaming`. A turn runs from a
  * user's message to the next (a steer or follow-up starts one too): an assistant message after the turn's first
  * `continues` it, shown under the first one's name line without its own (UI-470). A message sent on another day than
- * the message shown before it carries a `day` mark, shown as a day separator above it (UI-750).
+ * the message shown before it carries a `day` mark, shown as a day separator above it (UI-750). A message whose reads
+ * run on into the next messages of its turn shows their reads too (UI-765): `joined` are those messages' indexes,
+ * and `live` says the reply being streamed joins it as well (it then has no item of its own).
  */
 export type ItemKind =
   | {
@@ -39,6 +41,8 @@ export type ItemKind =
       readonly index: number;
       readonly continues: boolean;
       readonly day: DayMark | undefined;
+      readonly joined: readonly number[];
+      readonly live: boolean;
     }
   | { readonly type: "notice"; readonly index: number }
   | { readonly type: "streaming"; readonly continues: boolean };
@@ -110,29 +114,70 @@ function runsById(tools: readonly ToolRun[]): ReadonlyMap<string, ToolRun> {
   return runs;
 }
 
-/** The last item list built for a transcript array, with the notices and streaming flag it was built for. */
+/** The last item list built for a transcript array, with the notices and streaming flags it was built for. */
 interface ItemList {
   readonly notices: readonly Notice[];
   readonly streaming: boolean;
+  readonly liveReads: boolean;
   readonly showXdevNotices: boolean;
   readonly items: readonly Item[];
 }
 
 const ITEM_LISTS = new WeakMap<readonly TranscriptEntry[], ItemList>();
 
+/** The `joined` of a message whose reads do not run on. */
+const NOT_JOINED: readonly number[] = [];
+
+/** A `read` of a file or a folder, which a read group takes (UI-765); a URL's read is a fetch, shown on its own. */
+function readsFile(block: AssistantContent): boolean {
+  if (block.type !== "toolCall" || block.name !== "read") {
+    return false;
+  }
+  const path = block.arguments?.path;
+  return typeof path !== "string" || !/^https?:\/\//i.test(path);
+}
+
+/** Text or thinking without a visible character: it shows nothing, so it does not end a run of reads. */
+function blankContent(block: AssistantContent): boolean {
+  return (
+    (block.type === "text" && (block.text ?? "").trim() === "") ||
+    (block.type === "thinking" && (block.thinking ?? "").trim() === "")
+  );
+}
+
+/** Whether `message` shows nothing but reads of files (at least one), so they join the reads before it (UI-765). */
+function onlyReads(message: AssistantMessage): boolean {
+  const content = message.content ?? [];
+  return (
+    message.errorMessage === undefined &&
+    content.some(readsFile) &&
+    content.every((block) => readsFile(block) || blankContent(block))
+  );
+}
+
+/** Whether the last thing `message` shows is a read of a file, which reads in the next messages continue. */
+function endsWithRead(message: AssistantMessage): boolean {
+  const last = (message.content ?? []).findLast((block) => !blankContent(block));
+  return message.errorMessage === undefined && last !== undefined && readsFile(last);
+}
+
 /**
  * The transcript's rows in order: each notice goes after the messages that preceded it, tool results shown inside
  * their call's card are left out, and the streaming reply comes last; each message and the streaming reply say
  * whether they continue their turn (UI-470). Informational xdev notices are hidden unless opted in (UI-043).
- * The same array while the transcript, notices, streaming flag and visibility setting stay the same.
+ * An assistant message showing only reads joins the row before it when that row ends with reads and nothing came
+ * between them (a notice, a record, a day separator), and so does the streaming reply (UI-765).
+ * The same array while the transcript, notices, streaming flags and visibility setting stay the same.
  */
 export function items(state: ThreadState, showXdevNotices = false): readonly Item[] {
   const streaming = state.streaming !== null;
+  const liveReads = state.streaming !== null && onlyReads(state.streaming.message);
   const known = ITEM_LISTS.get(state.transcript);
   if (
     known !== undefined &&
     known.notices === state.notices &&
     known.streaming === streaming &&
+    known.liveReads === liveReads &&
     known.showXdevNotices === showXdevNotices
   ) {
     return known.items;
@@ -153,6 +198,10 @@ export function items(state: ThreadState, showXdevNotices = false): readonly Ite
   let answered = false;
   // The local day of the last shown message with a send time.
   let lastDay: number | undefined;
+  // The `joined` of the last row while it ends with reads, which a message showing only reads continues (UI-765).
+  let open: number[] | undefined;
+  // How many rows there were once the open row was added: one added after it closes it.
+  let openAt = 0;
   for (const [index, { message }] of state.transcript.entries()) {
     noticesUpTo(index);
     if (message.role === "toolResult" && message.toolCallId !== undefined && called.has(message.toolCallId)) {
@@ -160,27 +209,40 @@ export function items(state: ThreadState, showXdevNotices = false): readonly Ite
     }
     const at = sentAt(message);
     const day = at === undefined ? undefined : startOfDay(at);
+    const mark = at === undefined || day === lastDay ? undefined : { at, first: lastDay === undefined };
+    lastDay = day ?? lastDay;
     const assistant = message.role === "assistant";
+    if (assistant && open !== undefined && openAt === result.length && mark === undefined && onlyReads(message)) {
+      open.push(index);
+      continue;
+    }
+    const joined = assistant && endsWithRead(message) ? [] : undefined;
     result.push({
       key: `m${index}`,
       kind: {
         type: "message",
         index,
         continues: assistant && answered,
-        day: at === undefined || day === lastDay ? undefined : { at, first: lastDay === undefined },
+        day: mark,
+        joined: joined ?? NOT_JOINED,
+        live: false,
       },
     });
-    lastDay = day ?? lastDay;
+    open = joined;
+    openAt = result.length;
     answered = assistant || (answered && message.role !== "user");
   }
   noticesUpTo(Number.POSITIVE_INFINITY);
-  if (streaming) {
+  const last = result.at(-1);
+  if (liveReads && open !== undefined && openAt === result.length && last?.kind.type === "message") {
+    result[result.length - 1] = { ...last, kind: { ...last.kind, live: true } };
+  } else if (streaming) {
     result.push({
       key: "streaming",
       kind: { type: "streaming", continues: answered },
     });
   }
-  ITEM_LISTS.set(state.transcript, { notices: state.notices, streaming, showXdevNotices, items: result });
+  ITEM_LISTS.set(state.transcript, { notices: state.notices, streaming, liveReads, showXdevNotices, items: result });
   return result;
 }
 
@@ -237,6 +299,11 @@ export type Block =
   | { readonly type: "thinking"; readonly text: string; readonly key?: string }
   | { readonly type: "image"; readonly mime: string; readonly data: string }
   | { readonly type: "tool"; readonly card: ToolCard }
+  /**
+   * A run of two or more consecutive `read` calls of one message, shown as one card (UI-765): their cards in call order
+   * and the run's state, `running` while any of them is live, else `failed` when any failed.
+   */
+  | { readonly type: "readGroup"; readonly cards: readonly ToolCard[]; readonly status: CardStatus }
   /** A message kind without its own renderer: a one-line summary and its JSON. */
   | { readonly type: "record"; readonly summary: string; readonly json: string };
 
@@ -280,6 +347,10 @@ function derive<K extends object, T>(
 
 const VIEWS = new WeakMap<AgentMessage, Derived<MessageView>>();
 const BLOCKS = new WeakMap<AssistantContent, Derived<Block>>();
+/** Read groups by the block of their first read; the same group while its reads' blocks stay. */
+const GROUPS = new WeakMap<Block, Derived<Block>>();
+/** Views of rows whose reads continue in the next messages (UI-765), by the row's own message. */
+const JOINED = new WeakMap<AgentMessage, Derived<MessageView>>();
 
 /** The run and the result of each tool call of `message`: what its view depends on besides the message itself. */
 function toolInputs(state: ThreadState, message: AgentMessage): unknown[] {
@@ -333,9 +404,20 @@ export function streamingView(state: ThreadState): MessageView | undefined {
 }
 
 function assistantView(state: ThreadState, message: AssistantMessage, messageId: string | null): MessageView {
+  return {
+    role: "assistant",
+    label: strings.chat.roleAssistant,
+    blocks: groupReads(assistantBlocks(state, message, messageId)),
+    error: message.errorMessage,
+    steering: false,
+  };
+}
+
+/** The display blocks of an assistant message's content, before its reads are grouped. */
+function assistantBlocks(state: ThreadState, message: AssistantMessage, messageId: string | null): Block[] {
   const completedAt = typeof message.completedAt === "number" ? message.completedAt : undefined;
   const calledAt = completedAt ?? message.timestamp;
-  const blocks = (message.content ?? []).flatMap((block, index): Block[] => {
+  return (message.content ?? []).flatMap((block, index): Block[] => {
     const thinkingKey = messageId === null ? {} : { key: `message/${messageId}/thinking/${index}` };
     switch (block.type) {
       case "text":
@@ -379,13 +461,88 @@ function assistantView(state: ThreadState, message: AssistantMessage, messageId:
         return [];
     }
   });
-  return {
+}
+
+/**
+ * The view of a row whose reads continue in the next messages of its turn (UI-765): the message at `index`, then the
+ * reads of the transcript's messages `joined` and, when `live`, of the reply being streamed. The same object while
+ * those messages, their tool runs and results stay.
+ */
+function joinedView(state: ThreadState, index: number, joined: readonly number[], live: boolean): MessageView {
+  const parts: { message: AssistantMessage; messageId: string | null }[] = [];
+  for (const at of [index, ...joined]) {
+    const entry = state.transcript[at];
+    if (entry?.message.role === "assistant") {
+      parts.push({ message: entry.message, messageId: entry.message_id });
+    }
+  }
+  if (live && state.streaming !== null) {
+    parts.push({ message: state.streaming.message, messageId: state.streaming.message_id });
+  }
+  const [first] = parts;
+  if (first === undefined) {
+    return messageView(state, index);
+  }
+  const inputs = parts.flatMap(({ message, messageId }) => [message, messageId, ...toolInputs(state, message)]);
+  return derive(JOINED, first.message, inputs, () => ({
     role: "assistant",
     label: strings.chat.roleAssistant,
-    blocks,
-    error: message.errorMessage,
+    blocks: groupReads(parts.flatMap(({ message, messageId }) => assistantBlocks(state, message, messageId))),
+    error: first.message.errorMessage,
     steering: false,
+  }));
+}
+
+type ToolBlock = Extract<Block, { type: "tool" }>;
+
+/** A call the read group takes: a `read` of a file or a folder (a URL's read is a fetch, shown on its own). */
+function groupsRead(block: Block): block is ToolBlock {
+  return block.type === "tool" && block.card.name === "read" && block.card.view.kind === "read";
+}
+
+/**
+ * `blocks` with each run of two or more consecutive `read` calls in one group (UI-765); any other visible block (text,
+ * thinking, an image, another tool) ends the run, blank text or thinking inside a run is left out, and a lone read
+ * keeps its own card.
+ */
+function groupReads(blocks: readonly Block[]): Block[] {
+  const grouped: Block[] = [];
+  let run: ToolBlock[] = [];
+  // Blank blocks after the run's last read: dropped if another read follows, else shown where they are.
+  let blanks: Block[] = [];
+  const close = () => {
+    const [first] = run;
+    if (first !== undefined && run.length > 1) {
+      const reads = run;
+      grouped.push(derive(GROUPS, first, reads, () => readGroup(reads)));
+    } else {
+      grouped.push(...run);
+    }
+    grouped.push(...blanks);
+    run = [];
+    blanks = [];
   };
+  for (const block of blocks) {
+    if (groupsRead(block)) {
+      run.push(block);
+      blanks = [];
+    } else if (run.length > 0 && (block.type === "text" || block.type === "thinking") && block.text.trim() === "") {
+      // Blank text or thinking shows nothing, so it does not end the run.
+      blanks.push(block);
+    } else {
+      close();
+      grouped.push(block);
+    }
+  }
+  close();
+  return grouped;
+}
+
+function readGroup(reads: readonly ToolBlock[]): Block {
+  const cards = reads.map((read) => read.card);
+  const live = cards.some((card) => card.status !== "succeeded" && card.status !== "failed");
+  const failed = cards.some((card) => card.status === "failed");
+  return { type: "readGroup", cards, status: live ? "running" : failed ? "failed" : "succeeded" };
 }
 
 /** What a transcript row shows. */
@@ -437,8 +594,11 @@ export function rowContent(state: ThreadState, item: Item): RowContent | undefin
       return system === undefined
         ? rowFor(message, {
             type: "message",
-            view: messageView(state, item.kind.index),
-            streaming: false,
+            view:
+              item.kind.joined.length === 0 && !item.kind.live
+                ? messageView(state, item.kind.index)
+                : joinedView(state, item.kind.index, item.kind.joined, item.kind.live),
+            streaming: item.kind.live,
             continues: item.kind.continues,
           })
         : rowFor(message, { type: "system", row: system });

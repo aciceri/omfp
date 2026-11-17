@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   type AgentMessage,
+  type AssistantContent,
   emptyThreadState,
   type JsonObject,
   type NoticeFrame,
@@ -8,7 +9,16 @@ import {
   type ThreadEvent,
   type ThreadState,
 } from "@omfp/core";
-import { daySeparator, items, messageView, rowContent, streamingView } from "../../src/vm/transcript.ts";
+import {
+  type Block,
+  daySeparator,
+  type Item,
+  items,
+  type MessageView,
+  messageView,
+  rowContent,
+  streamingView,
+} from "../../src/vm/transcript.ts";
 import { fixture, fixtureUntil, isFrame } from "../widgets/chat/fixtures.ts";
 
 function kinds(state: ThreadState): string[] {
@@ -437,5 +447,268 @@ describe("day separators", () => {
       label: "Wed, 30 Dec 2026",
       date: "2026-12-30",
     });
+  });
+});
+
+/** A `read` call of `path`. */
+function readCall(id: string, path: string): AssistantContent {
+  return { type: "toolCall", id, name: "read", arguments: { path } };
+}
+
+/** The result of read `id`: its text, failed with `isError`. */
+function readResult(id: string, text: string, isError = false): AgentMessage {
+  return { role: "toolResult", toolCallId: id, toolName: "read", content: [{ type: "text", text }], isError };
+}
+
+/** One assistant message of `content`, then `results`. */
+function replyWith(content: AssistantContent[], ...results: AgentMessage[]): ThreadState {
+  const messages: AgentMessage[] = [{ role: "assistant", content }, ...results];
+  return { ...emptyThreadState(), transcript: messages.map((message) => ({ message_id: null, message })) };
+}
+
+/** Each block of `view`: a read group as `reads` and its calls, a tool card as `tool` and its call, else its type. */
+function shape(view: MessageView | undefined): string[] {
+  return (view?.blocks ?? []).map((block: Block) => {
+    switch (block.type) {
+      case "readGroup":
+        return `reads ${block.cards.map((card) => card.toolCallId).join(",")}`;
+      case "tool":
+        return `tool ${block.card.toolCallId}`;
+      default:
+        return block.type;
+    }
+  });
+}
+
+/** The state of the read group of the first message of `state`. */
+function groupStatus(state: ThreadState): string | undefined {
+  const [block] = messageView(state, 0).blocks;
+  return block?.type === "readGroup" ? block.status : undefined;
+}
+
+describe("read groups", () => {
+  // spec: UI-765
+  test("consecutive reads of one message are one group in call order; a lone read keeps its own card", () => {
+    const three = replyWith([readCall("a", "src/a.rs"), readCall("b", "src/b.rs:10-20"), readCall("c", "src")]);
+    expect(shape(messageView(three, 0))).toEqual(["reads a,b,c"]);
+    expect(shape(messageView(replyWith([readCall("a", "src/a.rs")]), 0))).toEqual(["tool a"]);
+  });
+
+  // spec: UI-765
+  test("text, thinking, another tool or a URL's read between reads ends the run", () => {
+    const state = replyWith([
+      { type: "text", text: "Reading." },
+      readCall("a", "src/a.rs"),
+      readCall("b", "src/b.rs"),
+      { type: "text", text: "And this one." },
+      readCall("c", "src/c.rs"),
+      { type: "toolCall", id: "d", name: "bash", arguments: { command: "ls" } },
+      readCall("e", "src/e.rs"),
+      readCall("f", "src/f.rs"),
+      { type: "thinking", thinking: "one more" },
+      readCall("g", "src/g.rs"),
+      readCall("h", "https://example.com/page"),
+      readCall("i", "src/i.rs"),
+    ]);
+    expect(shape(messageView(state, 0))).toEqual([
+      "text",
+      "reads a,b",
+      "text",
+      "tool c",
+      "tool d",
+      "reads e,f",
+      "thinking",
+      "tool g",
+      "tool h",
+      "tool i",
+    ]);
+  });
+
+  // spec: UI-765, UI-052
+  test("the group runs while any read runs, else fails when a read failed; each read keeps its own state", () => {
+    const calls = [readCall("a", "src/a.rs"), readCall("b", "src/missing.rs")];
+    expect(groupStatus(replyWith(calls))).toBe("running");
+    expect(groupStatus(replyWith(calls, readResult("a", "1:fn a() {}"), readResult("b", "1:fn b() {}")))).toBe(
+      "succeeded",
+    );
+    const failed = replyWith(calls, readResult("a", "1:fn a() {}"), readResult("b", "Path not found", true));
+    expect(groupStatus(failed)).toBe("failed");
+    const [group] = messageView(failed, 0).blocks;
+    expect(group?.type === "readGroup" && group.cards.map((card) => card.status)).toEqual(["succeeded", "failed"]);
+    const running: ThreadState = {
+      ...replyWith(calls, readResult("b", "Path not found", true)),
+      tools: [
+        {
+          tool_call_id: "a",
+          tool_name: "read",
+          args: { path: "src/a.rs" },
+          intent: null,
+          status: "running",
+          partial_result: null,
+          preview: null,
+          result: null,
+          background: null,
+        },
+      ],
+    };
+    expect(groupStatus(running)).toBe("running");
+  });
+
+  // spec: UI-765, UI-191
+  test("a read streamed after another joins its group, which keeps its identity while its reads stay", () => {
+    const first = readCall("a", "src/a.rs");
+    const second = readCall("b", "src/b.rs");
+    const streamingWith = (content: AssistantContent[]): ThreadState => ({
+      ...emptyThreadState(),
+      streaming: { message_id: "live", message: { role: "assistant", content } },
+    });
+    expect(shape(streamingView(streamingWith([first])))).toEqual(["tool a"]);
+    const joined = streamingView(streamingWith([first, second]));
+    expect(shape(joined)).toEqual(["reads a,b"]);
+    const before = streamingView(streamingWith([first, second, { type: "text", text: "Both" }]));
+    const after = streamingView(streamingWith([first, second, { type: "text", text: "Both read." }]));
+    expect(shape(after)).toEqual(["reads a,b", "text"]);
+    expect(after?.blocks[0]).toBe(before?.blocks[0]);
+    expect(after?.blocks[0]).toBe(joined?.blocks[0]);
+  });
+});
+
+/** `messages` as a transcript; assistant messages are given as their content. */
+function transcriptOf(...messages: (AgentMessage | AssistantContent[])[]): ThreadState {
+  return {
+    ...emptyThreadState(),
+    transcript: messages.map((message) => ({
+      message_id: null,
+      message: Array.isArray(message) ? { role: "assistant", content: message } : message,
+    })),
+  };
+}
+
+/** Each row of `state`: its key, then the shape of its view (see {@link shape}). */
+function rowShapes(state: ThreadState): string[][] {
+  return items(state).map((item) => {
+    const content = rowContent(state, item);
+    return [item.key, ...(content?.type === "message" ? shape(content.view) : [content?.type ?? "none"])];
+  });
+}
+
+describe("read groups across messages", () => {
+  const ask: AgentMessage = { role: "user", content: "read them" };
+
+  // spec: UI-765, UI-042
+  test("reads in the next messages of a turn join the row whose reads they continue; their results do not break it", () => {
+    const state = transcriptOf(
+      ask,
+      [{ type: "text", text: "Looking." }, readCall("a", "src/a.rs")],
+      readResult("a", "1:a"),
+      [readCall("b", "src/b.rs")],
+      readResult("b", "Path not found", true),
+      [
+        { type: "text", text: "  " },
+        { type: "thinking", thinking: "" },
+        readCall("c", "src/c.rs"),
+        readCall("d", "src"),
+      ],
+      readResult("c", "1:c"),
+      readResult("d", "c.rs"),
+      [{ type: "text", text: "Done." }],
+    );
+    expect(rowShapes(state)).toEqual([
+      ["m0", "text"],
+      ["m1", "text", "reads a,b,c,d"],
+      ["m8", "text"],
+    ]);
+    const [, group] = items(state);
+    expect(group?.kind.type === "message" && group.kind.joined).toEqual([3, 5]);
+    const content = group === undefined ? undefined : rowContent(state, group);
+    const block = content?.type === "message" ? content.view.blocks[1] : undefined;
+    expect(block?.type === "readGroup" && block.cards.map((card) => card.status)).toEqual([
+      "succeeded",
+      "failed",
+      "succeeded",
+      "succeeded",
+    ]);
+    expect(block?.type === "readGroup" && block.status).toBe("failed");
+    // The joined row keeps its content while nothing it shows changes (UI-191).
+    expect(group && rowContent({ ...state, settled: !state.settled }, group)).toBe(content);
+  });
+
+  // spec: UI-765
+  test("a message showing anything else, or reads after something else, keeps its own row", () => {
+    const read = (id: string) => readCall(id, `src/${id}.rs`);
+    expect(rowShapes(transcriptOf([read("a")], [{ type: "thinking", thinking: "hm" }, read("b")]))).toEqual([
+      ["m0", "tool a"],
+      ["m1", "thinking", "tool b"],
+    ]);
+    expect(rowShapes(transcriptOf([read("a")], [read("b"), { type: "text", text: "so" }]))).toEqual([
+      ["m0", "tool a"],
+      ["m1", "tool b", "text"],
+    ]);
+    expect(rowShapes(transcriptOf([read("a"), { type: "text", text: "so" }], [read("b")]))).toEqual([
+      ["m0", "tool a", "text"],
+      ["m1", "tool b"],
+    ]);
+    const bash: AssistantContent = { type: "toolCall", id: "x", name: "bash", arguments: { command: "ls" } };
+    expect(rowShapes(transcriptOf([read("a")], [bash], [read("b")]))).toEqual([
+      ["m0", "tool a"],
+      ["m1", "tool x"],
+      ["m2", "tool b"],
+    ]);
+    expect(rowShapes(transcriptOf([read("a")], [readCall("u", "https://example.com")]))).toEqual([
+      ["m0", "tool a"],
+      ["m1", "tool u"],
+    ]);
+    const failed: AgentMessage = { role: "assistant", content: [read("a")], errorMessage: "overloaded" };
+    expect(rowShapes(transcriptOf(failed, [read("b")]))).toEqual([
+      ["m0", "tool a"],
+      ["m1", "tool b"],
+    ]);
+  });
+
+  // spec: UI-765, UI-043, UI-750
+  test("a notice or another day between two messages of reads keeps them apart", () => {
+    const frame: NoticeFrame = { type: "unknown", data: { type: "mystery" } };
+    const reads = transcriptOf([readCall("a", "src/a.rs")], [readCall("b", "src/b.rs")]);
+    expect(rowShapes(reads)).toEqual([["m0", "reads a,b"]]);
+    expect(rowShapes({ ...reads, notices: [{ position: 1, frame }] })).toEqual([
+      ["m0", "tool a"],
+      ["n0", "notice"],
+      ["m1", "tool b"],
+    ]);
+    const days = transcriptOf(
+      { role: "assistant", content: [readCall("a", "src/a.rs")], timestamp: local(12, 23) },
+      { role: "assistant", content: [readCall("b", "src/b.rs")], timestamp: local(13, 1) },
+    );
+    expect(rowShapes(days)).toEqual([
+      ["m0", "tool a"],
+      ["m1", "tool b"],
+    ]);
+  });
+
+  // spec: UI-765, UI-191
+  test("a streamed reply of reads joins the open row, which streams; the item list stays while it grows", () => {
+    const state = transcriptOf(ask, [readCall("a", "src/a.rs")], readResult("a", "1:a"));
+    const streamingWith = (content: AssistantContent[]): ThreadState => ({
+      ...state,
+      streaming: { message_id: "live", message: { role: "assistant", content } },
+    });
+    const composing = streamingWith([{ type: "toolCall", id: "b", name: "read", partialArgs: '{"pa' }]);
+    const live = items(composing);
+    expect(live.map((item) => item.key)).toEqual(["m0", "m1"]);
+    expect(live[1]?.kind.type === "message" && live[1].kind.live).toBe(true);
+    const row = live[1] === undefined ? undefined : rowContent(composing, live[1]);
+    expect(row?.type === "message" && row.streaming).toBe(true);
+    expect(rowShapes(composing)).toEqual([
+      ["m0", "text"],
+      ["m1", "reads a,b"],
+    ]);
+    const written = streamingWith([readCall("b", "src/b.rs")]);
+    expect(items(written)).toBe(live);
+    expect(rowContent(written, live[0] as Item)).toBe(rowContent(composing, live[0] as Item));
+    expect(rowShapes(streamingWith([{ type: "thinking", thinking: "next" }]))).toEqual([
+      ["m0", "text"],
+      ["m1", "tool a"],
+      ["streaming", "thinking"],
+    ]);
   });
 });

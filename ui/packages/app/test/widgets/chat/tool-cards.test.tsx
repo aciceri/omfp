@@ -7,9 +7,10 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { replay } from "@omfp/core";
 import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { type OmfpHost, OPEN_FILES, SELECTED_THREAD } from "../../../src/sdk/index.ts";
-import { type ToolCard, toolCard } from "../../../src/vm/tool.ts";
+import { type CardStatus, type ToolCard, toolCard } from "../../../src/vm/tool.ts";
+import type { MessageView } from "../../../src/vm/transcript.ts";
 import { MessageRow, ToolCardView } from "../../../src/widgets/chat/message.tsx";
 import { type Clock, ClockContext } from "../../../src/widgets/chat/state.ts";
 import { card, cards, streaming } from "../../support/cards.ts";
@@ -610,3 +611,245 @@ describe("opening files from cards", () => {
     expect(opened()?.map((tab) => tab.path)).toEqual([path]);
   });
 });
+
+describe("read group card", () => {
+  /** Renders a reply whose only block is the read group of `reads` in workspace `w1`, as {@link show} does. */
+  function showGroup(reads: ToolCard[], status: CardStatus): HTMLElement {
+    const test = testHost();
+    shownHost = test.host;
+    test.client.connected();
+    test.client.index({
+      workspaces: [workspace("w1", [{ ...repo("w1", "src", "main"), kind: "clone" }])],
+      threads: [thread("t1", "cards", "w1")],
+    });
+    test.host.window.set(SELECTED_THREAD, "t1");
+    renderWithHost(
+      <MessageRow
+        cardKey="m1"
+        streaming={false}
+        continues={false}
+        view={{
+          role: "assistant",
+          label: "Assistant",
+          blocks: [{ type: "readGroup", cards: reads, status }],
+          error: undefined,
+          steering: false,
+        }}
+      />,
+      test,
+    );
+    test.flush();
+    return screen.getByTestId("read-group");
+  }
+
+  /** The three reads of the fixture: a file, a missing file (failed) and a folder. */
+  const reads = () => ["call_read_1", "call_read_2", "call_read_3"].map((id) => card("read_tool_calls", id));
+  const calls = (element: HTMLElement) =>
+    within(element)
+      .queryAllByTestId("tool-card")
+      .map((node) => node.dataset.call);
+
+  // spec: UI-765, UI-052
+  test("collapsed: one head with the count and the run's failed mark; the failed read stays shown with its error", () => {
+    const group = showGroup(reads(), "failed");
+    expect(group.dataset.status).toBe("failed");
+    const head = byTestId(group, "read-group-toggle");
+    expect(head.getAttribute("aria-expanded")).toBe("false");
+    expect(byTestId(group, "read-group-count").textContent).toBe("3 files");
+    expect(within(group).getByRole("region", { name: "Read 3 files" }).dataset.status).toBe("failed");
+    expect(byTestId(group, "read-group-status").textContent).toBe("failed");
+    expect(within(group).queryByTestId("read-group-reads")).toBeNull();
+    expect(calls(group)).toEqual(["call_read_2"]);
+    expect(byTestId(group, "tool-error").textContent).toBe("Path 'src/missing.rs' not found");
+  });
+
+  // spec: UI-765, UI-050
+  test("open: every read in call order with its mark and path, each opening to its own read card", async () => {
+    const group = showGroup(reads(), "failed");
+    await userEvent.click(byTestId(group, "read-group-toggle"));
+    expect(within(group).queryByTestId("read-group-shown")).toBeNull();
+    const list = byTestId(group, "read-group-reads");
+    expect(calls(list)).toEqual(["call_read_1", "call_read_2", "call_read_3"]);
+    expect(
+      within(list)
+        .getAllByTestId("tool-card")
+        .map((node) => node.dataset.status),
+    ).toEqual(["succeeded", "failed", "succeeded"]);
+    expect(texts(list, "tool-path")).toEqual(["src/lib.rs", "src/missing.rs", "src"]);
+    const [first] = within(list).getAllByTestId("tool-card");
+    if (first === undefined) {
+      throw new Error("no read");
+    }
+    expect(within(first).queryByTestId("tool-content")).toBeNull();
+    await userEvent.click(byTestId(first, "toggle"));
+    expect(byTestId(first, "tool-content").textContent).toStartWith("//! Tool card fixture crate.");
+  });
+
+  // spec: UI-765, UI-116
+  test("a read's path with its selector opens the file at its line without toggling it", async () => {
+    const ranged = toolCard(
+      "c4",
+      { type: "toolCall", id: "c4", name: "read", arguments: { path: "src/lib.rs:4-6" } },
+      undefined,
+      {
+        role: "toolResult",
+        toolCallId: "c4",
+        toolName: "read",
+        content: [{ type: "text", text: "4:    left + right" }],
+      },
+      undefined,
+    );
+    const group = showGroup([card("read_tool_calls", "call_read_1"), ranged], "succeeded");
+    await userEvent.click(byTestId(group, "read-group-toggle"));
+    const read = within(group)
+      .getAllByTestId("tool-card")
+      .find((node) => node.dataset.call === "c4");
+    if (read === undefined) {
+      throw new Error("no ranged read");
+    }
+    expect(byTestId(read, "tool-selector").textContent).toBe(":4-6");
+    expect([read.dataset.omfpPath, read.dataset.omfpLine]).toEqual(["src/lib.rs", "4"]);
+    await userEvent.click(byTestId(read, "tool-path-open"));
+    const opened = shownHost?.window.get(OPEN_FILES).w1?.tabs.map(({ path, line }) => ({ path, line }));
+    expect(opened).toEqual([{ path: "src/lib.rs", line: 4 }]);
+    expect(byTestId(read, "toggle").getAttribute("aria-expanded")).toBe("false");
+  });
+
+  // spec: UI-765, UI-473
+  test("collapsed: a read's images stay shown under the head; open, under that read's card only", async () => {
+    const image = toolCard(
+      "c5",
+      { type: "toolCall", id: "c5", name: "read", arguments: { path: "/w/plot.png" } },
+      undefined,
+      {
+        role: "toolResult",
+        toolCallId: "c5",
+        toolName: "read",
+        content: [{ type: "image", data: "iVBORw0KGgo=", mimeType: "image/png" }],
+      },
+      undefined,
+    );
+    const group = showGroup([card("read_tool_calls", "call_read_1"), image], "succeeded");
+    expect(calls(group)).toEqual([]);
+    expect(within(byTestId(group, "read-group-shown")).getAllByTestId("tool-image").length).toBe(1);
+    await userEvent.click(byTestId(group, "read-group-toggle"));
+    expect(within(group).queryByTestId("read-group-shown")).toBeNull();
+    const [read] = within(group).getAllByTestId("tool-images");
+    expect(read?.closest("[data-testid=tool-card]")?.getAttribute("data-call")).toBe("c5");
+  });
+
+  // spec: UI-765, UI-695
+  test("running: the group spins and counts its elapsed time while a read runs", () => {
+    const clock = new ManualClock(1_000);
+    const test = testHost();
+    test.client.connected();
+    test.client.index({ workspaces: [workspace("w1")], threads: [thread("t1", "cards", "w1")] });
+    test.host.window.set(SELECTED_THREAD, "t1");
+    renderWithHost(
+      <ClockContext value={clock}>
+        <MessageRow
+          cardKey="m2"
+          streaming
+          continues={false}
+          view={{
+            role: "assistant",
+            label: "Assistant",
+            blocks: [
+              {
+                type: "readGroup",
+                cards: [card("read_tool_calls", "call_read_1"), streaming("read_tool_calls", "call_read_3")],
+                status: "running",
+              },
+            ],
+            error: undefined,
+            steering: false,
+          }}
+        />
+      </ClockContext>,
+      test,
+    );
+    test.flush();
+    const group = screen.getByTestId("read-group");
+    expect(group.dataset.status).toBe("running");
+    expect(byTestId(group, "read-group-status").textContent).toBe("running");
+    expect(byTestId(group, "read-group-duration").textContent).toBe("0 ms");
+    act(() => clock.advance(1_500));
+    expect(byTestId(group, "read-group-duration").textContent).toBe("1.5 s");
+  });
+
+  /** Renders `ui` in workspace `w1` as {@link show} does. */
+  function render(ui: ReactNode, clock?: Clock): void {
+    const test = testHost();
+    shownHost = test.host;
+    test.client.connected();
+    test.client.index({ workspaces: [workspace("w1")], threads: [thread("t1", "cards", "w1")] });
+    test.host.window.set(SELECTED_THREAD, "t1");
+    renderWithHost(clock === undefined ? ui : <ClockContext value={clock}>{ui}</ClockContext>, test);
+    test.flush();
+  }
+
+  // spec: UI-765, UI-052
+  test("a read opened while it streams alone stays open once a second read turns it into a group", async () => {
+    const first = streaming("read_tool_calls", "call_read_1");
+    render(<GrowingReply first={first} second={streaming("read_tool_calls", "call_read_3")} />);
+    const lone = screen.getByTestId("tool-card");
+    expect(byTestId(lone, "toggle").getAttribute("aria-expanded")).toBe("false");
+    await userEvent.click(byTestId(lone, "toggle"));
+    await userEvent.click(screen.getByTestId("second-read"));
+    const group = screen.getByTestId("read-group");
+    await userEvent.click(byTestId(group, "read-group-toggle"));
+    const read = within(group)
+      .getAllByTestId("tool-card")
+      .find((node) => node.dataset.call === first.toolCallId);
+    expect(read && byTestId(read, "toggle").getAttribute("aria-expanded")).toBe("true");
+  });
+
+  // spec: UI-765, UI-695
+  test("a read running in a collapsed group is observed from then on: opened later, its elapsed time counts from then", async () => {
+    const clock = new ManualClock(1_000);
+    const running = streaming("read_tool_calls", "call_read_3");
+    render(
+      <MessageRow
+        cardKey="m4"
+        streaming
+        continues={false}
+        view={readsReply([card("read_tool_calls", "call_read_1"), running])}
+      />,
+      clock,
+    );
+    act(() => clock.advance(1_500));
+    await userEvent.click(screen.getByTestId("read-group-toggle"));
+    const read = within(screen.getByTestId("read-group-reads"))
+      .getAllByTestId("tool-card")
+      .find((node) => node.dataset.call === running.toolCallId);
+    expect(read && byTestId(read, "tool-duration").textContent).toBe("1.5 s");
+  });
+});
+
+/** A streaming reply of `reads`, its blocks as the view model groups them: a lone read is its own card. */
+function readsReply(reads: ToolCard[]): MessageView {
+  const [only] = reads;
+  return {
+    role: "assistant",
+    label: "Assistant",
+    blocks:
+      reads.length === 1 && only !== undefined
+        ? [{ type: "tool", card: only }]
+        : [{ type: "readGroup", cards: reads, status: "running" }],
+    error: undefined,
+    steering: false,
+  };
+}
+
+/** A streaming reply whose second read arrives on demand, turning its first read's card into a group. */
+function GrowingReply({ first, second }: { first: ToolCard; second: ToolCard }) {
+  const [reads, setReads] = useState([first]);
+  return (
+    <>
+      <button type="button" data-testid="second-read" onClick={() => setReads([first, second])}>
+        second
+      </button>
+      <MessageRow cardKey="m3" streaming continues={false} view={readsReply(reads)} />
+    </>
+  );
+}

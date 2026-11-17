@@ -1085,3 +1085,42 @@ describe("transcript", () => {
     expect(client.subscribed.filter((topic) => topic === `thread/${THREAD}`).length).toBe(1);
   });
 });
+
+describe("read groups", () => {
+  /** Each rendered read group: its state, how many reads it has and the index of its transcript item. */
+  const groups = () =>
+    screen.getAllByTestId("read-group").map((group) => ({
+      status: group.dataset.status,
+      count: group.dataset.count,
+      item: group.closest<HTMLElement>("[data-testid=transcript-item]")?.dataset.index,
+    }));
+
+  // spec: UI-765, UI-095
+  test("one read per message in a turn is one item: its group, which j and k move over as one", () => {
+    const { host } = renderThread(<TranscriptWidget />, fixtureEvents("read_tool_calls"));
+    expect(screen.getAllByTestId("transcript-item").length).toBe(3);
+    expect(groups()).toEqual([{ status: "failed", count: "3", item: "1" }]);
+    const element = transcript();
+    act(() => element.focus());
+    const run = (id: string) => act(() => void host.commands.run(id, [], scopesAt(document.activeElement)));
+    const current = () => document.activeElement?.getAttribute("data-index");
+    run("nav.top");
+    run("nav.next");
+    expect(current()).toBe("1");
+    run("nav.next");
+    expect(current()).toBe("2");
+  });
+
+  // spec: UI-765, UI-191
+  test("a read being streamed joins the group above it, which streams, instead of a row of its own", () => {
+    const events = fixtureEvents("read_tool_calls");
+    const second = events.findIndex(
+      (event, index) => index > events.findIndex(isFrame("tool_execution_end")) && isFrame("message_update")(event),
+    );
+    renderThread(<TranscriptWidget />, events.slice(0, second + 2));
+    expect(screen.getAllByTestId("transcript-item").length).toBe(2);
+    expect(groups()).toEqual([{ status: "running", count: "2", item: "1" }]);
+    const message = screen.getByTestId("read-group").closest<HTMLElement>("[data-testid=message]");
+    expect(message?.dataset.streaming).toBe("true");
+  });
+});

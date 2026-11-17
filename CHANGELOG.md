@@ -23,6 +23,10 @@ The version's section is also the source of the GitHub release notes.
   with their state or next time, a press opening that job in `omfp:jobs`, with Run or Stop on hover.
 - The default view has the MCP servers (`omfp:mcp`) as a side tab after Background. Workspaces that already have a
   `.omfp/views.json` keep it: `:widget add omfp:mcp` adds the tab there.
+- Consecutive file reads show as one `read N files` card instead of a card per file, also when the agent reads one
+  file per reply, as long as nothing else shows between the reads: it spins while any read runs and is marked failed
+  when one failed, which stays visible while the group is collapsed; open, it lists each read with its path (and line
+  range), which opens the file, and each read opens to its output.
 
 ## 0.2.1 — 2026-11-17
 

@@ -345,6 +345,43 @@
     color: var(--omfp-on-surface);
   }
 
+  /* A read's path and its selector in a read group (UI-765): `src/lib.rs:10-20`, the selector muted. */
+  .omfp-tool-card__target {
+    display: inline-flex;
+    align-items: center;
+    min-inline-size: 0;
+  }
+
+  .omfp-tool-card__selector {
+    flex: none;
+    font-family: var(--omfp-font-code);
+    color: var(--omfp-on-surface-variant);
+  }
+
+  /* A read group (UI-765): open, its reads' cards in a padded column; collapsed, its failed reads and its reads'
+     images under the head. */
+  .omfp-read-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--omfp-s1);
+  }
+
+  .omfp-read-group__reads {
+    display: flex;
+    flex-direction: column;
+    gap: var(--omfp-s1);
+    margin: 0;
+    padding: var(--omfp-s2) var(--omfp-s3);
+    list-style: none;
+  }
+
+  .omfp-read-group__shown {
+    display: flex;
+    flex-direction: column;
+    gap: var(--omfp-s1);
+    padding-inline-start: var(--omfp-s3);
+  }
+
   .omfp-tool-card__section {
     display: flex;
     flex-direction: column;

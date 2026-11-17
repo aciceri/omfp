@@ -102,6 +102,33 @@ describe("the conversation as Markdown", () => {
     expect(messageMarkdown(messageView(state, 0))).toBe("**Tool ``a`b``** (pending)");
   });
 
+  // spec: UI-792, UI-765
+  test("reads grouped into one card stay one line each, with their results", () => {
+    const read = (id: string): AgentMessage => ({
+      role: "assistant",
+      content: [{ type: "toolCall", id, name: "read", arguments: { path: `src/${id}.rs` } }],
+    });
+    const result = (id: string): AgentMessage => ({
+      role: "toolResult",
+      toolCallId: id,
+      toolName: "read",
+      content: [{ type: "text", text: `fn ${id}() {}` }],
+    });
+    const state = conversation([{ role: "user", content: "read" }, read("a"), result("a"), read("b"), result("b")]);
+    expect(conversationMarkdown(state, "Reads")).toBe(
+      `${[
+        "# Reads",
+        "## You",
+        "read",
+        "## Assistant",
+        "**Tool `read`** (done)",
+        "```\nfn a() {}\n```",
+        "**Tool `read`** (done)",
+        "```\nfn b() {}\n```",
+      ].join("\n\n")}\n`,
+    );
+  });
+
   // spec: UI-791
   test("the exported file is named after the title", () => {
     expect(exportFileName("Fix the parser: ü & “quotes”!")).toBe("fix-the-parser-ü-quotes.md");

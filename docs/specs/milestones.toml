@@ -1220,6 +1220,8 @@ requirements = [
   "UI-791",
   "UI-792",
   "UI-793",
+  # Consecutive reads of one message grouped into one card (#147)
+  "UI-765",
 ]
 
 [M18]

@@ -40,6 +40,9 @@ export const chat = {
   tool: {
     fallbackName: "tool",
     label: (name: string) => `Tool ${name}`,
+    /** A run of consecutive reads shown as one card (UI-765): its label and the count in its head. */
+    readGroup: (count: number) => `Read ${count} files`,
+    readGroupFiles: (count: number) => `${count} files`,
     result: "Result",
     status: {
       composing: "writing arguments",

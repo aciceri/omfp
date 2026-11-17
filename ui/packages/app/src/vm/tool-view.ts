@@ -56,6 +56,8 @@ export type ToolView =
   | {
       readonly kind: "read";
       readonly path: string;
+      /** The selector the path was given with (`50-80`), shown after it in a read group (UI-765). */
+      readonly selector: string | undefined;
       /** The selector of the path (`50-80`), else the lines omp returned (`1–9 of 9`). */
       readonly range: string | undefined;
       /** The first line it read (the selector's, else the first line omp returned), where the file opens. */
@@ -306,6 +308,7 @@ export function toolView(
       return {
         kind: "read",
         path,
+        selector,
         range:
           selector ??
           (first !== undefined && last !== undefined && total !== undefined

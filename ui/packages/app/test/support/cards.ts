@@ -2,16 +2,19 @@
 
 import type { ThreadState } from "@omfp/core";
 import type { ToolCard } from "../../src/vm/tool.ts";
-import { items, messageView } from "../../src/vm/transcript.ts";
+import { items, rowContent } from "../../src/vm/transcript.ts";
 import { type FixtureName, fixture, fixtureUntil, isToolEnd } from "../widgets/chat/fixtures.ts";
 
-/** Every tool card of the transcript of `state`, in order. */
+/** Every tool card of the transcript's rows of `state`, in order, those of read groups (UI-765) included. */
 export function cards(state: ThreadState): ToolCard[] {
-  return items(state).flatMap((item) =>
-    item.kind.type === "message"
-      ? messageView(state, item.kind.index).blocks.flatMap((block) => (block.type === "tool" ? [block.card] : []))
-      : [],
-  );
+  return items(state).flatMap((item) => {
+    const content = rowContent(state, item);
+    return content?.type === "message"
+      ? content.view.blocks.flatMap((block) =>
+          block.type === "tool" ? [block.card] : block.type === "readGroup" ? block.cards : [],
+        )
+      : [];
+  });
 }
 
 function find(state: ThreadState, id: string, where: string): ToolCard {

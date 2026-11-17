@@ -63,6 +63,7 @@ describe("read card", () => {
     expect(view(running, "read")).toEqual({
       kind: "read",
       path: "src/lib.rs",
+      selector: undefined,
       range: undefined,
       line: undefined,
       language: "rust",

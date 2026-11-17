@@ -160,3 +160,26 @@ export function useObservedElapsed(key: string, active: boolean): number | undef
   }
   return Math.max(0, now - startedAt);
 }
+
+/**
+ * Records when each of the live items `keys` was first observed in this window, as {@link useObservedElapsed} does,
+ * for items not rendered yet: the reads of a collapsed read group (UI-765), whose elapsed time then counts from there.
+ */
+export function useObserved(keys: readonly string[]): void {
+  const clock = useClock();
+  const [observedAt, setObservedAt] = useWindowState(OBSERVED_AT);
+  // One string, so the effect runs again only when the set of keys not observed yet changes.
+  const unobserved = keys.filter((key) => observedAt[key] === undefined).join("\n");
+  useEffect(() => {
+    if (unobserved === "") {
+      return;
+    }
+    const observed = clock.now();
+    setObservedAt((previous) => {
+      const added = unobserved.split("\n").filter((key) => previous[key] === undefined);
+      return added.length === 0
+        ? previous
+        : { ...previous, ...Object.fromEntries(added.map((key) => [key, observed])) };
+    });
+  }, [clock, unobserved, setObservedAt]);
+}

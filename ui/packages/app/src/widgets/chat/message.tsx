@@ -26,7 +26,7 @@ import {
   useUrlActions,
 } from "omfp/sdk";
 import { memo, type ReactNode, useCallback } from "react";
-import { useExpanded, useObservedElapsed } from "./state.ts";
+import { useExpanded, useObserved, useObservedElapsed } from "./state.ts";
 import { fileTarget, ToolBody, ToolImages, ToolSubject } from "./tool-cards.tsx";
 
 const text = strings.chat;
@@ -62,6 +62,7 @@ export function MessageRow({
       // Blocks only grow at the end while streaming, so the index is a stable key.
       // biome-ignore lint/suspicious/noArrayIndexKey: see above
       key={index}
+      rowKey={cardKey}
       cardKey={blockCardKey(cardKey, block, index)}
       role={view.role}
       block={block}
@@ -104,20 +105,40 @@ export function MessageRow({
 }
 
 /** The key of the collapsible block at `index` of the message `cardKey`: a thinking block's own key when it has one
- * (UI-694), else its position. */
+ * (UI-694), a tool card's by its call, a read group's by its first call (UI-765), else its position. */
 export function blockCardKey(cardKey: string, block: Block, index: number): string {
-  return block.type === "thinking" && block.key !== undefined ? block.key : `${cardKey}/${index}`;
+  switch (block.type) {
+    case "thinking":
+      return block.key ?? `${cardKey}/${index}`;
+    case "tool":
+      return toolCardKey(cardKey, block.card.toolCallId, `${cardKey}/${index}`);
+    case "readGroup":
+      return `${cardKey}/reads/${block.cards[0]?.toolCallId ?? index}`;
+    default:
+      return `${cardKey}/${index}`;
+  }
+}
+
+/**
+ * The key of the card of call `toolCallId` in the message `rowKey`, `fallback` for a call without an id: the same
+ * whether the card stands alone or a read group shows it (UI-765), so a read keeps its disclosure when it joins one.
+ */
+function toolCardKey(rowKey: string, toolCallId: string, fallback: string): string {
+  return toolCallId === "" ? fallback : `${rowKey}/call/${toolCallId}`;
 }
 
 /** One block; renders again only when the block changes (the view model keeps unchanged blocks, UI-191), so a
  * streaming delta renders the growing block only. */
 const BlockView = memo(function BlockView({
+  rowKey,
   cardKey,
   role,
   block,
   streaming,
   last,
 }: {
+  /** The message's key, which its tool cards' keys start with. */
+  rowKey: string;
   cardKey: string;
   role: Role;
   block: Block;
@@ -158,6 +179,8 @@ const BlockView = memo(function BlockView({
       );
     case "tool":
       return <ToolCardView cardKey={cardKey} card={block.card} />;
+    case "readGroup":
+      return <ReadGroupView rowKey={rowKey} cardKey={cardKey} group={block} />;
     case "record":
       return <RecordBlock cardKey={cardKey} summary={block.summary} json={block.json} />;
   }
@@ -229,12 +252,13 @@ function markStatus(status: Card["status"]): ToolStatus {
 
 /** A tool card (UI-050, UI-163): collapsible, failed cards distinct and expanded by default (UI-052); tools with a
  * recorded shape show their specialized body, others the fallback's arguments and result. The result's images show
- * under it, open or not (UI-473). */
-export function ToolCardView({ cardKey, card }: { cardKey: string; card: Card }) {
+ * under it, open or not (UI-473). In a read group (`grouped`) a read's head adds its path's selector (UI-765). */
+export function ToolCardView({ cardKey, card, grouped = false }: { cardKey: string; card: Card; grouped?: boolean }) {
   const [expanded, setExpanded] = useExpanded(cardKey, expandedByDefault(card));
   // `:open` on the focused card opens its file (UI-116).
   const target = fileTarget(card.view);
   const exitCode = card.view.kind === "bash" ? card.view.exitCode : undefined;
+  const selector = grouped && card.view.kind === "read" ? card.view.selector : undefined;
   return (
     <div
       data-omfp-path={target?.path}
@@ -255,7 +279,16 @@ export function ToolCardView({ cardKey, card }: { cardKey: string; card: Card })
         onExpandedChange={setExpanded}
         arg={
           <>
-            <ToolSubject view={card.view} />
+            {selector === undefined ? (
+              <ToolSubject view={card.view} />
+            ) : (
+              <span className="omfp-tool-card__target">
+                <ToolSubject view={card.view} />
+                <span className="omfp-tool-card__selector" data-testid="tool-selector">
+                  :{selector}
+                </span>
+              </span>
+            )}
             <span className="omfp-tool-card__summary" data-testid="tool-summary">
               {card.summary}
             </span>
@@ -267,6 +300,97 @@ export function ToolCardView({ cardKey, card }: { cardKey: string; card: Card })
       </ToolCard>
       {card.images.length > 0 && <ToolImages card={card} />}
     </div>
+  );
+}
+
+/**
+ * Consecutive `read` calls as one card (UI-765): `read N files` with the run's state mark (running while any read
+ * runs, else failed when any failed), collapsed by default; open, the reads in call order, each its own read card
+ * (status mark, path and selector opening the file at its line, UI-116) that opens to its output, under the key it
+ * has alone in the message `rowKey`. A failed read and a read's images stay shown under the collapsed group, and its
+ * live reads are observed while it is collapsed (UI-695).
+ */
+export function ReadGroupView({
+  rowKey,
+  cardKey,
+  group,
+}: {
+  rowKey: string;
+  cardKey: string;
+  group: Extract<Block, { type: "readGroup" }>;
+}) {
+  const [expanded, setExpanded] = useExpanded(cardKey, false);
+  const count = group.cards.length;
+  const readKey = (card: Card, index: number) => toolCardKey(rowKey, card.toolCallId, `${cardKey}/${index}`);
+  const failed = group.cards.flatMap((card, index) => (card.status === "failed" ? [{ card, index }] : []));
+  const images = group.cards.filter((card) => card.status !== "failed" && card.images.length > 0);
+  // A read's card counts its elapsed time from when it was first observed (`ToolMeta`'s key), even if not shown yet.
+  useObserved(
+    group.cards.flatMap((card) =>
+      card.status === "composing" || card.status === "pending" || card.status === "running"
+        ? [`tool/${card.toolCallId}`]
+        : [],
+    ),
+  );
+  return (
+    <div className="omfp-read-group" data-testid="read-group" data-status={group.status} data-count={count}>
+      <ToolCard
+        aria-label={text.tool.readGroup(count)}
+        status={markStatus(group.status)}
+        name="read"
+        headTestId="read-group-toggle"
+        expanded={expanded}
+        onExpandedChange={setExpanded}
+        arg={
+          <span className="omfp-tool-card__summary" data-testid="read-group-count">
+            {text.tool.readGroupFiles(count)}
+          </span>
+        }
+        meta={<ReadGroupMeta cardKey={cardKey} group={group} />}
+      >
+        <ul className="omfp-read-group__reads" data-testid="read-group-reads">
+          {group.cards.map((card, index) => (
+            <li key={card.toolCallId}>
+              <ToolCardView cardKey={readKey(card, index)} card={card} grouped />
+            </li>
+          ))}
+        </ul>
+      </ToolCard>
+      {!expanded && (failed.length > 0 || images.length > 0) && (
+        <div className="omfp-read-group__shown" data-testid="read-group-shown">
+          {failed.map(({ card, index }) => (
+            <ToolCardView key={card.toolCallId} cardKey={readKey(card, index)} card={card} grouped />
+          ))}
+          {images.map((card) => (
+            <ToolImages key={card.toolCallId} card={card} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** A read group's head metadata: its state for assistive technology and its live or settled duration (UI-695). */
+function ReadGroupMeta({
+  cardKey,
+  group,
+}: {
+  cardKey: string;
+  group: Extract<Block, { type: "readGroup" }>;
+}): ReactNode {
+  const observed = useObservedElapsed(`tool/${cardKey}`, group.status === "running");
+  const settled = group.cards.map((card) => card.durationMs ?? 0);
+  const duration =
+    group.status === "running" || group.cards.every((card) => card.durationMs === undefined)
+      ? observed
+      : Math.max(...settled);
+  return (
+    <>
+      <span className="omfp-visually-hidden" data-testid="read-group-status">
+        {text.tool.status[group.status]}
+      </span>
+      {duration !== undefined && <span data-testid="read-group-duration">{formatDuration(duration)}</span>}
+    </>
   );
 }
 

@@ -69,6 +69,9 @@ function blockMarkdown(block: Block): string {
       return `*${text.image(block.mime)}*`;
     case "tool":
       return toolMarkdown(block.card);
+    case "readGroup":
+      // A read group (UI-765) is its reads, each one line with its result like any call.
+      return block.cards.map(toolMarkdown).join("\n\n");
     case "record":
       return block.summary;
   }

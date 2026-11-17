@@ -66,8 +66,9 @@ export interface ThreadActions {
    * Has omp compact the thread's context, with `instructions` (trimmed; blank: none) as the focus of its summary, then
    * shows a success toast (UI-910, UI-911). Without `mode` through `thread.compact`; with one (`soft`, `remote`,
    * `snapcompact`, which takes no focus) by sending omp's `/compact <mode> [focus]` as a prompt, whose outcome omp
-   * reports in the transcript (UI-913). Refused with an error toast while the thread works (its summary is not
-   * settled); a failure is reported. Resolves to whether omp compacted (with a mode: took the command).
+   * reports in the transcript: a neutral toast then says it started (UI-913). Refused with an error toast while the
+   * thread works (its summary is not settled); a failure is reported. Resolves to whether omp compacted (with a mode:
+   * took the command).
    */
   compact(threadId: string, instructions?: string, mode?: CompactMode): Promise<boolean>;
 }
@@ -107,6 +108,13 @@ export function reportSuccess(host: OmfpHost, text: string): void {
   host.window.set(SUCCESSES, (shown) => [...shown, { key: (shown.at(-1)?.key ?? 0) + 1, text }]);
   host.announcer.announce(text);
   host.notices.remember("success", text);
+}
+
+/** A user action omp took whose outcome shows elsewhere (UI-913): as {@link reportSuccess}, but a neutral toast. */
+function reportTaken(host: OmfpHost, text: string): void {
+  host.window.set(SUCCESSES, (shown) => [...shown, { key: (shown.at(-1)?.key ?? 0) + 1, text, tone: "info" as const }]);
+  host.announcer.announce(text);
+  host.notices.remember("info", text);
 }
 
 /** Asks the frame to log in (UI-382): to `providerId` at once, else through its provider picker. */
@@ -392,7 +400,7 @@ async function compactThread(
     if (mode !== undefined) {
       // omp's RPC `compact` takes no mode; its `/compact` builtin, sent as a prompt, does (UI-913).
       await host.client.call("thread.prompt", { threadId, text: compactPrompt(mode, focus) });
-      reportSuccess(host, text.started(mode));
+      reportTaken(host, text.started(mode));
       return true;
     }
     const result = await host.client.call("thread.compact", {

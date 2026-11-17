@@ -25,6 +25,14 @@ The version's section is also the source of the GitHub release notes.
   the page: oh-my-pi reports an address only when a tab is opened or sent somewhere with `goto`, so the box now says
   "It may have left this address since" with the call that may have moved it, until a later call reports one.
 
+### Fixed
+
+- The header's context meter refreshes when a turn ends and after every compaction, manual or automatic, instead of
+  only when the thread is selected again (#168).
+- `:compact <mode>` (and `/compact soft`, …) on a thread that is already compacted shows one
+  `Compaction skipped: <reason>` row instead of a second `Compaction failed: <reason>` one, and its toast, which only
+  says the compaction started, no longer carries a success mark (#169).
+
 ## 0.3.0 — 2026-11-17
 
 ### Added

@@ -1,8 +1,9 @@
 /** L1: the thread header's view-model (port of the Dioxus `vm/header.rs` tests). */
 
 import { describe, expect, test } from "bun:test";
-import { emptyThreadState, replay, type ThreadState } from "@omfp/core";
+import { emptyThreadState, replay, type ThreadEvent, type ThreadState } from "@omfp/core";
 import {
+  compactionsEnded,
   costLabel,
   decodeModels,
   decodeSession,
@@ -230,5 +231,22 @@ describe("header", () => {
     expect(decodeModels(null)).toEqual([]);
     expect(decodeThinkingLevels({ levels: "high" })).toEqual([]);
     expect(decodeSession("x")).toEqual({ model: undefined, thinkingLevel: undefined, contextUsage: undefined });
+  });
+
+  // spec: UI-030
+  test("the compactions that ended, automatic or manual and whatever their outcome, count; their starts do not", () => {
+    const events: ThreadEvent[] = [
+      { kind: "omp", frame: { type: "manual_compaction_start" } },
+      { kind: "omp", frame: { type: "manual_compaction_end", aborted: false, skipped: true, errorMessage: "x" } },
+      { kind: "omp", frame: { type: "auto_compaction_start", reason: "threshold", action: "context-full" } },
+      {
+        kind: "omp",
+        frame: { type: "auto_compaction_end", action: "context-full", aborted: false, willRetry: false },
+      },
+    ];
+    expect(compactionsEnded(emptyThreadState().notices)).toBe(0);
+    const { notices } = replay(events);
+    expect(compactionsEnded(notices)).toBe(2);
+    expect(compactionsEnded(notices)).toBe(2);
   });
 });

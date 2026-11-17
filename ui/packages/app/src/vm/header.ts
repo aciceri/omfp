@@ -273,6 +273,25 @@ export function formatCost(cost: number): string {
   return cost < 1 ? `$${cost.toFixed(4)}` : `$${cost.toFixed(2)}`;
 }
 
+/** Counts per notices array: the header asks on every event, the notices change per notice. */
+const COMPACTIONS = new WeakMap<ThreadState["notices"], number>();
+
+/**
+ * How many compactions, automatic or manual, the thread's notices saw end: the header reads the context usage again
+ * when it changes (UI-030), whatever their outcome.
+ */
+export function compactionsEnded(notices: ThreadState["notices"]): number {
+  const known = COMPACTIONS.get(notices);
+  if (known !== undefined) {
+    return known;
+  }
+  const count = notices.filter(
+    ({ frame }) => frame.type === "auto_compaction_end" || frame.type === "manual_compaction_end",
+  ).length;
+  COMPACTIONS.set(notices, count);
+  return count;
+}
+
 /** The model a thread whose start failed resumes with (UI-751): `thread.session`'s `model`, the one set on the thread
  * (omp then starts with it), else its `sessionModel`, the one its session file saved (DMN-338). */
 export function savedModel(session: Pick<ThreadSession, "model" | "sessionModel">): string | undefined {

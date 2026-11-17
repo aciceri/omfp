@@ -108,3 +108,35 @@ function compactionEnd(aborted: boolean, skipped: boolean | undefined, error: st
   }
   return row("compaction", "info", text.compacted);
 }
+
+/**
+ * Whether `notices[index]` is the output omp's `/compact` command prints for a compaction it skipped (`Compaction
+ * failed: <reason>`, omp 18.22.0): the skipped row just before it already says why, so the transcript leaves it out
+ * (UI-911). Only when the latest compaction end or command output before it is that skipped end, with the same reason.
+ */
+export function repeatsSkippedCompaction(notices: readonly { readonly frame: NoticeFrame }[], index: number): boolean {
+  const frame = notices[index]?.frame;
+  if (frame?.type !== "command_output") {
+    return false;
+  }
+  for (let before = index - 1; before >= 0; before--) {
+    const earlier = notices[before]?.frame;
+    switch (earlier?.type) {
+      case "auto_compaction_end":
+      case "manual_compaction_end": {
+        const { skipped, errorMessage } = earlier.data;
+        return (
+          skipped === true && errorMessage !== undefined && frame.data.text === `${OMP_COMPACT_FAILED}${errorMessage}`
+        );
+      }
+      case "command_output":
+        return false;
+      default:
+        break;
+    }
+  }
+  return false;
+}
+
+/** How omp's `/compact` command starts its output for a compaction that did not happen. */
+const OMP_COMPACT_FAILED = "Compaction failed: ";

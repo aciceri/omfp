@@ -23,7 +23,7 @@ import type {
 } from "@omfp/core";
 import { isObject } from "../sdk/json.ts";
 import { strings } from "../strings/index.ts";
-import { type NoticeRow, noticeRow } from "./notice.ts";
+import { type NoticeRow, noticeRow, repeatsSkippedCompaction } from "./notice.ts";
 import { type SystemRow, systemMessage, systemNotice } from "./system.ts";
 import { type CardStatus, oneLine, prettyJson, type ToolCard, toolCard } from "./tool.ts";
 
@@ -164,7 +164,8 @@ function endsWithRead(message: AssistantMessage): boolean {
 /**
  * The transcript's rows in order: each notice goes after the messages that preceded it, tool results shown inside
  * their call's card are left out, and the streaming reply comes last; each message and the streaming reply say
- * whether they continue their turn (UI-470). Informational xdev notices are hidden unless opted in (UI-043).
+ * whether they continue their turn (UI-470). Informational xdev notices are hidden unless opted in (UI-043); omp's
+ * `/compact` output repeating the skipped compaction before it always is (UI-911).
  * An assistant message showing only reads joins the row before it when that row ends with reads and nothing came
  * between them (a notice, a record, a day separator), and so does the streaming reply (UI-765).
  * The same array while the transcript, notices, streaming flags and visibility setting stay the same.
@@ -189,6 +190,9 @@ export function items(state: ThreadState, showXdevNotices = false): readonly Ite
     for (; notice < state.notices.length && (state.notices[notice]?.position ?? 0) <= position; notice++) {
       const entry = state.notices[notice];
       if (!showXdevNotices && entry !== undefined && systemNotice(entry.frame) !== undefined) {
+        continue;
+      }
+      if (repeatsSkippedCompaction(state.notices, notice)) {
         continue;
       }
       result.push({ key: `n${notice}`, kind: { type: "notice", index: notice } });

@@ -93,6 +93,7 @@ export {
   workspaceFilePath,
 } from "../vm/files.ts";
 export {
+  compactionsEnded,
   costLabel,
   decodeModels,
   decodeSession,

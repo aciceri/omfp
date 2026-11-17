@@ -29,6 +29,7 @@ import {
 } from "omfp/kit";
 import {
   AUTH_REVISION,
+  compactionsEnded,
   costLabel,
   DRAFT_THREAD,
   type DraftThread,
@@ -60,6 +61,7 @@ import {
   useHost,
   useReportError,
   useRunningInBackground,
+  useSnapshot,
   useThreadActions,
   useThreadCost,
   useThreadSummary,
@@ -248,8 +250,9 @@ function More({
 }
 
 /** Reads thread details while running, otherwise discovers models without starting a thread; after a failed start, the
- * model it resumes with (`thread.session`, UI-751). Login/logout changes refresh either list; the function refreshes a
- * thread's session after a model or thinking change. */
+ * model it resumes with (`thread.session`, UI-751). Login/logout changes refresh either list; the session (model,
+ * thinking and context usage) is read again whenever the thread settles or starts working and whenever a compaction
+ * ends (UI-030); the function refreshes it after a model or thinking change. */
 function useThreadDetails(
   threadId: string | undefined,
   process: ThreadSummary["process"]["state"] | undefined,
@@ -261,6 +264,13 @@ function useThreadDetails(
   const report = useReportError();
   const running = process === "running";
   const failed = process === "failed";
+  const settled = useSnapshot((snapshot) =>
+    threadId === undefined ? undefined : snapshot.index.threads.get(threadId)?.settled,
+  );
+  const compactions = useSnapshot((snapshot) => {
+    const notices = threadId === undefined ? undefined : snapshot.threads.get(threadId)?.state.notices;
+    return notices === undefined ? 0 : compactionsEnded(notices);
+  });
   useEffect(() => {
     // Read again on every login or logout.
     void authRevision;
@@ -276,7 +286,7 @@ function useThreadDetails(
     void request.then(
       (fetched) => {
         if (live) {
-          setDetails((previous) => ({ ...fetched, session: running ? fetched.session : previous.session }));
+          setDetails((previous) => ({ ...fetched, session: previous.session }));
         }
       },
       (error: unknown) => {
@@ -289,6 +299,28 @@ function useThreadDetails(
       live = false;
     };
   }, [call, threadId, running, authRevision, report]);
+  useEffect(() => {
+    // Read again on every login or logout, turn boundary and compaction: omp sends no event with the context usage.
+    void authRevision;
+    void settled;
+    void compactions;
+    if (!running || threadId === undefined) {
+      return;
+    }
+    let live = true;
+    call("thread.state", { threadId }).then(
+      (session) => {
+        if (live) {
+          setDetails((previous) => ({ ...previous, session: decodeSession(session) }));
+        }
+      },
+      // Without it the header keeps what it showed.
+      () => {},
+    );
+    return () => {
+      live = false;
+    };
+  }, [call, threadId, running, authRevision, settled, compactions]);
   useEffect(() => {
     setSaved(undefined);
     if (!failed || threadId === undefined) {
@@ -320,14 +352,14 @@ function useThreadDetails(
   return [{ ...details, saved }, refresh];
 }
 
+/** The models and thinking levels of a running thread; its session has a read of its own. */
 async function fetchDetails(call: SdkClient["call"], threadId: string): Promise<ThreadDetails> {
-  const [session, models, levels] = await Promise.allSettled([
-    call("thread.state", { threadId }),
+  const [models, levels] = await Promise.allSettled([
     call("thread.models", { threadId }),
     call("thread.thinking_levels", { threadId }),
   ]);
   return {
-    session: session.status === "fulfilled" ? decodeSession(session.value) : undefined,
+    session: undefined,
     models: models.status === "fulfilled" ? decodeModels(models.value) : [],
     modelsLoaded: models.status === "fulfilled",
     thinkingLevels: levels.status === "fulfilled" ? decodeThinkingLevels(levels.value) : [],

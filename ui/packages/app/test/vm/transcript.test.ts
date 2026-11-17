@@ -73,6 +73,26 @@ describe("transcript items", () => {
     expect(items(state).map((item) => item.key)).toEqual(["m0", "n0", "m1", "n1", "n2"]);
   });
 
+  // spec: UI-911, UI-913
+  test("omp's `/compact` output repeating the skipped compaction before it is left out; other outputs stay", () => {
+    const skipped: NoticeFrame = {
+      type: "manual_compaction_end",
+      data: { aborted: false, skipped: true, errorMessage: "Already compacted" },
+    };
+    const repeat: NoticeFrame = { type: "command_output", data: { text: "Compaction failed: Already compacted" } };
+    const failed: NoticeFrame = {
+      type: "manual_compaction_end",
+      data: { aborted: false, errorMessage: "No model available" },
+    };
+    const other: NoticeFrame = { type: "command_output", data: { text: "Compaction failed: No model available" } };
+    const state: ThreadState = {
+      ...fixture("text_reply"),
+      notices: [skipped, repeat, failed, other, repeat, skipped, repeat].map((frame) => ({ position: 2, frame })),
+    };
+    // The first and last repeats follow a skipped end; the middle one follows another command output.
+    expect(items(state).map((item) => item.key)).toEqual(["m0", "m1", "n0", "n2", "n3", "n4", "n5"]);
+  });
+
   // spec: UI-043
   test("new and retained xdev info notices stay in state but only appear while opted in", () => {
     const mounted: ThreadEvent = {

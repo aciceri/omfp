@@ -37,8 +37,9 @@ export function ConnectionBanner(): ReactNode {
 /**
  * The frame's one toast stack (bottom right): errors of failed actions as error toasts (UI-160), each staying until
  * dismissed — when omp says it needs a login, a short sentence with Log in and omp's own output under Details (UI-387,
- * UI-451) —, actions that worked as success toasts going by themselves (UI-385), the running login (UI-383; one this
- * window did not start too, UI-640), then the URLs omp opened (UI-346) and the page of a login started elsewhere.
+ * UI-451) —, actions that worked as success toasts going by themselves (UI-385; neutral ones for an action whose
+ * outcome shows elsewhere, UI-913), the running login (UI-383; one this window did not start too, UI-640), then the
+ * URLs omp opened (UI-346) and the page of a login started elsewhere.
  */
 export function Toasts(): ReactNode {
   const host = useHost();
@@ -98,7 +99,7 @@ export function Toasts(): ReactNode {
       {successes.map((success) => (
         <Toast
           key={success.key}
-          tone="success"
+          tone={success.tone ?? "success"}
           data-testid="success"
           dismissLabel={strings.shell.frame.dismiss}
           onDismiss={() => setSuccesses((all) => all.filter((other) => other.key !== success.key))}

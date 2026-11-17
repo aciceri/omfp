@@ -221,6 +221,48 @@ describe("omfp:header", () => {
   });
 
   // spec: UI-030
+  test("the context usage is read again when a turn settles and when a compaction ends, not only on selection", async () => {
+    const test = setup();
+    const usage = () => screen.getByTestId("context-usage").textContent;
+    await waitFor(() => expect(usage()).toBe("84k/200k"));
+    const contextAt = (percent: number) =>
+      test.client.answers.set("thread.state", () => ({
+        sessionId: "s",
+        model: opus,
+        thinkingLevel: "high",
+        contextUsage: { tokens: 1, contextWindow: 200_000, percent },
+      }));
+    const settled = (value: boolean) => {
+      test.client.index({
+        workspaces: [workspace("w1", [repo("w1", "fe", "main")])],
+        threads: [thread("t1", "checkout", "w1", { settled: value })],
+      });
+      test.flush();
+    };
+    test.client.thread("t1", []);
+    test.flush();
+    settled(false);
+    contextAt(60);
+    settled(true);
+    await waitFor(() => expect(usage()).toBe("120k/200k"));
+    contextAt(10);
+    test.client.threadEvents(
+      "t1",
+      { kind: "omp", frame: { type: "manual_compaction_start" } },
+      { kind: "omp", frame: { type: "manual_compaction_end", aborted: false } },
+    );
+    test.flush();
+    await waitFor(() => expect(usage()).toBe("20k/200k"));
+    contextAt(30);
+    test.client.threadEvents("t1", {
+      kind: "omp",
+      frame: { type: "auto_compaction_end", action: "context-full", aborted: false, willRetry: false },
+    });
+    test.flush();
+    await waitFor(() => expect(usage()).toBe("60k/200k"));
+  });
+
+  // spec: UI-030
   test("sending waits for the selected model to be applied without losing the first message", async () => {
     const base = testHost();
     answer(base.client);

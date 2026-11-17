@@ -3,8 +3,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { CallError } from "@omfp/client";
 import type { ThreadSummary } from "@omfp/protocol";
-import { act, cleanup, waitFor } from "@testing-library/react";
+import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import { GlobalCommands } from "../../src/frame/commands.tsx";
+import { Toasts } from "../../src/frame/status.tsx";
 import { DEFAULT_BINDINGS } from "../../src/keymap/keymap.ts";
 import { ERRORS, type OmfpHost, SELECTED_THREAD, SUCCESSES } from "../../src/sdk/index.ts";
 import { thread, workspace } from "../support/fixtures.ts";
@@ -16,7 +17,10 @@ function setup(summary: ThreadSummary = thread("t1", "checkout", "w1")) {
   const base = testHost();
   base.host.window.set(SELECTED_THREAD, summary.id);
   const test = renderWithHost(
-    <GlobalCommands viewIds={[]} currentView={undefined} widgets={[]} addWidget={() => Promise.resolve(false)} />,
+    <>
+      <GlobalCommands viewIds={[]} currentView={undefined} widgets={[]} addWidget={() => Promise.resolve(false)} />
+      <Toasts />
+    </>,
     base,
   );
   test.client.connected();
@@ -40,6 +44,7 @@ describe(":compact", () => {
       expect(test.host.commands.run("compact", ["keep", "the", "API", "decisions"])).toBe(true);
     });
     await waitFor(() => expect(successes(test.host)).toEqual(["Compacted the context (it held 123k tokens)"]));
+    expect(screen.getByTestId("success").dataset.tone).toBe("success");
     expect(test.client.callsTo("thread.compact").map((call) => call.params)).toEqual([
       { threadId: "t1", instructions: "keep the API decisions" },
     ]);
@@ -57,13 +62,15 @@ describe(":compact", () => {
   });
 
   // spec: UI-913
-  test("a first word naming a mode sends omp's /compact with it; snapcompact refuses a focus", async () => {
+  test("a first word naming a mode sends omp's /compact with it and a neutral toast; snapcompact refuses a focus", async () => {
     const test = setup();
     test.client.answers.set("thread.prompt", () => ({ promptId: "req_1", agentInvoked: false }));
     act(() => {
       test.host.commands.run("compact", ["Soft", "keep", "the", "plan"]);
     });
     await waitFor(() => expect(successes(test.host)).toEqual(["Compacting the context (soft)"]));
+    // omp reports the outcome in the transcript (a skipped compaction too): the toast marks no success.
+    expect(screen.getByTestId("success").dataset.tone).toBe("info");
     expect(test.client.callsTo("thread.prompt").map((call) => call.params)).toEqual([
       { threadId: "t1", text: "/compact soft keep the plan" },
     ]);

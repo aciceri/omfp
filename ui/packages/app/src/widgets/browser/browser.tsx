@@ -80,6 +80,12 @@ export function BrowserWidget(_props: WidgetProps): ReactNode {
                   {tab.url}
                 </p>
               )}
+              {tab.url !== undefined && tab.movedBy !== undefined && (
+                <p className="omfp-browser__action" data-testid="browser-moved">
+                  <span className="omfp-browser__meta">{text.movedBy}</span>{" "}
+                  <code title={tab.movedBy}>{tab.movedBy}</code>
+                </p>
+              )}
               <p className="omfp-browser__action">
                 <span className="omfp-browser__meta">{text.lastAction}</span>{" "}
                 <code title={tab.action} data-testid="browser-action">

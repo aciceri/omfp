@@ -392,6 +392,7 @@ export const shell = {
     note: "What the agent's browser calls reported, not the live page.",
     closed: "closed",
     noUrl: "No address yet",
+    movedBy: "It may have left this address since",
     lastAction: "Last action",
     noScreenshot: "No screenshot yet",
     screenshot: (name: string) => `Latest screenshot of tab ${name}`,

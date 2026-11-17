@@ -5,10 +5,12 @@ import { replay, type ThreadEvent } from "@omfp/core";
 import { browserView } from "../../src/vm/browser.ts";
 import { browserSession, evalCall, runningEvalCall, screenshot } from "../support/browser.ts";
 
+/** The tabs as plain values; `movedBy` only when a call may have moved the tab (UI-871). */
 function tabs(events: readonly ThreadEvent[]) {
-  return browserView(replay(events)).tabs.map(({ name, url, action, closed, screenshot: shot }) => ({
+  return browserView(replay(events)).tabs.map(({ name, url, movedBy, action, closed, screenshot: shot }) => ({
     name,
     url,
+    ...(movedBy === undefined ? {} : { movedBy }),
     action,
     closed,
     screenshot: shot === undefined ? undefined : atob(shot.data),
@@ -26,7 +28,14 @@ describe("browserView", () => {
         closed: false,
         screenshot: "docs-2",
       },
-      { name: "main", url: "https://example.com/", action: "close main", closed: true, screenshot: "main-1" },
+      {
+        name: "main",
+        url: "https://example.com/",
+        movedBy: 'main.click("#more")',
+        action: "close main",
+        closed: true,
+        screenshot: "main-1",
+      },
     ]);
   });
 
@@ -35,7 +44,14 @@ describe("browserView", () => {
     const events = browserSession();
     const running = events.findIndex((event) => JSON.stringify(event).includes("call_eval_5"));
     expect(tabs(events.slice(0, running))).toEqual([
-      { name: "main", url: "https://example.com/", action: "close main", closed: true, screenshot: "main-1" },
+      {
+        name: "main",
+        url: "https://example.com/",
+        movedBy: 'main.click("#more")',
+        action: "close main",
+        closed: true,
+        screenshot: "main-1",
+      },
       {
         name: "docs",
         url: "https://docs.example.com/api",
@@ -44,6 +60,43 @@ describe("browserView", () => {
         screenshot: undefined,
       },
     ]);
+  });
+
+  // spec: UI-871
+  test("an address stays the one open or goto reported; the first later call that may have moved the tab is noted", () => {
+    const moved = (events: readonly ThreadEvent[]) =>
+      tabs(events).map(({ name, url, movedBy }) => [name, url, movedBy]);
+    const opened = evalCall("a", [
+      { op: "browser", detail: "open main file:///tmp/page.html" },
+      { op: "browser", detail: "main.id(3).text()" },
+      { op: "browser", detail: 'main.frame("a.b(").attr("#x", "href")' },
+      { op: "browser", detail: "main.screenshot()" },
+      { op: "browser", detail: 'side.click("a")' },
+    ]);
+    expect(moved(opened)).toEqual([
+      ["side", undefined, undefined],
+      ["main", "file:///tmp/page.html", undefined],
+    ]);
+    // A click that navigates: omp's lines say what was called, never what `url()` or `waitForUrl` answered.
+    const clicked = [
+      ...opened,
+      ...evalCall("b", [
+        { op: "browser", detail: "main.id(5).click()" },
+        { op: "browser", detail: 'main.waitForUrl("example.com")' },
+        { op: "browser", detail: "main.url()" },
+      ]),
+    ];
+    expect(moved(clicked)[0]).toEqual(["main", "file:///tmp/page.html", "main.id(5).click()"]);
+    // Opening the tab again reports where it is; goto sends it to its address; back, reload and a run may move it.
+    const reported = [...clicked, ...evalCall("c", [{ op: "browser", detail: "open main https://example.com/" }])];
+    expect(moved(reported)[0]).toEqual(["main", "https://example.com/", undefined]);
+    const moving = ["main.back()", "main.reload()", 'main.waitForUrl("**/done")', 'main.run(location.assign("/x"))'];
+    for (const detail of [...moving, 'main.press("Enter")']) {
+      const after = [...reported, ...evalCall("d", [{ op: "browser", detail }])];
+      expect(moved(after)[0]).toEqual(["main", "https://example.com/", detail]);
+      const sent = [...after, ...evalCall("e", [{ op: "browser", detail: 'main.goto("https://b.test/")' }])];
+      expect(moved(sent)[0]).toEqual(["main", "https://b.test/", undefined]);
+    }
   });
 
   // spec: UI-871

@@ -28,7 +28,7 @@ function setup(events: readonly ThreadEvent[], select = true) {
 }
 
 describe("omfp:browser", () => {
-  // spec: UI-870, UI-187
+  // spec: UI-870, UI-871, UI-187
   test("a box per tab titled on its border, the most recently used first, with its address and last action", () => {
     setup(browserSession());
     expect(screen.getByTestId("browser").textContent).toContain("not the live page");
@@ -49,6 +49,10 @@ describe("omfp:browser", () => {
     ]);
     expect(within(docs).getByTestId("browser-action").textContent).toBe('docs.screenshot({"fullPage":true})');
     expect(within(main).getByTestId("browser-action").textContent).toBe("close main");
+    expect(within(main).getByTestId("browser-moved").textContent).toBe(
+      'It may have left this address since main.click("#more")',
+    );
+    expect(within(docs).queryAllByTestId("browser-moved").length).toBe(0);
   });
 
   // spec: UI-872, UI-474

@@ -6,7 +6,8 @@
  * `tools/browser.ts`: `open main https://…`, `main.click("#go")`, `main.goto("https://…")`, `close main`,
  * `close all`, `tabs`), and the call's images, the browser's screenshots among them marked `detail: "original"`. omp
  * sends no browser event stream and no CDP endpoint of its Chromium: this is what the calls reported, not the live
- * page.
+ * page. Only `open` (where the tab landed) and `goto("<url>")` carry an address: a status line never holds a call's
+ * value, so what `url()`, `waitForUrl(…)`, `back()` or a click answered stays in the agent's kernel (UI-871).
  */
 
 import type { JsonValue, ThreadState, ToolRun } from "@omfp/core";
@@ -24,6 +25,12 @@ export interface BrowserTab {
   readonly name: string;
   /** Where its last `open` landed or its last `goto` sent it; `undefined` before either. */
   readonly url: string | undefined;
+  /**
+   * omp's description of the first call after the one that reported `url` that may have taken the tab elsewhere
+   * without saying where (a click, `back()`, `waitForUrl(…)`, `run(…)`: anything but a read of the page);
+   * `undefined` when none did or there is no address.
+   */
+  readonly movedBy: string | undefined;
   /** omp's description of the last browser call on the tab, as omp wrote it. */
   readonly action: string;
   /** The agent closed it (`close <name>` or `close all`) and did not use it again. */
@@ -52,6 +59,62 @@ const CALL = /^(.+?)\.[A-Za-z_$][\w$]*\(/;
 const GOTO = /^goto\(("(?:[^"\\]|\\.)*")/;
 /** A chain that can take a screenshot: a `screenshot(` step (of the tab or a frame), or code run in the tab. */
 const CAPTURES = /(?:^|\.)(?:screenshot|run)\(/;
+/** The method a chain ends with: its first, or the one called on an `id(n)`, `ref("e5")` or `frame("…")` handle. */
+const LAST_METHOD = /^(?:(?:id|ref|frame)\((?:"(?:[^"\\]|\\.)*"|[^")]*)\)\.)?([A-Za-z_$][\w$]*)\(/;
+/**
+ * Helpers that only read the page or the browser (omp's inspection, capture and diagnostics helpers, and the waits
+ * for content): a chain ending with any other may have moved the tab.
+ */
+const READS: Readonly<Record<string, true>> = {
+  url: true,
+  title: true,
+  frames: true,
+  observe: true,
+  ariaSnapshot: true,
+  a11y: true,
+  extract: true,
+  text: true,
+  html: true,
+  value: true,
+  attr: true,
+  count: true,
+  box: true,
+  boundingBox: true,
+  styles: true,
+  isVisible: true,
+  isHidden: true,
+  isEnabled: true,
+  isChecked: true,
+  screenshot: true,
+  diffScreenshot: true,
+  pdf: true,
+  waitFor: true,
+  waitForSelector: true,
+  waitForText: true,
+  dialog: true,
+  devices: true,
+  clipboardRead: true,
+  cookies: true,
+  storage: true,
+  initScripts: true,
+  downloads: true,
+  console: true,
+  errors: true,
+  metrics: true,
+  vitals: true,
+  requests: true,
+  request: true,
+  routes: true,
+  recording: true,
+  webmcpList: true,
+  webmcpEvents: true,
+};
+
+/** Whether a call chain only reads the page, so it cannot have moved the tab. */
+function reads(chain: string): boolean {
+  const method = LAST_METHOD.exec(chain)?.[1];
+  return method !== undefined && Object.hasOwn(READS, method);
+}
 
 /** The browser call omp's status line `detail` describes; `undefined` for `tabs`, `targets` and unknown lines. */
 function browserCall(detail: string): BrowserCall | undefined {
@@ -165,6 +228,7 @@ function evalResults(state: Pick<ThreadState, "transcript" | "tools">): JsonValu
 interface TabState {
   name: string;
   url: string | undefined;
+  movedBy: string | undefined;
   action: string;
   closed: boolean;
   screenshot: BrowserScreenshot | undefined;
@@ -174,16 +238,25 @@ interface TabState {
 
 /**
  * The browser tabs of a thread from its `eval` calls (UI-870, UI-871): a tab appears with its first `open` or call,
- * takes the address of each `open` and `goto`, and closes with `close <name>` or `close all`; failed browser calls
- * report no tab and change nothing. A call's last screenshot belongs to a tab only when every browser call of that
- * eval call that can take one names that same tab and it did not drive the computer (UI-872).
+ * takes the address of each `open` and `goto`, notes the first later call that may have moved it elsewhere, and
+ * closes with `close <name>` or `close all`; failed browser calls report no tab and change nothing. A call's last
+ * screenshot belongs to a tab only when every browser call of that eval call that can take one names that same tab
+ * and it did not drive the computer (UI-872).
  */
 export function browserView(state: Pick<ThreadState, "transcript" | "tools">): BrowserView {
   const tabs = new Map<string, TabState>();
   let used = 0;
   const tab = (name: string, action: string): TabState => {
     const found = tabs.get(name);
-    const current = found ?? { name, url: undefined, action, closed: false, screenshot: undefined, used };
+    const current = found ?? {
+      name,
+      url: undefined,
+      movedBy: undefined,
+      action,
+      closed: false,
+      screenshot: undefined,
+      used,
+    };
     current.action = action;
     current.closed = false;
     current.used = used;
@@ -208,7 +281,10 @@ export function browserView(state: Pick<ThreadState, "transcript" | "tools">): B
       switch (call.kind) {
         case "open": {
           const opened = tab(call.name, detail);
-          opened.url = call.url ?? opened.url;
+          if (call.url !== undefined) {
+            opened.url = call.url;
+            opened.movedBy = undefined;
+          }
           break;
         }
         case "close": {
@@ -227,7 +303,13 @@ export function browserView(state: Pick<ThreadState, "transcript" | "tools">): B
           break;
         case "call": {
           const driven = tab(call.name, detail);
-          driven.url = gotoUrl(call.chain) ?? driven.url;
+          const sent = gotoUrl(call.chain);
+          if (sent !== undefined) {
+            driven.url = sent;
+            driven.movedBy = undefined;
+          } else if (driven.url !== undefined && driven.movedBy === undefined && !reads(call.chain)) {
+            driven.movedBy = detail;
+          }
           if (CAPTURES.test(call.chain)) {
             capturing.add(call.name);
           }
@@ -245,6 +327,13 @@ export function browserView(state: Pick<ThreadState, "transcript" | "tools">): B
   return {
     tabs: [...tabs.values()]
       .sort((a, b) => b.used - a.used)
-      .map(({ name, url, action, closed, screenshot }) => ({ name, url, action, closed, screenshot })),
+      .map(({ name, url, movedBy, action, closed, screenshot }) => ({
+        name,
+        url,
+        movedBy,
+        action,
+        closed,
+        screenshot,
+      })),
   };
 }

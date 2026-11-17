@@ -67,6 +67,7 @@ async fn saved_thread(journey: &Journey, launcher: &FakeLauncher) -> anyhow::Res
             thinking_level: None,
             approval_mode: None,
             prompt: None,
+            images: Vec::new(),
         })
         .await?
         .id;

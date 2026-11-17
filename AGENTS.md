@@ -221,6 +221,10 @@ tag, the `omp-rpc` git tag in `Cargo.toml`, `omfp_core::OMP_VERSION` and the rel
 - `/add-dir` and `/remove-dir` work over RPC as `prompt` (local command, no model turn), but omp refuses them while
   the agent streams ("Cannot add a directory while streaming."): the daemon syncs roots of a busy thread once its
   session settles.
+- `available_commands_update` lists only the builtins with a text-mode handler; a TUI-only builtin (`/settings`,
+  `/login`, `/fork`, `/copy`, …) is not announced and, sent as `prompt`, reaches the model as plain text. Refusals of
+  announced commands come as `command_output` text (`/mcp reconnect` …). The window's table of TUI-only builtins is
+  `ui/packages/app/src/vm/slash.ts`, pinned by `contract_slash_commands` (UI-975).
 - `--session-dir <dir> --continue` resumes the newest session of that directory whatever the cwd, so a thread keeps
   its session when it moves to another workspace folder (migration 3).
 - The `ask` tool takes one HTML `<form>` and walks it with `select`/`input`/`editor` dialogs, not the RPC `ask` dialog.

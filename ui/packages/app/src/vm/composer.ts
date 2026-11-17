@@ -10,6 +10,7 @@ import { MAC } from "../keymap/keymap.ts";
 import type { Draft } from "../sdk/index.ts";
 import { isObject } from "../sdk/json.ts";
 import { expandDraft } from "./paste.ts";
+import { slashEntries } from "./slash.ts";
 
 /** Most suggestions shown at once. */
 const MAX_SUGGESTIONS = 8;
@@ -230,11 +231,14 @@ export interface Suggestion {
   readonly description: string | undefined;
   /** The usage hint of the command's argument. */
   readonly hint: string | undefined;
+  /** Known not to work over omp's RPC: shown with the reason as its description, never picked (UI-978). */
+  readonly disabled: boolean;
 }
 
 /**
  * Commands matching the draft while it is a bare `/prefix` (no space yet): names first, then aliases, in the order of
- * `thread.commands` (kept fresh by `available_commands_update`, UI-060).
+ * `thread.commands` (kept fresh by `available_commands_update`, UI-060) followed by omp's TUI-only builtins
+ * ({@link slashEntries}); the disabled ones after the others (UI-978).
  */
 export function slashSuggestions(draft: string, commands: readonly AvailableSlashCommand[]): Suggestion[] {
   if (!draft.startsWith("/")) {
@@ -244,15 +248,15 @@ export function slashSuggestions(draft: string, commands: readonly AvailableSlas
   if (/\s/.test(prefix)) {
     return [];
   }
-  const byName = commands.filter((command) => command.name.startsWith(prefix));
-  const byAlias = commands.filter(
-    (command) => !command.name.startsWith(prefix) && (command.aliases ?? []).some((alias) => alias.startsWith(prefix)),
+  const entries = slashEntries(commands);
+  const byName = entries.filter((entry) => entry.name.startsWith(prefix));
+  const byAlias = entries.filter(
+    (entry) => !entry.name.startsWith(prefix) && entry.aliases.some((alias) => alias.startsWith(prefix)),
   );
-  return [...byName, ...byAlias].slice(0, MAX_SUGGESTIONS).map((command) => ({
-    name: command.name,
-    description: command.description,
-    hint: command.input?.hint,
-  }));
+  const matching = [...byName, ...byAlias];
+  return [...matching.filter((entry) => !entry.disabled), ...matching.filter((entry) => entry.disabled)]
+    .slice(0, MAX_SUGGESTIONS)
+    .map(({ name, description, hint, disabled }) => ({ name, description, hint, disabled }));
 }
 
 /** The draft text after picking `suggestion`. */

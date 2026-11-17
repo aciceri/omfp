@@ -55,6 +55,7 @@ import {
   threadJob,
   threadMark,
   useCall,
+  useCommand,
   useConversationActions,
   useHost,
   useReportError,
@@ -574,12 +575,27 @@ function useSessionChange(onChanged: () => void): (request: Promise<unknown>) =>
 }
 
 /** The model list; when omp offers no model, Log in instead (UI-388). Picking a usable model for a thread whose start
- * failed on its saved one stores it and starts omp with it on the same conversation (DMN-339, UI-751). */
+ * failed on its saved one stores it and starts omp with it on the same conversation (DMN-339, UI-751). `:model`
+ * (`thread.pickModel`, omp's `/model` too) opens the list, or logs in without a model (UI-980). */
 function ModelSelect({ threadId, view, onChanged }: SessionProps): ReactNode {
+  const host = useHost();
   const call = useCall();
   const report = useReportError();
   const [changing, setChanging] = useWindowState(MODEL_CHANGING);
+  const [open, setOpen] = useState(false);
   const pending = changing.includes(threadId);
+  useCommand({
+    id: "thread.pickModel",
+    title: strings.shell.commands.pickModel,
+    aliases: ["model"],
+    run: () => {
+      if (view.noModels) {
+        requestLogin(host);
+      } else {
+        setOpen(true);
+      }
+    },
+  });
   const onModel = (key: Key | null) => {
     const model = splitModel(String(key ?? ""));
     if (!pending && model !== undefined && String(key) !== view.model) {
@@ -589,7 +605,7 @@ function ModelSelect({ threadId, view, onChanged }: SessionProps): ReactNode {
         .finally(() => setChanging((previous) => previous.filter((id) => id !== threadId)));
     }
   };
-  return <ModelPicker {...view} disabled={pending} onSelectionChange={onModel} />;
+  return <ModelPicker {...view} disabled={pending} isOpen={open} onOpenChange={setOpen} onSelectionChange={onModel} />;
 }
 
 /** The same usable-model control before and after daemon thread creation; a saved model omp cannot use shows as the
@@ -600,9 +616,14 @@ function ModelPicker({
   noModels,
   onSelectionChange,
   disabled = false,
+  isOpen,
+  onOpenChange,
 }: Pick<HeaderView, "model" | "models" | "noModels"> & {
   onSelectionChange: (key: Key | null) => void;
   disabled?: boolean;
+  /** Open, when the caller controls it (`thread.pickModel`). */
+  isOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }): ReactNode {
   const host = useHost();
   if (noModels) {
@@ -639,6 +660,8 @@ function ModelPicker({
       }))}
       selectedKey={model ?? null}
       onSelectionChange={onSelectionChange}
+      {...(isOpen === undefined ? {} : { isOpen })}
+      {...(onOpenChange === undefined ? {} : { onOpenChange })}
     />
   );
 }

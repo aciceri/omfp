@@ -192,6 +192,7 @@ export {
   searchPattern,
   stepSearch,
 } from "../vm/search.ts";
+export { type SlashRoute, slashAction } from "../vm/slash.ts";
 export {
   appendTranscriptPage,
   EMPTY_TRANSCRIPT,

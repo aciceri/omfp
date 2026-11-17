@@ -9,6 +9,10 @@ The version's section is also the source of the GitHub release notes.
 
 ### Added
 
+- omp's `/` commands that only work in its terminal UI no longer go to the model as plain text: `/login`, `/logout`,
+  `/model` (the header's model list, also `:model`), `/compact`, `/fork`, `/copy`, `/export`, `/new`, `/hotkeys` and
+  `/resume` run omfp's own equivalent, and the others (`/settings`, `/quit`, `/tree`, …) are listed greyed out in the
+  `/` suggestions with the reason and not sent. When omp refuses a command it runs, an error now says why.
 - `:copy` copies the selected thread's conversation to the clipboard as Markdown (with a message focused in the
   transcript, only that message), and `:export` saves it as a `.md` file named after the thread: the browser
   downloads it, the desktop window saves it in the Downloads folder. Messages go under their author, tool calls are

@@ -483,6 +483,38 @@ describe("omfp:header", () => {
   });
 });
 
+describe("`:model`, omp's `/model` in omfp", () => {
+  // spec: UI-980
+  test("thread.pickModel opens the header's model list; without a model it logs in", async () => {
+    const { client, host, user } = setup();
+    await waitFor(() => expect(screen.getByTestId("context-usage")).toBeDefined());
+    expect(host.commands.resolve("model")?.id).toBe("thread.pickModel");
+    act(() => {
+      host.commands.run("thread.pickModel");
+    });
+    await user.click(await screen.findByRole("option", { name: "Haiku (anthropic)" }));
+    expect(client.callsTo("thread.set_model").map((call) => call.params)).toEqual([
+      { threadId: "t1", provider: "anthropic", modelId: "haiku" },
+    ]);
+    cleanup();
+
+    const base = testHost();
+    answer(base.client);
+    base.client.answers.set("thread.models", () => ({ models: [] }));
+    base.client.answers.set("thread.state", () => ({ sessionId: "s" }));
+    base.host.window.set(SELECTED_THREAD, "t1");
+    const empty = renderWithHost(<HeaderWidget />, base);
+    empty.client.connected();
+    empty.client.index({ workspaces: [workspace("w1")], threads: [thread("t1", "checkout", "w1")] });
+    empty.flush();
+    await screen.findByTestId("models-login");
+    act(() => {
+      empty.host.commands.run("model");
+    });
+    expect(empty.host.window.get(LOGIN)).toEqual({ providerId: undefined });
+  });
+});
+
 describe("copying and exporting from the header", () => {
   // spec: UI-793
   test("the ⋯ popover copies and exports the whole conversation, then closes", async () => {

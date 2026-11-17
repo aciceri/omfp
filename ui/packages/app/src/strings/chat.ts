@@ -201,6 +201,42 @@ export const chat = {
     },
     /** After the `ctrl+c` key chip. */
     interruptHint: "again to abort",
+    /** `/` commands over omp's RPC (UI-975..UI-980). */
+    slash: {
+      /** A routed command's description in the suggestions, by omp's name (UI-976, UI-978). */
+      routed: {
+        login: "Log in to a provider (:login)",
+        logout: "Log out of a provider (:logout)",
+        model: "Pick the thread's model in the header (:model)",
+        compact: "Compact the conversation, focused on what follows; soft, remote and snapcompact run in omp",
+        fork: "Fork this conversation into a new thread",
+        copy: "Copy the conversation as Markdown (:copy)",
+        export: "Export the conversation as a Markdown file (:export); with a path, omp writes HTML on its host",
+        new: "New thread in the current workspace (:new)",
+        hotkeys: "Show every key and command (:help)",
+        resume: "Pick another thread (:threads)",
+      } as Readonly<Record<string, string>>,
+      /** The argument hints of the routed commands omp does not announce. */
+      routedHints: { login: "[<provider>]", logout: "[<provider>]" } as Readonly<Record<string, string>>,
+      tuiOnly: "Needs omp's terminal UI",
+      /** The omfp way, after `tuiOnly`, by omp's name. */
+      hints: {
+        setup: ":login logs in to a provider",
+        branch: "omfp:tree navigates the session tree",
+        tree: "omfp:tree navigates the session tree",
+        delete: ":delete deletes the thread",
+        exit: ":stop stops the thread's process",
+        quit: ":stop stops the thread's process",
+        restart: ":stop then :restart restarts the thread's process",
+        live: "the composer's microphone starts live voice",
+      } as Readonly<Record<string, string>>,
+      refused: (name: string, reason: string) => `/${name} was not sent: ${reason}`,
+      noArguments: (name: string) => `/${name} was not sent: omfp runs it without arguments`,
+      /** A routed command whose window command nothing registered or enabled (no header in the view). */
+      unavailable: (name: string) => `/${name}: nothing in this window runs it now`,
+      /** omp answered a `/` prompt with an error (UI-979). */
+      failed: (name: string, error: string) => `/${name} failed: ${error}`,
+    },
   },
   /** Live voice (UI-180..UI-189). */
   live: {

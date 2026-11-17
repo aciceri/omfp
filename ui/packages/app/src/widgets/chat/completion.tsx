@@ -96,9 +96,9 @@ export function completionsOf(commands: readonly Suggestion[], files: readonly s
 
 /**
  * The keys of an open menu, captured before React Aria's `Autocomplete` sees them: Tab completes the highlighted entry
- * (else the first), Esc closes the menu. Returns whether the menu owns the key: not a chord (Ctrl, Alt or ⌘ held: the
- * queue keys, Alt+Enter, Ctrl-C keep their composer and keymap roles) nor an Enter that sends (Shift held, or no entry
- * highlighted); arrows and a plain Enter on a highlighted entry go on to the `Autocomplete`.
+ * (else the first enabled one), Esc closes the menu. Returns whether the menu owns the key: not a chord (Ctrl, Alt or
+ * ⌘ held: the queue keys, Alt+Enter, Ctrl-C keep their composer and keymap roles) nor an Enter that sends (Shift held,
+ * or no entry highlighted); arrows and a plain Enter on a highlighted entry go on to the `Autocomplete`.
  */
 export function completionKey(
   event: KeyboardEvent<HTMLElement>,
@@ -120,7 +120,9 @@ export function completionKey(
     event.preventDefault();
     event.stopPropagation();
     const id = document.getElementById(active ?? "")?.getAttribute("data-key");
-    const chosen = completions.find((completion) => completion.id === id) ?? completions[0];
+    // A disabled command is never picked (UI-978).
+    const pickable = completions.filter((completion) => completion.kind === "file" || !completion.suggestion.disabled);
+    const chosen = pickable.find((completion) => completion.id === id) ?? pickable[0];
     if (chosen !== undefined) {
       pick(chosen);
     }
@@ -169,7 +171,12 @@ export function CompletionMenu({
       >
         {(completion) =>
           completion.kind === "command" ? (
-            <MenuItem id={completion.id} textValue={completion.id} data-testid="slash-suggestion">
+            <MenuItem
+              id={completion.id}
+              textValue={completion.id}
+              isDisabled={completion.suggestion.disabled}
+              data-testid="slash-suggestion"
+            >
               <span className="omfp-composer__command">{completion.id}</span>
               {completion.suggestion.hint !== undefined && (
                 <span className="omfp-composer__hint"> {completion.suggestion.hint}</span>

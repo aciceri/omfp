@@ -833,6 +833,8 @@ export const shell = {
     login: "Log in to a provider (:login [<provider>]; without one, pick it)",
     logout: "Log out of a provider (:logout <provider>)",
     messages: "Show the notices and toasts that went by (newest first)",
+    /** `:model` (UI-980). */
+    pickModel: "Pick the thread's model (opens the header's model list)",
   },
   /** The help panel (UI-198): the effective keymap by mode and the `:` commands. */
   help: {

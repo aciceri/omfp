@@ -1234,6 +1234,13 @@ requirements = [
   "UI-796",
   "UI-797",
   "PRT-213",
+  # omp's `/` commands over RPC: routed, refused or disabled (#139)
+  "UI-975",
+  "UI-976",
+  "UI-977",
+  "UI-978",
+  "UI-979",
+  "UI-980",
 ]
 
 [M18]

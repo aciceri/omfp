@@ -6,7 +6,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import userEvent from "@testing-library/user-event";
 import { createKeyHandler } from "../../../src/keymap/handler.ts";
 import { DEFAULT_BINDINGS } from "../../../src/keymap/keymap.ts";
-import { draftKey, FOCUS_COMPOSER, type OmfpHost, SELECTED_THREAD } from "../../../src/sdk/index.ts";
+import { draftKey, ERRORS, FOCUS_COMPOSER, type OmfpHost, SELECTED_THREAD } from "../../../src/sdk/index.ts";
 import { FILE_QUERY_DELAY_MS } from "../../../src/widgets/chat/completion.tsx";
 import { ChatWidget, ComposerWidget } from "../../../src/widgets/chat/index.ts";
 import { PointerMedia } from "../../support/pointer.ts";
@@ -122,15 +122,103 @@ describe("composer", () => {
     const { client } = renderThread(<ComposerWidget />, []);
     const [asked, ...again] = client.callsTo("thread.commands");
     expect([asked?.params, again.length]).toEqual([{ threadId: THREAD }, 0]);
-    await act(async () => asked?.resolve({ commands: [{ name: "compact", source: "builtin" }] }));
+    await act(async () => asked?.resolve({ commands: [{ name: "compost", source: "custom" }] }));
     await userEvent.click(input());
-    await userEvent.keyboard("/co");
+    await userEvent.keyboard("/comp");
     const menu = await screen.findByTestId("slash-suggestions");
     expect(
       within(menu)
         .getAllByTestId("slash-suggestion")
         .map((item) => item.textContent),
-    ).toEqual(["/compact"]);
+    ).toEqual(["/compost"]);
+  });
+
+  // spec: UI-978
+  test("`/` lists omp's TUI-only builtins: the routed ones like any command, the others disabled with the reason", async () => {
+    renderThread(<ComposerWidget />, fixtureEvents("text_reply"));
+    await userEvent.click(input());
+    await userEvent.keyboard("/set");
+    const menu = await screen.findByTestId("slash-suggestions");
+    expect(
+      within(menu)
+        .getAllByTestId("slash-suggestion")
+        .map((item) => [item.textContent, item.getAttribute("aria-disabled")]),
+    ).toEqual([
+      ["/settings Needs omp's terminal UI", "true"],
+      ["/setup Needs omp's terminal UI; :login logs in to a provider", "true"],
+    ]);
+    // Tab picks no disabled command.
+    await userEvent.keyboard("{Tab}");
+    expect(input().value).toBe("/set");
+
+    await userEvent.clear(input());
+    await userEvent.keyboard("/log");
+    const routed = await screen.findByTestId("slash-suggestions");
+    expect(
+      within(routed)
+        .getAllByTestId("slash-suggestion")
+        .map((item) => [item.textContent, item.getAttribute("aria-disabled")]),
+    ).toEqual([
+      ["/login [<provider>] Log in to a provider (:login)", null],
+      ["/logout [<provider>] Log out of a provider (:logout)", null],
+    ]);
+    await userEvent.keyboard("{Tab}");
+    expect(input().value).toBe("/login ");
+  });
+
+  // spec: UI-976
+  test("a routed command runs omfp's equivalent instead of thread.prompt and clears the draft", async () => {
+    const { client, host } = renderThread(<ComposerWidget />, fixtureEvents("text_reply"));
+    const ran: string[][] = [];
+    act(() => {
+      host.commands.register({ id: "auth.login", title: "Log in", run: (args) => void ran.push([...args]) });
+    });
+    await userEvent.click(input());
+    await userEvent.keyboard("/login anthropic{Enter}");
+    expect(ran).toEqual([["anthropic"]]);
+    expect(input().value).toBe("");
+    await userEvent.keyboard("/compact keep the test plan{Enter}");
+    expect(client.callsTo("thread.compact").map((call) => call.params)).toEqual([
+      { threadId: THREAD, instructions: "keep the test plan" },
+    ]);
+    // Enter on the open menu would pick the highlighted command: Tab completes it, then Enter sends.
+    await userEvent.keyboard("/fork{Tab}{Enter}");
+    expect(client.callsTo("threads.fork").map((call) => call.params)).toEqual([{ threadId: THREAD }]);
+    expect(client.callsTo("thread.prompt")).toEqual([]);
+    // `/model` opens the header's model list: without a header nothing runs it, and the error says so.
+    await userEvent.keyboard("/model{Tab}{Enter}");
+    expect(host.window.get(ERRORS)).toEqual(["/model: nothing in this window runs it now"]);
+    // With arguments omfp has no equivalent for, omp runs it.
+    await userEvent.keyboard("/compact soft{Enter}");
+    expect(client.callsTo("thread.prompt").map((call) => call.params)).toEqual([
+      { threadId: THREAD, text: "/compact soft" },
+    ]);
+  });
+
+  // spec: UI-977
+  test("a TUI-only builtin is not sent: the reason is an error and the draft stays", async () => {
+    const { client, host } = renderThread(<ComposerWidget />, fixtureEvents("text_reply"));
+    await userEvent.click(input());
+    await userEvent.keyboard("/settings{Enter}");
+    expect(client.callsTo("thread.prompt")).toEqual([]);
+    expect(host.window.get(ERRORS)).toEqual(["/settings was not sent: Needs omp's terminal UI"]);
+    expect(input().value).toBe("/settings");
+  });
+
+  // spec: UI-979
+  test("a command omp answers with an error says why and comes back into the draft; a failed message stays quiet", async () => {
+    const { client, host } = renderThread(<ComposerWidget />, fixtureEvents("text_reply"));
+    await userEvent.click(input());
+    await userEvent.keyboard("/dirs{Tab}{Enter}");
+    await act(async () => client.callsTo("thread.prompt")[0]?.reject(new Error("Cannot list the directories")));
+    expect(host.window.get(ERRORS)).toEqual(["/dirs failed: Cannot list the directories"]);
+    expect(input().value).toBe("/dirs");
+
+    await userEvent.clear(input());
+    await userEvent.keyboard("hello{Enter}");
+    await act(async () => client.callsTo("thread.prompt")[1]?.reject(new Error("offline")));
+    expect(host.window.get(ERRORS)).toHaveLength(1);
+    expect(input().value).toBe("hello");
   });
 
   // spec: UI-732

@@ -95,6 +95,7 @@ bind. The built-in ones (`omfp://keymap` has them all):
 | `:open <path>[:<line>]` | Open a file of the workspace in a tab next to the chat. |
 | `:rescan` | Rescan the current workspace's repositories. |
 | `:login [<provider>]`, `:logout <provider>` | Log omp in to a provider (without one, pick it); remove omp's stored credentials of one. See "Logging in". |
+| `:model` | Open the selected thread's model list in its header (Log in when omp offers no model). |
 | `:view <id>` | Switch view. |
 | `:view-reset` | Write the default `views.json` again (replacing the file, every view and mount), after a confirmation. |
 | `:widget add <reference>` | Add a widget to the current view (last side tab, else the end) and write `views.json`; refused on views that exist only in an init file or a TSX file. |
@@ -147,6 +148,13 @@ composer's first line recalls the prompts you sent (this thread's first, then it
 first within each); `Down` on the last line goes back and, past the newest, restores what you had typed. `@` and part
 of a path suggest the workspace's files (fuzzy, like `Space f`); Tab or Enter inserts `@<path>`, which omp reads into
 the prompt's context.
+
+`/` at the start of the message suggests omp's commands. omp runs most of them, but some only work in its terminal UI:
+omfp runs its own equivalent for `/login`, `/logout`, `/model` (the header's model list), `/compact [<focus>]`,
+`/fork` (a new thread with the whole conversation), `/copy`, `/export`, `/new`, `/hotkeys` (`:help`) and `/resume`
+(`:threads`); the other terminal-only ones (`/settings`, `/quit`, `/tree`, …) show greyed out with the reason and are
+not sent. A command defined by the workspace, a skill or a plugin always goes to omp. When omp refuses a command, the
+error says why.
 
 The composer also takes readline's line-editing keys in insert mode (commands `composer.*`): `Ctrl-a` / `Ctrl-e`
 start / end of the line, `Ctrl-b` / `Ctrl-f` a character back / forward, `Alt-b` / `Alt-f` a word back / forward,

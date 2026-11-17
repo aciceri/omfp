@@ -36,6 +36,7 @@ import {
   type DraftThread,
   draftKey,
   EMPTY_DRAFT,
+  errorMessage,
   expandPastes,
   type FileMention,
   FOCUS_COMPOSER,
@@ -59,13 +60,16 @@ import {
   restoreFailedPrompt,
   SCOPE_ATTRIBUTE,
   type SendMode,
+  type SlashRoute,
   sendMode,
+  slashAction,
   slashSuggestions,
   strings,
   useAnnounce,
   useCall,
   useCommand,
   useHost,
+  useReportError,
   useThread,
   useThreadActions,
   useThreadSummary,
@@ -668,16 +672,48 @@ export const Composer = memo(function Composer({
   const completions = completionsOf(commandSuggestions, files);
   const open = completions.length > 0 && !dismissed;
 
+  const actions = useThreadActions();
+  const reportError = useReportError();
+  /** Runs the omfp equivalent of omp's `/name` (UI-976). */
+  const routeSlash = (name: string, route: SlashRoute) => {
+    switch (route.type) {
+      case "command":
+        if (!host.commands.run(route.id, route.args)) {
+          reportError(text.slash.unavailable(name));
+        }
+        return;
+      case "compact":
+        call("thread.compact", {
+          threadId,
+          ...(route.instructions === undefined ? {} : { instructions: route.instructions }),
+        }).catch(reportError);
+        return;
+      case "fork":
+        void actions.fork(threadId);
+        return;
+    }
+  };
+
   const send = (chosen: SendMode) => {
     if (isBlank(draft) || host.window.get(MODEL_CHANGING).includes(threadId)) {
       return;
     }
     const message = expandPastes(draft.text, draft.pastes).trim();
+    // omp's TUI-only commands are routed to omfp's equivalents or refused, never sent (UI-976, UI-977).
+    const slash = slashAction(message, commands);
+    if (slash.type === "refuse") {
+      reportError(slash.message);
+      return;
+    }
+    history.end();
+    setDraft(EMPTY_DRAFT);
+    if (slash.type === "route") {
+      routeSlash(slash.name, slash.route);
+      return;
+    }
     const images = draft.images;
     const queued = behavior(chosen);
     const sent = draft;
-    history.end();
-    setDraft(EMPTY_DRAFT);
     call("thread.prompt", {
       threadId,
       text: message,
@@ -689,7 +725,13 @@ export const Composer = memo(function Composer({
           announce(strings.chat.announce.queued);
         }
       },
-      () => setDraft((previous) => restoreFailedPrompt(previous, sent)),
+      (error: unknown) => {
+        setDraft((previous) => restoreFailedPrompt(previous, sent));
+        // A command omp refused says why (UI-979).
+        if (slash.command !== undefined) {
+          reportError(text.slash.failed(slash.command, errorMessage(error)));
+        }
+      },
     );
   };
   const abort = useCallback(() => {

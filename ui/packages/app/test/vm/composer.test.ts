@@ -190,9 +190,10 @@ describe("composer", () => {
     expect(canAbort(queued)).toBe(true);
   });
 
-  // spec: UI-060
+  // spec: UI-060, UI-978
   test("slash completion matches names then aliases until a space", () => {
-    expect(names("/c")).toEqual(["compact", "copy"]);
+    // omp's TUI-only `collab`, `clear` and `cleanse` follow, disabled.
+    expect(names("/c")).toEqual(["compact", "copy", "collab", "clear", "cleanse"]);
     expect(names("/m")).toEqual(["model", "mcp"]);
     expect(names("/cp")).toEqual(["copy"]);
     expect(names("/model gpt")).toEqual([]);

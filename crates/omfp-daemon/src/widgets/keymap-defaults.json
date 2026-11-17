@@ -761,6 +761,13 @@
       ]
     },
     {
+      "id": "thread.pickModel",
+      "title": "Pick the thread's model (opens the header's model list)",
+      "aliases": [
+        "model"
+      ]
+    },
+    {
       "id": "thread.rename",
       "title": "Rename the thread (:rename <title>, or in place without one)",
       "aliases": [

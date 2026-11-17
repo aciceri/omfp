@@ -81,6 +81,7 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   "thread.restart": commandTitles.restart,
   "thread.copy": commandTitles.copy,
   "thread.export": commandTitles.export,
+  "thread.pickModel": commandTitles.pickModel,
   "threads.toggle": commandTitles.toggleThreads,
   "window.theme": commandTitles.theme,
   "density.set": commandTitles.density,

@@ -1,9 +1,8 @@
 /** The gallery's design sheet (UI-173): the density strip, the logo, the glyphs and the token sheet with measured
  * contrast and the contrast guard's overrides. */
-import { Button, Icon, RowList, Select, TextField, ThreadRow } from "@omfp/kit";
+import { Button, cssColorReader, Icon, RowList, Select, TextField, ThreadRow } from "@omfp/kit";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { AA, type Adjustment, type ContrastPair, contrastRatio } from "../theme/contrast.ts";
-import { cssColorReader } from "../theme/guard.ts";
+import { AA, type Adjustment, type ContrastPair, contrastRatio, parseCssColor } from "../theme/contrast.ts";
 import { type FocusMeasure, FocusTable, measureFocus } from "./focus.tsx";
 import { type KeyHintMeasure, KeyHints, measureKeyHints } from "./key-hints.tsx";
 import { LogoSheet } from "./logo.tsx";
@@ -173,7 +172,7 @@ const TEXT_PAIRS: readonly (readonly [text: string, background: string])[] = [
 ];
 
 function measure(): ContrastPair[] {
-  const read = cssColorReader(document);
+  const read = cssColorReader(document, parseCssColor);
   return TEXT_PAIRS.flatMap(([text, background]) => {
     const fore = read(text);
     const back = read(background);

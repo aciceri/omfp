@@ -22,9 +22,9 @@ export const NO_MARKS: SearchMarks = { matches: [], current: undefined };
 /** The text the search reads in a message: the user's text, the assistant's Markdown, an expanded thinking block. */
 const TEXT_ROOTS = '[data-testid="plain-text"], [data-testid="markdown"], .omfp-reasoning__text';
 /** Text the search does not read: tool cards (with their own transcripts), controls (not the inline path links of
- * Markdown, which are the message's text), decorations. */
+ * Markdown, which are the message's text), decorations, and what a diagram's SVG holds but never shows (UI-981). */
 const OUTSIDE = '[data-testid="tool-card"]';
-const SKIPPED = 'button:not(.omfp-path-link), [aria-hidden="true"]';
+const SKIPPED = 'button:not(.omfp-path-link), [aria-hidden="true"], svg :is(style, title, desc)';
 /** Text in different blocks is separated, so an occurrence never spans two paragraphs or cells. */
 const BLOCKS = "p, li, pre, blockquote, h1, h2, h3, h4, h5, h6, dt, dd, td, th, tr, div";
 /** Overflow values that clip an element's content to its box. */

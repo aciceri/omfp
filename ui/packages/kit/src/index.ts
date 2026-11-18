@@ -183,6 +183,7 @@ export {
   type ThreadState,
   useCountUp,
 } from "./marks.tsx";
+export { MermaidDiagram, type MermaidDiagramProps } from "./mermaid.tsx";
 export { type MotionLevel, motionLevel, useMotionLevel } from "./motion.ts";
 export { type PathCompletion, PathField, type PathFieldProps, type PathSuggestion } from "./path-field.tsx";
 export {
@@ -282,6 +283,8 @@ export {
   type TabsProps,
 } from "./tabs.tsx";
 export { TerminalEmulator, type TerminalEmulatorProps } from "./terminal.tsx";
+export { cssColorReader } from "./theme-colors.ts";
+export { watchTheme } from "./theme-watch.ts";
 export {
   ChatHeader,
   type ChatHeaderProps,

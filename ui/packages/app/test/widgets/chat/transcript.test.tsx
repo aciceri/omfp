@@ -3,7 +3,7 @@
 import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
 import { CallError } from "@omfp/client";
 import type { JsonObject, ThreadEvent } from "@omfp/core";
-import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ERRORS, SELECTED_THREAD, SUCCESSES, scopesAt } from "../../../src/sdk/index.ts";
 import { TranscriptWidget } from "../../../src/widgets/chat/index.ts";
@@ -11,6 +11,7 @@ import { renderWithHost } from "../../support/host.tsx";
 import { fixtureEvents, isFrame } from "./fixtures.ts";
 import { renderThread, THREAD } from "./harness.tsx";
 import { fakeLayout, LIST_TOP, pagedLayout } from "./layout.ts";
+import "../../../../kit/test/support/mermaid.ts";
 
 let restoreLayout: () => void = () => {};
 beforeEach(() => {
@@ -214,6 +215,35 @@ describe("transcript", () => {
         current?.toString(),
         current?.startContainer.parentElement?.closest(".omfp-path-link") != null,
       ]).toEqual(["1 / 1", "main.rs", true]);
+    } finally {
+      highlights.restore();
+    }
+  });
+
+  // spec: UI-736, UI-981
+  test("in a drawn diagram the search highlights the labels, never the text the SVG does not show", async () => {
+    const highlights = installHighlights();
+    try {
+      const test = renderThread(<TranscriptWidget />, [
+        {
+          kind: "history",
+          session: { session_id: "s", resumed: true },
+          messages: [
+            { role: "user", content: "draw it" },
+            { role: "assistant", content: [{ type: "text", text: "```mermaid\ngraph TD\n  plan --> ship\n```" }] },
+          ],
+        },
+      ]);
+      await waitFor(() => expect(screen.getByTestId("mermaid-diagram").dataset.state).toBe("drawn"));
+      // The fake titles the SVG with the source's first line, as Mermaid does an `accTitle`.
+      expect(screen.getByTestId("mermaid-diagram").querySelector("svg title")?.textContent).toBe("graph TD");
+      await search((id) => test.host.commands.run(id), "graph");
+      const marked = ["omfp-search-current", "omfp-search"].flatMap((name) => [
+        ...(highlights.registry.get(name) ?? []),
+      ]);
+      expect(marked.map((range) => [range.toString(), range.startContainer.parentElement?.tagName])).toEqual([
+        ["graph", "text"],
+      ]);
     } finally {
       highlights.restore();
     }

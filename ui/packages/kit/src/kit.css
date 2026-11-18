@@ -1823,7 +1823,7 @@
     margin-block-end: 0;
   }
 
-  .omfp-markdown :is(p, ul, ol, blockquote, pre, .omfp-markdown__table) {
+  .omfp-markdown :is(p, ul, ol, blockquote, pre, .omfp-markdown__table, .omfp-diagram) {
     margin-block: var(--omfp-md-block);
   }
 
@@ -1906,6 +1906,53 @@
   .omfp-markdown hr {
     border: 0;
     border-block-start: var(--omfp-bw) solid var(--omfp-rule);
+  }
+
+  /* Mermaid diagrams (UI-981): the drawing framed like a code block and fitted to the text's width, the toggle and
+     Mermaid's reason under it. */
+  .omfp-diagram {
+    display: flex;
+    flex-direction: column;
+    gap: var(--omfp-s1);
+    min-inline-size: 0;
+    margin: 0;
+  }
+
+  .omfp-diagram > .omfp-code--block {
+    margin: 0;
+  }
+
+  /* Mermaid measures its labels in an element under `<body>`: the drawing drops the prose's text settings, so labels
+     wrap and size as they were measured. */
+  .omfp-diagram__drawing {
+    padding: var(--omfp-s3) var(--omfp-s4);
+    border: var(--omfp-bw) solid var(--omfp-rule);
+    border-inline-start: 2px solid var(--omfp-primary);
+    border-radius: var(--omfp-r-card);
+    line-height: var(--omfp-lh-ui);
+    overflow-wrap: normal;
+    background: var(--omfp-code-bg);
+  }
+
+  .omfp-diagram__drawing > svg {
+    display: block;
+    max-inline-size: 100%;
+    block-size: auto;
+    margin-inline: auto;
+  }
+
+  .omfp-diagram__foot {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--omfp-s2);
+  }
+
+  .omfp-diagram__error {
+    margin-inline-end: auto;
+    font-family: var(--omfp-font-ui);
+    font-size: var(--omfp-fs-xs);
+    color: var(--omfp-on-surface-variant);
   }
 
   /* Toasts (UI-160) */

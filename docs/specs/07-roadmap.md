@@ -904,6 +904,20 @@ the user's window): not offered.
 No recorded fixture: omp's Chromium cannot be downloaded or reached behind the contract tests' `DenyProxy`, so the
 tests build the eval results omp's sources describe.
 
+## Mermaid diagrams
+
+M17 draws the `mermaid` fences of Markdown as diagrams (#200, UI-981..983, E2E-76). omp's harness tells models to put
+flows, sequences and states in ` ```mermaid ` blocks, and the specs use them too; before, they showed as plain source.
+Mermaid 12.3 draws them in the page. Theme `base` takes its variables from the tokens through `cssColorReader`, shared
+with the contrast guard, as is `watchTheme`. Each component owns its drawing; SVG is never cached across instances,
+because that would duplicate marker and filter IDs. Closing fences are identified by the Markdown parser's tokens.
+Mermaid stays a code-split chunk loaded with the first diagram. On the release bundle (Bun 1.4.4 minify and splitting,
+gzip), the main chunk grows by about 0.1 KiB; the whole bundle's
+JavaScript and CSS grows from 1.14 MiB to 2.60 MiB, within UI-090's 3 MiB target. A first sequence diagram loads about
+240 KiB, a first flowchart or ER diagram about 700 KiB, of which 466 KiB is ELK, Mermaid 12's default layout. That
+default is kept, so diagrams look as they do elsewhere. Drawn in headless Chromium and in WebKitGTK 2.54 (`MiniBrowser`,
+the engine of `omfp desktop`): the three diagrams of [00](00-overview.md) draw in both.
+
 ## Later (noted, not scheduled)
 
 - Helix-style modal editing in the composer (UI-095 keeps a keymap with modes, so it fits later).

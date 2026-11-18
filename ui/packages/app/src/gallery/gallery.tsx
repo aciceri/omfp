@@ -6,10 +6,11 @@
  * and skin (UI-514, UI-797). The screenshot test (UI-174) waits for `[data-ready=true]` and reads the contrast rows.
  */
 import "./gallery.css";
+import { cssColorReader } from "@omfp/kit";
 import { useEffect, useState } from "react";
 import { SKINS } from "../frame/set.ts";
-import type { Adjustment } from "../theme/contrast.ts";
-import { applyContrastGuard, cssColorReader } from "../theme/guard.ts";
+import { type Adjustment, parseCssColor } from "../theme/contrast.ts";
+import { applyContrastGuard } from "../theme/guard.ts";
 import { applyAppearance, applyUserTheme, SYSTEM_ACCENT } from "../theme/theme.ts";
 import { BorderBoxes, Cards, CodeDemo, Diffs, Interactions, ToolCards } from "./cards.tsx";
 import { Composers, LiveVoice, Transcript } from "./chat.tsx";
@@ -56,7 +57,7 @@ function applyGalleryParams(params: GalleryParams): Adjustment[] {
   });
   applyUserTheme(document, FIXTURE_CSS.get(params.theme) ?? null);
   document.title = "omfp kit";
-  return applyContrastGuard(root, cssColorReader(document));
+  return applyContrastGuard(root, cssColorReader(document, parseCssColor));
 }
 
 /**

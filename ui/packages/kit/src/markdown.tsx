@@ -1,11 +1,12 @@
-import { type ComponentType, type HTMLAttributes, useMemo } from "react";
-import ReactMarkdown, { type Components } from "react-markdown";
+import { type ComponentProps, type ComponentType, type HTMLAttributes, useMemo } from "react";
+import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cx } from "./class.ts";
 import { Highlighted } from "./highlight.tsx";
+import { MermaidDiagram } from "./mermaid.tsx";
 import { linkReference, type OpenPath, PathLink, pathReference, relativeSource, resolvePath } from "./paths.tsx";
 
-const REMARK_PLUGINS = [remarkGfm];
+const REMARK_PLUGINS = [remarkGfm, remarkClosedMermaid];
 
 const FENCE_LANGUAGE = /(?:^|\s)language-(\S+)/;
 
@@ -22,14 +23,54 @@ function fenceLanguage(node: { children?: readonly unknown[] } | undefined): str
   return typeof name === "string" ? name.slice("language-".length) : undefined;
 }
 
-/** Links open in a new tab without leaking the referrer; fenced code with a language is highlighted (UI-090); a table
- * sits in a region that scrolls sideways when it is wider than the text (UI-369), focusable so the keyboard can
- * scroll it; everything else keeps react-markdown's elements. */
+interface FenceContext {
+  data: { flowCodeInside?: boolean };
+  stack: { type: string; lang?: string; data?: { hProperties?: Record<string, unknown> } }[];
+}
+
+function remarkClosedMermaid(this: {
+  data(key: string): unknown;
+  data(key: string, value: unknown): unknown;
+}) {
+  const extension = {
+    enter: {
+      codeFencedFence(this: FenceContext) {
+        // This hook runs for both fences; the default exit handler starts buffering after the opening one.
+        if (!this.data.flowCodeInside) return;
+        const code = this.stack.findLast((node) => node.type === "code");
+        if (code?.lang?.toLowerCase() !== "mermaid") return;
+        code.data ??= {};
+        code.data.hProperties ??= {};
+        code.data.hProperties["data-mermaid-closed"] = true;
+      },
+    },
+  };
+  const extensions = this.data("fromMarkdownExtensions");
+  if (Array.isArray(extensions)) extensions.push(extension);
+  else this.data("fromMarkdownExtensions", [extension]);
+}
+
+/** A fenced code block, highlighted (UI-090); a closed `mermaid` block is drawn instead (UI-981). */
+function FencedBlock({ node, className, ...props }: ComponentProps<"pre"> & ExtraProps) {
+  const language = fenceLanguage(node);
+  const code = node?.children[0];
+  if (
+    language?.toLowerCase() === "mermaid" &&
+    code?.type === "element" &&
+    code.properties["data-mermaid-closed"] === true
+  ) {
+    const source = code.children.map((child) => (child.type === "text" ? child.value : "")).join("");
+    return <MermaidDiagram source={source.replace(/\n$/, "")} />;
+  }
+  return <pre {...props} className={cx("omfp-code omfp-code--block", className)} data-lang={language} />;
+}
+
+/** Links open in a new tab without leaking the referrer; fenced code with a language is highlighted (UI-090), a closed
+ * `mermaid` fence drawn (UI-981); a table sits in a region that scrolls sideways when it is wider than the text
+ * (UI-369), focusable so the keyboard can scroll it; everything else keeps react-markdown's elements. */
 const COMPONENTS = {
   a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
-  pre: ({ node, className, ...props }) => (
-    <pre {...props} className={cx("omfp-code omfp-code--block", className)} data-lang={fenceLanguage(node)} />
-  ),
+  pre: FencedBlock,
   table: ({ node: _node, ...props }) => (
     // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region must be focusable to scroll by keyboard.
     <section className="omfp-markdown__table" aria-label="Table" tabIndex={0}>
@@ -127,6 +168,7 @@ export interface MarkdownProps extends Omit<HTMLAttributes<HTMLDivElement>, "chi
 /**
  * Renders Markdown as prose (serif). Raw HTML in the source never becomes DOM: react-markdown without `rehype-raw`
  * drops it, and its URL filter removes `javascript:` links. Remote images and code-language classes are kept (UI-040).
+ * The only markup that becomes DOM is a diagram's SVG, which Mermaid sanitizes (UI-982).
  */
 export function Markdown({ text, className, onOpenPath, linkBase, image, ...props }: MarkdownProps) {
   const components = useMemo(() => {

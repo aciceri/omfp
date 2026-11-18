@@ -300,8 +300,8 @@
     background: var(--omfp-tertiary);
   }
 
-  /* Code (UI-166): a subtle gray surface without a frame; inline code plain on gray. */
-  :root[data-skin="boring"] .omfp-code--block {
+  /* Code (UI-166) and diagrams (UI-981): a subtle gray surface without a frame; inline code plain on gray. */
+  :root[data-skin="boring"] :is(.omfp-code--block, .omfp-diagram__drawing) {
     border: 0;
   }
 

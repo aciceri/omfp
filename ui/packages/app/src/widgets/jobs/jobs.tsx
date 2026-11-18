@@ -172,7 +172,7 @@ function Row({ workspaceId, job, row, now, open, onToggle, run, kill, enable }: 
             {row.action}
           </span>
           <span className="omfp-jobs__last" data-testid="job-last-run" data-status={row.lastRunStatus}>
-            {row.lastRun ?? text.never}
+            {row.lastRun ?? (row.run === undefined ? text.never : null)}
           </span>
         </button>
         <div className="omfp-jobs__actions">

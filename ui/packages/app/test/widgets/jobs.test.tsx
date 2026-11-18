@@ -108,6 +108,7 @@ describe("omfp:jobs", () => {
     expect(within(row("mail")).getByTestId("job-last-run").textContent).toBe("never ran");
     expect(within(row("watch")).getByTestId("job-status").textContent).toMatch(/^running /);
     expect(within(row("watch")).getByTestId("job-trigger").textContent).toBe("service · restart always");
+    expect(within(row("watch")).getByTestId("job-last-run").textContent).toBe("");
   });
 
   // spec: UI-742

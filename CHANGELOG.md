@@ -7,6 +7,10 @@ The version's section is also the source of the GitHub release notes.
 
 ## Unreleased
 
+### Fixed
+
+- `omfp:jobs` no longer shows "never ran" next to the running state while a job's first run is in progress (#194)
+
 ## 0.3.1 — 2026-11-18
 
 ### Fixed

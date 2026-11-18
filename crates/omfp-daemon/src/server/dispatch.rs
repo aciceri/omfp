@@ -272,6 +272,8 @@ async fn run(services: &Services, principal: &Principal, call: Call) -> Reply {
             provider_id: services.supervisor.cancel_login(None),
         }),
         Call::AuthLogout(params) => ok(&services.auth_logout(params.provider_id).await?),
+        Call::AuthImportable(_) => ok(&services.auth_importable().await?),
+        Call::AuthImport(_) => ok(&services.auth_import().await?),
         Call::OauthCallback(params) => ok(&services.oauth_callback(params).await?),
         call => threads::thread(services, principal, call).await,
     }

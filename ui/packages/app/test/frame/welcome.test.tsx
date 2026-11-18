@@ -5,7 +5,7 @@ import { CallError } from "@omfp/client";
 import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Frame } from "../../src/frame/frame.tsx";
-import { SELECTED_THREAD, type WidgetComponent } from "../../src/sdk/index.ts";
+import { ERRORS, SELECTED_THREAD, SUCCESSES, type WidgetComponent } from "../../src/sdk/index.ts";
 import type { WidgetRegistry } from "../../src/view/resolve.ts";
 import { thread, workspace } from "../support/fixtures.ts";
 import { ManualTimers, renderWithHost, testHost } from "../support/host.tsx";
@@ -23,14 +23,18 @@ const registry: WidgetRegistry = new Map<string, WidgetComponent>(
   ["header", "chat", "workspace", "changes", "background"].map((name) => [`omfp:${name}`, stub(name)]),
 );
 
-/** A connected window whose index knows `models` (`undefined`: the daemon has not checked yet). */
-function setup(models: number | undefined) {
+/** A connected window whose index knows `models` (`undefined`: the daemon has not checked yet); `importable` answers
+ * `auth.importable` (else it stays pending). */
+function setup(models: number | undefined, importable?: () => unknown) {
   const base = testHost(undefined, {
     importer: () => new Promise<unknown>(() => {}),
     reportTimers: new ManualTimers(),
     noticeTimers: new ManualTimers(),
   });
   base.client.answers.set("widgets.report", () => ({}));
+  if (importable !== undefined) {
+    base.client.answers.set("auth.importable", importable);
+  }
   const test = renderWithHost(<Frame registry={registry} now={() => 0} />, base);
   test.client.connected();
   test.client.index({
@@ -134,5 +138,124 @@ describe("the first run", () => {
     expect(welcomed()).toBe(true);
     act(() => selected.host.window.set(SELECTED_THREAD, "t1"));
     expect(welcomed()).toBe(false);
+  });
+
+  // spec: UI-505
+  test("the welcome asks auth.importable once per connection and offers nothing when omp has no login or it fails", async () => {
+    const empty = setup(0, () => ({ providers: [] }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(welcomed()).toBe(true);
+    expect(empty.client.callsTo("auth.importable").length).toBe(1);
+    expect(screen.queryAllByTestId("welcome-import").length).toBe(0);
+    expect(screen.queryAllByTestId("welcome-import-note").length).toBe(0);
+    // The welcome going and coming back on the same connection asks nothing again.
+    act(() => {
+      empty.client.indexEvents({ kind: "models_changed", models: 2 });
+      empty.flush();
+    });
+    act(() => {
+      empty.client.indexEvents({ kind: "models_changed", models: 0 });
+      empty.flush();
+    });
+    expect(welcomed()).toBe(true);
+    expect(empty.client.callsTo("auth.importable").length).toBe(1);
+
+    cleanup();
+    const failing = setup(0);
+    const [asked] = failing.client.callsTo("auth.importable");
+    await act(async () => {
+      asked?.reject(new CallError({ kind: "daemon", error: { code: "omp_error", message: "auth broker configured" } }));
+      await Promise.resolve();
+    });
+    expect(welcomed()).toBe(true);
+    expect(screen.queryAllByTestId("welcome-import").length).toBe(0);
+    expect(failing.host.window.get(ERRORS)).toEqual([]);
+
+    // A window with usable models never asks.
+    cleanup();
+    const configured = setup(3);
+    expect(configured.client.callsTo("auth.importable").length).toBe(0);
+  });
+
+  // spec: UI-505
+  test("a new connection asks again even with the same connection number, and an earlier connection's late answer is dropped", async () => {
+    const test = setup(0);
+    const [first] = test.client.callsTo("auth.importable");
+    // The daemon restarted and numbers this connection 1 again: still a new connection.
+    act(() => {
+      test.client.model.setConnection({ kind: "reconnecting", attempt: 1, retryInMs: 500, error: "closed" });
+      test.client.notify();
+      test.flush();
+    });
+    act(() => {
+      test.client.connected();
+      test.client.index({ workspaces: [workspace("w1")], threads: [thread("t1", "checkout", "w1")], models: 0 });
+      test.flush();
+    });
+    expect(test.client.callsTo("auth.importable").length).toBe(2);
+    await act(async () => {
+      first?.resolve({ providers: [{ providerId: "anthropic", oauth: false }] });
+      await Promise.resolve();
+    });
+    expect(screen.queryAllByTestId("welcome-import").length).toBe(0);
+
+    const [, second] = test.client.callsTo("auth.importable");
+    await act(async () => {
+      second?.resolve({ providers: [{ providerId: "openai", oauth: false }] });
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("welcome-import").textContent).toBe("Use my omp logins (openai)");
+  });
+
+  // spec: UI-505
+  test("with omp's logins the welcome offers to copy them under the login, with the OAuth caveat only for browser logins", async () => {
+    setup(0, () => ({
+      providers: [
+        { providerId: "anthropic", oauth: false },
+        { providerId: "openai", oauth: false },
+      ],
+    }));
+    const button = await screen.findByTestId("welcome-import");
+    expect([button.textContent, button.dataset.variant]).toEqual([
+      "Use my omp logins (anthropic, openai)",
+      "secondary",
+    ]);
+    expect(screen.getByTestId("welcome-login").dataset.variant).toBe("primary");
+    const note = screen.getByTestId("welcome-import-note");
+    expect(note.textContent).toBe("Copies only omp's logins, nothing else.");
+    expect(button.getAttribute("aria-describedby")).toBe(note.id);
+    expect(note.id).not.toBe("");
+
+    cleanup();
+    setup(0, () => ({
+      providers: [
+        { providerId: "anthropic", oauth: true },
+        { providerId: "openai", oauth: false },
+      ],
+    }));
+    await screen.findByTestId("welcome-import");
+    expect(screen.getByTestId("welcome-import-note").textContent).toBe(
+      "Copies only omp's logins, nothing else. A browser login then lives in both apps: if one of them gets signed out, log in there again.",
+    );
+  });
+
+  // spec: UI-505, UI-506
+  test("pressing the offer copies omp's logins with auth.import, busy while it runs, and says what it copied", async () => {
+    const test = setup(0, () => ({ providers: [{ providerId: "anthropic", oauth: false }] }));
+    await test.user.click(await screen.findByTestId("welcome-import"));
+    expect(test.client.callsTo("auth.import").map((call) => call.params)).toEqual([{}]);
+    expect(screen.getByTestId("welcome-import").dataset.pending).toBe("true");
+    await test.user.click(screen.getByTestId("welcome-import"));
+    expect(test.client.callsTo("auth.import").length).toBe(1);
+
+    const [copy] = test.client.callsTo("auth.import");
+    await act(async () => {
+      copy?.resolve({ providers: [{ providerId: "anthropic", oauth: false }] });
+      await Promise.resolve();
+    });
+    expect(test.host.window.get(SUCCESSES).map((shown) => shown.text)).toEqual(["Copied omp's logins: anthropic"]);
+    expect(screen.getByTestId("welcome-import").dataset.pending).toBeUndefined();
   });
 });

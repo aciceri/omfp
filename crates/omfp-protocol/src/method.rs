@@ -357,6 +357,10 @@ methods! {
     AuthLoginCancel = "auth.login_cancel" (params::Empty) -> auth::LoginCancelled;
     /// Removes every credential omp stored for a provider (PRT-133).
     AuthLogout = "auth.logout" (auth::ProviderRef) -> auth::LoggedOut;
+    /// The provider logins standalone omp holds that omfp could copy into its own profile (PRT-136).
+    AuthImportable = "auth.importable" (params::Empty) -> auth::OmpLogins;
+    /// Copies standalone omp's provider logins into omfp's own profile with omp's export/import (PRT-137).
+    AuthImport = "auth.import" (params::Empty) -> auth::OmpLogins;
     /// Relays the address a browser ended on after an OAuth sign-in omp started (a thread's `/mcp reauth`, else the
     /// running login) to omp's loopback callback listener on the daemon's host (PRT-212, DMN-340..DMN-342).
     OauthCallback = "oauth.callback" (auth::OAuthCallbackParams) -> auth::OAuthCallbackRelayed;

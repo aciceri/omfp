@@ -358,6 +358,14 @@
   ],
   "commands": [
     {
+      "id": "auth.import",
+      "title": "Copy omp's logins (:import-logins)",
+      "aliases": [
+        "import-logins"
+      ],
+      "description": "Copies the provider logins of your standalone omp into omfp's omp, through omp's own auth export and import: only model-provider logins, never its configuration or MCP credentials. A browser (OAuth) login then lives in both apps: a provider that rotates its tokens may sign one of them out later, and you log in there again."
+    },
+    {
       "id": "auth.login",
       "title": "Log in to a provider (:login [<provider>]; without one, pick it)",
       "aliases": [

@@ -49,6 +49,9 @@ oxc_transformer = "=0.158.0"
 proptest = "1"
 regex = "1"
 portable-pty = "0.9"
+# SQLite's own byte-range read lock on standalone omp's credential store (DMN-229): rustix locks whole files only and
+# the daemon forbids unsafe code. The version portable-pty already builds, with its `fs` feature.
+nix = { version = "0.28", default-features = false, features = ["fs"] }
 # Parses PTY output into the bounded plain-text screen agents inspect (TRM-106).
 vt100 = "0.18"
 reqwest = { version = "0.13", default-features = false, features = [

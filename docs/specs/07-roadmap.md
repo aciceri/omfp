@@ -768,6 +768,14 @@ A login the window did not start (an agent's `auth.login` through `omfp_call`, a
 as its own does: the `index` topic carries the running login with its page and progress (DMN-290), and the window
 shows its progress toast with Cancel and its page's toast with Open and Copy until it ends (UI-640, E2E-62).
 
+Reusing omp's logins (#199): omfp's profile stays isolated (ARC-021), but a user who already uses omp no longer has to
+log in again. When omp can use no model, the welcome offers `Use my omp logins (<providers>)`, and `:import-logins` does
+the same at any time (UI-505, UI-506). The copy is the pinned omp's own `omp auth export`, run on a private read-only
+snapshot of the user's omp login store (deleted right after), piped into `omp auth import -` with omfp's profile
+(DMN-229, DMN-230, PRT-136, PRT-137, E2E-74). Only provider logins are copied, never MCP credentials or
+configuration. A copied browser login may later sign one of the two apps out if its provider rotates refresh tokens;
+the offer says so.
+
 `omfp:background` no longer grows with every finished job and subagent: what runs comes first, the five most recently
 finished stay in sight (a failed one until it is opened), the older ones collapse under `Finished (N)`, and Clear
 finished hides them from the window, remembered across reloads (UI-641..UI-643, E2E-63).

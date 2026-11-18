@@ -47,6 +47,10 @@ pub struct Ports {
     pub omp_version: String,
     /// Environment overrides for every omp process.
     pub omp_env: Vec<(OsString, Option<OsString>)>,
+    /// Overrides of the daemon's own environment that make up the user's own (standalone) omp, whose provider logins
+    /// `auth.importable`/`auth.import` read (DMN-229, DMN-230); empty in production: the daemon's environment as
+    /// inherited.
+    pub user_omp_env: Vec<(OsString, Option<OsString>)>,
     /// Startup warnings shown to clients (DMN-001).
     pub warnings: Vec<String>,
     /// The time declared jobs' schedules and service backoffs follow (DMN-323, DMN-326).
@@ -96,6 +100,7 @@ impl Ports {
             omp_program: program,
             omp_version: version,
             omp_env,
+            user_omp_env: Vec::new(),
             warnings: warning.into_iter().collect(),
             clock: Arc::new(SystemClock),
         })
@@ -369,6 +374,7 @@ pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHa
         data.clone(),
         SupervisorConfig {
             omp_env,
+            user_omp_env: ports.user_omp_env,
             max_processes: config.max_processes,
             idle_timeout: config.idle_timeout,
             event_capacity: config.event_buffer,

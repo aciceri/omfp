@@ -1,0 +1,29 @@
+---
+source: crates/omfp-protocol/tests/protocol/golden.rs
+expression: golden
+---
+{
+  "request": {
+    "id": "c42",
+    "method": "auth.importable",
+    "params": {},
+    "type": "request"
+  },
+  "response": {
+    "id": "c42",
+    "ok": true,
+    "result": {
+      "providers": [
+        {
+          "oauth": true,
+          "providerId": "anthropic"
+        },
+        {
+          "oauth": false,
+          "providerId": "openai"
+        }
+      ]
+    },
+    "type": "response"
+  }
+}

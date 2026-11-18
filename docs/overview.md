@@ -43,11 +43,17 @@ omfp uses `<data-dir>/omp-profile`, with user configuration in `agent/`: `config
 `$XDG_DATA_HOME/omfp/omp-profile` or `~/.local/share/omfp/omp-profile` on Linux, and
 `~/Library/Application Support/omfp/omp-profile` on macOS. `omfp daemon --data-dir <path>` relocates the whole profile.
 
-**Upgrading from shared configuration:** this is a fresh profile. Run `:login` in omfp again and explicitly configure
-the new `agent/` directory for the models and user settings you need. omfp never automatically imports
-or copies old credentials/configuration, never falls back to `~/.omp/agent` (or standalone omp's XDG state), and has
-no sharing switch. Login/logout and config changes in one app do not change the other's stored state. Existing
-threads, session history and workspace/repository configuration are preserved; `.omp/` project config still applies.
+**Upgrading from shared configuration:** this is a fresh profile. Run `:login` in omfp again, or copy the logins
+standalone omp already has: the welcome offers *Use my omp logins*, and `:import-logins` does the same at any time.
+The copy makes a read-only copy of standalone omp's login database in omfp's private data folder, runs omp's own
+`omp auth export` on it (deleting it right after) piped into `omp auth import -`, takes only model-provider logins (no
+MCP credentials, settings, `models.yml` or `mcp.json`) and happens only when you ask — or an agent or MCP client with
+Drive acting for you does. A browser (OAuth) login then lives
+in both apps: a provider that rotates refresh tokens may sign one of them out later, and you log in there again.
+Configure the new `agent/` directory explicitly for the models and user settings you need. omfp never
+falls back to `~/.omp/agent` (or standalone omp's XDG state) and has no sharing switch. Login/logout and config
+changes in one app do not change the other's stored state. Existing threads, session history and
+workspace/repository configuration are preserved; `.omp/` project config still applies.
 
 This covers every daemon-owned omp, including login, model discovery, title generation and session probes.
 `HOME`, cwd and repository roots are unchanged; explicit API keys in the daemon's environment still work. This is

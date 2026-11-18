@@ -34,7 +34,7 @@ use omfp_protocol::{
 };
 use omfp_protocol::{
     AuthProvider, AuthProviders, AuthStatus, LoggedIn, LoggedOut, LoginCancelled,
-    OAuthCallbackParams, OAuthCallbackRelayed, ProviderRef,
+    OAuthCallbackParams, OAuthCallbackRelayed, OmpLogin, OmpLogins, ProviderRef,
 };
 use omfp_protocol::{CardAnswer, CardAnswerParams, CompileWidgetParams, CompiledWidget};
 use omfp_protocol::{
@@ -1649,6 +1649,8 @@ fn auth_examples() -> Vec<(&'static str, Value)> {
                 remaining_source: Some("ANTHROPIC_API_KEY".to_owned()),
             },
         ),
+        example::<method::AuthImportable>(Empty {}, &omp_logins()),
+        example::<method::AuthImport>(Empty {}, &omp_logins()),
         example::<method::OauthCallback>(
             OAuthCallbackParams {
                 thread_id: Some(THREAD_ID.to_owned()),
@@ -1657,6 +1659,40 @@ fn auth_examples() -> Vec<(&'static str, Value)> {
             &OAuthCallbackRelayed { status: 200 },
         ),
     ]
+}
+
+fn omp_logins() -> OmpLogins {
+    OmpLogins {
+        providers: vec![
+            OmpLogin {
+                provider_id: "anthropic".to_owned(),
+                oauth: true,
+            },
+            OmpLogin {
+                provider_id: "openai".to_owned(),
+                oauth: false,
+            },
+        ],
+    }
+}
+
+// spec: PRT-136, PRT-137
+#[test]
+fn omps_logins_serialize_as_provider_ids_and_oauth_flags() {
+    assert_eq!(
+        serde_json::to_value(omp_logins()).unwrap(),
+        json!({ "providers": [
+            { "providerId": "anthropic", "oauth": true },
+            { "providerId": "openai", "oauth": false },
+        ] })
+    );
+    assert_eq!(
+        serde_json::to_value(OmpLogins {
+            providers: Vec::new()
+        })
+        .unwrap(),
+        json!({ "providers": [] })
+    );
 }
 
 // spec: PRT-212

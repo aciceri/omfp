@@ -17,6 +17,7 @@ getrandom.workspace = true
 hex.workspace = true
 httpdate.workspace = true
 jiff.workspace = true
+nix.workspace = true
 omp-rpc.workspace = true
 omfp-core.workspace = true
 omfp-protocol.workspace = true

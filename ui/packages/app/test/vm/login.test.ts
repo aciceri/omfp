@@ -5,6 +5,8 @@ import { CallError } from "@omfp/client";
 import type { AuthProvider } from "@omfp/protocol";
 import { errorMessage } from "../../src/sdk/actions.ts";
 import {
+  importedSummary,
+  importOffer,
   loginCompletions,
   loginProblem,
   logoutCompletions,
@@ -125,5 +127,25 @@ describe("login completions and outcomes", () => {
       true,
       false,
     ]);
+  });
+
+  // spec: UI-505, UI-506
+  test("copying omp's logins names their providers and adds the OAuth caveat only for browser logins", () => {
+    const keys = [
+      { providerId: "anthropic", oauth: false },
+      { providerId: "openai", oauth: false },
+    ];
+    const caveat = "A browser login then lives in both apps: if one of them gets signed out, log in there again.";
+    expect(importOffer(keys)).toEqual({
+      button: "Use my omp logins (anthropic, openai)",
+      note: "Copies only omp's logins, nothing else.",
+    });
+    expect(importedSummary(keys)).toBe("Copied omp's logins: anthropic, openai");
+    const browser = [{ providerId: "openai-codex", oauth: true }];
+    expect(importOffer(browser)).toEqual({
+      button: "Use my omp logins (openai-codex)",
+      note: `Copies only omp's logins, nothing else. ${caveat}`,
+    });
+    expect(importedSummary(browser)).toBe(`Copied omp's logins: openai-codex. ${caveat}`);
   });
 });

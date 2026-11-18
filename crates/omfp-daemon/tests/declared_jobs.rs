@@ -45,6 +45,7 @@ async fn start(dir: TempDir) -> TestDaemon {
         omp_program: "omp".into(),
         omp_version: omfp_core::OMP_VERSION.into(),
         omp_env: Vec::new(),
+        user_omp_env: omfp_testkit::absent_standalone_omp(&dir),
         warnings: Vec::new(),
         clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
     };

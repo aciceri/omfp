@@ -227,6 +227,18 @@ struct Script {
     models: Option<u32>,
     /// The specs of every check of the usable models so far, oldest first.
     model_checks: Vec<LaunchSpec>,
+    /// What every later `omp auth export` answers (DMN-229): its document, or the stderr it fails with; `None`: a
+    /// document without credentials.
+    export: Option<Result<String, String>>,
+    /// The stderr every later `omp auth import` fails with (DMN-230); `None`: it imports.
+    import_failure: Option<String>,
+    /// The specs of every `omp auth export` so far, oldest first.
+    exports: Vec<LaunchSpec>,
+    /// The bytes of the store each `omp auth export` so far found in its agent directory (`PI_CODING_AGENT_DIR`'s
+    /// `agent.db`), oldest first; `None` without one.
+    export_stores: Vec<Option<Vec<u8>>>,
+    /// The spec and the document of every `omp auth import` so far, oldest first.
+    imports: Vec<(LaunchSpec, String)>,
 }
 
 /// The fake launcher. Without queued runs, every launch plays [`FakeRun::fresh`].
@@ -312,6 +324,12 @@ impl FakeLauncher {
         self.gate(TITLE_GATE)
     }
 
+    /// Holds every later `omp auth import` (DMN-230), before it stores anything, until the returned gate opens.
+    #[must_use]
+    pub fn gate_imports(&self) -> Gate {
+        self.gate(IMPORT_GATE)
+    }
+
     /// Holds every later launch, before the process exists, until the returned gate opens.
     #[must_use]
     pub fn gate_launches(&self) -> Gate {
@@ -370,6 +388,35 @@ impl FakeLauncher {
     pub fn model_checks(&self) -> Vec<LaunchSpec> {
         lock(&self.script).model_checks.clone()
     }
+
+    /// Answers every later `omp auth export` (DMN-229) with `export`: its document on stdout, or the stderr it fails
+    /// with; by default a document without credentials.
+    pub fn set_export(&self, export: Result<&str, &str>) {
+        lock(&self.script).export = Some(export.map(str::to_owned).map_err(str::to_owned));
+    }
+
+    /// Fails every later `omp auth import` (DMN-230) with `stderr`.
+    pub fn fail_imports(&self, stderr: &str) {
+        lock(&self.script).import_failure = Some(stderr.to_owned());
+    }
+
+    /// The spec of every `omp auth export` so far, oldest first.
+    #[must_use]
+    pub fn exports(&self) -> Vec<LaunchSpec> {
+        lock(&self.script).exports.clone()
+    }
+
+    /// The bytes of the store each `omp auth export` so far found in its agent directory, oldest first (DMN-229).
+    #[must_use]
+    pub fn export_stores(&self) -> Vec<Option<Vec<u8>>> {
+        lock(&self.script).export_stores.clone()
+    }
+
+    /// The spec and the stdin document of every `omp auth import` so far, oldest first.
+    #[must_use]
+    pub fn imports(&self) -> Vec<(LaunchSpec, String)> {
+        lock(&self.script).imports.clone()
+    }
 }
 
 /// Gate key of title generations (not an omp command).
@@ -380,6 +427,9 @@ const LAUNCH_GATE: &str = "<launch>";
 
 /// Gate key of process closes (not an omp command).
 const CLOSE_GATE: &str = "<close>";
+
+/// Gate key of `omp auth import` runs (not an RPC command).
+const IMPORT_GATE: &str = "<auth import>";
 
 impl AgentLauncher for FakeLauncher {
     fn launch(
@@ -470,6 +520,43 @@ impl AgentLauncher for FakeLauncher {
         }
         script.model_checks.push(spec.clone());
         Ok(script.models.unwrap_or(1))
+    }
+
+    fn export_logins(&self, spec: &LaunchSpec) -> Result<String, StartError> {
+        let store = spec
+            .env
+            .iter()
+            .rev()
+            .find(|(key, _)| key == "PI_CODING_AGENT_DIR")
+            .and_then(|(_, dir)| dir.as_ref())
+            .and_then(|dir| std::fs::read(Path::new(dir).join("agent.db")).ok());
+        let mut script = lock(&self.script);
+        script.exports.push(spec.clone());
+        script.export_stores.push(store);
+        match script.export.clone() {
+            Some(Ok(document)) => Ok(document),
+            Some(Err(stderr)) => Err(StartError::Auth {
+                command: "auth export",
+                stderr,
+            }),
+            None => Ok(r#"{"version":1,"credentials":[]}"#.to_owned()),
+        }
+    }
+
+    fn import_logins(&self, spec: &LaunchSpec, document: String) -> Result<(), StartError> {
+        let gate = lock(&self.script).gates.get(IMPORT_GATE).cloned();
+        if let Some(gate) = gate {
+            gate.pass();
+        }
+        let mut script = lock(&self.script);
+        script.imports.push((spec.clone(), document));
+        match script.import_failure.clone() {
+            Some(stderr) => Err(StartError::Auth {
+                command: "auth import",
+                stderr,
+            }),
+            None => Ok(()),
+        }
     }
 }
 

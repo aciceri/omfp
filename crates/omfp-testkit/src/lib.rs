@@ -4,6 +4,10 @@
 //! - [`DenyProxy`]: an HTTP(S) proxy that refuses and records every connection, to catch stray network access.
 //! - [`OmpEnv`]: an isolated omp home and agent directory wired to a [`fake_llm::FakeLlm`].
 //! - [`OmpSession`]: a live `omp --mode rpc-ui` process with every raw stdout frame recorded.
+//! - [`absent_standalone_omp`], [`standalone_omp_env`]: the user's own omp a test daemon looks at (`Ports::user_omp_env`).
+
+use std::ffi::OsString;
+use std::path::Path;
 
 mod deny_proxy;
 mod omp;
@@ -29,3 +33,32 @@ pub const KNOWN_DISCOVERY_HOSTS: &[&str] = &[
     "api.venice.ai",
     "zenmux.ai",
 ];
+
+/// The environment variables the daemon reads to find standalone omp's credential store (DMN-229).
+const STANDALONE_OMP_VARIABLES: &[&str] = &[
+    "PI_CONFIG_DIR",
+    "OMP_PROFILE",
+    "PI_PROFILE",
+    "PI_CODING_AGENT_DIR",
+    "XDG_DATA_HOME",
+];
+
+/// `Ports::user_omp_env` of a standalone omp at `home`: `HOME` set to it and every other variable the daemon reads to
+/// find standalone omp's store unset, so nothing inherited points at the developer's own omp (TST-003).
+#[must_use]
+pub fn standalone_omp_env(home: &Path) -> Vec<(OsString, Option<OsString>)> {
+    std::iter::once(("HOME".into(), Some(home.as_os_str().to_owned())))
+        .chain(
+            STANDALONE_OMP_VARIABLES
+                .iter()
+                .map(|key| (OsString::from(key), None)),
+        )
+        .collect()
+}
+
+/// `Ports::user_omp_env` of a test daemon without a standalone omp: [`standalone_omp_env`] at `<dir>/standalone-home`,
+/// which a test may fill with a store (`.omp/agent/agent.db`) or leave absent.
+#[must_use]
+pub fn absent_standalone_omp(dir: impl AsRef<Path>) -> Vec<(OsString, Option<OsString>)> {
+    standalone_omp_env(&dir.as_ref().join("standalone-home"))
+}

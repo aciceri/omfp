@@ -111,7 +111,7 @@ export function reportSuccess(host: OmfpHost, text: string): void {
 }
 
 /** A user action omp took whose outcome shows elsewhere (UI-913): as {@link reportSuccess}, but a neutral toast. */
-function reportTaken(host: OmfpHost, text: string): void {
+export function reportTaken(host: OmfpHost, text: string): void {
   host.window.set(SUCCESSES, (shown) => [...shown, { key: (shown.at(-1)?.key ?? 0) + 1, text, tone: "info" as const }]);
   host.announcer.announce(text);
   host.notices.remember("info", text);

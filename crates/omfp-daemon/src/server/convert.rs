@@ -135,13 +135,15 @@ pub(crate) fn supervisor_error(error: SupervisorError) -> ErrorBody {
         SupervisorError::AlreadyResolved(_) | SupervisorError::CardNotWaiting(_) => {
             ErrorCode::AlreadyResolved
         }
+        SupervisorError::StandaloneStore(_) => ErrorCode::OmpError,
         SupervisorError::InvalidResponse(_)
         | SupervisorError::EmptyOffer
         | SupervisorError::UserMcpConfig => ErrorCode::BadRequest,
         SupervisorError::LiveActive { .. }
         | SupervisorError::NoLiveSession
         | SupervisorError::Busy
-        | SupervisorError::BusyMove => ErrorCode::Conflict,
+        | SupervisorError::BusyMove
+        | SupervisorError::LoginRunning => ErrorCode::Conflict,
         SupervisorError::Live { omp, .. } => {
             // omp's own refusal of a second session (DMN-104): the same conflict the daemon reports itself.
             let code = if omp.contains("A live session is already active") {

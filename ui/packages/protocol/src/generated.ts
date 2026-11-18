@@ -1200,6 +1200,24 @@ export type OAuthCallbackRelayed = {
   status: number;
 };
 
+/** One provider standalone omp holds a login for (PRT-136). */
+export type OmpLogin = {
+  /**
+   * At least one of its logins is an OAuth (browser) login: a provider that rotates refresh tokens may sign one
+   * of the two apps out later.
+   */
+  oauth: boolean;
+  providerId: string;
+};
+
+/**
+ * Standalone omp's provider logins: those omfp could copy (`auth.importable`) or copied (`auth.import`), PRT-136,
+ * PRT-137.
+ */
+export type OmpLogins = {
+  providers: OmpLogin[];
+};
+
 /** `fs.complete` result: directories sorted by name, at most 200. */
 export type PathCompletions = {
   entries: PathEntry[];
@@ -2582,6 +2600,8 @@ export interface Methods {
   "auth.login": { params: ProviderRef; result: LoggedIn };
   "auth.login_cancel": { params: Empty; result: LoginCancelled };
   "auth.logout": { params: ProviderRef; result: LoggedOut };
+  "auth.importable": { params: Empty; result: OmpLogins };
+  "auth.import": { params: Empty; result: OmpLogins };
   "oauth.callback": { params: OAuthCallbackParams; result: OAuthCallbackRelayed };
 }
 
@@ -2699,5 +2719,7 @@ export const METHODS: readonly MethodName[] = [
   "auth.login",
   "auth.login_cancel",
   "auth.logout",
+  "auth.importable",
+  "auth.import",
   "oauth.callback",
 ];

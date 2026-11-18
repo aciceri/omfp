@@ -1320,6 +1320,14 @@ requirements = [
   "DMN-358",
   "DMN-359",
   "UI-998",
+  # Reusing omp's logins (#199)
+  "DMN-229",
+  "DMN-230",
+  "PRT-136",
+  "PRT-137",
+  "UI-505",
+  "UI-506",
+  "E2E-74",
 ]
 
 [M18]

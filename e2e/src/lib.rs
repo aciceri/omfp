@@ -306,14 +306,24 @@ impl std::fmt::Debug for Journey {
 impl Journey {
     /// Starts everything with the model replying `steps` in order, then opens the UI with the token in the URL.
     pub async fn start(steps: Vec<Step>) -> anyhow::Result<Self> {
+        Self::start_set_up(steps, |_, _| Ok(())).await
+    }
+
+    /// [`Journey::start`] where `setup` changes omp's environment and the daemon's ports once the fixtures are in the
+    /// daemon's omp profile and before the daemon starts: e.g. a fresh install ([`fresh_install`]) beside a standalone
+    /// omp of the user ([`standalone_omp`]).
+    pub async fn start_set_up(
+        steps: Vec<Step>,
+        setup: impl FnOnce(&OmpEnv, &mut Ports) -> anyhow::Result<()>,
+    ) -> anyhow::Result<Self> {
         require_pinned_omp();
-        Self::launch(steps, None, web_bundle()).await
+        Self::launch(steps, None, web_bundle(), setup).await
     }
 
     /// Starts a journey whose daemon runs `launcher` (the fake omp of `omfp_daemon::agent`, scripted by the test
     /// through its clone) instead of omp: for what the pinned omp cannot do offline, e.g. a live voice call (E2E-14).
     pub async fn start_fake(launcher: FakeLauncher) -> anyhow::Result<Self> {
-        Self::launch(Vec::new(), Some(launcher), web_bundle()).await
+        Self::launch(Vec::new(), Some(launcher), web_bundle(), |_, _| Ok(())).await
     }
 
     /// [`Journey::start_fake`] serving the web bundle at `bundle` (e.g. a copy with a measuring script, TST-052).
@@ -321,13 +331,14 @@ impl Journey {
         launcher: FakeLauncher,
         bundle: PathBuf,
     ) -> anyhow::Result<Self> {
-        Self::launch(Vec::new(), Some(launcher), bundle).await
+        Self::launch(Vec::new(), Some(launcher), bundle, |_, _| Ok(())).await
     }
 
     async fn launch(
         steps: Vec<Step>,
         launcher: Option<FakeLauncher>,
         bundle: PathBuf,
+        setup: impl FnOnce(&OmpEnv, &mut Ports) -> anyhow::Result<()>,
     ) -> anyhow::Result<Self> {
         trace_daemon();
         let started = Instant::now();
@@ -342,7 +353,7 @@ impl Journey {
         let env = OmpEnv::new(&fake.base_url(), Some(&proxy))?;
         let data = tempfile::tempdir()?;
         let git = launcher.as_ref().map(|_| Arc::new(FakeGit::new()));
-        let daemon = start_daemon(&env, data.path(), &bundle, launcher, git.clone()).await?;
+        let daemon = start_daemon(&env, data.path(), &bundle, launcher, git.clone(), setup).await?;
         let profile = tempfile::tempdir()?;
         let chromedriver = ChromeDriver::start()?;
         let driver = WebDriver::new(&chromedriver.url, chrome(profile.path())?).await?;
@@ -1018,6 +1029,7 @@ async fn start_daemon(
     bundle: &Path,
     launcher: Option<FakeLauncher>,
     git: Option<Arc<FakeGit>>,
+    setup: impl FnOnce(&OmpEnv, &mut Ports) -> anyhow::Result<()>,
 ) -> anyhow::Result<DaemonHandle> {
     let omp = omp_bin();
     let path = |path: &Path| path.to_string_lossy().into_owned();
@@ -1038,22 +1050,85 @@ async fn start_daemon(
         path(&config_file(data)),
     ])?;
     let config = Config::from_cli(cli, None, None).map_err(anyhow::Error::msg)?;
-    let ports = if let Some(launcher) = launcher {
+    let mut ports = if let Some(launcher) = launcher {
         Ports {
             launcher: Arc::new(launcher),
             git: git.unwrap_or_else(|| Arc::new(FakeGit::new())),
             omp_program: config.omp_bin.clone().unwrap_or_default(),
             omp_version: omfp_core::OMP_VERSION.to_owned(),
             omp_env: Vec::new(),
+            user_omp_env: omfp_testkit::absent_standalone_omp(data),
             warnings: Vec::new(),
             clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
         }
     } else {
         let mut ports = Ports::resolve(&config)?;
         ports.omp_env = env.prepare_omfp_profile(data)?;
+        // No standalone omp of the user unless `setup` puts one in: its home, inside the journey's data directory, has
+        // no `.omp`, so nothing reaches the real ~/.omp.
+        ports.user_omp_env = omfp_testkit::absent_standalone_omp(data);
         ports
     };
+    setup(env, &mut ports)?;
     start_with(config, ports).await
+}
+
+/// Makes the daemon's omp profile a fresh install, as `contract_login.rs` does: no `models.yml`, and model selection
+/// scoped to one model of a provider that needs a credential with keyless discovery off, so omp can use no model
+/// until it holds a credential for Anthropic. For [`Journey::start_set_up`]'s setup.
+pub fn fresh_install(env: &OmpEnv) -> anyhow::Result<()> {
+    std::fs::remove_file(env.agent_dir().join("models.yml"))?;
+    std::fs::write(
+        env.agent_dir().join("config.yml"),
+        "enabledModels: [anthropic/claude-sonnet-4-5]\n\
+         disabledProviders: [local, web, ollama, llama.cpp, lm-studio, apple]\n",
+    )?;
+    Ok(())
+}
+
+/// The user's own standalone omp beside omfp's profile, for [`Journey::start_set_up`]'s setup (`Ports::user_omp_env`):
+/// `env`'s isolated environment with the agent directory `<home>/.omp/agent` (empty, the fixtures being in omfp's
+/// profile), holding the logins of `credentials` (a document of `omp auth export`'s format, inert values only) stored
+/// by the pinned omp's own `omp auth import`. Returns that omp's environment overrides.
+pub fn standalone_omp(
+    env: &OmpEnv,
+    credentials: &Value,
+) -> anyhow::Result<Vec<(OsString, Option<OsString>)>> {
+    let agent = env.home().join(".omp").join("agent");
+    anyhow::ensure!(
+        env.agent_dir() != agent,
+        "the fixtures must be in omfp's profile before the standalone omp gets its own store"
+    );
+    std::fs::create_dir_all(&agent)?;
+    let mut overrides = env.env_overrides();
+    for (key, value) in &mut overrides {
+        if key == "PI_CODING_AGENT_DIR" {
+            *value = Some(agent.clone().into_os_string());
+        }
+    }
+    let file = env.root().join("standalone-logins.json");
+    std::fs::write(&file, credentials.to_string())?;
+    let mut import = Command::new(omp_bin());
+    import
+        .arg("auth")
+        .arg("import")
+        .arg(&file)
+        .current_dir(env.work_dir());
+    for (key, value) in &overrides {
+        match value {
+            Some(value) => import.env(key, value),
+            None => import.env_remove(key),
+        };
+    }
+    let output = import.output().context("running omp auth import")?;
+    std::fs::remove_file(&file)?;
+    if !output.status.success() {
+        bail!(
+            "omp auth import failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    Ok(overrides)
 }
 
 fn config_file(data: &Path) -> PathBuf {

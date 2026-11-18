@@ -1,6 +1,7 @@
 //! Params and results of logging omp in to a provider (PRT-129..PRT-133, PRT-140): `auth.status`, `auth.providers`,
 //! `auth.login`, `auth.login_cancel` and `auth.logout`. The flow of a login reaches a window as `login_*` window
-//! requests ([`crate::WindowRequest`]). `oauth.callback` (PRT-212) relays the loopback callback of an OAuth sign-in
+//! requests ([`crate::WindowRequest`]). `auth.importable` and `auth.import` (PRT-136, PRT-137) list and copy
+//! standalone omp's provider logins. `oauth.callback` (PRT-212) relays the loopback callback of an OAuth sign-in
 //! omp started — a login or a thread's `/mcp reauth` — from a browser on another machine.
 
 use schemars::JsonSchema;
@@ -104,6 +105,24 @@ pub struct LoggedOut {
     /// What still authenticates the provider once they are gone, as omp names it (e.g. an environment variable);
     /// `null` when nothing does.
     pub remaining_source: Option<String>,
+}
+
+/// One provider standalone omp holds a login for (PRT-136).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OmpLogin {
+    pub provider_id: String,
+    /// At least one of its logins is an OAuth (browser) login: a provider that rotates refresh tokens may sign one
+    /// of the two apps out later.
+    pub oauth: bool,
+}
+
+/// Standalone omp's provider logins: those omfp could copy (`auth.importable`) or copied (`auth.import`), PRT-136,
+/// PRT-137.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct OmpLogins {
+    pub providers: Vec<OmpLogin>,
 }
 
 /// `oauth.callback` params (PRT-212): the address the user's browser ended on after an OAuth sign-in omp started, to

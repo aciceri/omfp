@@ -99,7 +99,8 @@ pub fn permission(method: &str) -> Option<Permission> {
         | "mcp.tools"
         | "auth.status"
         | "auth.models"
-        | "auth.providers" => Read,
+        | "auth.providers"
+        | "auth.importable" => Read,
         "workspaces.create"
         | "workspaces.update"
         | "workspaces.remove"
@@ -166,7 +167,8 @@ pub fn permission(method: &str) -> Option<Permission> {
         | "windows.check_widget"
         | "auth.login"
         | "auth.login_cancel"
-        | "auth.logout" => Drive,
+        | "auth.logout"
+        | "auth.import" => Drive,
         _ => return None,
     })
 }

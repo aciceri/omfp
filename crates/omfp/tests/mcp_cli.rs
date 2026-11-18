@@ -31,6 +31,7 @@ async fn mcp_config_prints_the_entry_of_the_local_daemon() {
         omp_program: "omp".into(),
         omp_version: omfp_core::OMP_VERSION.into(),
         omp_env: Vec::new(),
+        user_omp_env: Vec::new(),
         warnings: Vec::new(),
         clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
     };

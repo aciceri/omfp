@@ -115,8 +115,9 @@ crates/omfp-daemon    daemon library: omp adapter (omp.rs), agent port + FakeLau
                       token and origin checks; server/mcp/methods.rs: the registry as tools, the catalogue and the static docs as resources);
                       the logins to omp's providers (supervisor/login.rs: the short-lived login omp, one login at a
                       time, the reload of running threads after a login; supervisor/models.rs: the count of usable
-                      models of `auth.status`; server/services/logins.rs: `auth.*` and the
-                      `login_*` window requests of a login's flow);
+                      models of `auth.status`; supervisor/import.rs: standalone omp's logins offered and copied, its
+                      store found as omp finds it and exported from a private snapshot; server/services/logins.rs:
+                      `auth.*` and the `login_*` window requests of a login's flow);
                       the relay of an OAuth sign-in's loopback callback pasted from a remote browser (oauth_relay.rs:
                       the SSRF guard and the GET; supervisor/oauth.rs: the sign-ins each thread and the login wait on;
                       server/services/oauth.rs: `oauth.callback`);
@@ -257,6 +258,15 @@ tag, the `omp-rpc` git tag in `Cargo.toml`, `omfp_core::OMP_VERSION` and the rel
 - Todo tasks have no `blocked` status since 18.19 (omp-rpc's `TodoStatus` lost `Blocked` and `TodoItem.blocker`).
 - At startup omp always fetches its model catalog (`catalog.stencil.so` + keyless providers) and no setting disables
   it: contract tests run omp behind `DenyProxy` and fail on hosts outside `KNOWN_DISCOVERY_HOSTS`.
+- `omp auth export` is no read: it opens its credential store read-write (creates a missing one, migrates an older
+  schema, adds tables and indexes its schema lacks, backfills identity keys, chmods the file), writes logs and extracts
+  natives. Even SQLite's read-only connection creates or updates `agent.db-shm`, and `immutable=1` disables its locking.
+  omfp therefore reads standalone omp's `agent.db` (`-journal`, `-wal`) as bytes under SQLite's own SHARED lock (a
+  POSIX record lock on its shared range, never `RESERVED_BYTE`: other readers probe it for hot journals) and a read
+  lock on the checkpoint byte of `agent.db-shm` (opened read-only), stages them in a private snapshot in
+  `<data-dir>/login/` where SQLite replays or rolls back and `VACUUM INTO` writes the copy, exports from it with omfp's
+  profile environment, and deletes it after (DMN-229). omp also loads `~/.env`, `<config root>/.env` and
+  `<agent dir>/.env` for variables left empty.
 - omp reads project config from its cwd (the workspace folder) and loads a repo's `AGENTS.md` only when the repo is an
   `--add-dir` root; it does not resolve symlinked roots, and tools write through symlinks. Roots saved in a session
   survive a restart without their flag: detach with `/remove-dir` (S-10).

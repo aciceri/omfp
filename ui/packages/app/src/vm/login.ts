@@ -1,9 +1,10 @@
 /**
  * Logging in to a provider from the window (UI-380..UI-389): which texts of omp say it needs a login, what `:login`
- * and `:logout` complete, and the messages of a login's and a logout's outcome.
+ * and `:logout` complete, and the messages of a login's and a logout's outcome; the texts of copying standalone omp's
+ * logins (UI-505, UI-506).
  */
 
-import type { AuthProvider, LoggedOut } from "@omfp/protocol";
+import type { AuthProvider, LoggedOut, OmpLogin } from "@omfp/protocol";
 import { strings } from "../strings/index.ts";
 
 const text = strings.shell.login;
@@ -81,4 +82,26 @@ export function withAuthenticated(
   authenticated: boolean,
 ): readonly AuthProvider[] {
   return providers.map((provider) => (provider.id === providerId ? { ...provider, authenticated } : provider));
+}
+
+/**
+ * The texts of copying standalone omp's `logins` (UI-505, UI-506): their provider ids joined by ", ", and the OAuth
+ * caveat when any of them is a browser login.
+ */
+function describeLogins(logins: readonly OmpLogin[]): { readonly ids: string; readonly caveat: string | undefined } {
+  const ids = logins.map((login) => login.providerId).join(", ");
+  return { ids, caveat: logins.some((login) => login.oauth) ? text.oauthCaveat : undefined };
+}
+
+/** The welcome's offer to copy standalone omp's `logins` (UI-505): its button text and its note. */
+export function importOffer(logins: readonly OmpLogin[]): { readonly button: string; readonly note: string } {
+  const { ids, caveat } = describeLogins(logins);
+  const note = strings.shell.welcome.importNote;
+  return { button: strings.shell.welcome.importLogins(ids), note: caveat === undefined ? note : `${note} ${caveat}` };
+}
+
+/** The success toast of a copy (UI-506) that copied `logins`, at least one. */
+export function importedSummary(logins: readonly OmpLogin[]): string {
+  const { ids, caveat } = describeLogins(logins);
+  return caveat === undefined ? text.imported(ids) : `${text.imported(ids)}. ${caveat}`;
 }

@@ -75,7 +75,8 @@ impl DataDir {
         self.root.join("omp")
     }
 
-    /// The isolated omp user configuration and state (ARC-021), never imported from standalone omp.
+    /// The isolated omp user configuration and state (ARC-021), never imported from standalone omp except its provider
+    /// logins, copied on request (DMN-230).
     #[must_use]
     pub fn omp_profile(&self) -> PathBuf {
         self.root.join("omp-profile")

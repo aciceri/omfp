@@ -115,7 +115,8 @@ impl OmpEnv {
     }
 
     /// Places this test's synthetic fixtures in a daemon's isolated profile before startup. This is test setup,
-    /// not application migration: production never moves or copies standalone credentials/configuration.
+    /// not application migration: production never moves standalone configuration, and copies only provider logins,
+    /// on the user's request, through omp's own `auth export`/`auth import` (DMN-229, DMN-230).
     pub fn prepare_omfp_profile(
         &self,
         data: &Path,

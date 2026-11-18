@@ -21,6 +21,17 @@ The version's section is also the source of the GitHub release notes.
   turn ends and comes back live when you open it. With `wait` the agent waits for your answer, given through the
   widget (`useAnswer()` in `omfp/sdk`) or the card's Cancel, optionally with a timeout; meanwhile the thread needs
   you, as with a question (#229).
+- omfp can reuse standalone omp's logins: on a fresh install the welcome offers *Use my omp logins (…)*, and
+  `:import-logins` copies them at any time. Only model-provider logins are copied, and only when you ask (or an agent
+  or MCP client acting for you does); MCP credentials, settings and model configuration stay behind. omfp never runs
+  omp on standalone omp's own login database: it makes a read-only copy of it in omfp's private data folder, lets omp's
+  own `auth export` read that copy, deletes it right after, and imports the provider logins with `auth import`.
+  The copy waits up to 2 s for a write standalone omp has in progress, is taken again when omp saved meanwhile, and
+  creates nothing beside omp's database, so a read-only omp folder works too.
+  The database is found with omp 18.22.0's directory rules from omfp's environment: omp's `.env` files are not read,
+  and in the Flatpak a database under the host's `$XDG_DATA_HOME/omp` is not found. A browser (OAuth) login then lives
+  in both apps, so a provider that rotates refresh tokens may sign one of them out later: log in there again. Copying
+  is refused while a login runs (#199).
 
 ### Changed
 

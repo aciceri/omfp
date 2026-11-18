@@ -1,5 +1,6 @@
-//! `auth.*` (PRT-129..PRT-133, PRT-140, DMN-219..DMN-224, DMN-235, DMN-236): omp's OAuth logins, run by the
-//! short-lived login omp of the supervisor (`supervisor/login.rs`), and the count of models omp can use
+//! `auth.*` (PRT-129..PRT-133, PRT-136, PRT-137, PRT-140, DMN-219..DMN-224, DMN-229, DMN-230, DMN-235, DMN-236):
+//! omp's OAuth logins, run by the short-lived login omp of the supervisor (`supervisor/login.rs`), standalone omp's
+//! logins copied on request (`supervisor/import.rs`), and the count of models omp can use
 //! (`supervisor/models.rs`). A login's flow — the URL to open, progress, a code to paste — reaches one window as
 //! `login_*` window requests (PRT-131); the window answers the code with `windows.answer`. Every window sees the
 //! running login, its page and its progress on the `index` topic (DMN-290).
@@ -10,7 +11,7 @@ use std::time::Duration;
 
 use omfp_protocol::{
     AuthProvider, AuthProviders, AuthStatus, ErrorBody, ErrorCode, IndexEvent, LoggedIn, LoggedOut,
-    LoginActivity, WindowAnswer, WindowRequest,
+    LoginActivity, OmpLogins, WindowAnswer, WindowRequest,
 };
 use omp_rpc::{
     CancelUiResponse, Event, ExtensionUiRequest, ExtensionUiResponse, GetLoginProvidersResult,
@@ -313,9 +314,12 @@ impl Services {
                 return Err(error);
             }
         };
+        // A login begins only when no import runs (DMN-230): omp's import would replace the account it stores.
+        let writes = self.supervisor.credential_writes().await;
         let login = self
             .supervisor
             .begin_login(&provider.id, connection, &process);
+        drop(writes);
         self.login_board.begin(&self.index, login, &provider);
         let flow = Flow {
             windows: Arc::clone(&self.windows),
@@ -362,15 +366,36 @@ impl Services {
     }
 
     /// `auth.logout` (PRT-133, DMN-223): removes every credential omp stored for `provider_id`, one `logout` per
-    /// account `get_logout_accounts` lists; then the usable models are checked again (DMN-236).
+    /// account `get_logout_accounts` lists; then the usable models are checked again (DMN-236). Holds the credential
+    /// writes (DMN-230) until every `logout` answered and the login omp is closed, in a task of its own that outlives
+    /// its caller: a caller that goes away (an MCP stream closed) cannot let a copy write omp's store meanwhile.
     pub async fn auth_logout(&self, provider_id: String) -> Result<LoggedOut, ErrorBody> {
-        let omp = self.supervisor.auth_omp().await.map_err(supervisor_error)?;
-        let result = logout(&omp.process, provider_id).await;
-        close(omp.process).await;
-        if result.is_ok() {
-            self.supervisor.recheck_usable_models();
-        }
-        result
+        let supervisor = self.supervisor.clone();
+        tokio::spawn(async move {
+            let _writes = supervisor.credential_writes().await;
+            let omp = supervisor.auth_omp().await.map_err(supervisor_error)?;
+            let result = logout(&omp.process, provider_id).await;
+            close(omp.process).await;
+            if result.is_ok() {
+                supervisor.recheck_usable_models();
+            }
+            result
+        })
+        .await
+        .map_err(internal)?
+    }
+
+    /// `auth.importable` (PRT-136, DMN-229): the provider logins standalone omp holds that omfp could copy.
+    pub async fn auth_importable(&self) -> Result<OmpLogins, ErrorBody> {
+        self.supervisor.omp_logins().await.map_err(supervisor_error)
+    }
+
+    /// `auth.import` (PRT-137, DMN-230): copies standalone omp's provider logins into omfp's profile.
+    pub async fn auth_import(&self) -> Result<OmpLogins, ErrorBody> {
+        self.supervisor
+            .import_omp_logins()
+            .await
+            .map_err(supervisor_error)
     }
 }
 
@@ -408,6 +433,7 @@ async fn logout(
 
 #[cfg(test)]
 mod tests {
+    use futures::FutureExt as _;
     use omfp_protocol::{IndexSnapshot, Settings, Theme};
 
     use super::*;
@@ -461,5 +487,136 @@ mod tests {
         assert_eq!(shown(&index), Some(("b".into(), Some("new".into()))));
         board.end(&index, 2);
         assert_eq!(shown(&index), None);
+    }
+
+    /// Services on a fake launcher whose user environment holds a standalone omp store under `dir`.
+    async fn services(dir: &std::path::Path, launcher: &crate::agent::FakeLauncher) -> Services {
+        use crate::git::{FakeGit, Git};
+        use crate::paths::DataDir;
+        use crate::store::Store;
+        use crate::supervisor::{Supervisor, SupervisorConfig};
+        use crate::threads::Threads;
+        use crate::widgets::Widgets;
+        use crate::workspaces::Workspaces;
+
+        let home = dir.join("standalone-home");
+        let agent = home.join(".omp").join("agent");
+        std::fs::create_dir_all(&agent).unwrap();
+        rusqlite::Connection::open(agent.join("agent.db"))
+            .unwrap()
+            .execute_batch("CREATE TABLE standalone (n INTEGER);")
+            .unwrap();
+        let data = DataDir::new(dir.join("data"));
+        std::fs::create_dir_all(data.root()).unwrap();
+        let root = dir.join("workspaces");
+        let store = Arc::new(Store::open(&data.db(), &root).unwrap());
+        let threads = Arc::new(Threads::new(Arc::clone(&store), data.clone()));
+        let workspaces = Arc::new(Workspaces::new(
+            Arc::clone(&store),
+            Arc::new(FakeGit::new()) as Arc<dyn Git>,
+            root,
+        ));
+        let widgets = Arc::new(Widgets::new(data.widgets(), None));
+        let mut config = SupervisorConfig::new("omp");
+        config.user_omp_env = omfp_testkit::standalone_omp_env(&home);
+        let supervisor = Supervisor::new(
+            Arc::new(launcher.clone()),
+            Arc::clone(&threads),
+            Arc::clone(&workspaces),
+            data,
+            config,
+        );
+        Services::new(
+            store,
+            threads,
+            workspaces,
+            supervisor,
+            widgets,
+            Arc::new(crate::jobs::declared::SystemClock),
+        )
+        .await
+        .unwrap()
+    }
+
+    /// Opens its gates when dropped, also when the test panics.
+    struct OpenOnDrop(Vec<crate::agent::Gate>);
+
+    impl Drop for OpenOnDrop {
+        fn drop(&mut self) {
+            for gate in &self.0 {
+                gate.open();
+            }
+        }
+    }
+
+    // spec: DMN-230, DMN-223
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_logout_whose_caller_went_away_holds_the_credential_writes_until_its_omp_is_closed() {
+        let dir = tempfile::tempdir().unwrap();
+        let launcher = crate::agent::FakeLauncher::new();
+        let services = services(dir.path(), &launcher).await;
+        launcher.reply(
+            "get_logout_accounts",
+            crate::agent::FakeReply::Ok(serde_json::json!({ "accounts": [
+                { "credentialId": 3, "provider": "anthropic", "label": "a@example.com", "detail": "oauth #3",
+                  "type": "oauth", "active": true }
+            ]})),
+        );
+        launcher.set_export(Ok(
+            r#"{"version":1,"credentials":[{"provider":"openai","credential":{"type":"api_key","key":"k"}}]}"#,
+        ));
+        let logout = launcher.gate("logout");
+        let closes = launcher.gate_closes();
+        // A failed assertion must not leave the logout's blocking call held at a gate: the runtime would wait for it.
+        let _open = OpenOnDrop(vec![logout.clone(), closes.clone()]);
+        let caller = tokio::spawn({
+            let services = services.clone();
+            async move { services.auth_logout("anthropic".into()).await }
+        });
+        logout.arrived(1).await;
+
+        // The caller goes away (an MCP stream closed) while omp logs out.
+        caller.abort();
+        assert!(caller.await.unwrap_err().is_cancelled());
+        assert!(
+            services
+                .supervisor
+                .credential_writes()
+                .now_or_never()
+                .is_none(),
+            "the logout still holds the credential writes"
+        );
+
+        // The logout's RPCs end; while its omp is being closed the lock is still held.
+        logout.open();
+        closes.arrived(1).await;
+        assert!(
+            services
+                .supervisor
+                .credential_writes()
+                .now_or_never()
+                .is_none(),
+            "the logout holds the credential writes until its omp is closed"
+        );
+        // A copy asked for now runs once the close is done.
+        let import = tokio::spawn({
+            let services = services.clone();
+            async move { services.auth_import().await }
+        });
+        closes.open();
+        let copied = import.await.unwrap().unwrap();
+        assert_eq!(copied.providers[0].provider_id, "openai");
+        let process = launcher.process(0);
+        assert!(process.is_closed());
+        assert_eq!(
+            process
+                .calls()
+                .into_iter()
+                .filter(|call| matches!(call, crate::agent::FakeCall::Call(OmpCall::Logout(_))))
+                .count(),
+            1,
+            "the logout ran to its end"
+        );
+        assert_eq!(launcher.exports().len(), 1);
     }
 }

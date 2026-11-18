@@ -5,7 +5,8 @@
  * frame's toasts show its progress with Cancel; the daemon's `login_url`, `login_progress` and `login_input` requests
  * open the provider's page (and its toast), update the progress and ask for a pasted code. A login this window did not
  * start (an agent's `auth.login`, another window's) shows from the `index` topic's `login` (UI-640): the same progress
- * toast and the page's toast. `:logout` removes omp's stored credentials of a provider.
+ * toast and the page's toast. `:logout` removes omp's stored credentials of a provider. `:import-logins` (and the
+ * welcome's offer) copies standalone omp's logins (UI-505, UI-506).
  */
 
 import { Button, Dialog, Icon, ListBox, ListBoxItem, TextField, Toast } from "@omfp/kit";
@@ -20,6 +21,7 @@ import {
   registerCommand,
   reportError,
   reportSuccess,
+  reportTaken,
   requestLogin,
   urlHost,
   useAnnounce,
@@ -30,7 +32,14 @@ import {
   windowKey,
 } from "../sdk/index.ts";
 import { strings } from "../strings/index.ts";
-import { loginCompletions, logoutCompletions, logoutSummary, providerName, withAuthenticated } from "../vm/login.ts";
+import {
+  importedSummary,
+  loginCompletions,
+  logoutCompletions,
+  logoutSummary,
+  providerName,
+  withAuthenticated,
+} from "../vm/login.ts";
 import { OPENED_URLS, OpenedUrlToast } from "./opened-urls.tsx";
 
 /** The running login of the `index` topic (DMN-290), whoever started it; `undefined` when none runs. */
@@ -151,6 +160,34 @@ async function logout(host: OmfpHost, providerId: string): Promise<void> {
   }
 }
 
+/** Whether this window's copy of standalone omp's logins (`auth.import`, UI-506) runs. */
+export const IMPORT_RUN = windowKey<boolean>("importRun", false);
+
+/**
+ * Copies standalone omp's logins into omfp's omp (`auth.import`, UI-505, UI-506), once at a time: a copy says which
+ * providers it copied (and the OAuth caveat) and bumps {@link AUTH_REVISION}; one that found nothing says so in a
+ * neutral toast, and a failure (a login running: `conflict`) is an error toast with omp's or the daemon's words.
+ */
+export async function importLogins(host: OmfpHost): Promise<void> {
+  if (host.window.get(IMPORT_RUN)) {
+    return;
+  }
+  host.window.set(IMPORT_RUN, true);
+  try {
+    const { providers } = await host.client.call("auth.import", {});
+    if (providers.length === 0) {
+      reportTaken(host, text.nothingToImport);
+    } else {
+      host.window.set(AUTH_REVISION, (revision) => revision + 1);
+      reportSuccess(host, importedSummary(providers));
+    }
+  } catch (error) {
+    reportError(host, error);
+  } finally {
+    host.window.set(IMPORT_RUN, false);
+  }
+}
+
 /** A `login_input` request waiting for its answer (UI-384). */
 interface InputRequest {
   readonly requestId: string;
@@ -160,8 +197,8 @@ interface InputRequest {
 }
 
 /**
- * The window's side of a login: takes {@link LOGIN} requests, registers `:login` and `:logout`, follows the daemon's
- * login requests and renders the provider picker and the paste dialog. Mounted once, by the frame.
+ * The window's side of a login: takes {@link LOGIN} requests, registers `:login`, `:logout` and `:import-logins`,
+ * follows the daemon's login requests and renders the provider picker and the paste dialog. Mounted once, by the frame.
  */
 export function Login(): ReactNode {
   const host = useHost();
@@ -223,9 +260,17 @@ export function Login(): ReactNode {
         await logout(host, providerId);
       },
     });
+    const stopImport = registerCommand(host, {
+      id: "auth.import",
+      title: strings.shell.commands.importLogins,
+      description: strings.shell.commands.importLoginsDescription,
+      aliases: ["import-logins"],
+      run: () => importLogins(host),
+    });
     return () => {
       stopLogin();
       stopLogout();
+      stopImport();
     };
   }, [host, known]);
 

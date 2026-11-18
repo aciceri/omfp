@@ -130,6 +130,12 @@ pub enum StartError {
     OpenCancelled,
     #[error("cannot check the omp session lease: {0}")]
     LeaseCheck(String),
+    /// `omp auth export`/`omp auth import` failed (DMN-229, DMN-230): omp's stderr, never its stdout.
+    #[error("omp {command} failed: {stderr}")]
+    Auth {
+        command: &'static str,
+        stderr: String,
+    },
 }
 
 /// What session setup found.

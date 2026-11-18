@@ -45,13 +45,15 @@ fn config(dir: &Path, args: &[&str]) -> Config {
     Config::from_cli(cli, None, None).unwrap()
 }
 
-fn ports(launcher: &FakeLauncher, git: &Arc<FakeGit>) -> Ports {
+/// The ports of a test daemon over `dir`, its standalone omp at `<dir>/standalone-home` ([`standalone_home`]).
+fn ports(dir: &Path, launcher: &FakeLauncher, git: &Arc<FakeGit>) -> Ports {
     Ports {
         launcher: Arc::new(launcher.clone()),
         git: Arc::clone(git) as _,
         omp_program: "omp".into(),
         omp_version: omfp_core::OMP_VERSION.into(),
         omp_env: Vec::new(),
+        user_omp_env: omfp_testkit::absent_standalone_omp(dir),
         warnings: vec!["running anyway (--allow-omp-mismatch)".into()],
         clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
     }
@@ -61,7 +63,7 @@ async fn daemon(args: &[&str]) -> TestDaemon {
     let dir = tempfile::tempdir().unwrap();
     let launcher = FakeLauncher::new();
     let git = Arc::new(FakeGit::new());
-    let handle = start_with(config(dir.path(), args), ports(&launcher, &git))
+    let handle = start_with(config(dir.path(), args), ports(dir.path(), &launcher, &git))
         .await
         .unwrap();
     TestDaemon {
@@ -70,6 +72,13 @@ async fn daemon(args: &[&str]) -> TestDaemon {
         git,
         dir,
     }
+}
+
+/// The home of the synthetic standalone omp `auth.importable`/`auth.import` read (DMN-229,
+/// [`omfp_testkit::absent_standalone_omp`]): absent until a test creates its `.omp`, so nothing reads the developer's
+/// own home.
+fn standalone_home(dir: &Path) -> std::path::PathBuf {
+    dir.join("standalone-home")
 }
 
 impl TestDaemon {
@@ -406,7 +415,7 @@ async fn the_data_directory_and_the_daemons_files_are_private() {
     std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o755)).unwrap();
     let launcher = FakeLauncher::new();
     let git = Arc::new(FakeGit::new());
-    let handle = start_with(config(&data, &[]), ports(&launcher, &git))
+    let handle = start_with(config(&data, &[]), ports(&data, &launcher, &git))
         .await
         .unwrap();
 
@@ -438,7 +447,7 @@ async fn one_daemon_per_data_directory_published_in_daemon_json() {
             .unwrap();
     assert_eq!(written["addr"], first.handle.addr().to_string());
 
-    let fresh = || ports(&FakeLauncher::new(), &Arc::new(FakeGit::new()));
+    let fresh = || ports(&data_dir, &FakeLauncher::new(), &Arc::new(FakeGit::new()));
     let second = start_with(config(&data_dir, &[]), fresh()).await;
     let error = second.unwrap_err().to_string();
     assert!(error.contains("already running"), "{error}");
@@ -3159,6 +3168,492 @@ async fn a_login_or_a_logout_checks_the_usable_models_again_once_someone_asked()
     window.ok("auth.logout", anthropic).await;
     assert_eq!(models_changed(&mut window).await, 0);
     assert_eq!(daemon.launcher.model_checks().len(), 3);
+}
+
+/// An `omp auth export` document: an API key of `openai`, an MCP server's credential, an OAuth login of
+/// `anthropic` and a second, OAuth login of `openai`.
+fn omp_export() -> String {
+    json!({ "version": 1, "credentials": [
+        { "provider": "openai", "credential": { "type": "api_key", "key": "sk-inert" } },
+        { "provider": "mcp:fixture", "credential": { "type": "oauth", "access": "a", "refresh": "r", "expires": 1 } },
+        { "provider": "anthropic", "credential": { "type": "oauth", "access": "a", "refresh": "r", "expires": 1 } },
+        { "provider": "openai", "credential": { "type": "oauth", "access": "b", "refresh": "s", "expires": 2 } },
+    ] })
+    .to_string()
+}
+
+/// The last value `key` has in `env`: `None` when absent, `null` when unset, else the value as a string.
+fn env_value(env: &[(std::ffi::OsString, Option<std::ffi::OsString>)], key: &str) -> Option<Value> {
+    env.iter()
+        .rev()
+        .find(|(name, _)| name == key)
+        .map(|(_, value)| {
+            value
+                .as_ref()
+                .map_or(Value::Null, |value| json!(value.to_string_lossy()))
+        })
+}
+
+impl TestDaemon {
+    /// Makes the synthetic standalone omp exist: its credential store `~/.omp/agent/agent.db`, a WAL-mode SQLite
+    /// database with a `standalone` table.
+    fn install_standalone_omp(&self) {
+        let agent = standalone_home(self.dir.path()).join(".omp").join("agent");
+        std::fs::create_dir_all(&agent).unwrap();
+        let db = rusqlite::Connection::open(agent.join("agent.db")).unwrap();
+        db.execute_batch("PRAGMA journal_mode=WAL; CREATE TABLE standalone (n INTEGER);")
+            .unwrap();
+    }
+
+    /// The snapshot directories left in `<data-dir>/login/`.
+    fn snapshots(&self) -> Vec<std::path::PathBuf> {
+        let Ok(entries) = std::fs::read_dir(self.dir.path().join("login")) else {
+            return Vec::new();
+        };
+        entries
+            .map(|entry| entry.unwrap().path())
+            .filter(|path| {
+                path.file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with("snapshot-"))
+            })
+            .collect()
+    }
+}
+
+/// Whether the SQLite database `bytes` has a table `table`.
+fn has_table(bytes: &[u8], table: &str) -> bool {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("copy.db");
+    std::fs::write(&path, bytes).unwrap();
+    rusqlite::Connection::open(path)
+        .unwrap()
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            [table],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap()
+        == 1
+}
+
+// spec: PRT-136, DMN-229
+#[tokio::test(flavor = "multi_thread")]
+#[allow(clippy::too_many_lines)] // One scenario: no store, then a store, its snapshot and the export's spec.
+async fn omps_logins_are_read_from_a_snapshot_of_its_store_only_when_the_store_exists() {
+    let daemon = daemon(&[]).await;
+    daemon.launcher.set_export(Ok(&omp_export()));
+    let mut client = daemon.client("test").await;
+
+    assert_eq!(
+        client.ok("auth.importable", json!({})).await,
+        json!({ "providers": [] })
+    );
+    let agent = standalone_home(daemon.dir.path())
+        .join(".omp")
+        .join("agent");
+    std::fs::create_dir_all(&agent).unwrap();
+    assert_eq!(
+        client.ok("auth.importable", json!({})).await,
+        json!({ "providers": [] })
+    );
+    assert!(
+        daemon.launcher.exports().is_empty(),
+        "no omp runs without standalone omp's credential store"
+    );
+
+    daemon.install_standalone_omp();
+    let listing = || {
+        let mut names: Vec<_> = std::fs::read_dir(&agent)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        names.sort();
+        names
+    };
+    let before = listing();
+    let bytes = std::fs::read(agent.join("agent.db")).unwrap();
+    assert_eq!(
+        client.ok("auth.importable", json!({})).await,
+        json!({ "providers": [
+            { "providerId": "openai", "oauth": true },
+            { "providerId": "anthropic", "oauth": true },
+        ] })
+    );
+    assert_eq!(
+        listing(),
+        before,
+        "nothing written beside standalone omp's store"
+    );
+    assert_eq!(std::fs::read(agent.join("agent.db")).unwrap(), bytes);
+    let exports = daemon.launcher.exports();
+    assert_eq!(exports.len(), 1);
+    let spec = &exports[0];
+    let dir = daemon.dir.path();
+    assert_eq!(spec.program, std::path::PathBuf::from("omp"));
+    assert_eq!(spec.cwd, dir.join("login").join("work"));
+    assert!(spec.cwd.is_dir());
+    let Some(Value::String(snapshot)) = env_value(&spec.env, "PI_CODING_AGENT_DIR") else {
+        panic!("the export runs on a snapshot: {:?}", spec.env);
+    };
+    let snapshot = std::path::PathBuf::from(snapshot);
+    assert_eq!(snapshot.parent(), Some(dir.join("login").as_path()));
+    assert_eq!(
+        env_value(&spec.env, "OMP_CODING_AGENT_DIR"),
+        Some(json!(snapshot.to_string_lossy()))
+    );
+    assert_eq!(env_value(&spec.env, "OMP_LOG_LEVEL"), Some(json!("error")));
+    assert_eq!(
+        env_value(&spec.env, "OMP_PROFILE"),
+        Some(json!("default")),
+        "omfp's profile environment, not the user's"
+    );
+    assert_eq!(
+        env_value(&spec.env, "XDG_DATA_HOME"),
+        Some(json!(
+            dir.join("omp-profile")
+                .join("xdg")
+                .join("data")
+                .to_string_lossy()
+        ))
+    );
+    assert_ne!(
+        env_value(&spec.env, "HOME"),
+        Some(json!(standalone_home(dir).to_string_lossy()))
+    );
+    let stores = daemon.launcher.export_stores();
+    assert!(
+        has_table(
+            stores[0].as_deref().expect("a copy of the store"),
+            "standalone"
+        ),
+        "the snapshot is standalone omp's store"
+    );
+    assert!(
+        !snapshot.exists(),
+        "the snapshot is removed after the export"
+    );
+    assert_eq!(daemon.snapshots(), Vec::<std::path::PathBuf>::new());
+    assert!(
+        daemon.launcher.imports().is_empty(),
+        "reading copies nothing"
+    );
+    daemon.launcher.set_export(Ok(
+        r#"{"version":1,"credentials":[{"provider":"groq","credential":{"type":"api_key","key":"k"}}]}"#,
+    ));
+    assert_eq!(
+        client.ok("auth.importable", json!({})).await,
+        json!({ "providers": [{ "providerId": "groq", "oauth": false }] })
+    );
+}
+
+// spec: PRT-136, DMN-229
+#[tokio::test(flavor = "multi_thread")]
+async fn an_export_omfp_cannot_read_or_a_failed_one_is_omps_error() {
+    let daemon = daemon(&[]).await;
+    daemon.install_standalone_omp();
+    let mut client = daemon.client("test").await;
+
+    daemon
+        .launcher
+        .set_export(Ok(r#"{"version":2,"credentials":[]}"#));
+    let error = client.call("auth.importable", json!({})).await.unwrap_err();
+    assert_eq!(error["code"], "omp_error", "{error}");
+    assert_eq!(
+        error["message"],
+        "omp `auth export` failed: its login export is version 2; omfp reads version 1"
+    );
+
+    daemon
+        .launcher
+        .set_export(Err("Auth broker is configured; export is not available"));
+    let error = client.call("auth.import", json!({})).await.unwrap_err();
+    assert_eq!(error["code"], "omp_error", "{error}");
+    assert_eq!(
+        error["message"],
+        "omp `auth export` failed: Auth broker is configured; export is not available"
+    );
+    assert_eq!(
+        daemon.launcher.imports().len(),
+        0,
+        "no import after a failed export"
+    );
+    assert_eq!(
+        daemon.snapshots(),
+        Vec::<std::path::PathBuf>::new(),
+        "the snapshot is removed after a failed export too"
+    );
+}
+
+// spec: PRT-137, DMN-230, DMN-224, DMN-236
+#[tokio::test(flavor = "multi_thread")]
+async fn copying_imports_the_provider_logins_into_the_profile_then_reloads_threads_and_models() {
+    let daemon = daemon(&[]).await;
+    daemon.install_standalone_omp();
+    daemon.launcher.set_export(Ok(&omp_export()));
+    daemon.launcher.set_usable_models(0);
+    let mut window = daemon.client("test").await;
+    window.ok("subscribe", json!({ "topic": "index" })).await;
+    let thread = create_thread(&mut window).await;
+    window
+        .ok("thread.state", json!({ "threadId": thread }))
+        .await;
+    launched(&daemon, 1).await;
+    assert_eq!(
+        window.ok("auth.status", json!({})).await,
+        json!({ "models": 0 })
+    );
+    assert_eq!(models_changed(&mut window).await, 0);
+    daemon.launcher.set_usable_models(3);
+
+    let copied = window.ok("auth.import", json!({})).await;
+
+    assert_eq!(
+        copied,
+        json!({ "providers": [
+            { "providerId": "openai", "oauth": true },
+            { "providerId": "anthropic", "oauth": true },
+        ] })
+    );
+    let imports = daemon.launcher.imports();
+    assert_eq!(imports.len(), 1);
+    let (spec, document) = &imports[0];
+    let document: Value = serde_json::from_str(document).unwrap();
+    let providers: Vec<&str> = document["credentials"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["provider"].as_str().unwrap())
+        .collect();
+    assert_eq!(document["version"], 1);
+    assert_eq!(
+        providers,
+        ["openai", "anthropic", "openai"],
+        "no MCP credential"
+    );
+    assert_eq!(document["credentials"][0]["credential"]["key"], "sk-inert");
+    let dir = daemon.dir.path();
+    assert_eq!(spec.cwd, dir.join("login").join("work"));
+    assert_eq!(
+        env_value(&spec.env, "PI_CODING_AGENT_DIR"),
+        Some(json!(
+            dir.join("omp-profile").join("agent").to_string_lossy()
+        )),
+        "imported into omfp's profile"
+    );
+    assert_eq!(env_value(&spec.env, "OMP_PROFILE"), Some(json!("default")));
+    assert_eq!(daemon.launcher.exports().len(), 1, "a fresh export");
+    assert_eq!(models_changed(&mut window).await, 3);
+    // The idle thread restarts to load the models the logins unlocked, as after a login.
+    launched(&daemon, 2).await;
+    assert_eq!(
+        daemon.launcher.launches()[1].spec.session_dir,
+        daemon.launcher.launches()[0].spec.session_dir
+    );
+    assert!(daemon.launcher.process(0).is_closed());
+}
+
+// spec: PRT-137, DMN-230
+#[tokio::test(flavor = "multi_thread")]
+async fn nothing_to_copy_runs_no_import_and_a_failed_import_is_omps_error() {
+    let daemon = daemon(&[]).await;
+    let mut client = daemon.client("test").await;
+    assert_eq!(
+        client.ok("auth.import", json!({})).await,
+        json!({ "providers": [] })
+    );
+    assert!(daemon.launcher.exports().is_empty(), "no standalone omp");
+
+    daemon.install_standalone_omp();
+    daemon.launcher.set_export(Ok(
+        r#"{"version":1,"credentials":[{"provider":"mcp:fixture","credential":{"type":"oauth","access":"a"}}]}"#,
+    ));
+    assert_eq!(
+        client.ok("auth.import", json!({})).await,
+        json!({ "providers": [] })
+    );
+    assert_eq!(daemon.launcher.exports().len(), 1);
+    assert!(
+        daemon.launcher.imports().is_empty(),
+        "only MCP credentials: no import"
+    );
+
+    daemon.launcher.set_export(Ok(&omp_export()));
+    daemon.launcher.fail_imports("Auth broker is configured");
+    let error = client.call("auth.import", json!({})).await.unwrap_err();
+    assert_eq!(error["code"], "omp_error", "{error}");
+    assert_eq!(
+        error["message"],
+        "omp `auth import` failed: Auth broker is configured"
+    );
+    assert!(!error.to_string().contains("sk-inert"), "{error}");
+}
+
+// spec: PRT-136, PRT-137, DMN-229, DMN-230
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unreadable_store_is_never_exported() {
+    let daemon = daemon(&[]).await;
+    daemon.launcher.set_export(Ok(&omp_export()));
+    let mut client = daemon.client("test").await;
+    let agent = standalone_home(daemon.dir.path())
+        .join(".omp")
+        .join("agent");
+    std::fs::create_dir_all(&agent).unwrap();
+    std::fs::write(
+        agent.join("agent.db"),
+        "sk-inert, not a database, long enough to have a header",
+    )
+    .unwrap();
+
+    assert_eq!(
+        client.ok("auth.importable", json!({})).await,
+        json!({ "providers": [] })
+    );
+    let error = client.call("auth.import", json!({})).await.unwrap_err();
+    assert_eq!(error["code"], "omp_error", "{error}");
+    assert!(
+        error["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("standalone omp's login store cannot be read: "),
+        "{error}"
+    );
+    assert!(!error.to_string().contains("sk-inert"), "{error}");
+    assert!(daemon.launcher.exports().is_empty(), "no omp runs");
+    assert_eq!(daemon.snapshots(), Vec::<std::path::PathBuf>::new());
+}
+
+// spec: DMN-229
+#[tokio::test(flavor = "multi_thread")]
+async fn a_daemon_started_from_an_omfp_shell_sees_no_standalone_omp_even_through_a_symlink() {
+    let dir = tempfile::tempdir().unwrap();
+    let launcher = FakeLauncher::new();
+    let git = Arc::new(FakeGit::new());
+    let mut ports = ports(dir.path(), &launcher, &git);
+    // omfp's own profile, named through a symlink to the data directory.
+    let alias = dir.path().join("alias");
+    std::os::unix::fs::symlink(dir.path(), &alias).unwrap();
+    ports.user_omp_env.push((
+        "PI_CODING_AGENT_DIR".into(),
+        Some(alias.join("omp-profile").join("agent").into()),
+    ));
+    let handle = start_with(config(dir.path(), &[]), ports).await.unwrap();
+    let daemon = TestDaemon {
+        handle,
+        launcher,
+        git,
+        dir,
+    };
+    let agent = daemon.dir.path().join("omp-profile").join("agent");
+    std::fs::create_dir_all(&agent).unwrap();
+    rusqlite::Connection::open(agent.join("agent.db"))
+        .unwrap()
+        .execute_batch("CREATE TABLE standalone (n INTEGER);")
+        .unwrap();
+    daemon.launcher.set_export(Ok(&omp_export()));
+    let mut client = daemon.client("test").await;
+
+    assert_eq!(
+        client.ok("auth.importable", json!({})).await,
+        json!({ "providers": [] })
+    );
+    assert_eq!(
+        client.ok("auth.import", json!({})).await,
+        json!({ "providers": [] })
+    );
+    assert!(daemon.launcher.exports().is_empty(), "omfp's own profile");
+}
+
+// spec: PRT-137, DMN-230
+#[tokio::test(flavor = "multi_thread")]
+async fn copying_while_a_login_runs_is_a_conflict() {
+    let daemon = daemon(&[]).await;
+    daemon.install_standalone_omp();
+    daemon.launcher.set_export(Ok(&omp_export()));
+    daemon
+        .launcher
+        .reply("get_login_providers", login_providers());
+    let gate = daemon.launcher.gate("login");
+    let mut window = daemon.client("test").await;
+    send_request(
+        &mut window,
+        "l1",
+        "auth.login",
+        json!({ "providerId": "anthropic" }),
+    )
+    .await;
+    gate.arrived(1).await;
+
+    let mut other = daemon.client("other").await;
+    let error = other.call("auth.import", json!({})).await.unwrap_err();
+    assert_eq!(error["code"], "conflict", "{error}");
+    assert_eq!(
+        error["message"],
+        "a login is running; copy omp's logins after it ends"
+    );
+    assert!(daemon.launcher.exports().is_empty(), "nothing ran");
+    gate.open();
+    let response = response_to(&mut window, "l1").await;
+    assert_eq!(response["ok"], true, "{response}");
+
+    assert_eq!(
+        other.ok("auth.import", json!({})).await["providers"][0]["providerId"],
+        "openai"
+    );
+}
+
+// spec: DMN-230
+#[tokio::test(flavor = "multi_thread")]
+async fn a_login_begins_only_after_a_running_copy() {
+    let daemon = daemon(&[]).await;
+    daemon.install_standalone_omp();
+    daemon.launcher.set_export(Ok(&omp_export()));
+    daemon
+        .launcher
+        .reply("get_login_providers", login_providers());
+    let imports = daemon.launcher.gate_imports();
+    let listed = daemon.launcher.gate("get_login_providers");
+    let login = daemon.launcher.gate("login");
+    let mut window = daemon.client("test").await;
+    window.ok("subscribe", json!({ "topic": "index" })).await;
+    send_request(&mut window, "i1", "auth.import", json!({})).await;
+    imports.arrived(1).await;
+
+    // The login lists the providers, then waits for the copy to begin.
+    let mut other = daemon.client("other").await;
+    send_request(
+        &mut other,
+        "l1",
+        "auth.login",
+        json!({ "providerId": "anthropic" }),
+    )
+    .await;
+    listed.arrived(1).await;
+    listed.open();
+    imports.open();
+
+    // The copy stored its logins before the login began (the lock is released before the copy's answer is written,
+    // so the two frames may come in either order).
+    let (mut answered, mut began) = (false, false);
+    while !(answered && began) {
+        let frame = window.frame().await;
+        if frame["type"] == "response" && frame["id"] == "i1" {
+            assert_eq!(frame["ok"], true, "{frame}");
+            answered = true;
+        } else if frame["type"] == "event"
+            && frame["event"]["kind"] == "login_changed"
+            && !frame["event"]["login"].is_null()
+        {
+            assert_eq!(
+                daemon.launcher.imports().len(),
+                1,
+                "the login began only after the copy stored its logins"
+            );
+            began = true;
+        }
+    }
+    login.open();
+    let response = response_to(&mut other, "l1").await;
+    assert_eq!(response["ok"], true, "{response}");
 }
 
 // spec: DMN-237

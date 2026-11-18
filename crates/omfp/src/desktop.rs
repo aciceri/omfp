@@ -1061,6 +1061,7 @@ mod tests {
             omp_program: "omp".into(),
             omp_version: omfp_core::OMP_VERSION.into(),
             omp_env: Vec::new(),
+            user_omp_env: Vec::new(),
             warnings: Vec::new(),
             clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
         };

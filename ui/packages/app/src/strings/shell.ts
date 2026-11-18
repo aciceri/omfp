@@ -790,6 +790,10 @@ export const shell = {
     removedNone: (name: string) => `omp held no stored credential of ${name}.`,
     stillAuthenticated: (name: string, source: string) => `${name} still authenticates with ${source}.`,
     logoutUsage: "Usage: :logout <provider>",
+    /** Copying standalone omp's logins (UI-505, UI-506). */
+    imported: (providers: string) => `Copied omp's logins: ${providers}`,
+    nothingToImport: "omp has no logins to copy",
+    oauthCaveat: "A browser login then lives in both apps: if one of them gets signed out, log in there again.",
   },
   /** The first run's welcome when omp has no usable model (UI-500, UI-501). */
   welcome: {
@@ -797,6 +801,9 @@ export const shell = {
     why: "omp has no model it can use yet. Log in to a provider to start your first thread.",
     logIn: "Log in to a provider",
     keys: "Or give omp an API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, …) in the daemon's environment and restart it.",
+    /** The offer to copy standalone omp's logins (UI-505). */
+    importLogins: (providers: string) => `Use my omp logins (${providers})`,
+    importNote: "Copies only omp's logins, nothing else.",
   },
   /** Notices in the mode line and system notifications (UI-096, UI-192). */
   notices: {
@@ -899,6 +906,10 @@ export const shell = {
     collapseThreads: "Hide or show the left column",
     login: "Log in to a provider (:login [<provider>]; without one, pick it)",
     logout: "Log out of a provider (:logout <provider>)",
+    importLogins: "Copy omp's logins (:import-logins)",
+    /** `:describe-command import-logins` (UI-506). */
+    importLoginsDescription:
+      "Copies the provider logins of your standalone omp into omfp's omp, through omp's own auth export and import: only model-provider logins, never its configuration or MCP credentials. A browser (OAuth) login then lives in both apps: a provider that rotates its tokens may sign one of them out later, and you log in there again.",
     messages: "Show the notices and toasts that went by (newest first)",
     /** `:model` (UI-980). */
     pickModel: "Pick the thread's model (opens the header's model list)",

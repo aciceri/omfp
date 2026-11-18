@@ -25,7 +25,8 @@ pub use activity::{
 };
 pub use auth::{
     AuthProvider, AuthProviders, AuthStatus, AvailableModel, AvailableModels, LoggedIn, LoggedOut,
-    LoginActivity, LoginCancelled, OAuthCallbackParams, OAuthCallbackRelayed, ProviderRef,
+    LoginActivity, LoginCancelled, OAuthCallbackParams, OAuthCallbackRelayed, OmpLogin, OmpLogins,
+    ProviderRef,
 };
 pub use dto::{
     AllThreads, BuiltinTheme, CreatedBy, Density, DiffPage, FileCandidate, FileCandidates,

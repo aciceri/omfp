@@ -119,6 +119,18 @@ impl Supervisor {
         Err(failure.unwrap_or_else(|| SupervisorError::Internal("no login omp start".into())))
     }
 
+    /// Waits for and holds the right to write omfp's credential store (DMN-230): `auth.import` holds it for its whole
+    /// run, `auth.logout` too; a login holds it while it begins ([`Supervisor::begin_login`]), so it waits for a
+    /// running import and an import that starts later sees it running.
+    pub async fn credential_writes(&self) -> tokio::sync::MutexGuard<'_, ()> {
+        self.inner.credential_writes.lock().await
+    }
+
+    /// Whether an `auth.login` runs (DMN-222).
+    pub(super) fn login_running(&self) -> bool {
+        lock(&self.inner.login).is_some()
+    }
+
     /// Makes `process` the running login of `provider_id`, shown by the window of connection `window`; the login that
     /// ran before is cancelled (one at a time: omp's OAuth callback listeners take fixed ports, DMN-222). Returns the
     /// login's number for [`Supervisor::end_login`].

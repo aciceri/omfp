@@ -163,7 +163,8 @@
     min-inline-size: 0;
   }
 
-  /* The first run's welcome in place of the view (UI-500): centred, one primary action. */
+  /* The first run's welcome in place of the view (UI-500): centred, one primary action (and the secondary copy of
+     standalone omp's logins, UI-505). */
   .omfp-welcome {
     flex: 1 1 auto;
     display: flex;
@@ -190,11 +191,13 @@
   }
 
   .omfp-welcome__why,
+  .omfp-welcome__note,
   .omfp-welcome__keys {
     margin: 0;
     max-inline-size: 36rem;
   }
 
+  .omfp-welcome__note,
   .omfp-welcome__keys {
     font-size: var(--omfp-fs-xs);
     color: var(--omfp-on-surface-variant);

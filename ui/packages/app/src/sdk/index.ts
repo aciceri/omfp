@@ -308,6 +308,7 @@ export {
   removeWorkspace,
   reportError,
   reportSuccess,
+  reportTaken,
   requestLogin,
   type ThreadActions,
   threadActions,

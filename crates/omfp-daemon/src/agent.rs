@@ -4,10 +4,12 @@
 
 mod fake;
 
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, PoisonError, RwLock};
+use std::time::Duration;
 
 use omp_rpc::{
     AbortAndRestoreQueueCommand, BashCommand, BtwCommand, BtwResult, CancelSubagentCommand, Client,
@@ -193,6 +195,11 @@ pub trait AgentLauncher: Send + Sync {
     /// How many models omp started for `spec` can use (DMN-235): the length of its `get_available_models`, the models
     /// of the providers it holds a credential for and of keyless ones; the omp stops before this returns.
     fn usable_models(&self, spec: &LaunchSpec) -> Result<u32, StartError>;
+    /// `omp auth export` as `spec` says (program, cwd, environment; DMN-229): omp's export document, its stdout. A
+    /// failure carries omp's stderr, never its stdout, which holds secrets.
+    fn export_logins(&self, spec: &LaunchSpec) -> Result<String, StartError>;
+    /// `omp auth import -` as `spec` says, `document` on its stdin (DMN-230). A failure carries omp's stderr.
+    fn import_logins(&self, spec: &LaunchSpec, document: String) -> Result<(), StartError>;
 }
 
 /// The real launcher: `omp --mode rpc-ui` through `omp-rpc`.
@@ -272,6 +279,170 @@ impl AgentLauncher for OmpLauncher {
         })?;
         Ok(u32::try_from(listed.models.len()).unwrap_or(u32::MAX))
     }
+
+    fn export_logins(&self, spec: &LaunchSpec) -> Result<String, StartError> {
+        export_logins(spec, AUTH_DEADLINE)
+    }
+
+    fn import_logins(&self, spec: &LaunchSpec, document: String) -> Result<(), StartError> {
+        import_logins(spec, document, AUTH_DEADLINE)
+    }
+}
+
+/// How long a one-shot `omp auth …` may run before it is killed (DMN-229, DMN-230).
+const AUTH_DEADLINE: Duration = Duration::from_mins(1);
+
+/// How many of omp's last stderr lines a failed `omp auth …` reports.
+const AUTH_STDERR_LINES: usize = 20;
+
+/// `omp auth export` within `deadline`.
+fn export_logins(spec: &LaunchSpec, deadline: Duration) -> Result<String, StartError> {
+    let output = run_auth(spec, "auth export", &["auth", "export"], None, deadline)?;
+    String::from_utf8(output.stdout).map_err(|_| StartError::Auth {
+        command: "auth export",
+        stderr: "its output is not UTF-8".to_owned(),
+    })
+}
+
+/// `omp auth import -` with `document` on its stdin, within `deadline`.
+fn import_logins(
+    spec: &LaunchSpec,
+    document: String,
+    deadline: Duration,
+) -> Result<(), StartError> {
+    run_auth(
+        spec,
+        "auth import",
+        &["auth", "import", "-"],
+        Some(document),
+        deadline,
+    )
+    .map(drop)
+}
+
+/// Runs `omp <args>` as `spec` says (program, cwd, environment overrides), on the host (DMN-229, DMN-230), as the
+/// leader of its own process group, `input` written to its stdin beside the reads of its output so neither blocks.
+/// Once omp exits, or at `deadline` when it has not, whatever is left of its group is killed — a descendant holding
+/// its pipes would block the reads — and only then is omp reaped and its pipes read to their end; past the deadline
+/// the call fails. A failure carries the tail of its stderr, never its stdout (an export's holds secrets); a non-zero
+/// exit wins over a failed write (omp may exit without reading its input).
+fn run_auth(
+    spec: &LaunchSpec,
+    command: &'static str,
+    args: &[&str],
+    input: Option<String>,
+    deadline: Duration,
+) -> Result<Output, StartError> {
+    use std::io::Read;
+    use std::os::unix::process::CommandExt;
+
+    use rustix::process::{Pid, Signal, WaitId, WaitIdOptions, kill_process_group, waitid};
+
+    let mut process = Command::new(&spec.program);
+    process.args(args).current_dir(&spec.cwd);
+    for (key, value) in &spec.env {
+        match value {
+            Some(value) => process.env(key, value),
+            None => process.env_remove(key),
+        };
+    }
+    let mut process = crate::flatpak::on_host(process);
+    process
+        .process_group(0)
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = process.spawn()?;
+    let pid = i32::try_from(child.id())
+        .ok()
+        .and_then(Pid::from_raw)
+        .ok_or_else(|| std::io::Error::other("omp has no process id"))?;
+    let writer = child.stdin.take().zip(input).map(|(mut stdin, input)| {
+        // Dropping `stdin` at the end ends omp's input.
+        std::thread::spawn(move || stdin.write_all(input.as_bytes()))
+    });
+    let drain = |pipe: Option<Box<dyn Read + Send>>| {
+        std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            if let Some(mut pipe) = pipe {
+                pipe.read_to_end(&mut bytes)?;
+            }
+            Ok::<_, std::io::Error>(bytes)
+        })
+    };
+    let stdout = drain(child.stdout.take().map(|pipe| Box::new(pipe) as _));
+    let stderr = drain(child.stderr.take().map(|pipe| Box::new(pipe) as _));
+    // Waits for omp's exit without reaping it: until it is reaped its pid names its group, so the kill below cannot
+    // reach a process that reused the number.
+    let (exited, exit) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        while matches!(
+            waitid(
+                WaitId::Pid(pid),
+                WaitIdOptions::EXITED | WaitIdOptions::NOWAIT
+            ),
+            Err(rustix::io::Errno::INTR)
+        ) {}
+        let _ = exited.send(());
+    });
+    let finished = exit.recv_timeout(deadline).is_ok();
+    match kill_process_group(pid, Signal::KILL) {
+        Ok(()) | Err(rustix::io::Errno::SRCH) => {}
+        Err(error) => tracing::warn!(%error, "cannot stop omp {command}"),
+    }
+    let status = child.wait();
+    let joined = |thread: std::thread::JoinHandle<std::io::Result<Vec<u8>>>| {
+        thread
+            .join()
+            .unwrap_or_else(|_| Err(std::io::Error::other("its reader panicked")))
+    };
+    let (stdout, stderr) = (joined(stdout), joined(stderr));
+    let written = writer.map(std::thread::JoinHandle::join);
+    if !finished {
+        return Err(StartError::Auth {
+            command,
+            stderr: format!(
+                "omp {command} did not finish within {} s",
+                deadline.as_secs_f64()
+            ),
+        });
+    }
+    let output = Output {
+        status: status?,
+        stdout: stdout?,
+        stderr: stderr?,
+    };
+    auth_outcome(command, &output)?;
+    match written {
+        None | Some(Ok(Ok(()))) => Ok(output),
+        Some(Ok(Err(error))) => Err(error.into()),
+        Some(Err(_)) => Err(StartError::Auth {
+            command,
+            stderr: "writing its input failed".to_owned(),
+        }),
+    }
+}
+
+/// A failed `omp <command>`: the tail of its stderr, never its stdout (an export's holds secrets).
+fn auth_outcome(command: &'static str, output: &Output) -> Result<(), StartError> {
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let lines: Vec<&str> = stderr.trim().lines().collect();
+    let tail = lines[lines.len().saturating_sub(AUTH_STDERR_LINES)..].join("\n");
+    Err(StartError::Auth {
+        command,
+        stderr: if tail.is_empty() {
+            output.status.to_string()
+        } else {
+            tail
+        },
+    })
 }
 
 /// `omp session lease --json` output.
@@ -446,6 +617,43 @@ impl AgentProcess for OmpAgent {
 mod tests {
     use super::*;
 
+    // spec: DMN-229, DMN-230
+    #[test]
+    fn a_failed_omp_auth_reports_its_stderr_tail_never_its_stdout() {
+        use std::os::unix::process::ExitStatusExt;
+        let stderr = (1..=25)
+            .map(|line| format!("line {line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let output = Output {
+            status: std::process::ExitStatus::from_raw(256),
+            stdout: br#"{"credentials":[{"key":"sk-secret"}]}"#.to_vec(),
+            stderr: stderr.into_bytes(),
+        };
+        let error = auth_outcome("auth export", &output)
+            .unwrap_err()
+            .to_string();
+        assert!(!error.contains("sk-secret"), "{error}");
+        assert!(
+            error.starts_with("omp auth export failed: line 6\n"),
+            "{error}"
+        );
+        assert!(error.ends_with("line 25"), "{error}");
+        let silent = Output {
+            stderr: Vec::new(),
+            ..output.clone()
+        };
+        let error = auth_outcome("auth import", &silent)
+            .unwrap_err()
+            .to_string();
+        assert_eq!(error, "omp auth import failed: exit status: 1");
+        let ok = Output {
+            status: std::process::ExitStatus::from_raw(0),
+            ..output
+        };
+        assert!(auth_outcome("auth export", &ok).is_ok());
+    }
+
     // spec: DMN-033
     #[test]
     fn lease_report_names_held_unknown_and_free_sessions() {
@@ -472,5 +680,107 @@ mod tests {
         );
         assert_eq!(CompactCommand::TIMEOUT_MS, None);
         assert_eq!(ManualCompact::TIMEOUT_MS, Some(600_000));
+    }
+
+    /// A `LaunchSpec` whose omp is `sh` running the script `body`: `sh auth …` runs `<dir>/auth`, which is read, never
+    /// executed (no `ETXTBSY` while other tests fork).
+    fn script(dir: &std::path::Path, body: &str) -> LaunchSpec {
+        std::fs::write(dir.join("auth"), format!("{body}\n")).unwrap();
+        LaunchSpec {
+            program: "sh".into(),
+            cwd: dir.to_owned(),
+            add_dirs: Vec::new(),
+            session_dir: dir.join("sessions"),
+            fork: None,
+            model: None,
+            approval_mode: None,
+            append_system_prompt: None,
+            extension: None,
+            stderr_log: dir.join("omp.log"),
+            env: Vec::new(),
+        }
+    }
+
+    /// A FIFO in `dir` nobody ever writes: opening it to read blocks for good, without `sleep`.
+    fn never(dir: &std::path::Path) -> std::path::PathBuf {
+        let fifo = dir.join("never");
+        assert!(
+            Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap()
+                .success()
+        );
+        fifo
+    }
+
+    /// `call`'s result, failing the test when it has none within 30 s instead of hanging it.
+    fn bounded<T: Send + 'static>(call: impl FnOnce() -> T + Send + 'static) -> T {
+        let (done, result) = std::sync::mpsc::channel();
+        std::thread::spawn(move || done.send(call()));
+        result
+            .recv_timeout(Duration::from_secs(30))
+            .expect("the call returns")
+    }
+
+    /// A document larger than a pipe's buffer.
+    fn large_document() -> String {
+        format!(r#"{{"version":1,"pad":"{}"}}"#, "x".repeat(256 * 1024))
+    }
+
+    // spec: DMN-230
+    #[test]
+    fn an_import_refused_before_reading_its_input_reports_omps_stderr() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = script(dir.path(), "echo refused >&2\nexit 1");
+        let error = import_logins(&spec, large_document(), AUTH_DEADLINE).unwrap_err();
+        assert_eq!(error.to_string(), "omp auth import failed: refused");
+    }
+
+    // spec: DMN-230
+    #[test]
+    fn an_import_reading_a_large_document_succeeds() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = script(dir.path(), "cat >/dev/null");
+        import_logins(&spec, large_document(), AUTH_DEADLINE).unwrap();
+    }
+
+    // spec: DMN-229, DMN-230
+    #[test]
+    fn an_omp_auth_past_its_deadline_is_killed_with_its_group() {
+        let dir = tempfile::tempdir().unwrap();
+        let never = never(dir.path());
+        // A hung omp that never reads its input, with a descendant holding its output pipes: the call returns only once
+        // the whole group is gone, since it reads the pipes to their end.
+        let spec = script(
+            dir.path(),
+            &format!("cat '{0}' &\ncat '{0}'", never.display()),
+        );
+        let deadline = Duration::from_millis(200);
+        let import = spec.clone();
+        let error =
+            bounded(move || import_logins(&import, large_document(), deadline)).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "omp auth import failed: omp auth import did not finish within 0.2 s"
+        );
+        let error = bounded(move || export_logins(&spec, deadline)).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "omp auth export failed: omp auth export did not finish within 0.2 s"
+        );
+    }
+
+    // spec: DMN-229, DMN-230
+    #[test]
+    fn a_descendant_holding_the_pipes_of_an_exited_omp_is_killed() {
+        let dir = tempfile::tempdir().unwrap();
+        let never = never(dir.path());
+        let spec = script(
+            dir.path(),
+            &format!("cat '{}' &\nprintf '{{}}'", never.display()),
+        );
+        let exported = bounded(move || export_logins(&spec, AUTH_DEADLINE)).unwrap();
+        assert_eq!(exported, "{}");
     }
 }

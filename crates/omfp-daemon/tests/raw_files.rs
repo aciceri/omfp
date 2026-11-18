@@ -59,6 +59,7 @@ impl Daemon {
             omp_program: "omp".into(),
             omp_version: omfp_core::OMP_VERSION.into(),
             omp_env: Vec::new(),
+            user_omp_env: omfp_testkit::absent_standalone_omp(&data),
             warnings: Vec::new(),
             clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
         };

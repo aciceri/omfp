@@ -86,6 +86,18 @@ fn write(path: &Path, contents: &str) {
     std::fs::write(path, contents).unwrap();
 }
 
+/// Disables omp's keyless providers in the fresh profile of the data directory `data`: a local ollama (or another
+/// keyless server on the developer's machine) would count as usable models, so only a stored key may make any.
+fn disable_keyless_providers(data: &Path) {
+    write(
+        &DataDir::new(data)
+            .omp_profile()
+            .join("agent")
+            .join("config.yml"),
+        "disabledProviders: [local, web, ollama, llama.cpp, lm-studio, apple]\n",
+    );
+}
+
 // spec: ARC-021, DMN-030, DMN-190, DMN-219, DMN-223, DMN-235, PRT-110, UI-389
 #[tokio::test(flavor = "multi_thread")]
 #[allow(clippy::too_many_lines)] // One end-to-end isolation acceptance scenario.
@@ -134,6 +146,7 @@ async fn fresh_profile_never_imports_standalone_state_and_mutations_are_bidirect
 
     let data = tempfile::tempdir().unwrap();
     let workspaces = data.path().join("workspaces");
+    disable_keyless_providers(data.path());
     let cli = Cli::try_parse_from([
         "daemon",
         "--bind",
@@ -285,4 +298,213 @@ async fn fresh_profile_never_imports_standalone_state_and_mutations_are_bidirect
     );
     assert_eq!(auth(&harness, &profile_env, None).await, after);
     harness.assert_no_stray_network();
+}
+
+/// The provider credentials of an `omp auth export` document: `(provider, credential type)`.
+fn credentials(export: &Value) -> Vec<(String, String)> {
+    export["credentials"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| {
+            (
+                entry["provider"].as_str().unwrap().to_owned(),
+                entry["credential"]["type"].as_str().unwrap().to_owned(),
+            )
+        })
+        .collect()
+}
+
+/// Where standalone omp keeps its credential store in [`copy_scenario`].
+#[derive(Clone, Copy)]
+enum StandaloneStore {
+    /// `$XDG_DATA_HOME/omp/agent.db`: the XDG data directory exists.
+    Xdg,
+    /// `~/.omp/agent/agent.db`, with a `~/.env` naming another `XDG_DATA_HOME`.
+    Home,
+}
+
+/// The trees a copy must leave as they were: standalone omp's home tree, its XDG roots, and a directory only a
+/// `.env` file names.
+fn untouched(harness: &Harness) -> Vec<BTreeMap<std::path::PathBuf, [u8; 20]>> {
+    let root = harness.env.root();
+    let mut trees = vec![
+        snapshot(&harness.env.home().join(".omp")),
+        snapshot(&root.join("xdg")),
+        snapshot(&root.join("other")),
+    ];
+    if let Ok(env) = std::fs::read(harness.env.home().join(".env")) {
+        trees.push(BTreeMap::from([(".env".into(), Sha1::digest(env).into())]));
+    }
+    trees
+}
+
+/// The snapshot directories left in `<data>/login/`.
+fn snapshots(data: &Path) -> Vec<std::path::PathBuf> {
+    std::fs::read_dir(data.join("login"))
+        .map(|entries| {
+            entries
+                .map(|entry| entry.unwrap().path())
+                .filter(|path| {
+                    path.file_name()
+                        .is_some_and(|name| name.to_string_lossy().starts_with("snapshot-"))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// A requested copy against the pinned omp, standalone omp's store at `store`: only the provider login reaches the
+/// fresh profile, exported from a private snapshot that is gone afterwards, and nothing of standalone omp changes.
+#[allow(clippy::too_many_lines)] // One end-to-end copy acceptance scenario.
+async fn copy_scenario(store: StandaloneStore) {
+    let harness = Harness::new(Vec::new()).await;
+    let root = harness.env.root().to_owned();
+    let standalone_xdg = root.join("xdg");
+    let categories: &[&str] = match store {
+        StandaloneStore::Xdg => &["data", "state", "cache"],
+        StandaloneStore::Home => &["state", "cache"],
+    };
+    for category in categories {
+        std::fs::create_dir_all(standalone_xdg.join(category).join("omp")).unwrap();
+    }
+    std::fs::create_dir_all(standalone_xdg.join("data")).unwrap();
+    let mut standalone_env = harness.env.env_overrides();
+    standalone_env.push((
+        "XDG_CONFIG_HOME".into(),
+        Some(standalone_xdg.join("config").into_os_string()),
+    ));
+    // An `openai` API key and the `mcp:fixture` MCP server's OAuth credential, stored by omp itself.
+    auth(&harness, &standalone_env, Some("standalone-key")).await;
+    let stored = match store {
+        StandaloneStore::Xdg => standalone_xdg.join("data").join("omp").join("agent.db"),
+        StandaloneStore::Home => harness.env.agent_dir().join("agent.db"),
+    };
+    assert!(
+        stored.is_file(),
+        "standalone omp's store is at {}",
+        stored.display()
+    );
+    // A directory only a `.env` file names: omp reads `~/.env` for variables left empty, which omfp never does.
+    std::fs::create_dir_all(root.join("other").join("omp")).unwrap();
+    if matches!(store, StandaloneStore::Home) {
+        write(
+            &harness.env.home().join(".env"),
+            &format!("XDG_DATA_HOME={}\n", root.join("other").display()),
+        );
+    }
+    write(
+        &harness.env.agent_dir().join("mcp.json"),
+        r#"{"mcpServers":{"standalone":{"command":"never-run","enabled":false}}}"#,
+    );
+    let standalone_files: Vec<(&str, String)> = ["config.yml", "models.yml", "mcp.json"]
+        .into_iter()
+        .map(|name| {
+            let text = std::fs::read_to_string(harness.env.agent_dir().join(name)).unwrap();
+            (name, text)
+        })
+        .collect();
+    let before = untouched(&harness);
+
+    let data = tempfile::tempdir().unwrap();
+    let workspaces = data.path().join("workspaces");
+    disable_keyless_providers(data.path());
+    let cli = Cli::try_parse_from([
+        "daemon",
+        "--bind",
+        "127.0.0.1:0",
+        "--data-dir",
+        data.path().to_str().unwrap(),
+        "--workspaces-root",
+        workspaces.to_str().unwrap(),
+        "--no-title-generation",
+    ])
+    .unwrap();
+    let config = Config::from_cli(cli, None, None).unwrap();
+    let mut ports = Ports::resolve(&config).unwrap();
+    ports.omp_env.clone_from(&standalone_env);
+    ports.user_omp_env.clone_from(&standalone_env);
+    let daemon = start_with(config, ports).await.unwrap();
+    let mut client = Client::hello(daemon.addr(), daemon.token().expose(), "test").await;
+    client.ok("subscribe", json!({ "topic": "index" })).await;
+    assert_eq!(
+        client.ok("auth.status", json!({})).await,
+        json!({"models":0}),
+        "the fresh profile holds no login"
+    );
+    let openai = json!({"providers":[{"providerId":"openai","oauth":false}]});
+
+    assert_eq!(client.ok("auth.importable", json!({})).await, openai);
+    assert_eq!(
+        untouched(&harness),
+        before,
+        "reading the logins leaves standalone omp as it was"
+    );
+    assert_eq!(snapshots(data.path()), Vec::<std::path::PathBuf>::new());
+    let profile = DataDir::new(data.path()).omp_profile();
+    let profile_env =
+        omp_profile::environment(&DataDir::new(data.path()), standalone_env.clone()).unwrap();
+    assert_eq!(credentials(&auth(&harness, &profile_env, None).await), []);
+    assert_eq!(client.ok("auth.import", json!({})).await, openai);
+
+    let copied = auth(&harness, &profile_env, None).await;
+    assert_eq!(
+        credentials(&copied),
+        [("openai".to_owned(), "api_key".to_owned())],
+        "only the provider login, no MCP credential"
+    );
+    assert_eq!(
+        copied["credentials"][0]["credential"]["key"],
+        "standalone-key"
+    );
+    for (name, text) in &standalone_files {
+        let path = profile.join("agent").join(name);
+        let copy = std::fs::read_to_string(&path).unwrap_or_default();
+        assert_ne!(&copy, text, "{name} is not copied");
+        assert!(!copy.contains("standalone"), "{name} is not copied");
+    }
+    // The import checks the usable models again; the index publishes the new count (DMN-236).
+    tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        loop {
+            let frame = client.event("index").await;
+            if frame["event"]["kind"] == "models_changed"
+                && frame["event"]["models"].as_u64().unwrap() > 0
+            {
+                return;
+            }
+        }
+    })
+    .await
+    .expect("the copied key makes models usable");
+
+    assert_eq!(
+        client.ok("auth.import", json!({})).await,
+        openai,
+        "copying again is harmless"
+    );
+    assert_eq!(
+        credentials(&auth(&harness, &profile_env, None).await),
+        [("openai".to_owned(), "api_key".to_owned())],
+        "omp's import replaces the provider's key"
+    );
+    assert_eq!(snapshots(data.path()), Vec::<std::path::PathBuf>::new());
+    daemon.shutdown().await.unwrap();
+    assert_eq!(
+        untouched(&harness),
+        before,
+        "copying leaves standalone omp as it was"
+    );
+    harness.assert_no_stray_network();
+}
+
+// spec: ARC-021, DMN-229, DMN-230, PRT-136, PRT-137
+#[tokio::test(flavor = "multi_thread")]
+async fn a_requested_copy_from_an_xdg_located_store_brings_only_its_provider_logins() {
+    copy_scenario(StandaloneStore::Xdg).await;
+}
+
+// spec: ARC-021, DMN-229, DMN-230, PRT-136, PRT-137
+#[tokio::test(flavor = "multi_thread")]
+async fn a_requested_copy_from_the_home_store_ignores_omps_env_files_and_brings_only_its_logins() {
+    copy_scenario(StandaloneStore::Home).await;
 }

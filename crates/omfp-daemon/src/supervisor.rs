@@ -38,6 +38,7 @@ use crate::workspaces::{WorkspaceError, Workspaces};
 mod cards;
 mod dialogs;
 mod fork;
+mod import;
 mod live;
 mod login;
 mod mcp;
@@ -125,6 +126,9 @@ pub struct SupervisorConfig {
     pub omp_program: PathBuf,
     /// Environment overrides for every omp process (tests isolate omp with them).
     pub omp_env: Vec<(OsString, Option<OsString>)>,
+    /// Overrides of the daemon's own environment that make up the user's own (standalone) omp, whose provider logins
+    /// `auth.importable`/`auth.import` read (DMN-229, DMN-230); empty: the daemon's environment as inherited.
+    pub user_omp_env: Vec<(OsString, Option<OsString>)>,
     /// Maximum concurrent omp processes (DMN-038).
     pub max_processes: usize,
     /// Idle, settled, unwatched processes are stopped after this long (DMN-034).
@@ -151,6 +155,7 @@ impl SupervisorConfig {
         Self {
             omp_program: omp_program.into(),
             omp_env: Vec::new(),
+            user_omp_env: Vec::new(),
             max_processes: 64,
             idle_timeout: Duration::from_mins(15),
             event_capacity: 2000,
@@ -225,6 +230,12 @@ pub enum SupervisorError {
     Workspace(#[from] WorkspaceError),
     #[error("internal error: {0}")]
     Internal(String),
+    /// `auth.import` while a login runs (DMN-230): omp's import would replace the accounts that login stores.
+    #[error("a login is running; copy omp's logins after it ends")]
+    LoginRunning,
+    /// Standalone omp's login store cannot be copied (DMN-229, DMN-230): the reason, never its content.
+    #[error("{0}")]
+    StandaloneStore(String),
 }
 
 pub type Result<T, E = SupervisorError> = std::result::Result<T, E>;
@@ -513,6 +524,9 @@ struct Inner {
     /// The running `auth.login` and the numbers telling logins apart (DMN-222).
     login: Mutex<Option<login::Running>>,
     logins: AtomicU64,
+    /// Serializes the writes to omfp's credential store the daemon starts (DMN-230): `auth.import` holds it for its
+    /// whole run, `auth.logout` too, and a login takes it to begin, so it waits for a running import.
+    credential_writes: tokio::sync::Mutex<()>,
     /// What the daemon knows of the models omp can use (DMN-235..DMN-237).
     models: models::UsableModels,
 }
@@ -634,6 +648,7 @@ impl Supervisor {
                 login: Mutex::new(None),
                 models: models::UsableModels::default(),
                 logins: AtomicU64::new(0),
+                credential_writes: tokio::sync::Mutex::new(()),
             }),
         }
     }

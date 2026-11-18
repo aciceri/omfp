@@ -2675,3 +2675,36 @@ async fn an_omp_that_exits_unexpectedly_leaves_no_sign_in_waiting() {
         Ok(Err(crate::oauth_relay::Refusal::NotPending))
     ));
 }
+
+// spec: DMN-230
+#[tokio::test(flavor = "multi_thread")]
+async fn a_copy_whose_caller_went_away_finishes_and_holds_the_credential_writes_until_then() {
+    let home = tempfile::tempdir().unwrap();
+    let agent = home.path().join(".omp").join("agent");
+    std::fs::create_dir_all(&agent).unwrap();
+    rusqlite::Connection::open(agent.join("agent.db"))
+        .unwrap()
+        .execute_batch("CREATE TABLE standalone (n INTEGER);")
+        .unwrap();
+    let env = omfp_testkit::standalone_omp_env(home.path());
+    let h = harness(|config| config.user_omp_env = env);
+    h.launcher.set_export(Ok(
+        r#"{"version":1,"credentials":[{"provider":"openai","credential":{"type":"api_key","key":"k"}}]}"#,
+    ));
+    let gate = h.launcher.gate_imports();
+    let supervisor = h.supervisor.clone();
+    let caller = tokio::spawn(async move { supervisor.import_omp_logins().await });
+    gate.arrived(1).await;
+
+    // The caller goes away (an MCP stream closed) while omp imports.
+    caller.abort();
+    assert!(caller.await.unwrap_err().is_cancelled());
+    assert!(
+        h.supervisor.inner.credential_writes.try_lock().is_err(),
+        "the copy still holds the credential writes: a login or a logout waits"
+    );
+
+    gate.open();
+    drop(h.supervisor.credential_writes().await);
+    assert_eq!(h.launcher.imports().len(), 1, "the copy finished");
+}

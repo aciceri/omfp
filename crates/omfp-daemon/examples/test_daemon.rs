@@ -37,6 +37,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         omp_program: "omp".into(),
         omp_version: omfp_core::OMP_VERSION.into(),
         omp_env: Vec::new(),
+        // A standalone omp with an empty home: nothing reads the developer's own omp (TST-003).
+        user_omp_env: omfp_testkit::absent_standalone_omp(&data_dir),
         warnings: Vec::new(),
         clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
     };

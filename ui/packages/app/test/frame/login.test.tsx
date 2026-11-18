@@ -7,7 +7,7 @@ import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { completions } from "../../src/frame/cmdline.ts";
 import { Frame } from "../../src/frame/frame.tsx";
-import { AUTH_REVISION, ERRORS, reportError, type WidgetComponent } from "../../src/sdk/index.ts";
+import { AUTH_REVISION, ERRORS, reportError, SUCCESSES, type WidgetComponent } from "../../src/sdk/index.ts";
 import type { WidgetRegistry } from "../../src/view/resolve.ts";
 import { thread, workspace } from "../support/fixtures.ts";
 import { ManualTimers, renderWithHost, type TestHost, testHost } from "../support/host.tsx";
@@ -438,6 +438,64 @@ describe("logging in", () => {
     );
     run(test, "logout");
     expect(test.host.window.get(ERRORS)).toEqual(["Usage: :logout <provider>"]);
+  });
+
+  // spec: UI-506
+  test(":import-logins copies omp's logins with auth.import and says what it copied, that there was none, or why it failed", async () => {
+    const test = setup();
+    const command = test.host.commands.list().find((listed) => listed.id === "auth.import");
+    expect([command?.title, command?.aliases]).toEqual(["Copy omp's logins (:import-logins)", ["import-logins"]]);
+    expect(command?.description).toContain("never its configuration or MCP credentials");
+
+    run(test, "import-logins");
+    const [first] = test.client.callsTo("auth.import");
+    expect(first?.params).toEqual({});
+    await settle(() =>
+      first?.resolve({
+        providers: [
+          { providerId: "anthropic", oauth: true },
+          { providerId: "openai", oauth: false },
+        ],
+      }),
+    );
+    expect(test.host.window.get(SUCCESSES).map((shown) => [shown.text, shown.tone])).toEqual([
+      [
+        "Copied omp's logins: anthropic, openai. A browser login then lives in both apps: if one of them gets signed out, log in there again.",
+        undefined,
+      ],
+    ]);
+    expect(test.host.window.get(AUTH_REVISION)).toBe(1);
+
+    run(test, "import-logins");
+    const [, second] = test.client.callsTo("auth.import");
+    await settle(() => second?.resolve({ providers: [] }));
+    expect(test.host.window.get(SUCCESSES).at(-1)).toMatchObject({ text: "omp has no logins to copy", tone: "info" });
+    expect(test.host.window.get(ERRORS)).toEqual([]);
+
+    run(test, "import-logins");
+    const [, , third] = test.client.callsTo("auth.import");
+    await settle(() =>
+      third?.reject(
+        new CallError({ kind: "daemon", error: { code: "omp_error", message: "auth broker is configured" } }),
+      ),
+    );
+    expect(test.host.window.get(ERRORS)).toEqual(["auth broker is configured (omp_error)"]);
+
+    run(test, "import-logins");
+    const [, , , fourth] = test.client.callsTo("auth.import");
+    await settle(() =>
+      fourth?.reject(
+        new CallError({
+          kind: "daemon",
+          error: { code: "conflict", message: "a login is running; copy omp's logins after it ends" },
+        }),
+      ),
+    );
+    expect(test.host.window.get(ERRORS)).toEqual([
+      "auth broker is configured (omp_error)",
+      "a login is running; copy omp's logins after it ends (conflict)",
+    ]);
+    expect(test.host.window.get(AUTH_REVISION)).toBe(1);
   });
 
   // spec: UI-381, UI-387, UI-451

@@ -99,6 +99,7 @@ bind. The built-in ones (`omfp://keymap` has them all):
 | `:open <path>[:<line>]` | Open a file of the workspace in a tab next to the chat. |
 | `:rescan` | Rescan the current workspace's repositories. |
 | `:login [<provider>]`, `:logout <provider>` | Log omp in to a provider (without one, pick it); remove omp's stored credentials of one. See "Logging in". |
+| `:import-logins` | Copy your standalone omp's provider logins into omfp's omp (`auth.import`). See "Logging in". |
 | `:model` | Open the selected thread's model list in its header (Log in when omp offers no model). |
 | `:view <id>` | Switch view. |
 | `:view-reset` | Write the default `views.json` again (replacing the file, every view and mount), after a confirmation. |
@@ -209,6 +210,16 @@ use, every window follows (`auth.status`).
   model resumes the same conversation with it; omfp never picks one for you.
 - `:logout <provider>` removes omp's stored credentials of the provider and says how many it removed and what still
   authenticates it (e.g. an environment variable).
+- If your standalone omp (the one you run in a terminal) holds provider logins, the welcome also offers `Use my omp
+  logins (<providers>)`, and `:import-logins` does the same at any time. Nothing is copied until you ask: you, or an
+  agent or MCP client with Drive acting for you. omfp makes a read-only copy of your standalone omp's login database
+  in its private data folder, runs omp's own `omp auth export` on that copy (deleting it right after) and pipes it
+  into `omp auth import -` (in omfp's profile): only model-provider logins, never configuration, `models.yml`,
+  `mcp.json` or MCP server credentials; nothing of your standalone omp is written. `Copied omp's logins: <providers>`
+  confirms it, and threads see the new models as after a login. Copying again is harmless. The database is found from
+  omfp's environment (not omp's `.env` files; in the Flatpak, one under the host's `$XDG_DATA_HOME/omp` is missed).
+- A browser (OAuth) login copied this way then lives in both apps. A provider that rotates its tokens may later sign
+  one of the two out; log in again there.
 
 Instead of logging in, give omp an API key: an environment variable such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or
 `GEMINI_API_KEY` in the daemon's environment (omp inherits it, so restart the daemon after setting one), providers and
@@ -216,10 +227,11 @@ keys in `<data-dir>/omp-profile/agent/models.yml`, or keys stored in that profil
 
 The profile is normally `~/.local/share/omfp/omp-profile` on Linux (`$XDG_DATA_HOME/omfp/omp-profile` when set) or
 `~/Library/Application Support/omfp/omp-profile` on macOS; `--data-dir` relocates it. User `config.yml`, `models.yml`,
-`mcp.json`, agent definitions and `APPEND_SYSTEM.md` belong in its `agent/` directory. Existing users must log in
-again and configure this fresh profile: omfp never imports/copies old credentials or configuration and has no sharing
-switch or standalone fallback. Threads/history and workspace `.omp/` config are kept. `HOME` stays unchanged, and
-explicit API keys inherited from the daemon's environment still work. `:logout` affects only this profile's store.
+`mcp.json`, agent definitions and `APPEND_SYSTEM.md` belong in its `agent/` directory. Existing users start with this
+fresh profile: log in again, or copy standalone omp's provider logins as above; configuration is never copied and
+there is no sharing switch or standalone fallback. Threads/history and workspace `.omp/` config are kept. `HOME` stays
+unchanged, and explicit API keys inherited from the daemon's environment still work. `:logout` affects only this
+profile's store.
 
 ## Agents and the window
 

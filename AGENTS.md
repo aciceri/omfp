@@ -139,9 +139,10 @@ crates/omfp           the `omfp` binary (D-15): `daemon`, `theme set` (remote.rs
                       the `desktop` feature (Tauri 2: WebKitGTK on Linux, WKWebView on macOS, M11) `desktop`
                       (desktop.rs: the window on the daemon's own UI, the theme push of `--connect`, the `OMFP_SMOKE`
                       check; desktop/local.rs: find or start the background daemon; desktop/portal.rs: the color
-                      scheme of the settings portal over gio's D-Bus API (Linux); desktop/macos.rs: the data store id,
-                      the page's `Notification` posted to the notification center, the app menu's New Window and
-                      zoom items); tray.rs: `omfp daemon
+                      scheme of the settings portal over gio's D-Bus API (Linux); desktop/zoom.rs: the page zoom of
+                      the Linux window (UI-283: the page's Ctrl keys and wheel, a WebKit script message handler);
+                      desktop/macos.rs: the data store id, the page's `Notification` posted to the notification
+                      center, the app menu's New Window and zoom items); tray.rs: `omfp daemon
                       --tray`, the shared tray model, tray/sni.rs the
                       Linux StatusNotifierItem + dbusmenu over gio, tray/macos.rs the macOS menu bar item (AppKit on
                       the main thread, the daemon on another); build.rs (also the tray pixmaps and, on macOS, the
@@ -327,8 +328,11 @@ tag, the `omp-rpc` git tag in `Cargo.toml`, `omfp_core::OMP_VERSION` and the rel
 - The desktop window (`--features desktop`) is plain `cargo build`: no Tauri CLI, no JS, no IPC, no capabilities.
   `tauri-build` rewrites `crates/omfp/gen/schemas/` on every build (gitignored) and needs `crates/omfp/icons/icon.png`
   (RGBA). WebKitGTK has no `RTCPeerConnection` (the desktop's live voice uses omp's `live_start`, S-09) and keys
-  `localStorage` by origin, port included. Parallel `xvfb-run -a` can pick the same display: `just test-desktop` runs
-  one test at a time.
+  `localStorage` by origin, port included. WebKitGTK zooms on no key and no wheel; the key and wheel events the page
+  leaves alone come back to the GTK widgets afterwards, except a wheel event that scrolled anything (UI-283). The
+  page's zoom listener is on the window, after the page's own wheel handlers: one with side effects of scrolling (the
+  transcript unpinning) must skip `ctrlKey`, which zooms and scrolls nothing. Parallel `xvfb-run -a` can pick the same
+  display: `just test-desktop` runs one test at a time.
 - macOS (M11): the Mac's login shell may not be POSIX, so run remote commands as `sh -s < script`; Nix there may need
   `--option builders ''`; a flake build sees git-tracked files only (`git add -A` in a scratch copy). The desktop tests
   open windows on the logged-in user's screen (from SSH too); microphone requests from an SSH session are denied

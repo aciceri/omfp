@@ -3,6 +3,8 @@
 //! daemon. The window loads the daemon's own UI over http: no bundled assets, no Tauri IPC, no capabilities.
 
 use std::ffi::OsString;
+use std::fmt::Write as _;
+use std::hash::{BuildHasher as _, Hasher as _, RandomState};
 use std::io::IsTerminal as _;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
@@ -30,6 +32,8 @@ mod local;
 mod macos;
 #[cfg(target_os = "linux")]
 mod portal;
+#[cfg(target_os = "linux")]
+mod zoom;
 
 pub use local::{LocalDaemon, fallback_bind};
 #[cfg(target_os = "linux")]
@@ -440,8 +444,8 @@ fn open_window(
     let origin = url.origin().ascii_serialization();
     // The top-level page, as its loads report it (the permission handler must not call into the webview).
     let page = Arc::new(Mutex::new(url.clone()));
-    #[cfg(target_os = "macos")]
-    let nonce = macos::notify_nonce();
+    // The secret of the scripts the window gives its page (DMN-182): macOS's notifications, Linux's zoom.
+    let nonce = page_nonce();
     let builder = WebviewWindowBuilder::new(&app, "main", WebviewUrl::External(url.clone()))
         .title("omfp")
         .inner_size(1280.0, 800.0)
@@ -496,6 +500,9 @@ fn open_window(
     // directory; WKWebView ignores it and takes a data store identifier instead (UI-250, macOS 14+).
     #[cfg(target_os = "linux")]
     let builder = builder.data_directory(webview_data.to_path_buf());
+    // UI-283: the page zoom, which WebKitGTK has on no key and no wheel and the Linux window on no menu.
+    #[cfg(target_os = "linux")]
+    let builder = builder.initialization_script(zoom::zoom_script(&origin, &nonce));
     // WKWebView has no web notifications: the daemon's page gets a `Notification` whose notifications the window posts
     // to the system's notification center (UI-252).
     #[cfg(target_os = "macos")]
@@ -513,6 +520,10 @@ fn open_window(
     let window = builder.build()?;
     #[cfg(target_os = "linux")]
     let _color_scheme = portal::follow_color_scheme(&window);
+    #[cfg(target_os = "linux")]
+    if let Err(error) = zoom::follow_zoom(&window, &nonce) {
+        eprintln!("omfp desktop: no page zoom: {error}");
+    }
     if smoke.is_some() {
         smoke_check(
             window,
@@ -581,7 +592,8 @@ fn opens_externally(url: &Url, origin: &str) -> bool {
     navigation(url, origin) == Navigation::External
 }
 
-/// A zoom command of the window (UI-281): the View menu's Zoom In, Zoom Out and Actual Size.
+/// A zoom command of the window: the macOS View menu's Zoom In, Zoom Out and Actual Size (UI-281), the Linux page's
+/// zoom keys and wheel (UI-283).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Zoom {
     In,
@@ -589,7 +601,7 @@ pub enum Zoom {
     Reset,
 }
 
-/// The window's page zoom levels (UI-281), the browsers' steps from 50 % to 300 %.
+/// The window's page zoom levels (UI-281, UI-283), the browsers' steps from 50 % to 300 %.
 const ZOOM_LEVELS: [f64; 13] = [
     0.5, 0.67, 0.75, 0.8, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0,
 ];
@@ -610,6 +622,25 @@ pub fn zoomed(current: f64, zoom: Zoom) -> f64 {
             .unwrap_or(current),
         Zoom::Reset => 1.0,
     }
+}
+
+/// The secret of a window's initialization scripts (DMN-182): only the scripts it gives its top-level page on the
+/// daemon's origin know it, so a frame of another origin cannot reach the window through them (macOS's notifications,
+/// UI-252; Linux's zoom, UI-283). 32 hex digits.
+fn page_nonce() -> String {
+    random_bytes().iter().fold(String::new(), |mut hex, byte| {
+        let _ = write!(hex, "{byte:02x}");
+        hex
+    })
+}
+
+/// 16 random bytes: each `RandomState` has its own random keys, so two hashes of nothing are random.
+fn random_bytes() -> [u8; 16] {
+    let random = || RandomState::new().build_hasher().finish().to_le_bytes();
+    let mut id = [0; 16];
+    id[..8].copy_from_slice(&random());
+    id[8..].copy_from_slice(&random());
+    id
 }
 
 /// The command line of one more window like the one of `args` (UI-282): on the same daemon (`--connect`) or the

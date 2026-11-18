@@ -184,8 +184,8 @@ export function markTabEdges(list: HTMLElement): void {
 
 /**
  * The ref of a tab bar: one row whose list scrolls sideways without a visible scrollbar (UI-452). The edges with more
- * tabs past them fade, a vertical wheel over the list scrolls it sideways, and the selected tab scrolls into view
- * whenever the selection changes (a reveal, UI-274, may pick a tab out of view).
+ * tabs past them fade, a vertical wheel over the list scrolls it sideways (with Ctrl it zooms the page, UI-283), and
+ * the selected tab scrolls into view whenever the selection changes (a reveal, UI-274, may pick a tab out of view).
  */
 function useTabBar(selected: string | undefined): RefObject<HTMLDivElement | null> {
   const bar = useRef<HTMLDivElement>(null);
@@ -196,7 +196,7 @@ function useTabBar(selected: string | undefined): RefObject<HTMLDivElement | nul
     }
     const mark = () => markTabEdges(list);
     const wheel = (event: WheelEvent) => {
-      if (Math.abs(event.deltaY) > Math.abs(event.deltaX) && list.scrollWidth > list.clientWidth) {
+      if (!event.ctrlKey && Math.abs(event.deltaY) > Math.abs(event.deltaX) && list.scrollWidth > list.clientWidth) {
         event.preventDefault();
         list.scrollLeft += event.deltaY;
       }

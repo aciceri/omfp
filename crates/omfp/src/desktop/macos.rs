@@ -4,7 +4,6 @@
 //! also build in Linux tests.
 
 use std::fmt::Write as _;
-use std::hash::{BuildHasher as _, Hasher as _, RandomState};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -15,9 +14,9 @@ use std::sync::{Mutex, PoisonError};
 
 use tauri::Url;
 
-use super::Zoom;
 #[cfg(target_os = "macos")]
 use super::zoomed;
+use super::{Zoom, random_bytes};
 
 /// The URL scheme of the page's notifications: the window cancels the navigation and posts the notification.
 pub const NOTIFY_SCHEME: &str = "omfp-notify";
@@ -39,15 +38,6 @@ pub fn data_store_identifier(webview_data: &Path) -> anyhow::Result<[u8; 16]> {
     std::fs::create_dir_all(webview_data)?;
     std::fs::write(&file, id)?;
     Ok(id)
-}
-
-/// 16 random bytes: each `RandomState` has its own random keys, so two hashes of nothing are random.
-fn random_bytes() -> [u8; 16] {
-    let random = || RandomState::new().build_hasher().finish().to_le_bytes();
-    let mut id = [0; 16];
-    id[..8].copy_from_slice(&random());
-    id[8..].copy_from_slice(&random());
-    id
 }
 
 /// The app's bundle identifier (the embedded Info.plist's), the directory `WebKit` keeps its data stores under.
@@ -121,16 +111,6 @@ pub fn commit_local_storage(id: &[u8; 16]) {
             );
         }
     }
-}
-
-/// The secret of a window's notifications (DMN-182): only its own [`notification_script`] knows it, so a frame of
-/// another origin cannot post notifications under omfp's name by navigating to `omfp-notify:`.
-#[must_use]
-pub fn notify_nonce() -> String {
-    random_bytes().iter().fold(String::new(), |mut hex, byte| {
-        let _ = write!(hex, "{byte:02x}");
-        hex
-    })
 }
 
 /// The page's `Notification` in the window (UI-252): `WKWebView` denies web notifications, so the window replaces the
@@ -586,9 +566,9 @@ mod tests {
     // spec: UI-252, DMN-182
     #[test]
     fn a_notify_navigation_with_the_windows_nonce_carries_the_pages_notification() {
-        let nonce = notify_nonce();
+        let nonce = crate::desktop::page_nonce();
         assert_eq!(nonce.len(), 32);
-        assert_ne!(notify_nonce(), nonce);
+        assert_ne!(crate::desktop::page_nonce(), nonce);
         let url = Url::parse(&format!(
             "omfp-notify:?n={nonce}&title=Fix+the+tests&body=needs+you+%26+waits&tag=t1&other=x"
         ))

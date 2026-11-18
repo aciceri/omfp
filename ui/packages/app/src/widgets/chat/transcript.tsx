@@ -616,7 +616,8 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
           dispatch({ type: "scroll", ...now, previous });
         }}
         onWheel={(event) => {
-          if (!fromInside(event)) {
+          // Ctrl with the wheel zooms the page and scrolls nothing (UI-283): the pin and the restore stay.
+          if (!fromInside(event) || event.ctrlKey) {
             return;
           }
           userScrolls();

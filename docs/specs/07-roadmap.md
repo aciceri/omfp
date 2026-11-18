@@ -375,6 +375,13 @@ Synth gradient, rendered headlessly from `crates/omfp/icons/icon.html`. Screensh
 desktop windows on one daemon showing different threads, and Chromium on the same daemon with the same threads.
 Packaging the flake's `omfp` package (wrapped with glib-networking, bundled `web/` and `omp`) is left to M9.
 
+Page zoom (added later, UI-283): WebKitGTK zooms on no key and no wheel, so the Linux window had none. Measured on
+WebKitGTK 2.52 (GTK3): the key and wheel events the page leaves alone come back to the GTK widgets after the page saw
+them, but a wheel event that scrolled anything counts as handled, so Ctrl with the wheel over the transcript would
+never zoom from GTK. The page decides instead: an initialization script on the daemon's top-level page takes Ctrl with
+`+`/`=`, `-`, `0` and the wheel when nothing prevented them (an image viewer keeps its own Ctrl-wheel zoom, UI-550) and
+posts the step to a WebKit script message handler named with the window's nonce, which sets the web view's zoom level.
+
 ## M8 — Subagents, tree, goal (done)
 
 Scope: UI-081..083 (as built-in widgets); daemon commands for subagents, tree, fork, label, goal, btw, compact; reducer

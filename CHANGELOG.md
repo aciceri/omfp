@@ -59,6 +59,10 @@ The version's section is also the source of the GitHub release notes.
 - A terminal (`omfp:terminal`, the kit's `TerminalEmulator`) closed or re-created right after it opened, e.g. by
   switching tabs quickly, no longer reports an uncaught `TypeError` (`this._renderer.value.dimensions`) from
   xterm.js among the window's errors (#225).
+- The Linux desktop window zooms like a browser: Ctrl with `+` (or `=`), `-` and `0`, and Ctrl with the mouse wheel,
+  which no longer scrolls. An image viewer keeps Ctrl with the wheel for its own zoom; Ctrl with the wheel over a row
+  of view tabs zooms too, in browsers as well. Ctrl with the wheel over a conversation that follows its newest output
+  keeps following it (#202).
 
 ## 0.4.1 — 2026-11-19
 

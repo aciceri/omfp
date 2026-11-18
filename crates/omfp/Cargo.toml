@@ -25,6 +25,7 @@ desktop = [
   "dep:tauri",
   "dep:tauri-build",
   "dep:gio",
+  "dep:webkit2gtk",
   "dep:objc2",
   "dep:objc2-app-kit",
   "dep:objc2-foundation",
@@ -44,9 +45,11 @@ tauri = { workspace = true, optional = true }
 tokio.workspace = true
 tokio-tungstenite.workspace = true
 
-# Linux: the settings portal's colour scheme and the status notifier tray over gio's D-Bus API.
+# Linux: the settings portal's colour scheme and the status notifier tray over gio's D-Bus API; the page zoom of the
+# window through its WebKitGTK web view (UI-283).
 [target.'cfg(target_os = "linux")'.dependencies]
 gio = { workspace = true, optional = true }
+webkit2gtk = { workspace = true, optional = true }
 
 # macOS (M11, S-15): the menu bar item through Tauri's tray (tray-icon, AppKit's NSStatusItem); the page's
 # notifications through Foundation's user notification center (UI-252); the app icon through AppKit (UI-222); the wait

@@ -435,6 +435,105 @@ fn the_linux_desktop_decodes_h264_and_stays_responsive() {
     assert_eq!(state["smoke"], "loaded", "{state}");
 }
 
+// spec: TST-033, UI-283
+#[cfg(target_os = "linux")]
+#[test]
+fn the_linux_window_zooms_on_the_pages_ctrl_keys_and_wheel() {
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("data");
+    let workspaces = dir.path().join("workspaces");
+    // The user's init file presses the zoom keys and turns the wheel with Ctrl, each time waiting for the page's width
+    // (CSS pixels) to change: a wheel event a widget prevented (an image viewer's zoom, UI-550) zooms nothing, two
+    // half notches make a step. It records the widths in `data-smoke`.
+    let config = dir.path().join(".config/omfp");
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::write(
+        config.join("init.ts"),
+        r#"export default function init() {
+  const changed = (before) =>
+    new Promise((resolve, reject) => {
+      const deadline = performance.now() + 20000;
+      const poll = () => {
+        if (window.innerWidth !== before) resolve(window.innerWidth);
+        else if (performance.now() > deadline) reject(new Error(`still ${before} px wide`));
+        else setTimeout(poll, 20);
+      };
+      poll();
+    });
+  const key = (key) => () =>
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey: true, bubbles: true, cancelable: true }));
+  const wheel = (target, ...notches) => () => {
+    for (const notch of notches) {
+      const wheelDeltaY = 120 * notch;
+      const init = { deltaY: -wheelDeltaY, wheelDeltaY, ctrlKey: true, bubbles: true, cancelable: true };
+      target.dispatchEvent(new WheelEvent("wheel", init));
+    }
+  };
+  const viewer = document.createElement("div");
+  viewer.addEventListener("wheel", (event) => event.preventDefault());
+  document.body.append(viewer);
+  const widths = [window.innerWidth];
+  const steps = [key("+"), wheel(viewer, 1), wheel(document.body, -1), wheel(document.body, 0.5, 0.5), key("-"), key("-"), key("0")];
+  (async () => {
+    for (const step of steps) {
+      const before = window.innerWidth;
+      step();
+      // The prevented wheel changes nothing: the next step's width shows it.
+      if (step !== steps[1]) widths.push(await changed(before));
+    }
+    document.body.dataset.smoke = widths.join(" ");
+  })().catch((error) => {
+    document.body.dataset.smoke = `failed: ${error.message}; ${widths.join(" ")}`;
+  });
+}
+"#,
+    )
+    .unwrap();
+    let _daemon = BackgroundDaemon(&data);
+    let output = desktop_with(
+        dir.path(),
+        &[
+            ("OMFP_SMOKE", "local"),
+            ("OMFP_SMOKE_WAIT", "body[data-smoke]"),
+            ("ANTHROPIC_API_KEY", "sk-ant-omfp-test"),
+        ],
+        &[
+            "--data-dir",
+            data.to_str().unwrap(),
+            "--",
+            "--static-dir",
+            web_bundle().to_str().unwrap(),
+            "--workspaces-root",
+            workspaces.to_str().unwrap(),
+            "--bind",
+            "127.0.0.1:0",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let state: serde_json::Value = stdout
+        .lines()
+        .find_map(|line| line.strip_prefix("OMFP_SMOKE_READY "))
+        .map(|json| serde_json::from_str(json).unwrap())
+        .unwrap();
+    let widths: Vec<f64> = state["smoke"]
+        .as_str()
+        .unwrap()
+        .split(' ')
+        .map(|width| width.parse().unwrap_or(f64::NAN))
+        .collect();
+    // Zoom In (key), nothing (prevented wheel), Zoom Out (wheel), Zoom In (two half notches), Zoom Out twice (key),
+    // Actual Size (key): UI-281's levels.
+    let levels = [1.0, 1.1, 1.0, 1.1, 1.0, 0.9, 1.0];
+    assert_eq!(widths.len(), levels.len(), "{state}");
+    assert!(
+        widths
+            .iter()
+            .zip(levels)
+            .all(|(width, level)| (width - widths[0] / level).abs() <= 1.0),
+        "{state}"
+    );
+}
+
 /// Stops the background daemon of a test, also when the test fails.
 struct Daemon(i32);
 

@@ -456,6 +456,8 @@ requirements = [
   "UI-005",
   # The window follows the desktop's color scheme from the settings portal
   "UI-195",
+  # The window's page zoom on Ctrl with + = - 0 and the wheel (WebKitGTK zooms on neither, the window has no menu)
+  "UI-283",
   # The theme file of this machine pushed to a daemon reached with --connect
   "UI-091",
   # Live voice in the desktop window: omp's live_start (WebKitGTK has no WebRTC, S-09)

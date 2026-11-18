@@ -836,6 +836,30 @@ describe("transcript", () => {
     expect(element.dataset.pinned).toBe("false");
   });
 
+  // spec: UI-042, UI-283
+  test("Ctrl with the wheel up over a pinned transcript, the page's zoom, leaves it pinned and following", () => {
+    const { client, flush } = renderThread(<TranscriptWidget />, longHistory(50));
+    const element = transcript();
+    scrollTo(element, 4400, 5000);
+    expect(element.dataset.pinned).toBe("true");
+    const item = screen.getAllByTestId("transcript-item").at(-1);
+    if (item === undefined) throw new Error("no transcript item");
+    // The window's zoom listener (UI-283) prevents the scroll after the transcript's handler: nothing scrolled.
+    const zoom = new WheelEvent("wheel", { deltaY: -120, cancelable: true, bubbles: true });
+    // happy-dom's WheelEvent takes no modifier keys from its init.
+    Object.defineProperty(zoom, "ctrlKey", { value: true });
+    fireEvent(item, zoom);
+    expect(element.dataset.pinned).toBe("true");
+    // Streamed content is still followed to its new bottom.
+    Object.defineProperty(element, "scrollHeight", { configurable: true, value: 5100 });
+    client.thread(THREAD, longHistory(51));
+    flush();
+    expect([element.scrollTop, element.dataset.pinned]).toEqual([5100, "true"]);
+    // Without Ctrl the wheel up still unpins.
+    fireEvent.wheel(item, { deltaY: -120 });
+    expect(element.dataset.pinned).toBe("false");
+  });
+
   // spec: UI-042
   test("a move up its scroll event has not reported yet unpins at the next render instead of being followed", () => {
     const { client, flush } = renderThread(<TranscriptWidget />, longHistory(50));

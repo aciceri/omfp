@@ -294,6 +294,13 @@ describe("frame", () => {
       list.dispatchEvent(wheel);
     });
     expect([list.scrollLeft, wheel.defaultPrevented]).toEqual([120, true]);
+    // Ctrl with the wheel is the page's zoom, not the list's (happy-dom's WheelEvent takes no modifier keys).
+    const zoom = new WheelEvent("wheel", { deltaY: 120, cancelable: true });
+    Object.defineProperty(zoom, "ctrlKey", { value: true });
+    act(() => {
+      list.dispatchEvent(zoom);
+    });
+    expect([list.scrollLeft, zoom.defaultPrevented]).toEqual([120, false]);
     markTabEdges(list);
     expect(edges()).toEqual([true, true]);
     list.scrollLeft = 200;

@@ -18,6 +18,9 @@ The version's section is also the source of the GitHub release notes.
 - The card of an LSP `rename` shows the old and new symbol name, the total (`6 edits in 3 files`) and each file's
   edit count; a preview's files open as they are (the renamed file at the call's line) rather than against `HEAD`, and
   a list of more than 8 files collapses behind a "… N more files" button (#193).
+- When the which-key panel (`Space`, `g`, …) has more keys than fit a short window, only its keys scroll, between its
+  title and the `esc` row, and the edge with more keys past it fades out, so the keys below the fold no longer go
+  unnoticed where scrollbars are hidden (#192).
 
 ## 0.3.1 — 2026-11-18
 

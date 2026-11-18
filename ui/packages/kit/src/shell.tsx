@@ -4,7 +4,16 @@
  * They are presentational: the app wires keys, focus and data; forced state classes (`is-hover`, `is-focus`) render
  * hover and focus statically (UI-173).
  */
-import { type ButtonHTMLAttributes, type HTMLAttributes, type ReactNode, type Ref, useId } from "react";
+import {
+  type ButtonHTMLAttributes,
+  type HTMLAttributes,
+  type ReactNode,
+  type Ref,
+  type RefObject,
+  useEffect,
+  useId,
+  useRef,
+} from "react";
 import {
   Button as AriaButton,
   type ButtonProps as AriaButtonProps,
@@ -715,18 +724,50 @@ export interface WhichKeyProps extends Omit<HTMLAttributes<HTMLElement>, "title"
 
 /**
  * The which-key panel (UI-320): a popover titled `╭─ <keys>` listing, in groups laid out in columns, the keys that
- * complete a started sequence. A labelled region that never takes the focus: the keys keep going to the page.
+ * complete a started sequence. A labelled region that never takes the focus: the keys keep going to the page. When the
+ * keys do not fit, only the groups scroll, between the title and the footer.
  */
 export function WhichKey({ keys, label, footer, className, children, ...props }: WhichKeyProps) {
+  const groups = useScrollEdges();
   return (
     <section {...props} aria-label={label} className={cx("omfp-popover omfp-whichkey", className)}>
       <div className="omfp-whichkey__title" aria-hidden="true">
         <Kbd>{keys}</Kbd>
       </div>
-      <div className="omfp-whichkey__groups">{children}</div>
+      <div ref={groups} className="omfp-whichkey__groups">
+        {children}
+      </div>
       {footer !== undefined && <div className="omfp-whichkey__foot">{footer}</div>}
     </section>
   );
+}
+
+/**
+ * Marks the edges of an element scrolled vertically with more content past them (`data-more-start`, `data-more-end`),
+ * like the view tab bars sideways (UI-452), so a cut list shows that it scrolls where scrollbars are overlays or hidden.
+ * Marks again after every render (the content changed) and on every resize.
+ */
+function useScrollEdges(): RefObject<HTMLDivElement | null> {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const element = ref.current;
+    if (element === null) {
+      return undefined;
+    }
+    const mark = () => {
+      element.toggleAttribute("data-more-start", element.scrollTop > 1);
+      element.toggleAttribute("data-more-end", element.scrollTop + element.clientHeight < element.scrollHeight - 1);
+    };
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(mark);
+    observer?.observe(element);
+    element.addEventListener("scroll", mark, { passive: true });
+    mark();
+    return () => {
+      observer?.disconnect();
+      element.removeEventListener("scroll", mark);
+    };
+  });
+  return ref;
 }
 
 export interface WhichKeyGroupProps extends Omit<HTMLAttributes<HTMLDivElement>, "title"> {

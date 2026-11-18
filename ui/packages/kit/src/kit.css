@@ -2656,11 +2656,21 @@
   }
 
   /* Which-key panel (UI-320): the keys completing a started sequence, groups in columns, on the pop surface (its pop
-   * animation is the popovers' row of the motion catalogue). */
+   * animation is the popovers' row of the motion catalogue). When the keys do not fit (a short window), only the groups
+   * scroll, between the title and the `esc` row, and an edge with more keys past it fades out (`data-more-start`/
+   * `data-more-end`, set by the kit's `WhichKey`), like the view tab bars (UI-452). */
   .omfp-whichkey {
+    display: flex;
+    flex-direction: column;
     inline-size: min(52rem, 92%);
     min-inline-size: 0;
+    overflow: hidden;
     font-size: var(--omfp-fs-xs);
+  }
+
+  .omfp-whichkey__title,
+  .omfp-whichkey__foot {
+    flex: none;
   }
 
   .omfp-whichkey__title::before {
@@ -2668,10 +2678,29 @@
   }
 
   .omfp-whichkey__groups {
+    --whichkey-fade-start: 0px;
+    --whichkey-fade-end: 0px;
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
     gap: var(--omfp-s2) var(--omfp-s4);
+    min-block-size: 0;
     padding: 0 var(--omfp-s2);
+    overflow-y: auto;
+    mask-image: linear-gradient(
+      to bottom,
+      transparent,
+      var(--omfp-on-surface) var(--whichkey-fade-start),
+      var(--omfp-on-surface) calc(100% - var(--whichkey-fade-end)),
+      transparent
+    );
+  }
+
+  .omfp-whichkey__groups[data-more-start] {
+    --whichkey-fade-start: var(--omfp-s5);
+  }
+
+  .omfp-whichkey__groups[data-more-end] {
+    --whichkey-fade-end: var(--omfp-s5);
   }
 
   .omfp-whichkey__group-title {

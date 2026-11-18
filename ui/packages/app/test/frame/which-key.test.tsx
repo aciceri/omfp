@@ -227,4 +227,33 @@ describe("Space leader menu", () => {
     keys(":");
     expect(document.activeElement === screen.getByTestId("command-line-input")).toBe(true);
   });
+
+  // spec: UI-320
+  test("keys past a short window's panel: only the groups scroll, and an edge with more keys past it fades", async () => {
+    await setup();
+    document.body.focus();
+    keys(" ");
+    const groups = panel()?.querySelector<HTMLElement>(".omfp-whichkey__groups");
+    if (groups === null || groups === undefined) {
+      throw new Error("no which-key groups");
+    }
+    // The title and the `esc` row stay outside the scrolling groups.
+    expect(groups.querySelectorAll(".omfp-whichkey__title, .omfp-whichkey__foot").length).toBe(0);
+    // happy-dom lays nothing out: groups 100 px tall over 300 px of keys.
+    Object.defineProperty(groups, "clientHeight", { value: 100 });
+    Object.defineProperty(groups, "scrollHeight", { value: 300 });
+    const edges = () => [groups.hasAttribute("data-more-start"), groups.hasAttribute("data-more-end")];
+    const scrollTo = (top: number) => {
+      groups.scrollTop = top;
+      act(() => {
+        groups.dispatchEvent(new Event("scroll"));
+      });
+    };
+    scrollTo(0);
+    expect(edges()).toEqual([false, true]);
+    scrollTo(100);
+    expect(edges()).toEqual([true, true]);
+    scrollTo(200);
+    expect(edges()).toEqual([true, false]);
+  });
 });

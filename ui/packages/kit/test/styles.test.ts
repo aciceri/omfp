@@ -157,6 +157,28 @@ describe("kit styles", () => {
     expect(description.declarations.get("text-overflow")).toBe("ellipsis");
   });
 
+  // spec: UI-320
+  test("the which-key panel scrolls its groups only, title and `esc` row pinned, edges with more keys fading", () => {
+    const panel = findRule(kitRules, [LAYER], ".omfp-whichkey");
+    expect(["display", "flex-direction", "overflow"].map((name) => panel.declarations.get(name))).toEqual([
+      "flex",
+      "column",
+      "hidden",
+    ]);
+    const pinned = findRule(kitRules, [LAYER], ".omfp-whichkey__title, .omfp-whichkey__foot");
+    expect(pinned.declarations.get("flex")).toBe("none");
+    const groups = findRule(kitRules, [LAYER], ".omfp-whichkey__groups");
+    expect(["min-block-size", "overflow-y"].map((name) => groups.declarations.get(name))).toEqual(["0", "auto"]);
+    expect(groups.declarations.get("mask-image")).toBe(
+      "linear-gradient( to bottom, transparent, var(--omfp-on-surface) var(--whichkey-fade-start), var(--omfp-on-surface) calc(100% - var(--whichkey-fade-end)), transparent )",
+    );
+    const fade = (edge: string) =>
+      findRule(kitRules, [LAYER], `.omfp-whichkey__groups[data-more-${edge}]`).declarations.get(
+        `--whichkey-fade-${edge}`,
+      );
+    expect([fade("start"), fade("end")]).toEqual(["var(--omfp-s5)", "var(--omfp-s5)"]);
+  });
+
   // spec: UI-486
   test("room where there is room: the `:` menu up to 48rem, which-key descriptions on up to three lines, a wider left column", () => {
     expect(findRule(kitRules, [LAYER], ".omfp-cmdmenu").declarations.get("inline-size")).toBe("min(48rem, 70%)");

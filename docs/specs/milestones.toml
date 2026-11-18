@@ -1268,6 +1268,8 @@ requirements = [
   "UI-967",
   # One file tab per file, whatever path reached it (#171)
   "UI-119",
+  # Images at most at their natural size in the transcript (#191)
+  "UI-475",
 ]
 
 [M18]

@@ -235,7 +235,10 @@
     color: var(--omfp-on-surface-variant);
   }
 
+  /* A message's image (UI-475) at most at its natural size: the body is a flex column, whose default `stretch` would
+     widen a small image to the column and upscale it; larger ones shrink to fit, keeping their aspect ratio. */
   .omfp-message__image {
+    align-self: flex-start;
     max-inline-size: min(100%, 32rem);
     border: var(--omfp-bw) solid var(--omfp-rule);
     border-radius: var(--omfp-r-card);

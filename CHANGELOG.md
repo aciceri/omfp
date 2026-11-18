@@ -10,6 +10,8 @@ The version's section is also the source of the GitHub release notes.
 ### Fixed
 
 - `omfp:jobs` no longer shows "never ran" next to the running state while a job's first run is in progress (#194)
+- A small image attached to a message is no longer stretched across the transcript's column: images show at most at
+  their natural size, scaled down only to fit (#191).
 
 ## 0.3.1 — 2026-11-18
 

@@ -4,10 +4,13 @@
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { replay } from "@omfp/core";
 import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { type ReactNode, useState } from "react";
+import { findRule, parseCss } from "../../../../kit/test/support/css.ts";
 import { type OmfpHost, OPEN_FILES, SELECTED_THREAD, strings } from "../../../src/sdk/index.ts";
 import { type CardStatus, type ToolCard, toolCard } from "../../../src/vm/tool.ts";
 import type { MessageView } from "../../../src/vm/transcript.ts";
@@ -661,6 +664,48 @@ describe("result images", () => {
     expect(document.activeElement?.getAttribute("data-testid")).toBe("tool-image");
     await userEvent.keyboard("{Enter}");
     expect(screen.queryAllByTestId("tool-image-dialog").length).toBe(1);
+  });
+
+  // spec: UI-475
+  test("a message's image and a result's thumbnail show at most at their natural size: never stretched, never upscaled", () => {
+    renderWithHost(
+      <MessageRow
+        cardKey="m1"
+        streaming={false}
+        continues={false}
+        view={{
+          role: "user",
+          label: "You",
+          blocks: [{ type: "image", mime: "image/png", data: "iVBORw0KGgo=" }],
+          error: undefined,
+          steering: false,
+        }}
+      />,
+      testHost(),
+    );
+    const image = screen.getByTestId("message-image");
+    const thumbnail = show(imageCard(1)).querySelector(".omfp-tool-images__img");
+    for (const element of [image, thumbnail]) {
+      expect([element?.getAttribute("width"), element?.getAttribute("height"), element?.getAttribute("style")]).toEqual(
+        [null, null, null],
+      );
+    }
+    // happy-dom lays nothing out: the rules themselves are checked, in both skins.
+    const read = (path: string) => parseCss(readFileSync(join(import.meta.dir, path), "utf8"));
+    const chat = read("../../../src/widgets/chat/chat.css");
+    const rule = (selector: string) => findRule(chat, ["@layer omfp-widgets"], selector).declarations;
+    const sizes = ["width", "height", "inline-size", "block-size", "min-inline-size", "min-block-size", "flex"];
+    // The message's body is a flex column: the image must not stretch across it.
+    const message = rule(".omfp-message__image");
+    expect([message.get("align-self"), message.get("max-inline-size")]).toEqual(["flex-start", "min(100%, 32rem)"]);
+    expect(sizes.filter((size) => message.has(size))).toEqual([]);
+    const inThumbnail = rule(".omfp-tool-images__img");
+    expect([inThumbnail.get("max-inline-size"), inThumbnail.get("max-block-size")]).toEqual(["100%", "100%"]);
+    expect(sizes.filter((size) => inThumbnail.has(size))).toEqual([]);
+    const boring = [...read("../../../src/boring.css"), ...read("../../../../kit/src/boring.css")];
+    expect(
+      boring.filter((css) => /omfp-message__image|omfp-tool-images/.test(css.selector)).map((css) => css.selector),
+    ).toEqual([]);
   });
 });
 

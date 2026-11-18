@@ -7,31 +7,42 @@ The version's section is also the source of the GitHub release notes.
 
 ## Unreleased
 
+## 0.3.1 — 2026-11-18
+
 ### Fixed
 
-- With `skin = boring`, the key hint in buttons (`enter` in Send) is readable again: it takes the button's own text
-  color instead of a muted gray that nearly vanished on the dark Send button, and with `theme = matugen`.
-- A window no longer flashes the default Synth palette and Crush skin for a moment while it loads: the daemon serves
-  the page with the configured `[ui]` theme, skin, density, motion and font size already applied.
-- A file of the workspace reached by its absolute path (a breakpoint in `omfp:debug`) and by its workspace-relative
-  path (a tool card) now opens in one tab, which moves to the line of the latest opening, instead of two tabs. Tabs
-  kept from before show once too.
 - Selecting a thread low in a long list of workspaces no longer scrolls the whole window up, leaving an empty band at
   the bottom: only the left column scrolls (#167).
-- `omfp:browser` no longer presents a tab's address as current after the agent clicked, went back or ran code in
-  the page: oh-my-pi reports an address only when a tab is opened or sent somewhere with `goto`, so the box now says
-  "It may have left this address since" with the call that may have moved it, until a later call reports one.
-- An agent's `omfp_thread_wait` without `promptId` no longer answers at once with the thread's previous prompt when
-  the agent's `thread.prompt` for that thread is still being sent (two tool calls in the same turn): it waits for the
-  new prompt instead. Its description now also says to call it once `thread.prompt` answered.
-
-### Fixed
-
 - The header's context meter refreshes when a turn ends and after every compaction, manual or automatic, instead of
   only when the thread is selected again (#168).
 - `:compact <mode>` (and `/compact soft`, …) on a thread that is already compacted shows one
   `Compaction skipped: <reason>` row instead of a second `Compaction failed: <reason>` one, and its toast, which only
   says the compaction started, no longer carries a success mark (#169).
+- With `skin = boring`, the key hint in buttons (`enter` in Send) is readable again: it takes the button's own text
+  color instead of a muted gray that nearly vanished on the dark Send button, also with `theme = matugen` (#170).
+- A file of the workspace reached by its absolute path (a breakpoint in `omfp:debug`) and by its workspace-relative
+  path (a tool card) now opens in one tab, which moves to the line of the latest opening, instead of two tabs. Tabs
+  kept from before show once too (#171).
+- `omfp:browser` no longer presents a tab's address as current after the agent clicked, went back or ran code in
+  the page: oh-my-pi reports an address only when a tab is opened or sent somewhere with `goto`, so the box now says
+  "It may have left this address since" with the call that may have moved it, until a later call reports one (#172).
+- An agent's `omfp_thread_wait` without `promptId` no longer answers at once with the thread's previous prompt when
+  the agent's `thread.prompt` for that thread is still being sent (two tool calls in the same turn): it waits for the
+  new prompt instead. Its description now also says to call it once `thread.prompt` answered (#173).
+- A window no longer flashes the default Synth palette and Crush skin for a moment while it loads: the daemon serves
+  the page with the configured `[ui]` theme, skin, density, motion and font size already applied (#174).
+
+### Release limitations
+
+- macOS downloads are signed ad-hoc and are not notarized unless the release explicitly says otherwise. On first
+  launch, allow the app in System Settings → Privacy & Security → Open Anyway. Updates may request microphone
+  permission again.
+- The Flatpak deliberately runs oh-my-pi, git and job commands on the host with your account's permissions; it is
+  not an isolation boundary. Keep workspaces under your home directory. On NixOS, use the Nix package or configure
+  a compatible `omp_bin`. Job processes left behind after their shell exits are not killed on the host.
+- Standalone downloads do not cover Windows, Intel Macs or ARM Linux.
+- Multi-select prompts of the `ask` tool do not show yet which choices are checked: oh-my-pi 18.22 sends that state,
+  but omfp's prompt card does not use it yet.
 
 ## 0.3.0 — 2026-11-17
 

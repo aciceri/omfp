@@ -48,7 +48,15 @@ export interface EditedFile {
   readonly path: string;
   /** What happened to it, in omp's words (`2 edits`, `created`, `renamed from src/a.ts`). */
   readonly note: string;
+  /** The text edits it got, when omp counts them (`undefined` for a created, renamed or deleted file). */
+  readonly edits: number | undefined;
   readonly removed: boolean;
+}
+
+/** The names of a symbol `rename`: the call's `symbol` (when it named one) and its `new_name`. */
+export interface RenamedSymbol {
+  readonly from: string | undefined;
+  readonly to: string;
 }
 
 /** A code action the server offers, by omp's index. */
@@ -89,6 +97,10 @@ export type LspResult =
       readonly title: string;
       /** Whether the edit was applied (a rename preview was not). */
       readonly applied: boolean;
+      /** A symbol rename's old and new names; `undefined` for other edits. */
+      readonly rename: RenamedSymbol | undefined;
+      /** `6 edits in 3 files`, from the files' counts; `undefined` when omp counted none. */
+      readonly total: string | undefined;
       readonly files: readonly EditedFile[];
       readonly commands: readonly string[];
       readonly notes: readonly string[];
@@ -324,36 +336,61 @@ function symbolsResult(text: string): LspResult | undefined {
   return { type: "symbols", title: title.replace(/:$/, ""), workspace: document === null, symbols };
 }
 
+/** `1 edit`, `2 edits`; `1 file`, `2 files`. */
+function count(value: number, noun: string): string {
+  return `${value} ${noun}${value === 1 ? "" : "s"}`;
+}
+
+/** A file that got `edits` text edits. */
+function editedFile(path: string | undefined, edits: number): EditedFile {
+  return { path: path ?? "", note: count(edits, "edit"), edits, removed: false };
+}
+
 /** The rows of an applied or previewed workspace edit (`applyWorkspaceEdit`, `formatWorkspaceEdit`). */
 const EDIT_ROWS: readonly { readonly pattern: RegExp; readonly file: (match: RegExpExecArray) => EditedFile }[] = [
   {
     // `Applied 2 edit(s) to src/a.ts`; `rename_file`'s `  rust-analyzer: applied 2 edit(s) to src/a.ts`.
     pattern: /^\s*(?:[^:]+: )?[Aa]pplied (\d+) edit\(s\) to (.+)$/,
-    file: (match) => ({ path: match[2] ?? "", note: `${match[1]} edits`, removed: false }),
+    file: (match) => editedFile(match[2], Number(match[1])),
   },
   {
     pattern: /^\s*(?:Created|CREATE:) (.+)$/,
-    file: (match) => ({ path: match[1] ?? "", note: "created", removed: false }),
+    file: (match) => ({ path: match[1] ?? "", note: "created", edits: undefined, removed: false }),
   },
   {
     pattern: /^\s*(?:Deleted|DELETE:) (.+)$/,
-    file: (match) => ({ path: match[1] ?? "", note: "deleted", removed: true }),
+    file: (match) => ({ path: match[1] ?? "", note: "deleted", edits: undefined, removed: true }),
   },
   {
     // `Renamed a → b` (applied, `rename_file`); a preview's `RENAME: a <cursor> b`, the cursor being the theme's
     // `nav.cursor` (`❯`, the Nerd Font chevron or `>`). Split at the separator so paths keep their spaces.
     pattern: /^\s*(?:Renamed (.+?) → |RENAME: (.+?) (?:❯|\u{f054}|>) )(.+)$/u,
-    file: (match) => ({ path: match[3] ?? "", note: `renamed from ${match[1] ?? match[2]}`, removed: false }),
+    file: (match) => ({
+      path: match[3] ?? "",
+      note: `renamed from ${match[1] ?? match[2]}`,
+      edits: undefined,
+      removed: false,
+    }),
   },
   {
-    // A preview's `src/a.ts: 2 edits`.
+    // A preview's `src/a.ts: 1 edit`, `src/a.ts: 2 edits`.
     pattern: /^\s+(.+): (\d+) edits?$/,
-    file: (match) => ({ path: match[1] ?? "", note: `${match[2]} edits`, removed: false }),
+    file: (match) => editedFile(match[1], Number(match[2])),
   },
 ];
 
-/** A `rename`, `rename_file` or applied `code_actions` answer: the files it changed and the commands it ran. */
-function editsResult(text: string): LspResult | undefined {
+/** `6 edits in 3 files`, over the files omp counted edits for; `undefined` when it counted none. */
+function editsTotal(files: readonly EditedFile[]): string | undefined {
+  const counted = files.flatMap((file) => (file.edits === undefined ? [] : [file.edits]));
+  const edits = counted.reduce((sum, edits) => sum + edits, 0);
+  return counted.length === 0 ? undefined : `${count(edits, "edit")} in ${count(counted.length, "file")}`;
+}
+
+/**
+ * A `rename`, `rename_file` or applied `code_actions` answer: the files it changed and the commands it ran, and a
+ * symbol rename's names (omp's text names neither: they are the call's).
+ */
+function editsResult(text: string, rename: RenamedSymbol | undefined): LspResult | undefined {
   const [title = "", ...lines] = text.split("\n");
   const files: EditedFile[] = [];
   const commands: string[] = [];
@@ -390,6 +427,8 @@ function editsResult(text: string): LspResult | undefined {
     type: "edits",
     title: title.replace(/:$/, ""),
     applied: !title.startsWith("Rename preview"),
+    rename,
+    total: editsTotal(files),
     files,
     commands,
     notes,
@@ -408,8 +447,15 @@ function actionsResult(text: string): LspResult | undefined {
   return actions.length === 0 ? undefined : { type: "actions", title: title.replace(/:$/, ""), actions };
 }
 
+/** The arguments of an `lsp` call its answer is read with. */
+export interface LspCall {
+  /** The symbol at the call's line, `#N` naming its Nth occurrence (`add#2`). */
+  readonly symbol: string | undefined;
+  readonly newName: string | undefined;
+}
+
 /** The answer of an `lsp` call of `action`, read from its text. */
-export function lspResult(action: string, text: string): LspResult {
+export function lspResult(action: string, text: string, call: LspCall): LspResult {
   const plain: LspResult = { type: "text", text };
   switch (action) {
     case "diagnostics":
@@ -421,11 +467,15 @@ export function lspResult(action: string, text: string): LspResult {
       return locationsResult(text) ?? plain;
     case "symbols":
       return symbolsResult(text) ?? plain;
-    case "rename":
+    case "rename": {
+      const rename =
+        call.newName === undefined ? undefined : { from: call.symbol?.replace(/#\d+$/, ""), to: call.newName };
+      return editsResult(text, rename) ?? plain;
+    }
     case "rename_file":
-      return editsResult(text) ?? plain;
+      return editsResult(text, undefined) ?? plain;
     case "code_actions":
-      return (text.startsWith('Applied "') ? editsResult(text) : actionsResult(text)) ?? plain;
+      return (text.startsWith('Applied "') ? editsResult(text, undefined) : actionsResult(text)) ?? plain;
     case "hover":
       return text === "No hover information" ? plain : { type: "hover", markdown: text };
     default:

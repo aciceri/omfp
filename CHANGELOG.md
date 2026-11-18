@@ -11,6 +11,12 @@ The version's section is also the source of the GitHub release notes.
 
 - `omfp:jobs` no longer shows "never ran" next to the running state while a job's first run is in progress (#194)
 
+### Changed
+
+- The card of an LSP `rename` shows the old and new symbol name, the total (`6 edits in 3 files`) and each file's
+  edit count; a preview's files open as they are (the renamed file at the call's line) rather than against `HEAD`, and
+  a list of more than 8 files collapses behind a "… N more files" button (#193).
+
 ## 0.3.1 — 2026-11-18
 
 ### Fixed

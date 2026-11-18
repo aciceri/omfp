@@ -345,7 +345,7 @@ describe("ast_edit and resolve cards", () => {
       action: "apply",
       label: "AST Edit: 1 replacement in 1 file",
       reason: "Saturating is safer.",
-      files: [{ path: "src/lib.rs", note: "1 replacement", removed: false }],
+      files: [{ path: "src/lib.rs", note: "1 replacement", edits: undefined, removed: false }],
     });
   });
 });
@@ -537,9 +537,11 @@ describe("lsp card", () => {
       type: "edits",
       title: "Applied rename",
       applied: true,
+      rename: { from: undefined, to: "sum" },
+      total: "3 edits in 2 files",
       files: [
-        { path: "src/lib.rs", note: "2 edits", removed: false },
-        { path: "src/main.rs", note: "1 edits", removed: false },
+        { path: "src/lib.rs", note: "2 edits", edits: 2, removed: false },
+        { path: "src/main.rs", note: "1 edit", edits: 1, removed: false },
       ],
       commands: [],
       notes: [],
@@ -552,10 +554,12 @@ describe("lsp card", () => {
       type: "edits",
       title: "Rename preview",
       applied: false,
+      rename: { from: undefined, to: "sum" },
+      total: "2 edits in 1 file",
       files: [
-        { path: "src/lib.rs", note: "2 edits", removed: false },
-        { path: "src/new.rs", note: "renamed from src/old.rs", removed: false },
-        { path: "src/gone.rs", note: "deleted", removed: true },
+        { path: "src/lib.rs", note: "2 edits", edits: 2, removed: false },
+        { path: "src/new.rs", note: "renamed from src/old.rs", edits: undefined, removed: false },
+        { path: "src/gone.rs", note: "deleted", edits: undefined, removed: true },
       ],
       commands: [],
       notes: [],
@@ -569,9 +573,46 @@ describe("lsp card", () => {
       type: "edits",
       title: 'Applied "Add import"',
       applied: true,
-      files: [{ path: "src/a.ts", note: "1 edits", removed: false }],
+      rename: undefined,
+      total: "1 edit in 1 file",
+      files: [{ path: "src/a.ts", note: "1 edit", edits: 1, removed: false }],
       commands: ["_typescript.applyFix"],
       notes: [],
+    });
+  });
+
+  // spec: UI-919
+  test("a symbol rename: its old and new names, each file's edits and the total, as omp 18.22.0 words them", () => {
+    // `textDocument/rename` answered with a `changes` map, previewed (`formatWorkspaceEdit`: `N edit`/`N edits`) and
+    // applied (`applyWorkspaceEdit`: `Applied N edit(s) to`); `symbol` names the old name, `#N` its occurrence.
+    const args = { action: "rename", file: "src/lib.rs", line: 3, symbol: "add#2", new_name: "sum" };
+    const files = [
+      { path: "src/lib.rs", note: "3 edits", edits: 3, removed: false },
+      { path: "src/main.rs", note: "1 edit", edits: 1, removed: false },
+      { path: "tests/calc test.rs", note: "2 edits", edits: 2, removed: false },
+    ];
+    const preview = "Rename preview:\n  src/lib.rs: 3 edits\n  src/main.rs: 1 edit\n  tests/calc test.rs: 2 edits";
+    expect(view(lspCard({ ...args, apply: false }, preview), "lsp").result).toEqual({
+      type: "edits",
+      title: "Rename preview",
+      applied: false,
+      rename: { from: "add", to: "sum" },
+      total: "6 edits in 3 files",
+      files,
+      commands: [],
+      notes: [],
+    });
+    const applied =
+      "Applied rename:\n  Applied 3 edit(s) to src/lib.rs\n  Applied 1 edit(s) to src/main.rs\n  Applied 2 edit(s) to tests/calc test.rs";
+    expect(view(lspCard(args, applied), "lsp").result).toMatchObject({
+      applied: true,
+      rename: { from: "add", to: "sum" },
+      total: "6 edits in 3 files",
+      files,
+    });
+    expect(view(lspCard(args, "Rename returned no edits"), "lsp").result).toEqual({
+      type: "text",
+      text: "Rename returned no edits",
     });
   });
 
@@ -581,7 +622,7 @@ describe("lsp card", () => {
       const result = view(lspCard({ action: "rename_file", file: "a b.ts", new_name: "c d.ts" }, answer), "lsp").result;
       return result?.type === "edits" ? result.files : [];
     };
-    const renamed = [{ path: "src/c d.ts", note: "renamed from src/a b.ts", removed: false }];
+    const renamed = [{ path: "src/c d.ts", note: "renamed from src/a b.ts", edits: undefined, removed: false }];
     expect(filesOf("Renamed 1 file → src/c d.ts\n  Renamed src/a b.ts → src/c d.ts")).toEqual(renamed);
     expect(filesOf("Applied rename:\n  Renamed src/a b.ts → src/c d.ts")).toEqual(renamed);
     for (const cursor of ["❯", "\uf054", ">"]) {

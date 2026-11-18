@@ -482,10 +482,41 @@ describe("code-intelligence cards", () => {
     const answer = "Applied rename:\n  Applied 2 edit(s) to src/lib.rs\n  Deleted src/old.rs";
     const element = await open(lspCard({ action: "rename", file: "src/lib.rs", line: 3, new_name: "sum" }, answer));
     expect(texts(element, "tool-file")).toEqual(["src/lib.rs2 edits", "src/old.rsdeleted"]);
+    expect(byTestId(element, "lsp-rename").textContent).toBe("renamed to sum");
+    expect(byTestId(element, "lsp-edit-total").textContent).toBe("2 edits in 1 file");
     const [changed, deleted] = within(element).getAllByTestId("tool-file");
     expect(deleted !== undefined && within(deleted).queryByTestId("path-link")).toBeNull();
     await userEvent.click(within(changed as HTMLElement).getByTestId("path-link"));
     expect(opened()).toEqual([{ path: "src/lib.rs", line: undefined, diff: true }]);
+  });
+
+  // spec: UI-919, UI-116
+  test("lsp rename preview: old → new name, the total; files open at the call's line, a long list collapses", async () => {
+    const paths = Array.from({ length: 10 }, (_, index) => `src/m${index}.rs`);
+    const rows = paths.map((path, index) => `  ${path}: ${index + 1} ${index === 0 ? "edit" : "edits"}`);
+    const element = await open(
+      lspCard(
+        { action: "rename", file: "src/m1.rs", line: 3, symbol: "add", new_name: "sum", apply: false },
+        `Rename preview:\n${rows.join("\n")}`,
+      ),
+    );
+    expect(byTestId(element, "lsp-rename").textContent).toBe("add → sum");
+    expect(byTestId(element, "lsp-edit-total").textContent).toBe("55 edits in 10 files");
+    expect(texts(element, "tool-file")).toEqual(
+      paths.slice(0, 8).map((path, index) => `${path}${index + 1} ${index === 0 ? "edit" : "edits"}`),
+    );
+    const more = byTestId(element, "tool-more");
+    expect([more.textContent, more.getAttribute("aria-expanded")]).toEqual(["… 2 more files", "false"]);
+    await userEvent.click(more);
+    expect(texts(element, "tool-file").length).toBe(10);
+    expect(byTestId(element, "tool-more").textContent).toBe(text.fewerFiles);
+    const links = within(element).getAllByTestId("path-link");
+    await userEvent.click(links[1] as HTMLElement);
+    await userEvent.click(links[9] as HTMLElement);
+    expect(opened()).toEqual([
+      { path: "src/m1.rs", line: 3, diff: undefined },
+      { path: "src/m9.rs", line: undefined, diff: undefined },
+    ]);
   });
 
   // spec: UI-919

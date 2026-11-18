@@ -526,6 +526,7 @@ export function toolView(
             ? records(source.fileReplacements).map((file) => ({
                 path: str(file.path) ?? "",
                 note: plural(num(file.count) ?? 0, "replacement", "replacements"),
+                edits: undefined,
                 removed: false,
               }))
             : [],
@@ -534,13 +535,14 @@ export function toolView(
     case "lsp": {
       const action = str(input.action) ?? str(details.action) ?? "";
       const answer = output?.text;
+      const symbol = str(input.symbol);
       return {
         kind: "lsp",
         action,
         file: str(input.file),
         line: num(input.line),
-        symbol: str(input.symbol),
-        result: answer === undefined ? undefined : lspResult(action, answer),
+        symbol,
+        result: answer === undefined ? undefined : lspResult(action, answer, { symbol, newName: str(input.new_name) }),
         noServer: answer?.includes("No language server found") === true,
       };
     }

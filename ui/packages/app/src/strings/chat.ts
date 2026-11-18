@@ -106,6 +106,11 @@ export const chat = {
       "omp starts language servers from the omfp daemon's environment (its PATH), not from your shell: install the server where the daemon runs.",
     commands: "Commands run",
     notApplied: "Preview: nothing was changed",
+    /** A symbol rename whose call named no old name (UI-919). */
+    renamedTo: "renamed to",
+    /** A long list of changed files' expander (UI-919). */
+    moreFiles: (count: number) => `… ${count} more ${count === 1 ? "file" : "files"}`,
+    fewerFiles: "Show fewer files",
   },
   duration: {
     ms: (ms: number) => `${ms.toFixed(0)} ms`,

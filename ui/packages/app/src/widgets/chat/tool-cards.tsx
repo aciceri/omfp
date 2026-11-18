@@ -379,7 +379,7 @@ function ToolSection({
     case "lsp":
       return (
         <>
-          {card.status !== "failed" && view.result !== undefined && <LspAnswer result={view.result} />}
+          {card.status !== "failed" && view.result !== undefined && <LspAnswer result={view.result} call={view} />}
           {view.noServer && (
             <p className="omfp-tool-card__meta" data-testid="lsp-environment">
               {text.serverEnvironment}
@@ -481,33 +481,61 @@ function Location({ path, line, column }: { path: string; line: number; column?:
   );
 }
 
-/** Files a workspace edit or an applied rewrite changed, each opening against `HEAD` (UI-917, UI-919). */
-function ChangedFiles({ files }: { files: readonly EditedFile[] }): ReactNode {
+/** Files of a long list of changed files shown until it is expanded (UI-919). */
+const FILES_SHOWN = 8;
+
+/**
+ * Files a workspace edit or an applied rewrite changed, each opening against `HEAD` (UI-917, UI-919); with `preview`,
+ * the files an edit that was not applied would change, each opening as it is (the call's file at the call's line). A
+ * long list shows its first files, expandable to all of them.
+ */
+function ChangedFiles({
+  files,
+  preview,
+}: {
+  files: readonly EditedFile[];
+  preview?: { readonly file: string | undefined; readonly line: number | undefined } | undefined;
+}): ReactNode {
   const openFile = useOpenFile();
+  const [expanded, setExpanded] = useState(false);
   if (files.length === 0) {
     return null;
   }
+  const hidden = files.length - FILES_SHOWN;
   return (
-    <ul className="omfp-tool-card__files">
-      {files.map((file) => (
-        <li key={file.path} data-testid="tool-file">
-          <div className="omfp-tool-card__file">
-            {file.removed ? (
-              <FilePath path={file.path} />
-            ) : (
-              <PathLink
-                reference={{ path: file.path, line: undefined }}
-                diff
-                onOpen={(ref) => openFile(ref.path, { diff: true })}
-              >
+    <>
+      <ul className="omfp-tool-card__files">
+        {(expanded || hidden <= 0 ? files : files.slice(0, FILES_SHOWN)).map((file) => (
+          <li key={file.path} data-testid="tool-file">
+            <div className="omfp-tool-card__file">
+              {file.removed ? (
                 <FilePath path={file.path} />
-              </PathLink>
-            )}
-            <span className="omfp-tool-card__meta">{file.note}</span>
-          </div>
-        </li>
-      ))}
-    </ul>
+              ) : (
+                <PathLink
+                  reference={{ path: file.path, line: file.path === preview?.file ? preview.line : undefined }}
+                  diff={preview === undefined}
+                  onOpen={(ref) => openFile(ref.path, preview === undefined ? { diff: true } : { line: ref.line })}
+                >
+                  <FilePath path={file.path} />
+                </PathLink>
+              )}
+              <span className="omfp-tool-card__meta">{file.note}</span>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {hidden > 0 && (
+        <Button
+          size="sm"
+          variant="quiet"
+          aria-expanded={expanded}
+          data-testid="tool-more"
+          onPress={() => setExpanded((open) => !open)}
+        >
+          {expanded ? text.fewerFiles : text.moreFiles(hidden)}
+        </Button>
+      )}
+    </>
   );
 }
 
@@ -543,10 +571,10 @@ function DiagnosticRow({ diagnostic }: { diagnostic: Diagnostic }): ReactNode {
 
 /**
  * An `lsp` answer (UI-918, UI-919): diagnostics with their severity and location, locations with their source,
- * symbols at their lines, the files an edit changed, the code actions offered, hover documentation as Markdown, else
- * omp's text.
+ * symbols at their lines, the files an edit changed (a symbol rename's old and new names first), the code actions
+ * offered, hover documentation as Markdown, else omp's text.
  */
-function LspAnswer({ result }: { result: LspResult }): ReactNode {
+function LspAnswer({ result, call }: { result: LspResult; call: Extract<ToolView, { kind: "lsp" }> }): ReactNode {
   switch (result.type) {
     case "diagnostics":
       return (
@@ -621,9 +649,27 @@ function LspAnswer({ result }: { result: LspResult }): ReactNode {
         <>
           <p className="omfp-tool-card__meta">
             <span data-testid="tool-total">{result.title}</span>
+            {result.total !== undefined && <span data-testid="lsp-edit-total">{result.total}</span>}
             {!result.applied && <span>{text.notApplied}</span>}
           </p>
-          <ChangedFiles files={result.files} />
+          {result.rename !== undefined && (
+            <p className="omfp-tool-card__meta">
+              <span data-testid="lsp-rename">
+                {result.rename.from === undefined ? (
+                  `${text.renamedTo} `
+                ) : (
+                  <>
+                    <Code code={result.rename.from} /> →{" "}
+                  </>
+                )}
+                <Code code={result.rename.to} />
+              </span>
+            </p>
+          )}
+          <ChangedFiles
+            files={result.files}
+            preview={result.applied ? undefined : { file: call.file, line: call.line }}
+          />
           {result.commands.length > 0 && (
             <>
               <h3>{text.commands}</h3>

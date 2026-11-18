@@ -1088,6 +1088,7 @@ name = "e2e"
 version = "0.3.1"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "clap",
  "fake-llm",
  "omfp",

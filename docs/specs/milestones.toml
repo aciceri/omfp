@@ -1270,6 +1270,9 @@ requirements = [
   "UI-119",
   # Images at most at their natural size in the transcript (#191)
   "UI-475",
+  # The chat's images open zoomable: the full view in an ImageView, a message's image opens it too
+  "UI-476",
+  "E2E-75",
 ]
 
 [M18]

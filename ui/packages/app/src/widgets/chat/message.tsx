@@ -28,6 +28,7 @@ import {
   useUrlActions,
 } from "omfp/sdk";
 import { memo, type ReactNode, useCallback } from "react";
+import { useImageViewer } from "./image-viewer.tsx";
 import { useExpanded, useObserved, useObservedElapsed } from "./state.ts";
 import { fileTarget, ToolBody, ToolImages, ToolSubject } from "./tool-cards.tsx";
 
@@ -171,14 +172,7 @@ const BlockView = memo(function BlockView({
     case "thinking":
       return <ThinkingBlock cardKey={cardKey} text={block.text} live={streaming && last} />;
     case "image":
-      return (
-        <img
-          className="omfp-message__image"
-          data-testid="message-image"
-          src={`data:${block.mime};base64,${block.data}`}
-          alt={text.attachedImage}
-        />
-      );
+      return <MessageImage src={`data:${block.mime};base64,${block.data}`} />;
     case "tool":
       return <ToolCardView cardKey={cardKey} card={block.card} />;
     case "readGroup":
@@ -187,6 +181,27 @@ const BlockView = memo(function BlockView({
       return <RecordBlock cardKey={cardKey} summary={block.summary} json={block.json} />;
   }
 });
+
+/** A message's image (UI-475), a button opening it at full size, zoomable (UI-476). */
+function MessageImage({ src }: { src: string }): ReactNode {
+  const viewer = useImageViewer();
+  return (
+    <>
+      <Button
+        variant="quiet"
+        className="omfp-message__open"
+        aria-label={text.openAttachedImage}
+        onPress={() =>
+          viewer.open({ src, alt: text.attachedImage, title: text.attachedImage, testId: "message-image-dialog" })
+        }
+        data-testid="message-image-open"
+      >
+        <img className="omfp-message__image" data-testid="message-image" src={src} alt={text.attachedImage} />
+      </Button>
+      {viewer.dialog}
+    </>
+  );
+}
 
 /** A Markdown chunk, parsed again only when its text changes. */
 const MarkdownChunk = memo(Markdown);

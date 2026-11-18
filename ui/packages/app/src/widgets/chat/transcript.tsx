@@ -69,6 +69,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { ImageViewer } from "./image-viewer.tsx";
 import { blockCardKey, MessageRow, NoticeRowView, SystemRowView } from "./message.tsx";
 import type { WidgetProps } from "./props.ts";
 import { collapsedThinkingHints, NO_MARKS, revealInline, textRanges, useSearchHighlights } from "./search.ts";
@@ -424,7 +425,10 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const container = event.currentTarget;
     const target = event.target;
-    if (target instanceof Element && target !== container && target.closest(CONTROLS) !== null) {
+    if (
+      !fromInside(event) ||
+      (target instanceof Element && target !== container && target.closest(CONTROLS) !== null)
+    ) {
       return;
     }
     const top = keyScrollTop(event.key, container.scrollTop, container.clientHeight, container.scrollHeight);
@@ -546,7 +550,7 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
   };
 
   return (
-    <>
+    <ImageViewer fallback={containerRef}>
       {searching && (
         <div className="omfp-transcript__search" data-testid="conversation-search">
           <SearchField
@@ -611,14 +615,17 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
           dispatch({ type: "scroll", ...now, previous });
         }}
         onWheel={(event) => {
+          if (!fromInside(event)) {
+            return;
+          }
           userScrolls();
           if (event.deltaY < 0) {
             dispatch({ type: "userScrollUp" });
           }
         }}
         onKeyDown={onKeyDown}
-        onPointerDown={userScrolls}
-        onTouchStart={userScrolls}
+        onPointerDown={(event) => fromInside(event) && userScrolls()}
+        onTouchStart={(event) => fromInside(event) && userScrolls()}
       >
         {NAV.map(({ id, title }) => (
           <NavRegistration key={id} id={id} title={title} run={runNav} />
@@ -668,7 +675,17 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
           {footer}
         </div>
       </div>
-    </>
+    </ImageViewer>
+  );
+}
+
+/**
+ * Whether a transcript event came from its own DOM, not from a portal a row renders (an image's dialog, a menu), whose
+ * events React still bubbles through the row: those never scroll the transcript.
+ */
+function fromInside(event: { currentTarget: EventTarget; target: EventTarget }): boolean {
+  return (
+    event.currentTarget instanceof Node && event.target instanceof Node && event.currentTarget.contains(event.target)
   );
 }
 

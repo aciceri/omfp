@@ -4042,6 +4042,22 @@
     color: var(--omfp-error);
   }
 
+  /* An image at full size (UI-474): the dialog as large as the window, its viewer filling the body under the title. */
+  .omfp-modal:has(> .omfp-image-dialog) {
+    inline-size: 94vw;
+    block-size: calc(100vh - 2 * var(--omfp-s4));
+  }
+
+  .omfp-image-dialog {
+    box-sizing: border-box;
+    block-size: 100%;
+  }
+
+  .omfp-image-dialog > .omfp-dialog__body {
+    flex: 1 1 0;
+    min-block-size: 0;
+  }
+
   /* A file path that opens the file (UI-116): inline, like the text around it, underlined on hover and focus. */
   .omfp-path-link {
     padding: 0;

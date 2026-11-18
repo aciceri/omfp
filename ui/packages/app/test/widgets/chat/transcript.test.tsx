@@ -861,6 +861,32 @@ describe("transcript", () => {
     expect(element.dataset.pinned).toBe("true");
   });
 
+  // spec: UI-476, UI-474
+  test("an image's dialog never scrolls the transcript and stays open once its row leaves the rendered window", async () => {
+    const [history] = longHistory(50);
+    if (history?.kind !== "history") throw new Error("no history");
+    const image = { type: "image" as const, data: "iVBORw0KGgo=", mimeType: "image/png" };
+    const messages = [...history.messages.slice(0, -1), { role: "user" as const, content: [image] }];
+    renderThread(<TranscriptWidget />, [{ ...history, messages }]);
+    const element = transcript();
+    scrollTo(element, 4400, 5000);
+    const bottom = element.scrollTop;
+    await userEvent.click(screen.getByTestId("message-image-open"));
+    const viewport = within(screen.getByTestId("message-image-dialog")).getByTestId("image-viewport");
+    // Keys and the wheel in the viewer are the viewer's, though React bubbles them through the row.
+    fireEvent.keyDown(viewport, { key: "Home" });
+    fireEvent.wheel(viewport, { deltaY: -100, ctrlKey: true });
+    expect([element.scrollTop, element.dataset.pinned]).toEqual([bottom, "true"]);
+    // The row with the image leaves the rendered window: the dialog stays.
+    scrollTo(element, 0, 5000);
+    expect(screen.queryAllByTestId("message-image-open").length).toBe(0);
+    expect(screen.queryAllByTestId("message-image-dialog").length).toBe(1);
+    // Closing it gives the focus to the transcript, the image that opened it being gone.
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryAllByTestId("message-image-dialog").length).toBe(0);
+    expect(document.activeElement?.getAttribute("data-testid")).toBe("transcript");
+  });
+
   // spec: UI-095
   test("transcript-scope nav commands move between messages", () => {
     const { host } = renderThread(<TranscriptWidget />, longHistory(5));

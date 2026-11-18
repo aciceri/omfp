@@ -153,7 +153,7 @@ async fn a_turn_shows_one_assistant_name_line_and_a_tool_results_image_opens_ful
     journey.element(DIALOG).await?;
     assert_eq!(
         journey
-            .attr(&format!("{DIALOG} [data-testid=tool-image-full]"), "alt")
+            .attr(&format!("{DIALOG} img[data-testid=image-after]"), "alt")
             .await?,
         Some("Image from read plot.png".to_owned())
     );

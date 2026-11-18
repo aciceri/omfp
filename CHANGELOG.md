@@ -12,6 +12,9 @@ The version's section is also the source of the GitHub release notes.
 - `omfp:jobs` no longer shows "never ran" next to the running state while a job's first run is in progress (#194)
 - A small image attached to a message is no longer stretched across the transcript's column: images show at most at
   their natural size, scaled down only to fit (#191).
+- The chat's images can be zoomed: an image attached to a message now opens at full size on a click, and that full
+  view (also of a tool's images and of `omfp:browser`'s screenshots) zooms and pans like an image file: the zoom
+  buttons, `100%`, Fit, Ctrl with the wheel, two fingers on a touch screen, dragging.
 
 ### Changed
 

@@ -1,7 +1,8 @@
 /**
  * Images in the kit (UI-549..UI-555): `ImageView` shows an image fitted to the viewer or zoomed — buttons, the wheel
  * with Ctrl (a trackpad pinch), two fingers on a touch screen — and panned by dragging, and compares it with an earlier
- * version side by side or under a slider, both at the same scale and scrolled together.
+ * version side by side or under a slider, both at the same scale and scrolled together. `ImageDialog` opens one in a
+ * modal dialog as large as the window (UI-474).
  */
 import {
   type CSSProperties,
@@ -15,6 +16,7 @@ import {
 } from "react";
 import { Button, IconButton } from "./button.tsx";
 import { cx } from "./class.ts";
+import { Dialog } from "./dialog.tsx";
 import { Icon } from "./icons.tsx";
 import {
   anchoredScroll,
@@ -362,6 +364,43 @@ export function ImageView({ src, alt, before, compare, labels, className, ...pro
         ))}
       </div>
     </div>
+  );
+}
+
+export interface ImageDialogProps {
+  /** The image the dialog shows; `undefined` keeps it closed. */
+  readonly image: { readonly src: string; readonly alt: string } | undefined;
+  /** The dialog's heading. */
+  readonly title: string;
+  readonly labels: ImageViewLabels;
+  /** Escape or a click outside closed it. */
+  readonly onClose: () => void;
+  readonly "data-testid"?: string | undefined;
+}
+
+/**
+ * An image at full size (UI-474): a modal dialog as large as the window, titled `title`, whose `ImageView` opens fitted
+ * and zooms and pans like any (UI-549..UI-551); Escape or a click outside closes it, the focus going back to what
+ * opened it.
+ */
+export function ImageDialog({ image, title, labels, onClose, "data-testid": testId }: ImageDialogProps): ReactNode {
+  return (
+    <Dialog
+      isOpen={image !== undefined}
+      onOpenChange={(open) => {
+        if (!open) {
+          onClose();
+        }
+      }}
+      isDismissable
+      title={title}
+      className="omfp-image-dialog"
+      data-testid={testId}
+    >
+      {image !== undefined && (
+        <ImageView src={image.src} alt={image.alt} labels={labels} className="omfp-image-dialog__view" />
+      )}
+    </Dialog>
   );
 }
 

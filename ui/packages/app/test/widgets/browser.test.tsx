@@ -56,7 +56,7 @@ describe("omfp:browser", () => {
   });
 
   // spec: UI-872, UI-474
-  test("the latest screenshot opens at full size in a dialog; Escape closes it", async () => {
+  test("the latest screenshot opens zoomable in a dialog as large as the window; Escape closes it", async () => {
     setup(browserSession());
     const [docs] = screen.getAllByTestId("browser-tab") as [HTMLElement];
     const thumb = within(docs).getByTestId("browser-screenshot");
@@ -66,11 +66,14 @@ describe("omfp:browser", () => {
     await userEvent.click(thumb);
     const dialog = screen.getByTestId("browser-screenshot-dialog");
     expect(within(dialog).getByRole("heading").textContent).toBe("Latest screenshot of tab docs");
-    const full = within(dialog).getByTestId("browser-screenshot-full");
+    const full = within(dialog).getByTestId("image-after");
     expect([full.getAttribute("src"), full.getAttribute("alt")]).toEqual([
       `data:image/png;base64,${btoa("docs-2")}`,
       "Latest screenshot of tab docs",
     ]);
+    expect(within(dialog).getByTestId("image-fit").getAttribute("aria-pressed")).toBe("true");
+    await userEvent.click(within(dialog).getByRole("button", { name: "Zoom in" }));
+    expect(within(dialog).getByTestId("image-fit").getAttribute("aria-pressed")).toBe("false");
     await userEvent.keyboard("{Escape}");
     expect(screen.queryAllByTestId("browser-screenshot-dialog").length).toBe(0);
   });

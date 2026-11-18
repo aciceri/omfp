@@ -1,11 +1,11 @@
 /**
  * `omfp:browser` (UI-870..UI-873): the browser tabs the selected thread's agent drove with omp's browser, from its
  * `eval` calls (`browserView`): a box per tab titled on its border (UI-187) with its address, its last action and the
- * latest screenshot its calls produced, which opens at full size in a dialog. omp exposes no live page over RPC, so
- * this shows what the calls reported.
+ * latest screenshot its calls produced, which opens at full size in a dialog, zoomed and panned like a file's image.
+ * omp exposes no live page over RPC, so this shows what the calls reported.
  */
 
-import { BorderBox, Button, Dialog, EmptyState } from "omfp/kit";
+import { BorderBox, Button, EmptyState, ImageDialog } from "omfp/kit";
 import {
   type BrowserScreenshot,
   type BrowserTab,
@@ -116,27 +116,17 @@ export function BrowserWidget(_props: WidgetProps): ReactNode {
           ))}
         </>
       )}
-      <Dialog
-        isOpen={opened?.screenshot !== undefined}
-        onOpenChange={(open) => {
-          if (!open) {
-            setOpened(undefined);
-          }
-        }}
-        isDismissable
+      <ImageDialog
+        image={
+          opened?.screenshot === undefined
+            ? undefined
+            : { src: imageSource(opened.screenshot), alt: text.screenshot(opened.name) }
+        }
         title={opened === undefined ? "" : text.screenshot(opened.name)}
-        className="omfp-image-dialog"
+        labels={strings.shell.file.image}
+        onClose={() => setOpened(undefined)}
         data-testid="browser-screenshot-dialog"
-      >
-        {opened?.screenshot !== undefined && (
-          <img
-            className="omfp-image-dialog__image"
-            src={imageSource(opened.screenshot)}
-            alt={text.screenshot(opened.name)}
-            data-testid="browser-screenshot-full"
-          />
-        )}
-      </Dialog>
+      />
     </section>
   );
 }

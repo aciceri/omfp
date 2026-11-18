@@ -116,7 +116,14 @@ export {
 } from "./field.tsx";
 export { Highlighted, languageOfPath, loadLanguage } from "./highlight.tsx";
 export { Icon, type IconName, type IconProps } from "./icons.tsx";
-export { type ImageCompare, ImageView, type ImageViewLabels, type ImageViewProps } from "./image.tsx";
+export {
+  type ImageCompare,
+  ImageDialog,
+  type ImageDialogProps,
+  ImageView,
+  type ImageViewLabels,
+  type ImageViewProps,
+} from "./image.tsx";
 export { Kbd, type KbdProps } from "./kbd.tsx";
 export {
   Disclosure,

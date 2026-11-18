@@ -235,13 +235,25 @@
     color: var(--omfp-on-surface-variant);
   }
 
-  /* A message's image (UI-475) at most at its natural size: the body is a flex column, whose default `stretch` would
-     widen a small image to the column and upscale it; larger ones shrink to fit, keeping their aspect ratio. */
-  .omfp-message__image {
+  /* A message's image (UI-475) at most at its natural size, in a button that opens it at full size (UI-476): the body
+     is a flex column, whose default `stretch` would widen a small image to the column and upscale it; larger ones
+     shrink to fit, keeping their aspect ratio. */
+  .omfp-button.omfp-message__open {
+    display: block;
     align-self: flex-start;
+    block-size: auto;
     max-inline-size: min(100%, 32rem);
-    border: var(--omfp-bw) solid var(--omfp-rule);
+    padding: 0;
+    overflow: hidden;
+    border-color: var(--omfp-rule);
     border-radius: var(--omfp-r-card);
+    background: transparent;
+    cursor: zoom-in;
+  }
+
+  .omfp-message__image {
+    display: block;
+    max-inline-size: 100%;
   }
 
   /* A tool result's images (UI-473): thumbnails under the card, open or not, in a row that wraps. Each is 10rem tall
@@ -276,20 +288,6 @@
     display: block;
     max-inline-size: 100%;
     max-block-size: 100%;
-    object-fit: contain;
-  }
-
-  /* The full view (UI-474): the dialog as wide as the image needs, within the window; the image fits the window. */
-  .omfp-modal:has(> .omfp-image-dialog) {
-    inline-size: auto;
-    max-inline-size: 94vw;
-  }
-
-  .omfp-image-dialog__image {
-    display: block;
-    max-inline-size: 100%;
-    max-block-size: calc(100vh - 12rem);
-    margin-inline: auto;
     object-fit: contain;
   }
 

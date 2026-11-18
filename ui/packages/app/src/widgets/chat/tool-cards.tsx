@@ -9,7 +9,6 @@ import {
   BoxRule,
   Button,
   Code,
-  Dialog,
   Diff,
   languageOfPath,
   Markdown,
@@ -37,6 +36,7 @@ import {
   useWorkspaces,
 } from "omfp/sdk";
 import { type ReactNode, useMemo, useState } from "react";
+import { useImageViewer } from "./image-viewer.tsx";
 
 const text = strings.chat.tool;
 
@@ -763,10 +763,11 @@ function imageSource(image: CardImage): string {
 
 /**
  * The images of a call's result (UI-473, UI-474): thumbnails in a row that wraps, shown whether the card is open or
- * not; a click (or Enter, Space) opens one at full size in a dialog that Escape closes.
+ * not; a click (or Enter, Space) opens one at full size in a dialog, zoomed and panned like a file's image, that Escape
+ * closes.
  */
 export function ToolImages({ card }: { card: ToolCard }): ReactNode {
-  const [opened, setOpened] = useState<CardImage | undefined>(undefined);
+  const viewer = useImageViewer();
   return (
     <>
       <ul className="omfp-tool-images" aria-label={text.resultImages(card.name)} data-testid="tool-images">
@@ -777,7 +778,9 @@ export function ToolImages({ card }: { card: ToolCard }): ReactNode {
               variant="quiet"
               className="omfp-tool-images__thumb"
               aria-label={text.openImage(image.alt)}
-              onPress={() => setOpened(image)}
+              onPress={() =>
+                viewer.open({ src: imageSource(image), alt: image.alt, title: image.alt, testId: "tool-image-dialog" })
+              }
               data-testid="tool-image"
             >
               <img className="omfp-tool-images__img" src={imageSource(image)} alt={image.alt} decoding="async" />
@@ -785,27 +788,7 @@ export function ToolImages({ card }: { card: ToolCard }): ReactNode {
           </li>
         ))}
       </ul>
-      <Dialog
-        isOpen={opened !== undefined}
-        onOpenChange={(open) => {
-          if (!open) {
-            setOpened(undefined);
-          }
-        }}
-        isDismissable
-        title={opened?.alt ?? ""}
-        className="omfp-image-dialog"
-        data-testid="tool-image-dialog"
-      >
-        {opened !== undefined && (
-          <img
-            className="omfp-image-dialog__image"
-            src={imageSource(opened)}
-            alt={opened.alt}
-            data-testid="tool-image-full"
-          />
-        )}
-      </Dialog>
+      {viewer.dialog}
     </>
   );
 }

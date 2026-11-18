@@ -16,6 +16,8 @@ export const chat = {
   thought: "Thought",
   redactedThinking: "(redacted by the provider)",
   attachedImage: "Attached image",
+  /** A message's image is a button opening it at full size (UI-476). */
+  openAttachedImage: "Open the attached image",
   details: "Details",
   missingMessage: "missing",
   /** The conversation as Markdown, for `:copy` and `:export` (UI-792). */

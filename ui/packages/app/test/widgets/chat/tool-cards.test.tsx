@@ -677,17 +677,33 @@ describe("result images", () => {
     expect(byTestId(element, "tool-images").getAttribute("aria-label")).toBe("Images from read");
   });
 
+  /** The full view's image and whether its zoom is fitted; a press on Zoom in zooms it (UI-549). */
+  async function zoomable(dialog: HTMLElement): Promise<string[]> {
+    const image = within(dialog).getByTestId("image-after");
+    const fit = within(dialog).getByTestId("image-fit");
+    const fitted = fit.getAttribute("aria-pressed") ?? "";
+    await userEvent.click(within(dialog).getByRole("button", { name: "Zoom in" }));
+    return [
+      image.getAttribute("src") ?? "",
+      image.getAttribute("alt") ?? "",
+      fitted,
+      fit.getAttribute("aria-pressed") ?? "",
+    ];
+  }
+
   // spec: UI-474
-  test("a click or Enter on a thumbnail opens the image at full size; Escape closes it", async () => {
+  test("a click or Enter on a thumbnail opens the image zoomable as large as the window; Escape closes it", async () => {
     const element = show(imageCard(1));
     expect(screen.queryAllByTestId("tool-image-dialog").length).toBe(0);
     await userEvent.click(byTestId(element, "tool-image"));
     const dialog = screen.getByTestId("tool-image-dialog");
     expect(within(dialog).getByRole("heading").textContent).toBe("Image from read /w/plot.png");
-    const full = within(dialog).getByTestId("tool-image-full");
-    expect([full.getAttribute("src"), full.getAttribute("alt")]).toEqual([
+    // The kit's image viewer: fitted first, then zoomed by its buttons like a file's image.
+    expect(await zoomable(dialog)).toEqual([
       "data:image/png;base64,iVBORw0KGgo=",
       "Image from read /w/plot.png",
+      "true",
+      "false",
     ]);
     await userEvent.keyboard("{Escape}");
     expect(screen.queryAllByTestId("tool-image-dialog").length).toBe(0);
@@ -697,7 +713,41 @@ describe("result images", () => {
     expect(screen.queryAllByTestId("tool-image-dialog").length).toBe(1);
   });
 
-  // spec: UI-475
+  // spec: UI-476, UI-474
+  test("a message's image is a button opening it zoomable; Escape closes it, back to the image", async () => {
+    renderWithHost(
+      <MessageRow
+        cardKey="m1"
+        streaming={false}
+        continues={false}
+        view={{
+          role: "user",
+          label: "You",
+          blocks: [{ type: "image", mime: "image/png", data: "iVBORw0KGgo=" }],
+          error: undefined,
+          steering: false,
+        }}
+      />,
+      testHost(),
+    );
+    const open = screen.getByTestId("message-image-open");
+    expect([open.getAttribute("aria-label"), open.querySelector("img")?.getAttribute("alt")]).toEqual([
+      "Open the attached image",
+      "Attached image",
+    ]);
+    expect(screen.queryAllByTestId("message-image-dialog").length).toBe(0);
+    await userEvent.click(open);
+    const dialog = screen.getByTestId("message-image-dialog");
+    expect(within(dialog).getByRole("heading").textContent).toBe("Attached image");
+    expect(await zoomable(dialog)).toEqual(["data:image/png;base64,iVBORw0KGgo=", "Attached image", "true", "false"]);
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryAllByTestId("message-image-dialog").length).toBe(0);
+    expect(document.activeElement?.getAttribute("data-testid")).toBe("message-image-open");
+    await userEvent.keyboard(" ");
+    expect(screen.queryAllByTestId("message-image-dialog").length).toBe(1);
+  });
+
+  // spec: UI-475, UI-476
   test("a message's image and a result's thumbnail show at most at their natural size: never stretched, never upscaled", () => {
     renderWithHost(
       <MessageRow
@@ -726,16 +776,25 @@ describe("result images", () => {
     const chat = read("../../../src/widgets/chat/chat.css");
     const rule = (selector: string) => findRule(chat, ["@layer omfp-widgets"], selector).declarations;
     const sizes = ["width", "height", "inline-size", "block-size", "min-inline-size", "min-block-size", "flex"];
-    // The message's body is a flex column: the image must not stretch across it.
+    // The message's body is a flex column: the image's button must not stretch across it, nor the image in it.
+    const button = rule(".omfp-button.omfp-message__open");
+    expect([button.get("align-self"), button.get("max-inline-size"), button.get("block-size")]).toEqual([
+      "flex-start",
+      "min(100%, 32rem)",
+      "auto",
+    ]);
+    expect(sizes.filter((size) => button.has(size) && size !== "block-size")).toEqual([]);
     const message = rule(".omfp-message__image");
-    expect([message.get("align-self"), message.get("max-inline-size")]).toEqual(["flex-start", "min(100%, 32rem)"]);
+    expect(message.get("max-inline-size")).toBe("100%");
     expect(sizes.filter((size) => message.has(size))).toEqual([]);
     const inThumbnail = rule(".omfp-tool-images__img");
     expect([inThumbnail.get("max-inline-size"), inThumbnail.get("max-block-size")]).toEqual(["100%", "100%"]);
     expect(sizes.filter((size) => inThumbnail.has(size))).toEqual([]);
     const boring = [...read("../../../src/boring.css"), ...read("../../../../kit/src/boring.css")];
     expect(
-      boring.filter((css) => /omfp-message__image|omfp-tool-images/.test(css.selector)).map((css) => css.selector),
+      boring
+        .filter((css) => /omfp-message__(image|open)|omfp-tool-images/.test(css.selector))
+        .map((css) => css.selector),
     ).toEqual([]);
   });
 });

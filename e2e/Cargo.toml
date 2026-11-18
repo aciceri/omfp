@@ -9,6 +9,8 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+# The test images of the chat's journeys, as a message's base64 `data`.
+base64.workspace = true
 clap.workspace = true
 fake-llm.workspace = true
 # The command line's protocol client (`omfp theme set`, calls the UI does not offer).

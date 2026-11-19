@@ -7,11 +7,27 @@ The version's section is also the source of the GitHub release notes.
 
 ## Unreleased
 
+## 0.4.1 — 2026-11-19
+
 ### Fixed
 
 - A daemon started with `omfp daemon` from a terminal that was closed later no longer fails with `internal error:
   task … panicked with message "failed printing to stderr: Input/output error"` when a thread is opened (or on any
-  later log line): what can no longer be printed is dropped. The tray and `omfp desktop` messages too.
+  later log line): what can no longer be printed is dropped. The tray and `omfp desktop` messages too (#209).
+
+### Release limitations
+
+- macOS downloads are signed ad-hoc and are not notarized unless the release explicitly says otherwise. On first
+  launch, allow the app in System Settings → Privacy & Security → Open Anyway. Updates may request microphone
+  permission again.
+- The Flatpak deliberately runs oh-my-pi, git and job commands on the host with your account's permissions; it is
+  not an isolation boundary. Keep workspaces under your home directory. On NixOS, use the Nix package or configure
+  a compatible `omp_bin`. Job processes left behind after their shell exits are not killed on the host.
+- Standalone downloads do not cover Windows, Intel Macs or ARM Linux.
+- Multi-select prompts of the `ask` tool do not show yet which choices are checked: oh-my-pi 18.22 sends that state,
+  but omfp's prompt card does not use it yet.
+- oh-my-pi always loads its own user `agent/mcp.json` from omfp's profile: omfp never writes it and neither lists nor
+  calls its servers, but a thread's agent still sees a hand-written one.
 
 ## 0.4.0 — 2026-11-19
 

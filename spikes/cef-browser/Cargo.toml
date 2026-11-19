@@ -1,0 +1,24 @@
+[package]
+name = "omfp-cef-spike"
+description = "Spike S-16: omfp's UI in prebuilt CEF, with web pages of widgets drawn as CEF BrowserViews over them."
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-or-later"
+
+# A workspace of its own: building it downloads CEF's prebuilt binaries (Spotify's builds, about 1 GB), which the main
+# workspace and `just ci` must not.
+[workspace]
+
+[dependencies]
+# cef-rs (tauri-apps): Rust bindings to the prebuilt CEF its build script downloads; the crate's build metadata names
+# the CEF release (156.0.31, Chromium 156).
+cef = "=156.7.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }

@@ -171,7 +171,7 @@ function Mcp({ workspaceId, threadId }: { workspaceId: string; threadId: string 
       )}
       {listing !== undefined && rows.length === 0 ? (
         <EmptyState icon="inbox" title={text.none} data-testid="mcp-none">
-          {text.noneHint(listing.projectConfig, listing.userConfig)}
+          {text.noneHint(listing.projectConfig)}
         </EmptyState>
       ) : (
         rows.map((row) => (

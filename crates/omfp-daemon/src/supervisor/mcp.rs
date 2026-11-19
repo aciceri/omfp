@@ -15,7 +15,7 @@ use tracing::{info, warn};
 
 use super::restart::Restart;
 use super::{Actor, OUTPUT_WAIT, Result, Supervisor, SupervisorError, blocking, lock};
-use crate::omp_mcp::{self, Check, Homes};
+use crate::omp_mcp::{self, Check};
 
 /// The daemon's `/mcp test` of server `name` waiting for its `command_output` (DMN-200).
 pub(super) struct PendingCheck {
@@ -24,11 +24,14 @@ pub(super) struct PendingCheck {
 }
 
 impl Supervisor {
-    fn homes(&self) -> Homes {
-        Homes {
-            home: self.inner.config.home.clone(),
-            agent_dir: self.inner.config.agent_dir.clone(),
-        }
+    /// omp's credential store in omfp's profile, `<agent dir>/agent.db`: the MCP logins the daemon uses (DMN-352).
+    #[must_use]
+    pub fn omp_credentials(&self) -> Option<PathBuf> {
+        self.inner
+            .config
+            .agent_dir
+            .as_ref()
+            .map(|dir| dir.join("agent.db"))
     }
 
     /// The servers configured for workspace `workspace_id`, unchecked (PRT-110, DMN-190).
@@ -38,8 +41,8 @@ impl Supervisor {
             .stores(move |inner| inner.workspaces.get(&id))
             .await?
             .path;
-        let servers = omp_mcp::configured(&path, &self.homes());
-        Ok(self.listing(workspace_id, None, false, &path, servers))
+        let servers = omp_mcp::configured(&path);
+        Ok(Self::listing(workspace_id, None, false, &path, servers))
     }
 
     /// The servers of the thread's workspace, each checkable one checked by the thread's omp when it runs (PRT-111,
@@ -56,6 +59,26 @@ impl Supervisor {
         self.thread_servers(thread_id, name).await
     }
 
+    /// Refuses a `/mcp` prompt that would make omp write its user MCP config: MCP servers belong to the workspace
+    /// (DMN-350).
+    pub(super) async fn refuse_user_mcp_config(&self, thread_id: &str, text: &str) -> Result<()> {
+        if !text.trim_start().starts_with("/mcp") {
+            return Ok(());
+        }
+        let id = thread_id.to_owned();
+        let path = self
+            .stores(move |inner| {
+                let thread = inner.threads.get(&id)?;
+                Ok::<_, SupervisorError>(inner.workspaces.get(&thread.workspace_id)?.path)
+            })
+            .await?;
+        let text = text.to_owned();
+        if blocking(move || omp_mcp::writes_user_config(&path, &text)).await? {
+            return Err(SupervisorError::UserMcpConfig);
+        }
+        Ok(())
+    }
+
     /// The thread's servers; with `only`, the others are listed unchecked.
     async fn thread_servers(&self, thread_id: &str, only: Option<&str>) -> Result<McpServers> {
         let id = thread_id.to_owned();
@@ -66,7 +89,7 @@ impl Supervisor {
                 Ok::<_, SupervisorError>((thread.workspace_id, workspace.path))
             })
             .await?;
-        let configured = omp_mcp::configured(&path, &self.homes());
+        let configured = omp_mcp::configured(&path);
         let running = self.is_running(thread_id);
         let mut servers = Vec::with_capacity(configured.len());
         for server in configured {
@@ -78,11 +101,16 @@ impl Supervisor {
                 };
             servers.push(omp_mcp::checked(server, check));
         }
-        Ok(self.listing(&workspace_id, Some(thread_id), running, &path, servers))
+        Ok(Self::listing(
+            &workspace_id,
+            Some(thread_id),
+            running,
+            &path,
+            servers,
+        ))
     }
 
     fn listing(
-        &self,
         workspace_id: &str,
         thread_id: Option<&str>,
         running: bool,
@@ -94,8 +122,6 @@ impl Supervisor {
             thread_id: thread_id.map(str::to_owned),
             running,
             project_config: omp_mcp::project_config(path).to_string_lossy().into_owned(),
-            user_config: omp_mcp::user_config(&self.homes())
-                .map(|path| path.to_string_lossy().into_owned()),
             servers,
         }
     }
@@ -158,9 +184,8 @@ impl Supervisor {
 
     /// Records the configs the thread's omp is about to read (DMN-201).
     pub(super) async fn loading_mcp_configs(&self, actor: &Actor, workspace: PathBuf) {
-        let homes = self.homes();
         let folder = workspace.clone();
-        match blocking(move || omp_mcp::fingerprint(&folder, &homes)).await {
+        match blocking(move || omp_mcp::fingerprint(&folder)).await {
             Ok(fingerprint) => *lock(&actor.mcp_configs) = Some((workspace, fingerprint)),
             Err(error) => warn!(thread = %actor.id, %error, "cannot read the MCP configs"),
         }
@@ -177,8 +202,7 @@ impl Supervisor {
             if actor.process().is_none() {
                 continue;
             }
-            let homes = self.homes();
-            let Ok(now) = blocking(move || omp_mcp::fingerprint(&workspace, &homes)).await else {
+            let Ok(now) = blocking(move || omp_mcp::fingerprint(&workspace)).await else {
                 continue;
             };
             let changed = match &mut *lock(&actor.mcp_configs) {

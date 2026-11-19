@@ -52,7 +52,8 @@ use omfp_protocol::{
     UnmountParams, Unmounted, WidgetLibrary, WidgetSaved,
 };
 use omfp_protocol::{
-    McpReconnectParams, McpScope, McpServer, McpServers, McpSource, McpState, McpTransport,
+    McpCallParams, McpCallResult, McpReconnectParams, McpServer, McpServers, McpSource, McpState,
+    McpTool, McpTools, McpToolsParams, McpTransport,
 };
 use omfp_protocol::{ReorderThreadParams, ReorderWorkspaceParams};
 use serde::de::DeserializeOwned;
@@ -1458,7 +1459,6 @@ fn mcp_examples() -> Vec<(&'static str, Value)> {
     let project = McpSource {
         path: "/work/checkout/.omp/mcp.json".to_owned(),
         workspace_path: Some(".omp/mcp.json".to_owned()),
-        scope: McpScope::Project,
         tool: "omp".to_owned(),
     };
     let docs = McpServer {
@@ -1476,9 +1476,8 @@ fn mcp_examples() -> Vec<(&'static str, Value)> {
         transport: McpTransport::Stdio,
         target: "npx -y fs-server".to_owned(),
         source: McpSource {
-            path: "/home/u/.cursor/mcp.json".to_owned(),
-            workspace_path: None,
-            scope: McpScope::User,
+            path: "/work/checkout/.cursor/mcp.json".to_owned(),
+            workspace_path: Some(".cursor/mcp.json".to_owned()),
             tool: "cursor".to_owned(),
         },
         state: McpState::Configured,
@@ -1491,7 +1490,6 @@ fn mcp_examples() -> Vec<(&'static str, Value)> {
         thread_id: thread_id.map(str::to_owned),
         running: thread_id.is_some(),
         project_config: "/work/checkout/.omp/mcp.json".to_owned(),
-        user_config: Some("/home/u/.omp/agent/mcp.json".to_owned()),
         servers,
     };
     let connected = McpServer {
@@ -1530,6 +1528,47 @@ fn mcp_examples() -> Vec<(&'static str, Value)> {
                 name: Some("docs".to_owned()),
             },
             &listing(Some(THREAD_ID), vec![connected, fs]),
+        ),
+    ]
+}
+
+/// The daemon's calls to a workspace server's tools (PRT-220, PRT-221).
+fn mcp_tool_examples() -> Vec<(&'static str, Value)> {
+    vec![
+        example::<method::McpTools>(
+            McpToolsParams {
+                workspace_id: WORKSPACE_ID.to_owned(),
+                server: "docs".to_owned(),
+            },
+            &McpTools {
+                workspace_id: WORKSPACE_ID.to_owned(),
+                server: "docs".to_owned(),
+                tools: vec![McpTool {
+                    name: "search".to_owned(),
+                    title: Some("Search the docs".to_owned()),
+                    description: Some("Full-text search".to_owned()),
+                    input_schema: json!({
+                        "type": "object",
+                        "properties": { "query": { "type": "string" } },
+                        "required": ["query"],
+                    }),
+                    output_schema: None,
+                    annotations: Some(json!({ "readOnlyHint": true })),
+                }],
+            },
+        ),
+        example::<method::McpCall>(
+            McpCallParams {
+                workspace_id: WORKSPACE_ID.to_owned(),
+                server: "docs".to_owned(),
+                tool: "search".to_owned(),
+                arguments: json!({ "query": "widgets" }).as_object().cloned(),
+            },
+            &McpCallResult {
+                content: vec![json!({ "type": "text", "text": "3 pages match" })],
+                structured_content: Some(json!({ "hits": 3 })),
+                is_error: false,
+            },
         ),
     ]
 }
@@ -1892,6 +1931,7 @@ fn every_method_has_a_golden_request_and_response() {
         activity_examples(),
         list_examples(),
         mcp_examples(),
+        mcp_tool_examples(),
         auth_examples(),
     ]
     .concat();

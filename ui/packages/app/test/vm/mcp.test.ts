@@ -9,7 +9,7 @@ function server(name: string, extra: Partial<McpServer> = {}): McpServer {
     name,
     transport: "stdio",
     target: `${name}-server --stdio`,
-    source: { path: "/work/w1/.omp/mcp.json", workspacePath: ".omp/mcp.json", scope: "project", tool: "omp" },
+    source: { path: "/work/w1/.omp/mcp.json", workspacePath: ".omp/mcp.json", tool: "omp" },
     state: "configured",
     checkable: true,
     ...extra,
@@ -22,7 +22,6 @@ function listing(servers: McpServer[], extra: Partial<McpServers> = {}): McpServ
     threadId: "t1",
     running: true,
     projectConfig: "/work/w1/.omp/mcp.json",
-    userConfig: "/home/u/.omp/agent/mcp.json",
     servers,
     ...extra,
   };
@@ -34,7 +33,7 @@ const SERVERS = [
   server("old", { state: "disabled", checkable: false }),
   server("cursor", {
     checkable: false,
-    source: { path: "/home/u/.cursor/mcp.json", scope: "user", tool: "cursor" },
+    source: { path: "/work/w1/.cursor/mcp.json", workspacePath: ".cursor/mcp.json", tool: "cursor" },
   }),
 ];
 
@@ -50,10 +49,10 @@ describe("mcpRows", () => {
     ]);
     expect(rows[1]?.error).toBe("ENOENT: no such file");
     expect(rows.map((row) => [row.source, row.openPath ?? null, row.origin])).toEqual([
-      [".omp/mcp.json", ".omp/mcp.json", "omp · project"],
-      [".omp/mcp.json", ".omp/mcp.json", "omp · project"],
-      [".omp/mcp.json", ".omp/mcp.json", "omp · project"],
-      ["/home/u/.cursor/mcp.json", null, "cursor · user"],
+      [".omp/mcp.json", ".omp/mcp.json", "omp"],
+      [".omp/mcp.json", ".omp/mcp.json", "omp"],
+      [".omp/mcp.json", ".omp/mcp.json", "omp"],
+      [".cursor/mcp.json", ".cursor/mcp.json", "cursor"],
     ]);
     expect(rows.map((row) => row.note !== undefined)).toEqual([false, false, false, true]);
     expect(rows.map((row) => row.disabled)).toEqual([false, false, true, false]);

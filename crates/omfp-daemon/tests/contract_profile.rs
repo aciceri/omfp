@@ -211,17 +211,15 @@ async fn fresh_profile_never_imports_standalone_state_and_mutations_are_bidirect
     let listing = client
         .ok("workspaces.mcp_servers", json!({"workspaceId":ws["id"]}))
         .await;
-    assert_eq!(
-        listing["userConfig"],
-        agent.join("mcp.json").to_str().unwrap()
-    );
+    // The profile's user-level config belongs to no workspace: only the workspace's own servers are listed.
+    assert_eq!(listing.get("userConfig"), None);
     let names: Vec<_> = listing["servers"]
         .as_array()
         .unwrap()
         .iter()
         .map(|server| server["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names, ["project", "isolated"]);
+    assert_eq!(names, ["project"]);
     let thread = client
         .ok(
             "threads.create",

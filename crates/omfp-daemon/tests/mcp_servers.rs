@@ -1,5 +1,6 @@
 //! Integration tests (L2) of the MCP server methods (M13) over a real WebSocket, on the fake launcher: the configured
-//! list (DMN-190), the checks by the thread's omp (DMN-191) and the reconnect by restart (DMN-192).
+//! list (DMN-190), the checks by the thread's omp (DMN-191), the reconnect by restart (DMN-192), the refusal of `/mcp`
+//! commands writing the user config (DMN-350) and the daemon's own calls to a workspace's server (PRT-220, PRT-221).
 
 mod client;
 
@@ -86,7 +87,8 @@ fn write(path: &Path, text: &str) {
     std::fs::write(path, text).unwrap();
 }
 
-/// A thread in a new workspace whose folder holds a project config; the user config adds one server.
+/// A thread in a new workspace whose folder holds a project config; omfp's profile holds a user config too, which
+/// belongs to no workspace.
 async fn thread_with_servers(
     daemon: &TestDaemon,
     client: &mut Client,
@@ -159,7 +161,6 @@ async fn a_workspace_lists_its_configured_servers_without_starting_omp() {
             ("good", "configured"),
             ("broken", "configured"),
             ("off", "disabled"),
-            ("mine", "configured"),
             ("imported", "configured"),
         ])
     );
@@ -167,8 +168,7 @@ async fn a_workspace_lists_its_configured_servers_without_starting_omp() {
     assert_eq!(listing["running"], false);
     let project = folder.join(".omp/mcp.json");
     assert_eq!(listing["projectConfig"], project.to_str().unwrap());
-    let user = daemon.profile_agent().join("mcp.json");
-    assert_eq!(listing["userConfig"], user.to_str().unwrap());
+    assert_eq!(listing.get("userConfig"), None);
     let good = &listing["servers"][0];
     assert_eq!(
         (&good["transport"], &good["target"], &good["checkable"]),
@@ -183,7 +183,6 @@ async fn a_workspace_lists_its_configured_servers_without_starting_omp() {
         json!({
             "path": project.to_str().unwrap(),
             "workspacePath": ".omp/mcp.json",
-            "scope": "project",
             "tool": "omp",
         })
     );
@@ -191,10 +190,9 @@ async fn a_workspace_lists_its_configured_servers_without_starting_omp() {
         listing["servers"][1]["target"],
         "/nonexistent/server --stdio"
     );
-    assert_eq!(listing["servers"][3]["source"]["scope"], "user");
-    assert_eq!(listing["servers"][3]["source"].get("workspacePath"), None);
-    assert_eq!(listing["servers"][4]["source"]["tool"], "cursor");
-    assert_eq!(listing["servers"][4]["checkable"], false);
+    assert_eq!(listing["servers"][3]["source"]["tool"], "cursor");
+    assert_eq!(listing["servers"][3]["checkable"], false);
+    assert_eq!(listing["servers"].as_array().unwrap().len(), 4);
     assert_eq!(daemon.launcher.launches().len(), 0);
 }
 
@@ -224,10 +222,6 @@ async fn a_running_thread_checks_its_servers_with_omp() {
         "/mcp test broken",
         &["Connection to \"broken\" failed: ENOENT: no such file or directory, posix_spawn '/nonexistent/server'"],
     );
-    daemon.launcher.local_output(
-        "/mcp test mine",
-        &["Server \"mine\" not found. Run /mcp list to see configured servers."],
-    );
     client
         .ok("thread.state", json!({ "threadId": thread }))
         .await;
@@ -243,7 +237,6 @@ async fn a_running_thread_checks_its_servers_with_omp() {
             ("good", "connected"),
             ("broken", "failed"),
             ("off", "disabled"),
-            ("mine", "configured"),
             ("imported", "configured"),
         ])
     );
@@ -254,7 +247,7 @@ async fn a_running_thread_checks_its_servers_with_omp() {
     );
     assert_eq!(
         daemon.checks(),
-        ["/mcp test good", "/mcp test broken", "/mcp test mine"],
+        ["/mcp test good", "/mcp test broken"],
         "omp checks only the enabled servers of its own files"
     );
 }
@@ -319,4 +312,127 @@ async fn a_working_thread_is_not_restarted_to_reconnect() {
 
     assert_eq!(refused["code"], "conflict", "{refused}");
     assert_eq!(daemon.launcher.launches().len(), 1);
+}
+
+// spec: DMN-350
+#[tokio::test(flavor = "multi_thread")]
+async fn mcp_commands_that_would_write_the_user_config_are_refused_before_omp() {
+    let daemon = TestDaemon::start().await;
+    let mut client = daemon.client().await;
+    let (thread, _, _) = thread_with_servers(&daemon, &mut client).await;
+
+    let refused = client
+        .call(
+            "thread.prompt",
+            json!({ "threadId": thread, "text": "/mcp add gh --scope user --url https://gh.example/mcp" }),
+        )
+        .await
+        .unwrap_err();
+    let imported = client
+        .call(
+            "thread.prompt",
+            json!({ "threadId": thread, "text": "/mcp disable imported" }),
+        )
+        .await
+        .unwrap_err();
+    client
+        .ok(
+            "thread.prompt",
+            json!({ "threadId": thread, "text": "/mcp disable good" }),
+        )
+        .await;
+
+    assert_eq!(refused["code"], "bad_request", "{refused}");
+    assert!(
+        refused["message"]
+            .as_str()
+            .unwrap()
+            .contains("MCP servers belong to the workspace")
+    );
+    assert_eq!(imported["code"], "bad_request", "{imported}");
+    assert_eq!(daemon.checks(), ["/mcp disable good"]);
+}
+
+/// A Streamable HTTP server with one tool, `echo`, answering every request as JSON.
+async fn echo_server() -> String {
+    use axum::Json;
+    use axum::response::IntoResponse;
+    async fn mcp(Json(body): Json<Value>) -> axum::response::Response {
+        let Some(id) = body.get("id").cloned() else {
+            return axum::http::StatusCode::ACCEPTED.into_response();
+        };
+        let result = match body["method"].as_str() {
+            Some("initialize") => {
+                json!({ "protocolVersion": "2025-11-25", "capabilities": { "tools": {} }, "serverInfo": { "name": "echo" } })
+            }
+            Some("tools/list") => {
+                json!({ "tools": [{ "name": "echo", "inputSchema": { "type": "object" } }] })
+            }
+            _ => {
+                json!({ "content": [{ "type": "text", "text": body["params"]["arguments"]["text"] }] })
+            }
+        };
+        Json(json!({ "jsonrpc": "2.0", "id": id, "result": result })).into_response()
+    }
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+    let app = axum::Router::new().route("/mcp", axum::routing::post(mcp));
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    url
+}
+
+// spec: PRT-220, PRT-221
+#[tokio::test(flavor = "multi_thread")]
+async fn a_widget_lists_and_calls_a_workspace_server_without_starting_omp() {
+    let daemon = TestDaemon::start().await;
+    let mut client = daemon.client().await;
+    let (_, workspace_id, folder) = thread_with_servers(&daemon, &mut client).await;
+    let url = echo_server().await;
+    write(
+        &folder.join(".omp/mcp.json"),
+        &json!({ "mcpServers": {
+            "echo": { "type": "http", "url": url },
+            "broken": { "command": "/nonexistent/server" },
+        }})
+        .to_string(),
+    );
+
+    let tools = client
+        .ok(
+            "mcp.tools",
+            json!({ "workspaceId": workspace_id, "server": "echo" }),
+        )
+        .await;
+    let called = client
+        .ok(
+            "mcp.call",
+            json!({ "workspaceId": workspace_id, "server": "echo", "tool": "echo", "arguments": { "text": "hi" } }),
+        )
+        .await;
+    let stdio = client
+        .call(
+            "mcp.tools",
+            json!({ "workspaceId": workspace_id, "server": "broken" }),
+        )
+        .await
+        .unwrap_err();
+    let user_level = client
+        .call(
+            "mcp.tools",
+            json!({ "workspaceId": workspace_id, "server": "mine" }),
+        )
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        tools,
+        json!({ "workspaceId": workspace_id, "server": "echo", "tools": [{ "name": "echo", "inputSchema": { "type": "object" } }] })
+    );
+    assert_eq!(
+        called,
+        json!({ "content": [{ "type": "text", "text": "hi" }], "isError": false })
+    );
+    assert_eq!(stdio["code"], "bad_request", "{stdio}");
+    assert_eq!(user_level["code"], "not_found", "{user_level}");
+    assert_eq!(daemon.launcher.launches().len(), 0, "no omp was started");
 }

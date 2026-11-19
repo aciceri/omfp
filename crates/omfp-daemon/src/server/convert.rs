@@ -40,6 +40,33 @@ impl From<StoreError> for ErrorBody {
     }
 }
 
+/// The protocol error of a failed `mcp.tools` or `mcp.call` (DMN-354): `not_found` for an unknown server,
+/// `bad_request` for one the daemon cannot call or a JSON-RPC error of the server (its code in `details.mcpCode`),
+/// `unauthorized` when the server refused omp's login (`details.reauth` the command that renews it), `internal` for
+/// transport failures, timeouts and a refresh that failed.
+impl From<crate::mcp_client::McpError> for ErrorBody {
+    fn from(error: crate::mcp_client::McpError) -> Self {
+        use crate::mcp_client::McpError;
+        let message = error.to_string();
+        match error {
+            McpError::NotFound(_) => ErrorBody::new(ErrorCode::NotFound, message),
+            McpError::Disabled(_) | McpError::Stdio(_) | McpError::NoUrl(_) => {
+                ErrorBody::new(ErrorCode::BadRequest, message)
+            }
+            McpError::Rpc { code, .. } => ErrorBody::new(ErrorCode::BadRequest, message)
+                .with_details(json!({ "mcpCode": code })),
+            McpError::Unauthorized { server, status } => {
+                ErrorBody::new(ErrorCode::Unauthorized, message).with_details(
+                    json!({ "status": status, "reauth": format!("/mcp reauth {server}") }),
+                )
+            }
+            McpError::Transport { .. } | McpError::Timeout { .. } | McpError::Login { .. } => {
+                ErrorBody::new(ErrorCode::Internal, message)
+            }
+        }
+    }
+}
+
 pub(crate) fn thread_error(error: ThreadError) -> ErrorBody {
     match error {
         ThreadError::Store(error) => ErrorBody::from(error),
@@ -106,7 +133,9 @@ pub(crate) fn supervisor_error(error: SupervisorError) -> ErrorBody {
             return body;
         }
         SupervisorError::AlreadyResolved(_) => ErrorCode::AlreadyResolved,
-        SupervisorError::InvalidResponse(_) | SupervisorError::EmptyOffer => ErrorCode::BadRequest,
+        SupervisorError::InvalidResponse(_)
+        | SupervisorError::EmptyOffer
+        | SupervisorError::UserMcpConfig => ErrorCode::BadRequest,
         SupervisorError::LiveActive { .. }
         | SupervisorError::NoLiveSession
         | SupervisorError::Busy

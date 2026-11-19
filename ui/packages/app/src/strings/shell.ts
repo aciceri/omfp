@@ -339,16 +339,15 @@ export const shell = {
     noWorkspaceHint: "Select a thread to see the MCP servers of its workspace.",
     loading: "Loading MCP servers…",
     none: "No MCP servers",
-    noneHint: (projectConfig: string, userConfig: string | null | undefined) =>
-      `Add them to ${projectConfig} (this workspace), or to ${userConfig ?? "omfp's isolated profile"} for every workspace, as ` +
+    noneHint: (projectConfig: string) =>
+      `Add them to this workspace's ${projectConfig}, as ` +
       '{ "mcpServers": { "<name>": { "command": "<program>", "args": [] } } } or ' +
       '{ "mcpServers": { "<name>": { "type": "http", "url": "<url>" } } }. omp also reads the configs of ' +
       "Claude Code (.claude/), Cursor (.cursor/) and VS Code (.vscode/mcp.json).",
     workspaceOnly: "No thread selected: the servers configured for this workspace, not checked.",
     notRunning: "The thread is not running: its servers start with it.",
     checked: "Checked by the thread's omp.",
-    notCheckable:
-      "omp checks only its native project and isolated-profile mcp.json files: it loads this one without a check.",
+    notCheckable: "omp checks only the workspace's .omp/mcp.json: it loads this one without a check.",
     state: {
       configured: "configured",
       connected: "connected",
@@ -357,7 +356,6 @@ export const shell = {
       checking: "checking…",
     },
     tools: (count: number) => (count === 1 ? "1 tool" : `${count} tools`),
-    origin: (tool: string, scope: string) => `${tool} · ${scope}`,
     openSource: (path: string) => `Open ${path}`,
     checkAgain: "Check again",
     reloadAll: "Reload all",

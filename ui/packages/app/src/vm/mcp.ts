@@ -25,7 +25,7 @@ export interface McpRow {
   readonly error: string | undefined;
   /** Where it is defined, as shown: the workspace-relative path when the file is in the workspace, else absolute. */
   readonly source: string;
-  /** The config's tool and scope (`omp · project`, `cursor · user`). */
+  /** The tool whose config it is (`omp`, `cursor`, …). */
   readonly origin: string;
   /** The workspace path the file tab opens; `undefined` for a file outside the workspace. */
   readonly openPath: string | undefined;
@@ -110,7 +110,7 @@ export function mcpRows(listing: McpServers, pending: McpPending = MCP_IDLE): Mc
       target: server.target,
       error: checking ? undefined : (server.error ?? undefined),
       source: server.source.workspacePath ?? server.source.path,
-      origin: text.origin(server.source.tool, server.source.scope),
+      origin: server.source.tool,
       openPath: server.source.workspacePath ?? undefined,
       note: threadRuns && !server.checkable && server.state !== "disabled" ? text.notCheckable : undefined,
       disabled: server.state === "disabled",

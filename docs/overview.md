@@ -38,21 +38,29 @@ just desktop    # the desktop window on your local daemon (started in the backgr
 ## Isolated omp profile
 
 omfp uses `<data-dir>/omp-profile`, with user configuration in `agent/`: `config.yml` (settings/model roles),
-`models.yml` (custom providers), `agent.db` (provider and MCP credentials), `mcp.json`, agents, extensions, skills and
+`models.yml` (custom providers), `agent.db` (provider and MCP credentials), agents, extensions, skills and
 `APPEND_SYSTEM.md`. Runtime/cache state stays under the profile too. The default location is
 `$XDG_DATA_HOME/omfp/omp-profile` or `~/.local/share/omfp/omp-profile` on Linux, and
 `~/Library/Application Support/omfp/omp-profile` on macOS. `omfp daemon --data-dir <path>` relocates the whole profile.
 
 **Upgrading from shared configuration:** this is a fresh profile. Run `:login` in omfp again and explicitly configure
-the new `agent/` directory for the models, user settings and MCP servers you need. omfp never automatically imports
+the new `agent/` directory for the models and user settings you need. omfp never automatically imports
 or copies old credentials/configuration, never falls back to `~/.omp/agent` (or standalone omp's XDG state), and has
 no sharing switch. Login/logout and config changes in one app do not change the other's stored state. Existing
 threads, session history and workspace/repository configuration are preserved; `.omp/` project config still applies.
 
 This covers every daemon-owned omp, including login, model discovery, title generation and session probes.
 `HOME`, cwd and repository roots are unchanged; explicit API keys in the daemon's environment still work. This is
-user-profile isolation, not a filesystem sandbox: agent tools still have the user's normal file access. Home-based
-MCP imports from other tools (such as Claude Code and Cursor) keep their existing discovery paths.
+user-profile isolation, not a filesystem sandbox: agent tools still have the user's normal file access.
+
+## MCP servers
+
+MCP servers belong to a workspace: put them in its `.omp/mcp.json` (or the project configs omp imports: `.claude/`,
+`.cursor/mcp.json`, `.vscode/mcp.json`, a root `mcp.json`). omfp lists no user-level MCP config and refuses the `/mcp`
+commands that would write one (`--scope user`, `/mcp enable|disable` of a server the workspace's `.omp/mcp.json` does
+not define). Log in to a server with `/mcp reauth <name>` in a thread of the workspace; the login is kept in the
+profile's `agent.db`. Widgets call the workspace's `http` and `sse` servers through the daemon (`useMcp`,
+`useMcpTool`, `mcp.call`), with no thread running: the daemon uses that same login and renews it the way omp does.
 
 ## Language servers and code intelligence
 

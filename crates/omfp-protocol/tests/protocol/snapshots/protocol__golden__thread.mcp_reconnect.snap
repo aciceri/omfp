@@ -24,7 +24,6 @@ expression: golden
           "name": "docs",
           "source": {
             "path": "/work/checkout/.omp/mcp.json",
-            "scope": "project",
             "tool": "omp",
             "workspacePath": ".omp/mcp.json"
           },
@@ -37,9 +36,9 @@ expression: golden
           "checkable": false,
           "name": "fs",
           "source": {
-            "path": "/home/u/.cursor/mcp.json",
-            "scope": "user",
-            "tool": "cursor"
+            "path": "/work/checkout/.cursor/mcp.json",
+            "tool": "cursor",
+            "workspacePath": ".cursor/mcp.json"
           },
           "state": "configured",
           "target": "npx -y fs-server",
@@ -47,7 +46,6 @@ expression: golden
         }
       ],
       "threadId": "01JD8X3Q4T9V2W6Y5Z7A1B3C4D",
-      "userConfig": "/home/u/.omp/agent/mcp.json",
       "workspaceId": "01JD8X3Q4T9V2W6Y5Z7A1B3C5E"
     },
     "type": "response"

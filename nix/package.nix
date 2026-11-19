@@ -22,6 +22,7 @@
   libicns,
   rcodesign,
   sqlite,
+  aws-lc,
   omp,
   web,
   desktop ? true,
@@ -101,12 +102,15 @@ rustPlatform.buildRustPackage {
   ];
 
   # nixpkgs' cargo setup hook sets LIBSQLITE3_SYS_USE_PKG_CONFIG=1: rusqlite links nixpkgs' sqlite instead of its
-  # bundled copy. GTK3, GLib and cairo come through webkitgtk's .pc files; glib-networking is TLS for `omfp desktop
-  # --connect https://…` (GIO_EXTRA_MODULES, set by the wrapper), gsettings-desktop-schemas the GTK settings schemas.
+  # bundled copy, and AWS_LC_SYS_USE_SYSTEM=1: aws-lc-sys (rustls' crypto provider, the daemon's HTTPS calls to MCP
+  # servers and token endpoints, DMN-351) links nixpkgs' aws-lc. GTK3, GLib and cairo come through webkitgtk's .pc
+  # files; glib-networking is TLS for `omfp desktop --connect https://…` (GIO_EXTRA_MODULES, set by the wrapper),
+  # gsettings-desktop-schemas the GTK settings schemas.
   # WebKitGTK delegates HTML media to GStreamer; the explicit plug-ins provide the demuxers and codecs in Nix's
   # isolated runtime.
   buildInputs = [
     sqlite
+    aws-lc
   ]
   ++ lib.optionals linuxDesktop (
     [

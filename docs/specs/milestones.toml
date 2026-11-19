@@ -1330,3 +1330,26 @@ requirements = [
   # Acceptance: the jobs journey in headless Chromium
   "E2E-72",
 ]
+
+[M19]
+status = "done"
+requirements = [
+  # Daemon: workspace-only MCP configs, the refused /mcp commands, the daemon's MCP client, omp's login and its refresh
+  "DMN-190",
+  "DMN-201",
+  "DMN-350",
+  "DMN-351",
+  "DMN-352",
+  "DMN-353",
+  "DMN-354",
+  # Protocol: McpServers without user configs, mcp.tools and mcp.call
+  "PRT-110",
+  "PRT-113",
+  "PRT-114",
+  "PRT-220",
+  "PRT-221",
+  # Window and SDK: omfp:mcp without user-level hints, useMcp/useMcpTool/mcpText
+  "UI-292",
+  "UI-294",
+  "AGT-095",
+]

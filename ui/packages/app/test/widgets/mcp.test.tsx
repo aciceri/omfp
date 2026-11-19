@@ -16,10 +16,9 @@ afterEach(cleanup);
 const PROJECT = {
   path: "/work/w1/.omp/mcp.json",
   workspacePath: ".omp/mcp.json",
-  scope: "project",
   tool: "omp",
 } as const;
-const USER = { path: "/data/omfp/omp-profile/agent/mcp.json", scope: "user", tool: "omp" } as const;
+const CURSOR = { path: "/work/w1/.cursor/mcp.json", workspacePath: ".cursor/mcp.json", tool: "cursor" } as const;
 
 function server(name: string, extra: Partial<McpServer> = {}): McpServer {
   return {
@@ -39,7 +38,6 @@ function listing(servers: McpServer[], extra: Partial<McpServers> = {}): McpServ
     threadId: "t1",
     running: true,
     projectConfig: "/work/w1/.omp/mcp.json",
-    userConfig: USER.path,
     servers,
     ...extra,
   };
@@ -48,7 +46,7 @@ function listing(servers: McpServer[], extra: Partial<McpServers> = {}): McpServ
 const CHECKED = listing([
   server("docs", { transport: "http", target: "http://127.0.0.1:9/mcp", state: "connected", tools: 2 }),
   server("fs", { state: "failed", error: "ENOENT: no such file or directory, posix_spawn 'fs-server'" }),
-  server("mine", { source: USER, state: "connected", tools: 1 }),
+  server("mine", { source: CURSOR, state: "connected", tools: 1 }),
 ]);
 
 /** The widget on thread `t1` of workspace `w1`, whose omp checked {@link CHECKED}. */
@@ -95,13 +93,36 @@ describe("omfp:mcp", () => {
   });
 
   // spec: UI-292
-  test("a workspace config opens in a file tab; a file outside the workspace is only shown", async () => {
+  test("a source is its workspace path, a button opening it in a file tab, followed by its tool", async () => {
     const { host, user } = setup();
     await waitFor(() => expect(boxes().length).toBe(3));
     const sources = screen.getAllByTestId("mcp-source");
-    expect(screen.queryAllByRole("button", { name: `Open ${USER.path}` }).length).toBe(0);
+    expect(sources.map((source) => source.textContent)).toEqual([".omp/mcp.json", ".omp/mcp.json", ".cursor/mcp.json"]);
+    expect(
+      screen.getAllByTestId("mcp-server").map((box) => box.querySelector(".omfp-mcp__origin")?.textContent),
+    ).toEqual(["omp", "omp", "cursor"]);
     await user.click(sources[0] ?? document.body);
-    expect(host.window.get(OPEN_FILES).w1?.tabs.map((tab) => tab.path)).toEqual([".omp/mcp.json"]);
+    await user.click(sources[2] ?? document.body);
+    expect(host.window.get(OPEN_FILES).w1?.tabs.map((tab) => tab.path)).toEqual([".omp/mcp.json", ".cursor/mcp.json"]);
+  });
+
+  // spec: UI-294
+  test("without servers it names the workspace's .omp/mcp.json and the JSON shapes, no user config", async () => {
+    const base = testHost(new FakeClient());
+    base.client.answers.set("thread.mcp_servers", () => listing([]));
+    base.host.window.set(SELECTED_THREAD, "t1");
+    const test = renderWithHost(<McpWidget />, base);
+    test.client.connected();
+    test.client.index({ workspaces: [workspace("w1")], threads: [thread("t1", "work", "w1")] });
+    test.flush();
+    const none = await screen.findByTestId("mcp-none");
+    const hint = none.textContent ?? "";
+    expect(hint).toContain("No MCP servers");
+    expect(hint).toContain("Add them to this workspace's /work/w1/.omp/mcp.json");
+    expect(hint).toContain('"command": "<program>"');
+    expect(hint).toContain('"type": "http"');
+    expect(hint).toContain("Cursor (.cursor/)");
+    expect(hint).not.toContain("every workspace");
   });
 
   // spec: UI-293, PRT-112

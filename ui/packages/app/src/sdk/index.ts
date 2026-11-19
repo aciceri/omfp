@@ -432,6 +432,7 @@ export {
   type WidgetElementProps,
 } from "./layout.tsx";
 export { LiveClient, type LiveClientOptions, type LiveLink, type LiveMedia, type LiveSnapshot } from "./live.ts";
+export { type Mcp, type McpOptions, mcpText, useMcp, useMcpTool } from "./mcp.ts";
 export type { Importer, LoadedWidget, WidgetLoadError } from "./modules.ts";
 export {
   MESSAGES,

@@ -537,8 +537,9 @@ output. Workspaces with a `views.json` of their own keep it: `:widget add omfp:b
 ## M13 — MCP servers (done)
 
 Scope: see the MCP servers of the current workspace's threads, their state, and restart them. Each thread's omp runs in
-the workspace folder, so it loads the workspace's `.omp/mcp.json`, omfp's `<data-dir>/omp-profile/agent/mcp.json` and the configs
-it imports from other tools. The daemon lists them (DMN-190, `workspaces.mcp_servers`, PRT-110), has the thread's omp
+the workspace folder, so it loads the workspace's `.omp/mcp.json` and the configs it imports from other tools (until
+M19 omfp also listed omfp's `<data-dir>/omp-profile/agent/mcp.json` and user-level imports; since then MCP servers belong
+to the workspace, DMN-190). The daemon lists them (DMN-190, `workspaces.mcp_servers`, PRT-110), has the thread's omp
 check each of its own (DMN-191, `thread.mcp_servers`, PRT-111) and reconnects by restarting the thread (DMN-192,
 `thread.mcp_reconnect`, PRT-112); the built-in `omfp:mcp` shows a border box per server with its state, tools, error and
 config file, Reconnect, Reload all and Check again (UI-290..UI-294), offered by the widget picker (since M14 by
@@ -848,6 +849,38 @@ Init files never declare jobs: they run in each open window (none open, nothing 
 while a job must run once, whether or not a window is open. They are the window's glue with jobs — a key or command
 that runs one, a view or panel showing them, a notice when a run fails — and nothing more: a listener's side effect
 runs once per open window, so chaining jobs (B after A) belongs to the daemon's triggers (later), not to `on`.
+
+## M19 — Workspace MCP tools for widgets (done)
+
+Scope (#205, D-22): MCP servers belong to a workspace, and widgets call their tools with no thread and no omp. The
+daemon lists only the workspace's config files (DMN-190) and refuses the `/mcp` commands that would make omp write its
+user config (DMN-350); it is itself an MCP client of the workspace's `http` and `sse` servers (DMN-351), sends the OAuth
+login omp stored for a server (DMN-352) and refreshes it the way omp does, in omp's own credential store (DMN-353), with
+its errors (DMN-354). The protocol: `mcp.tools` and `mcp.call` (PRT-220, PRT-221), `McpServers` without `userConfig` and
+sources without `scope` (PRT-110, PRT-113, PRT-114). The SDK: `useMcp`, `useMcpTool`, `mcpText` (AGT-095); `omfp:mcp`
+drops the user-level hints (UI-292, UI-294).
+
+Spike (omp 18.22.0 source, `mcp/manager.ts`, `mcp/oauth-credentials.ts`, `ai/src/auth/refresh.ts`,
+`ai/src/auth/sqlite-credential-store.ts`, `capability/index.ts`): omp's RPC has no command to call a tool without the
+model. omp keeps MCP OAuth credentials in `agent.db` (`auth_credentials`, provider `mcp_oauth:profile:<profile>:<url>`,
+`data` a JSON object with `access`, `refresh`, `expires`, `tokenUrl`, `clientId`, `resource`, `authorizationUrl`) and
+sends `Authorization: Bearer <access>` to `http`/`sse` servers. It refreshes only on demand — at a connection when the
+token expires within five minutes, and on a 401/403 — under a 15 s lease row in `auth_credential_refresh_leases`, and
+saves by compare-and-set; SQLite triggers bump `auth_change_revision` on every update. With no omp running nobody
+refreshes, and the refresh token stays usable. omp reads Claude Code's and Cursor's `~` configs only when
+`enabledProviders` opts them in, but always reads its own user `agent/mcp.json`, with no switch to stop it.
+
+Result: the daemon reads omp's row and refreshes it with omp's own protocol (lease, grant, compare-and-set into the same
+row), so neither side spends the other's rotated refresh token, and widgets work with zero threads. The schema is omp's,
+not a public interface: `contract_mcp_servers` pins it (the daemon refreshes a login in the pinned omp's real store and
+the thread's omp connects with that token without refreshing again), so an omp upgrade that changes it fails there
+(ENV-020). stdio servers are left out: the daemon would spawn each one next to every thread's copy.
+
+Acceptance: `mcp_client` unit tests on loopback fakes (Streamable HTTP with a kept session, an event-stream answer
+after a server `ping`, a forgotten session, the legacy SSE endpoint, header commands, timeouts, JSON-RPC errors; the
+credential store's lease, wait, takeover, compare-and-set and failure rules on omp's schema), L2 `tests/mcp_servers.rs`
+(the methods over the WebSocket without starting omp, the refused `/mcp` commands), L3 `contract_mcp_servers`, and the
+SDK hooks' tests.
 
 ## Reusable terminal sessions
 

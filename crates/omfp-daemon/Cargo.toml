@@ -29,9 +29,10 @@ oxc_span.workspace = true
 oxc_syntax.workspace = true
 oxc_transformer.workspace = true
 portable-pty.workspace = true
-# The relay of an OAuth callback to omp's loopback listener (DMN-342); also the MCP server's L2 tests speak HTTP to it
-# (DMN-155). Already in the tree through fake-llm.
-reqwest.workspace = true
+# The relay of an OAuth callback to omp's loopback listener (DMN-342), the MCP server's L2 tests (DMN-155), and the
+# daemon's calls to a workspace's remote MCP servers and their OAuth token endpoints (DMN-351, DMN-353), which need
+# TLS (rustls, already in the tree through Tauri) and form bodies.
+reqwest = { workspace = true, features = ["rustls", "form"] }
 rusqlite.workspace = true
 rustix.workspace = true
 serde.workspace = true

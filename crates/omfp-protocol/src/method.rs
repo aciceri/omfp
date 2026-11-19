@@ -328,6 +328,10 @@ methods! {
     ThreadMcpServers = "thread.mcp_servers" (params::ThreadRef) -> mcp::McpServers;
     /// Reconnects a thread's MCP servers by restarting its idle omp process, then checks them again (PRT-112).
     ThreadMcpReconnect = "thread.mcp_reconnect" (mcp::McpReconnectParams) -> mcp::McpServers;
+    /// The tools of a workspace's remote MCP server, listed by the daemon itself, no thread needed (PRT-220).
+    McpTools = "mcp.tools" (mcp::McpToolsParams) -> mcp::McpTools;
+    /// Calls a tool of a workspace's remote MCP server from the daemon, with omp's OAuth login for it (PRT-221).
+    McpCall = "mcp.call" (mcp::McpCallParams) -> mcp::McpCallResult;
     /// How many models omp can use; checked by a short-lived omp the first time, then kept current (PRT-140).
     AuthStatus = "auth.status" (params::Empty) -> auth::AuthStatus;
     /// Available usable models before creating a thread, from a short-lived omp (UI-023, UI-030). Each entry supplies

@@ -1,25 +1,20 @@
-//! The MCP servers omp loads for a workspace (M13): the config files omp 18.22.0 reads, parsed by the daemon in omp's
-//! precedence order (DMN-190), and the reply of omp's `/mcp test <name>`, the one check of a server omp offers over
-//! RPC (DMN-191).
+//! The MCP servers of a workspace (M13): the workspace's config files omp 18.22.0 reads, parsed by the daemon in
+//! omp's precedence order (DMN-190), the entry of one remote server the daemon calls itself (DMN-351), the `/mcp`
+//! commands that would make omp write its user config, refused (DMN-350), and the reply of omp's `/mcp test <name>`,
+//! the one check of a server omp offers over RPC (DMN-191).
 //!
-//! omp has no RPC command or frame for its live MCP state: `get_state` lists no MCP tool (they are `xd://` devices),
-//! `/mcp list` reads the same config files, `/mcp reload` only refreshes the command list and `/mcp reconnect` is
-//! refused outside the TUI (spike in 07-roadmap, M13).
+//! MCP servers belong to a workspace: omfp reads no user-level config (omfp's profile `agent/mcp.json`, Claude Code's
+//! or Cursor's under `~`) and never has omp write one. omp has no RPC command or frame for its live MCP state:
+//! `get_state` lists no MCP tool (they are `xd://` devices), `/mcp list` reads the same config files, `/mcp reload`
+//! only refreshes the command list and `/mcp reconnect` is refused outside the TUI (spike in 07-roadmap, M13).
 
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
-use omfp_protocol::{McpScope, McpServer, McpSource, McpState, McpTransport, RestartReason};
+use omfp_protocol::{McpServer, McpSource, McpState, McpTransport, RestartReason};
 use serde::Deserializer;
 use serde::de::{DeserializeSeed, IgnoredAny, MapAccess, SeqAccess, Visitor};
 use serde_json::{Map, Value};
-
-/// Where omp looks for MCP config besides the workspace: the user's home and omp's agent directory.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Homes {
-    pub home: Option<PathBuf>,
-    /// `<data-dir>/omp-profile/agent` in production (ARC-021).
-    pub agent_dir: Option<PathBuf>,
-}
 
 /// omp's project config of `workspace`, the file `/mcp add` writes and `/mcp test` reads.
 #[must_use]
@@ -27,98 +22,62 @@ pub fn project_config(workspace: &Path) -> PathBuf {
     workspace.join(".omp").join("mcp.json")
 }
 
-/// omp's user config, the file `/mcp add --scope user` writes and `/mcp test` reads.
-#[must_use]
-pub fn user_config(homes: &Homes) -> Option<PathBuf> {
-    homes.agent_dir.as_ref().map(|dir| dir.join("mcp.json"))
-}
-
 /// One config file omp reads, and how.
 struct ConfigFile {
     path: PathBuf,
-    scope: McpScope,
     tool: &'static str,
     /// The key path of the server map: `["mcpServers"]`, or `["mcp", "servers"]` for VS Code.
     key: &'static [&'static str],
-    /// omp's `/mcp test` sees its servers: omp's own project or user `mcp.json`.
+    /// omp's `/mcp test` sees its servers: the workspace's `.omp/mcp.json`.
     checkable: bool,
 }
 
-/// A group of files of which omp reads only the first that defines servers (Claude Code, Cursor), or every one.
+/// A group of files of which omp reads only the first that defines servers (Claude Code), or every one.
 enum Group {
     Every(Vec<ConfigFile>),
     First(Vec<ConfigFile>),
 }
 
-fn file(path: PathBuf, scope: McpScope, tool: &'static str, checkable: bool) -> ConfigFile {
+fn file(path: PathBuf, tool: &'static str, checkable: bool) -> ConfigFile {
     ConfigFile {
         path,
-        scope,
         tool,
         key: &["mcpServers"],
         checkable,
     }
 }
 
-/// The files omp reads, in its precedence order (omp `docs/mcp-config.md`, "Discovery and precedence"): omp's own
-/// (project, then user), Claude Code, Cursor, VS Code, then the root `mcp.json`/`.mcp.json` fallbacks. Codex, Gemini
-/// CLI, `OpenCode`, Windsurf and plugin configs are not read.
-fn config_files(workspace: &Path, homes: &Homes) -> Vec<Group> {
-    use McpScope::{Project, User};
+/// The workspace's files omp reads, in its precedence order (omp `docs/mcp-config.md`, "Discovery and precedence"):
+/// omp's own, Claude Code's, Cursor's, VS Code's, then the root `mcp.json`/`.mcp.json` fallbacks. Codex, Gemini CLI,
+/// `OpenCode`, Windsurf and plugin configs are not read.
+fn config_files(workspace: &Path) -> Vec<Group> {
     let omp = workspace.join(".omp");
-    let mut native = vec![
-        file(omp.join("mcp.json"), Project, "omp", true),
-        file(omp.join(".mcp.json"), Project, "omp", false),
-    ];
-    if let Some(agent) = &homes.agent_dir {
-        native.push(file(agent.join("mcp.json"), User, "omp", true));
-        native.push(file(agent.join(".mcp.json"), User, "omp", false));
-    }
     let claude = workspace.join(".claude");
-    let mut groups = vec![
-        Group::Every(native),
-        Group::First(vec![
-            file(claude.join(".mcp.json"), Project, "claude", false),
-            file(claude.join("mcp.json"), Project, "claude", false),
+    vec![
+        Group::Every(vec![
+            file(omp.join("mcp.json"), "omp", true),
+            file(omp.join(".mcp.json"), "omp", false),
         ]),
-    ];
-    if let Some(home) = &homes.home {
-        groups.push(Group::First(vec![
-            file(home.join(".claude.json"), User, "claude", false),
-            file(home.join(".claude").join("mcp.json"), User, "claude", false),
-        ]));
-    }
-    groups.push(Group::Every(vec![file(
-        workspace.join(".cursor").join("mcp.json"),
-        Project,
-        "cursor",
-        false,
-    )]));
-    if let Some(home) = &homes.home {
-        groups.push(Group::Every(vec![file(
-            home.join(".cursor").join("mcp.json"),
-            User,
+        Group::First(vec![
+            file(claude.join(".mcp.json"), "claude", false),
+            file(claude.join("mcp.json"), "claude", false),
+        ]),
+        Group::Every(vec![file(
+            workspace.join(".cursor").join("mcp.json"),
             "cursor",
             false,
-        )]));
-    }
-    groups.push(Group::Every(vec![ConfigFile {
-        path: workspace.join(".vscode").join("mcp.json"),
-        scope: Project,
-        tool: "vscode",
-        key: &["mcp", "servers"],
-        checkable: false,
-    }]));
-    groups.push(Group::First(vec![
-        file(workspace.join("mcp.json"), Project, "omp", false),
-        file(workspace.join(".mcp.json"), Project, "omp", false),
-    ]));
-    groups
-}
-
-fn read_json(path: &Path) -> Option<Value> {
-    let text = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str(&text).ok()
+        )]),
+        Group::Every(vec![ConfigFile {
+            path: workspace.join(".vscode").join("mcp.json"),
+            tool: "vscode",
+            key: &["mcp", "servers"],
+            checkable: false,
+        }]),
+        Group::First(vec![
+            file(workspace.join("mcp.json"), "omp", false),
+            file(workspace.join(".mcp.json"), "omp", false),
+        ]),
+    ]
 }
 
 /// Descends `key` in a JSON document and collects the object there as entries in file order: omp keeps the order a
@@ -204,17 +163,52 @@ fn servers_of(path: &Path, key: &[&str]) -> Option<Vec<(String, Value)>> {
     (!entries.is_empty()).then_some(entries)
 }
 
-fn names(json: Option<&Value>, key: &str) -> Vec<String> {
-    json.and_then(|json| json.get(key))
-        .and_then(Value::as_array)
-        .map(|names| {
-            names
-                .iter()
-                .filter_map(Value::as_str)
-                .map(str::to_owned)
-                .collect()
-        })
-        .unwrap_or_default()
+/// One server entry of the workspace and the file that defines it.
+struct Entry {
+    path: PathBuf,
+    tool: &'static str,
+    checkable: bool,
+    name: String,
+    config: Map<String, Value>,
+}
+
+/// Every server entry of the workspace in omp's precedence order, each name once from the first file defining it.
+fn entries(workspace: &Path) -> Vec<Entry> {
+    let mut found: Vec<Entry> = Vec::new();
+    for group in config_files(workspace) {
+        let (files, first_only) = match group {
+            Group::Every(files) => (files, false),
+            Group::First(files) => (files, true),
+        };
+        for file in files {
+            let Some(servers) = servers_of(&file.path, file.key) else {
+                continue;
+            };
+            for (name, config) in servers {
+                let Value::Object(config) = config else {
+                    continue;
+                };
+                if found.iter().any(|entry| entry.name == name) {
+                    continue;
+                }
+                found.push(Entry {
+                    path: file.path.clone(),
+                    tool: file.tool,
+                    checkable: file.checkable,
+                    name,
+                    config,
+                });
+            }
+            if first_only {
+                break;
+            }
+        }
+    }
+    found
+}
+
+fn disabled(config: &Map<String, Value>) -> bool {
+    config.get("enabled").and_then(Value::as_bool) == Some(false)
 }
 
 /// A remote URL without its query, fragment and user info, as omp's `/mcp list` shows it.
@@ -231,15 +225,18 @@ fn redact_url(url: &str) -> String {
     format!("{scheme}://{host}{path}")
 }
 
-fn transport_and_target(config: &Map<String, Value>) -> (McpTransport, String) {
-    let url = config.get("url").and_then(Value::as_str);
-    let transport = match config.get("type").and_then(Value::as_str) {
+fn transport(config: &Map<String, Value>) -> McpTransport {
+    match config.get("type").and_then(Value::as_str) {
         Some("http" | "streamable-http" | "streamableHttp") => McpTransport::Http,
         Some("sse") => McpTransport::Sse,
         Some("stdio") => McpTransport::Stdio,
-        _ if url.is_some() => McpTransport::Http,
+        _ if config.get("url").and_then(Value::as_str).is_some() => McpTransport::Http,
         _ => McpTransport::Stdio,
-    };
+    }
+}
+
+fn transport_and_target(config: &Map<String, Value>) -> (McpTransport, String) {
+    let transport = transport(config);
     let target = match transport {
         McpTransport::Stdio => {
             let command = config.get("command").and_then(Value::as_str).unwrap_or("");
@@ -254,89 +251,64 @@ fn transport_and_target(config: &Map<String, Value>) -> (McpTransport, String) {
                 .collect::<Vec<_>>()
                 .join(" ")
         }
-        McpTransport::Http | McpTransport::Sse => url.map(redact_url).unwrap_or_default(),
+        McpTransport::Http | McpTransport::Sse => config
+            .get("url")
+            .and_then(Value::as_str)
+            .map(redact_url)
+            .unwrap_or_default(),
     };
     (transport, target)
 }
 
-/// The MCP servers omp would load for `workspace`, unchecked (DMN-190): each name once, from the first file defining
-/// it, `disabled` when its entry says `enabled: false` (unless the user config's `enabledServers` names it) or the
-/// user config's `disabledServers` names it.
+/// The MCP servers of `workspace`, unchecked (DMN-190): each name once, from the first file defining it, `disabled`
+/// when its entry says `enabled: false`.
 #[must_use]
-pub fn configured(workspace: &Path, homes: &Homes) -> Vec<McpServer> {
-    let user = user_config(homes).and_then(|path| read_json(&path));
-    let denied = names(user.as_ref(), "disabledServers");
-    let allowed = names(user.as_ref(), "enabledServers");
-    let mut servers: Vec<McpServer> = Vec::new();
-    for group in config_files(workspace, homes) {
-        let (files, first_only) = match group {
-            Group::Every(files) => (files, false),
-            Group::First(files) => (files, true),
-        };
-        for file in files {
-            let Some(entries) = servers_of(&file.path, file.key) else {
-                continue;
-            };
-            for (name, config) in entries {
-                let Some(config) = config.as_object() else {
-                    continue;
-                };
-                if servers.iter().any(|server| server.name == name) {
-                    continue;
-                }
-                let (transport, target) = transport_and_target(config);
-                let off = config.get("enabled").and_then(Value::as_bool) == Some(false)
-                    && !allowed.contains(&name);
-                let disabled = off || denied.contains(&name);
+pub fn configured(workspace: &Path) -> Vec<McpServer> {
+    entries(workspace)
+        .into_iter()
+        .map(|entry| {
+            let (transport, target) = transport_and_target(&entry.config);
+            let disabled = disabled(&entry.config);
+            McpServer {
                 // `/mcp test` takes the first word as the name and skips disabled entries.
-                let checkable = file.checkable && !disabled && !name.contains(char::is_whitespace);
-                servers.push(McpServer {
-                    name,
-                    transport,
-                    target,
-                    source: McpSource {
-                        path: file.path.to_string_lossy().into_owned(),
-                        workspace_path: file
-                            .path
-                            .strip_prefix(workspace)
-                            .ok()
-                            .map(|path| path.to_string_lossy().into_owned()),
-                        scope: file.scope,
-                        tool: file.tool.to_owned(),
-                    },
-                    state: if disabled {
-                        McpState::Disabled
-                    } else {
-                        McpState::Configured
-                    },
-                    checkable,
-                    tools: None,
-                    error: None,
-                });
+                checkable: entry.checkable
+                    && !disabled
+                    && !entry.name.contains(char::is_whitespace),
+                name: entry.name,
+                transport,
+                target,
+                source: McpSource {
+                    workspace_path: entry
+                        .path
+                        .strip_prefix(workspace)
+                        .ok()
+                        .map(|path| path.to_string_lossy().into_owned()),
+                    path: entry.path.to_string_lossy().into_owned(),
+                    tool: entry.tool.to_owned(),
+                },
+                state: if disabled {
+                    McpState::Disabled
+                } else {
+                    McpState::Configured
+                },
+                tools: None,
+                error: None,
             }
-            if first_only {
-                break;
-            }
-        }
-    }
-    servers
+        })
+        .collect()
 }
 
-/// The server entries of every MCP config file omp reads for `workspace` plus the user config's enable lists, as a
-/// hash: a change means omp would load other servers or other settings of one (DMN-201). Only the server sections
-/// count, so `~/.claude.json`, which Claude Code rewrites all the time, changes it only when its servers change.
+/// The server entries of every MCP config file of `workspace`, as a hash: a change means omp would load other servers
+/// or other settings of one (DMN-201). Only the server sections count.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ConfigFingerprint(u64);
 
 /// The [`ConfigFingerprint`] of the files [`configured`] reads now.
 #[must_use]
-pub fn fingerprint(workspace: &Path, homes: &Homes) -> ConfigFingerprint {
+pub fn fingerprint(workspace: &Path) -> ConfigFingerprint {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::hash::DefaultHasher::new();
-    let user = user_config(homes).and_then(|path| read_json(&path));
-    names(user.as_ref(), "disabledServers").hash(&mut hasher);
-    names(user.as_ref(), "enabledServers").hash(&mut hasher);
-    for group in config_files(workspace, homes) {
+    for group in config_files(workspace) {
         let (Group::Every(files) | Group::First(files)) = group;
         for file in files {
             file.path.hash(&mut hasher);
@@ -348,6 +320,191 @@ pub fn fingerprint(workspace: &Path, homes: &Homes) -> ConfigFingerprint {
         }
     }
     ConfigFingerprint(hasher.finish())
+}
+
+/// `${VAR}` and `${VAR:-default}` in `text` replaced as omp's discovery does: a set variable gives its value (an empty
+/// one too, except under `:-`), else the default, else the placeholder stays as written.
+fn expand_env(text: &str, env: &impl Fn(&str) -> Option<String>) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find("${") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 2..];
+        let Some(end) = after.find('}') else {
+            out.push_str(&rest[start..]);
+            return out;
+        };
+        let inner = &after[..end];
+        let (name, default) = match inner.split_once(":-") {
+            Some((name, default)) => (name, Some(default)),
+            None => (inner, None),
+        };
+        if name.is_empty() || name.contains(':') {
+            out.push_str(&rest[start..start + 3 + end]);
+        } else {
+            match (env(name), default) {
+                (Some(value), default) if default.is_none() || !value.is_empty() => {
+                    out.push_str(&value);
+                }
+                (_, Some(default)) => out.push_str(default),
+                (_, None) => out.push_str(&rest[start..start + 3 + end]),
+            }
+        }
+        rest = &after[end + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+fn expand_env_deep(value: &mut Value, env: &impl Fn(&str) -> Option<String>) {
+    match value {
+        Value::String(text) => *text = expand_env(text, env),
+        Value::Array(items) => items.iter_mut().for_each(|item| expand_env_deep(item, env)),
+        Value::Object(map) => map.values_mut().for_each(|item| expand_env_deep(item, env)),
+        _ => {}
+    }
+}
+
+/// A server's `auth` block (omp's `MCPAuthConfig`): which stored credential it uses and, for credentials that do not
+/// carry their own, how to refresh it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Auth {
+    /// `type: "oauth"`; an `apikey` server uses no stored credential.
+    pub oauth: bool,
+    pub credential_id: Option<String>,
+    pub token_url: Option<String>,
+    pub client_id: Option<String>,
+    pub client_secret: Option<String>,
+    pub resource: Option<String>,
+}
+
+/// The entry of one remote server of the workspace, environment variables expanded (DMN-351).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Remote {
+    pub name: String,
+    /// `Http` (Streamable HTTP) or `Sse` (the legacy HTTP+SSE transport).
+    pub transport: McpTransport,
+    pub url: String,
+    /// The configured headers, each value as written: `!command`, the name of an environment variable, or literal.
+    pub headers: Vec<(String, String)>,
+    /// `headerPolicy: "origin-locked"`: the header values are literal.
+    pub literal_headers: bool,
+    pub auth: Option<Auth>,
+    /// The entry's `timeout` (milliseconds in the file).
+    pub timeout: Option<Duration>,
+}
+
+/// Why a server of the workspace cannot be called by the daemon.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Unavailable {
+    /// No config file of the workspace defines it.
+    NotFound,
+    /// Its entry says `enabled: false`.
+    Disabled,
+    /// A stdio server: the daemon calls remote servers only.
+    Stdio,
+    /// A remote entry without a `url`.
+    NoUrl,
+}
+
+fn text_of(config: &Map<String, Value>, key: &str) -> Option<String> {
+    config
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(str::to_owned)
+}
+
+/// The remote server `name` of `workspace` as the daemon calls it (DMN-351), with `env` for `${VAR}` placeholders.
+///
+/// # Errors
+///
+/// Why the server cannot be called: unknown, disabled, stdio, or without a URL.
+pub fn remote(
+    workspace: &Path,
+    name: &str,
+    env: &impl Fn(&str) -> Option<String>,
+) -> Result<Remote, Unavailable> {
+    let entry = entries(workspace)
+        .into_iter()
+        .find(|entry| entry.name == name)
+        .ok_or(Unavailable::NotFound)?;
+    if disabled(&entry.config) {
+        return Err(Unavailable::Disabled);
+    }
+    let mut config = Value::Object(entry.config);
+    expand_env_deep(&mut config, env);
+    let Value::Object(config) = config else {
+        return Err(Unavailable::NotFound);
+    };
+    let transport = transport(&config);
+    if transport == McpTransport::Stdio {
+        return Err(Unavailable::Stdio);
+    }
+    let url = text_of(&config, "url").ok_or(Unavailable::NoUrl)?;
+    let headers = config
+        .get("headers")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .filter_map(|(key, value)| Some((key.clone(), value.as_str()?.to_owned())))
+        .collect();
+    let auth = config
+        .get("auth")
+        .and_then(Value::as_object)
+        .map(|auth| Auth {
+            oauth: auth.get("type").and_then(Value::as_str) == Some("oauth"),
+            credential_id: text_of(auth, "credentialId"),
+            token_url: text_of(auth, "tokenUrl"),
+            client_id: text_of(auth, "clientId"),
+            client_secret: text_of(auth, "clientSecret"),
+            resource: text_of(auth, "resource"),
+        });
+    let timeout = match config.get("timeout") {
+        Some(Value::Number(ms)) => ms.as_u64(),
+        Some(Value::String(ms)) => ms.trim().parse().ok(),
+        _ => None,
+    }
+    .filter(|ms| *ms > 0)
+    .map(Duration::from_millis);
+    Ok(Remote {
+        name: entry.name,
+        transport,
+        url,
+        headers,
+        literal_headers: config.get("headerPolicy").and_then(Value::as_str)
+            == Some("origin-locked"),
+        auth,
+        timeout,
+    })
+}
+
+/// Whether prompt `text` is a `/mcp` command omp would answer by writing its user MCP config (DMN-350): any `--scope
+/// user` (before a `--` that starts a stdio command), and `/mcp enable|disable <name>` of a server the workspace's
+/// `.omp/mcp.json` does not define (omp then edits the user config's entry or its `disabledServers`/`enabledServers`).
+#[must_use]
+pub fn writes_user_config(workspace: &Path, text: &str) -> bool {
+    let mut words = text.split_whitespace();
+    if words.next() != Some("/mcp") {
+        return false;
+    }
+    let Some(verb) = words.next() else {
+        return false;
+    };
+    let options: Vec<&str> = words.take_while(|word| *word != "--").collect();
+    if options.windows(2).any(|pair| pair == ["--scope", "user"]) {
+        return true;
+    }
+    match (verb, options.first()) {
+        ("enable" | "disable", Some(name)) => {
+            !servers_of(&project_config(workspace), &["mcpServers"])
+                .unwrap_or_default()
+                .iter()
+                .any(|(defined, _)| defined == name)
+        }
+        _ => false,
+    }
 }
 
 /// Why one `command_output` text of omp says the thread's omp must connect anew to get new MCP tools (DMN-202,
@@ -417,34 +574,20 @@ mod tests {
         std::fs::write(path, text).unwrap();
     }
 
-    struct Layout {
-        _root: tempfile::TempDir,
-        workspace: PathBuf,
-        homes: Homes,
-    }
-
-    fn layout() -> Layout {
+    fn workspace() -> (tempfile::TempDir, PathBuf) {
         let root = tempfile::tempdir().unwrap();
         let workspace = root.path().join("ws");
-        let home = root.path().join("home");
         std::fs::create_dir_all(&workspace).unwrap();
-        Layout {
-            homes: Homes {
-                agent_dir: Some(home.join(".omp").join("agent")),
-                home: Some(home),
-            },
-            workspace,
-            _root: root,
-        }
+        (root, workspace)
     }
 
-    fn summary(servers: &[McpServer]) -> Vec<(String, String, McpState, bool)> {
+    fn summary(servers: &[McpServer]) -> Vec<(String, &str, McpState, bool)> {
         servers
             .iter()
             .map(|server| {
                 (
                     server.name.clone(),
-                    format!("{:?}:{}", server.source.scope, server.source.tool),
+                    server.source.tool.as_str(),
                     server.state,
                     server.checkable,
                 )
@@ -452,80 +595,63 @@ mod tests {
             .collect()
     }
 
+    fn no_env(_: &str) -> Option<String> {
+        None
+    }
+
     // spec: DMN-190
     #[test]
-    fn servers_come_from_omp_files_first_then_imported_ones_each_name_once() {
-        let l = layout();
-        let home = l.homes.home.clone().unwrap();
+    fn servers_come_from_the_workspace_files_in_omp_order_each_name_once() {
+        let (root, ws) = workspace();
         write(
-            &l.workspace.join(".omp/mcp.json"),
+            &ws.join(".omp/mcp.json"),
             r#"{"mcpServers":{"docs":{"type":"http","url":"https://user:pw@docs.example/mcp?key=s3cret"}}}"#,
         );
         write(
-            &home.join(".omp/agent/mcp.json"),
-            r#"{"mcpServers":{"docs":{"command":"ignored"},"fs":{"command":"npx","args":["-y","fs-server"]}},"disabledServers":["old"]}"#,
+            &ws.join(".omp/.mcp.json"),
+            r#"{"mcpServers":{"docs":{"command":"ignored"},"fs":{"command":"npx","args":["-y","fs-server"]}}}"#,
         );
         write(
-            &l.workspace.join(".claude/.mcp.json"),
-            r#"{"mcpServers":{"old":{"command":"old-server"},"fs":{"command":"shadowed"}}}"#,
+            &ws.join(".claude/.mcp.json"),
+            r#"{"mcpServers":{"old":{"command":"old-server","enabled":false},"fs":{"command":"shadowed"}}}"#,
         );
         write(
-            &l.workspace.join(".claude/mcp.json"),
+            &ws.join(".claude/mcp.json"),
             r#"{"mcpServers":{"skipped":{"command":"x"}}}"#,
         );
         write(
-            &home.join(".claude.json"),
+            &ws.join(".cursor/mcp.json"),
             r#"{"mcpServers":{"remote":{"type":"sse","url":"https://sse.example/"}}}"#,
         );
         write(
-            &l.workspace.join(".vscode/mcp.json"),
+            &ws.join(".vscode/mcp.json"),
             r#"{"mcp":{"servers":{"code":{"command":"code-mcp","enabled":false}}}}"#,
         );
         write(
-            &l.workspace.join("mcp.json"),
+            &ws.join("mcp.json"),
             r#"{"mcpServers":{"root":{"command":"r"}}}"#,
         );
         write(
-            &l.workspace.join(".mcp.json"),
+            &ws.join(".mcp.json"),
             r#"{"mcpServers":{"hidden":{"command":"h"}}}"#,
         );
+        // User-level configs belong to no workspace: never read.
+        write(
+            &root.path().join("home/.claude.json"),
+            r#"{"mcpServers":{"user":{"command":"u"}}}"#,
+        );
 
-        let servers = configured(&l.workspace, &l.homes);
+        let servers = configured(&ws);
 
         assert_eq!(
             summary(&servers),
             vec![
-                (
-                    "docs".into(),
-                    "Project:omp".into(),
-                    McpState::Configured,
-                    true
-                ),
-                ("fs".into(), "User:omp".into(), McpState::Configured, true),
-                (
-                    "old".into(),
-                    "Project:claude".into(),
-                    McpState::Disabled,
-                    false
-                ),
-                (
-                    "remote".into(),
-                    "User:claude".into(),
-                    McpState::Configured,
-                    false
-                ),
-                (
-                    "code".into(),
-                    "Project:vscode".into(),
-                    McpState::Disabled,
-                    false
-                ),
-                (
-                    "root".into(),
-                    "Project:omp".into(),
-                    McpState::Configured,
-                    false
-                ),
+                ("docs".into(), "omp", McpState::Configured, true),
+                ("fs".into(), "omp", McpState::Configured, false),
+                ("old".into(), "claude", McpState::Disabled, false),
+                ("remote".into(), "cursor", McpState::Configured, false),
+                ("code".into(), "vscode", McpState::Disabled, false),
+                ("root".into(), "omp", McpState::Configured, false),
             ]
         );
         assert_eq!(servers[0].transport, McpTransport::Http);
@@ -536,39 +662,121 @@ mod tests {
         );
         assert_eq!(servers[1].transport, McpTransport::Stdio);
         assert_eq!(servers[1].target, "npx -y fs-server");
-        assert_eq!(servers[1].source.workspace_path, None);
         assert_eq!(servers[3].transport, McpTransport::Sse);
         assert_eq!(servers[3].target, "https://sse.example");
     }
 
     // spec: DMN-190
     #[test]
-    fn the_user_allowlist_enables_an_entry_and_unreadable_files_are_skipped() {
-        let l = layout();
-        let home = l.homes.home.clone().unwrap();
+    fn unreadable_files_are_skipped_and_names_with_spaces_cannot_be_checked() {
+        let (_root, ws) = workspace();
         write(
-            &l.workspace.join(".omp/mcp.json"),
+            &ws.join(".omp/mcp.json"),
             r#"{"mcpServers":{"a":{"command":"a","enabled":false},"two words":{"command":"b"}}}"#,
         );
-        write(&l.workspace.join(".omp/.mcp.json"), "{ not json");
-        write(
-            &home.join(".omp/agent/mcp.json"),
-            r#"{"mcpServers":{},"enabledServers":["a"]}"#,
-        );
+        write(&ws.join(".omp/.mcp.json"), "{ not json");
 
         assert_eq!(
-            summary(&configured(&l.workspace, &l.homes)),
+            summary(&configured(&ws)),
             vec![
-                ("a".into(), "Project:omp".into(), McpState::Configured, true),
-                (
-                    "two words".into(),
-                    "Project:omp".into(),
-                    McpState::Configured,
-                    false
-                ),
+                ("a".into(), "omp", McpState::Disabled, false),
+                ("two words".into(), "omp", McpState::Configured, false),
             ]
         );
-        assert_eq!(configured(&l.workspace, &Homes::default()).len(), 2);
+        assert_eq!(configured(Path::new("/nowhere")), Vec::new());
+    }
+
+    // spec: DMN-351
+    #[test]
+    fn a_remote_entry_expands_environment_placeholders_like_omp() {
+        let (_root, ws) = workspace();
+        write(
+            &ws.join(".omp/mcp.json"),
+            r#"{"mcpServers":{
+                "linear":{"type":"http","url":"https://${HOST}/mcp?team=${TEAM:-core}&x=${UNSET}",
+                  "headers":{"X-Token":"!pass show linear","X-Env":"LINEAR_KEY","X-Lit":"${EMPTY:-fallback}"},
+                  "auth":{"type":"oauth","credentialId":"mcp_oauth_abc","tokenUrl":"https://auth.example/token"},
+                  "timeout":"2500"},
+                "legacy":{"type":"sse","url":"https://sse.example/sse","headerPolicy":"origin-locked","timeout":0},
+                "local":{"command":"fs"},
+                "off":{"type":"http","url":"https://off.example","enabled":false},
+                "nourl":{"type":"http"}
+            }}"#,
+        );
+        let env = |name: &str| match name {
+            "HOST" => Some("mcp.linear.app".to_owned()),
+            "EMPTY" => Some(String::new()),
+            _ => None,
+        };
+
+        let linear = remote(&ws, "linear", &env).unwrap();
+        assert_eq!(linear.transport, McpTransport::Http);
+        assert_eq!(
+            linear.url,
+            "https://mcp.linear.app/mcp?team=core&x=${UNSET}"
+        );
+        let mut headers = linear.headers.clone();
+        headers.sort();
+        assert_eq!(
+            headers,
+            vec![
+                ("X-Env".to_owned(), "LINEAR_KEY".to_owned()),
+                ("X-Lit".to_owned(), "fallback".to_owned()),
+                ("X-Token".to_owned(), "!pass show linear".to_owned()),
+            ]
+        );
+        assert!(!linear.literal_headers);
+        assert_eq!(
+            linear.auth,
+            Some(Auth {
+                oauth: true,
+                credential_id: Some("mcp_oauth_abc".into()),
+                token_url: Some("https://auth.example/token".into()),
+                ..Auth::default()
+            })
+        );
+        assert_eq!(linear.timeout, Some(Duration::from_millis(2500)));
+
+        let legacy = remote(&ws, "legacy", &no_env).unwrap();
+        assert_eq!(legacy.transport, McpTransport::Sse);
+        assert!(legacy.literal_headers);
+        assert_eq!((legacy.auth, legacy.timeout), (None, None));
+
+        assert_eq!(remote(&ws, "local", &no_env), Err(Unavailable::Stdio));
+        assert_eq!(remote(&ws, "off", &no_env), Err(Unavailable::Disabled));
+        assert_eq!(remote(&ws, "nourl", &no_env), Err(Unavailable::NoUrl));
+        assert_eq!(remote(&ws, "missing", &no_env), Err(Unavailable::NotFound));
+    }
+
+    // spec: DMN-350
+    #[test]
+    fn only_mcp_commands_that_would_write_the_user_config_are_caught() {
+        let (_root, ws) = workspace();
+        write(
+            &ws.join(".omp/mcp.json"),
+            r#"{"mcpServers":{"docs":{"type":"http","url":"https://docs.example/mcp"}}}"#,
+        );
+        for text in [
+            "/mcp add gh --scope user --url https://gh.example/mcp",
+            "/mcp remove gh --scope user",
+            "/mcp smithery-search github --scope user",
+            "/mcp disable imported",
+            "/mcp enable imported",
+        ] {
+            assert!(writes_user_config(&ws, text), "{text}");
+        }
+        for text in [
+            "/mcp add gh --url https://gh.example/mcp",
+            "/mcp add fs --scope project -- npx fs --scope user",
+            "/mcp disable docs",
+            "/mcp enable",
+            "/mcp test docs",
+            "/mcp reauth docs",
+            "/mcp",
+            "please run /mcp add gh --scope user",
+        ] {
+            assert!(!writes_user_config(&ws, text), "{text}");
+        }
     }
 
     // spec: DMN-191
@@ -601,47 +809,37 @@ mod tests {
             ),
             Some(Check::NotFound)
         );
-        let server = configured(Path::new("/nowhere"), &Homes::default());
-        assert_eq!(server, Vec::new());
     }
 
     // spec: DMN-201
     #[test]
     fn the_fingerprint_changes_with_the_servers_omp_reads_only() {
-        let l = layout();
-        let home = l.homes.home.clone().unwrap();
-        let empty = fingerprint(&l.workspace, &l.homes);
-        write(&l.workspace.join(".omp/mcp.json"), r#"{"mcpServers":{}}"#);
-        assert_eq!(fingerprint(&l.workspace, &l.homes), empty);
+        let (_root, ws) = workspace();
+        let empty = fingerprint(&ws);
+        write(&ws.join(".omp/mcp.json"), r#"{"mcpServers":{}}"#);
+        assert_eq!(fingerprint(&ws), empty);
 
         write(
-            &l.workspace.join(".omp/mcp.json"),
+            &ws.join(".omp/mcp.json"),
             r#"{"mcpServers":{"fs":{"command":"fs"}}}"#,
         );
-        let project = fingerprint(&l.workspace, &l.homes);
+        let project = fingerprint(&ws);
         assert_ne!(project, empty);
         write(
-            &l.workspace.join(".omp/mcp.json"),
+            &ws.join(".omp/mcp.json"),
             r#"{"mcpServers":{"fs":{"command":"fs","args":["--ro"]}}}"#,
         );
-        let changed = fingerprint(&l.workspace, &l.homes);
+        let changed = fingerprint(&ws);
         assert_ne!(changed, project);
 
-        // Claude Code rewrites `~/.claude.json` all the time: only its servers count.
-        write(&home.join(".claude.json"), r#"{"numStartups":1}"#);
-        assert_eq!(fingerprint(&l.workspace, &l.homes), changed);
+        // Only the server sections count.
+        write(&ws.join(".claude/.mcp.json"), r#"{"other":1}"#);
+        assert_eq!(fingerprint(&ws), changed);
         write(
-            &home.join(".claude.json"),
-            r#"{"numStartups":2,"mcpServers":{"gh":{"type":"http","url":"https://gh.example/mcp"}}}"#,
+            &ws.join(".claude/.mcp.json"),
+            r#"{"other":2,"mcpServers":{"gh":{"type":"http","url":"https://gh.example/mcp"}}}"#,
         );
-        let imported = fingerprint(&l.workspace, &l.homes);
-        assert_ne!(imported, changed);
-
-        write(
-            &home.join(".omp/agent/mcp.json"),
-            r#"{"mcpServers":{},"disabledServers":["gh"]}"#,
-        );
-        assert_ne!(fingerprint(&l.workspace, &l.homes), imported);
+        assert_ne!(fingerprint(&ws), changed);
     }
 
     // spec: DMN-202, DMN-228

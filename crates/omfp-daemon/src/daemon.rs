@@ -361,8 +361,6 @@ pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHa
     let agent_dir = data.omp_profile().join("agent");
     create_private_dir(&data.omp_profile())?;
     create_private_dir(&agent_dir)?;
-    let home = std::env::var_os("HOME");
-    let omp_home = conventions::omp_home(&omp_env, home.as_deref());
     let widgets = Arc::new(Widgets::new(data.widgets(), config.static_dir.as_deref()));
     let supervisor = Supervisor::new(
         ports.launcher,
@@ -375,7 +373,6 @@ pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHa
             idle_timeout: config.idle_timeout,
             event_capacity: config.event_buffer,
             agent_dir: Some(agent_dir),
-            home: omp_home,
             title_generation: config.title_generation,
             builtin_widgets: widgets.builtin_dir().map(Path::to_path_buf),
             ..SupervisorConfig::new(ports.omp_program)

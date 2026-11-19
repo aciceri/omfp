@@ -951,6 +951,24 @@ export type LoginCancelled = {
   providerId?: string | null;
 };
 
+/** `mcp.call` params (PRT-221). */
+export type McpCallParams = {
+  /** The tool's arguments, an object; none sends `{}`. */
+  arguments?: Record<string, unknown> | null;
+  server: string;
+  tool: string;
+  workspaceId: string;
+};
+
+/** `mcp.call` result (PRT-221): the server's `tools/call` result. */
+export type McpCallResult = {
+  /** The result's content blocks (`{ type: "text", text }`, `image`, `audio`, `resource_link`, `resource`), as sent. */
+  content: unknown[];
+  /** The tool reported a failure (the call itself went through). */
+  isError: boolean;
+  structuredContent?: unknown;
+};
+
 /** `thread.mcp_reconnect` params (PRT-112). */
 export type McpReconnectParams = {
   /** The server checked again after the restart; without it every checkable server is. */
@@ -958,12 +976,9 @@ export type McpReconnectParams = {
   threadId: string;
 };
 
-/** Whether a config belongs to the workspace or to the user. */
-export type McpScope = "project" | "user";
-
 /** One MCP server configured for the workspace (PRT-113). */
 export type McpServer = {
-  /** omp can check the server over RPC (`/mcp test`): it comes from omp's own project or user `mcp.json`. */
+  /** omp can check the server over RPC (`/mcp test`): it comes from the workspace's `.omp/mcp.json`. */
   checkable: boolean;
   /** Why the check failed (`failed`), as omp reported it. */
   error?: string | null;
@@ -983,12 +998,10 @@ export type McpServers = {
   projectConfig: string;
   /** The thread's omp process runs: its servers were checked. `false` without a thread. */
   running: boolean;
-  /** In omp's precedence order (the first definition of a name wins): omp's own files, then the imported ones. */
+  /** In omp's precedence order (the first definition of a name wins): omp's own file, then the imported ones. */
   servers: McpServer[];
   /** The thread whose omp checked the servers; `null` for `workspaces.mcp_servers`. */
   threadId?: string | null;
-  /** omfp's isolated user config, `<data-dir>/omp-profile/agent/mcp.json`, whether it exists or not (ARC-021). */
-  userConfig?: string | null;
   workspaceId: string;
 };
 
@@ -996,7 +1009,6 @@ export type McpServers = {
 export type McpSource = {
   /** Absolute path of the config file. */
   path: string;
-  scope: McpScope;
   /** The tool whose config it is: `omp`, `claude`, `cursor`, `vscode` (omp imports the others' files). */
   tool: string;
   /** The path relative to the workspace folder when the file is in it (a workspace file the UI can open). */
@@ -1011,8 +1023,35 @@ export type McpState =
   | "connected"
   /** omp could not connect to it or list its tools. */
   | "failed"
-  /** `enabled: false`, or named in the user config's `disabledServers`: omp does not load it. */
+  /** `enabled: false`: omp does not load it. */
   | "disabled";
+
+/** One tool of an MCP server, as its `tools/list` describes it. */
+export type McpTool = {
+  /** Hints such as `readOnlyHint` or `destructiveHint`, as the server sends them. */
+  annotations?: unknown;
+  description?: string | null;
+  /** The JSON Schema of the tool's `arguments`. */
+  inputSchema: unknown;
+  name: string;
+  /** The JSON Schema of the tool's `structuredContent`, when the server declares one. */
+  outputSchema?: unknown;
+  title?: string | null;
+};
+
+/** `mcp.tools` result (PRT-220): every tool the server lists, in its order. */
+export type McpTools = {
+  server: string;
+  tools: McpTool[];
+  workspaceId: string;
+};
+
+/** `mcp.tools` params (PRT-220). */
+export type McpToolsParams = {
+  /** The server's name in the workspace's MCP config. */
+  server: string;
+  workspaceId: string;
+};
 
 /** How omp talks to a server. */
 export type McpTransport = "stdio" | "http" | "sse";
@@ -2475,6 +2514,8 @@ export interface Methods {
   "workspaces.mcp_servers": { params: WorkspaceRef; result: McpServers };
   "thread.mcp_servers": { params: ThreadRef; result: McpServers };
   "thread.mcp_reconnect": { params: McpReconnectParams; result: McpServers };
+  "mcp.tools": { params: McpToolsParams; result: McpTools };
+  "mcp.call": { params: McpCallParams; result: McpCallResult };
   "auth.status": { params: Empty; result: AuthStatus };
   "auth.models": { params: Empty; result: AvailableModels };
   "auth.providers": { params: Empty; result: AuthProviders };
@@ -2587,6 +2628,8 @@ export const METHODS: readonly MethodName[] = [
   "workspaces.mcp_servers",
   "thread.mcp_servers",
   "thread.mcp_reconnect",
+  "mcp.tools",
+  "mcp.call",
   "auth.status",
   "auth.models",
   "auth.providers",

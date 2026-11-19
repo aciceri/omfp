@@ -96,6 +96,7 @@ pub fn permission(method: &str) -> Option<Permission> {
         | "windows.state"
         | "workspaces.mcp_servers"
         | "thread.mcp_servers"
+        | "mcp.tools"
         | "auth.status"
         | "auth.models"
         | "auth.providers" => Read,
@@ -151,6 +152,7 @@ pub fn permission(method: &str) -> Option<Permission> {
         | "thread.live_stop"
         | "thread.live_mute"
         | "thread.mcp_reconnect"
+        | "mcp.call"
         | "interaction.respond"
         | "jobs.start"
         | "jobs.kill"

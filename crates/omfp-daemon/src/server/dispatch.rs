@@ -186,6 +186,29 @@ async fn run(services: &Services, principal: &Principal, call: Call) -> Reply {
             .workspace_mcp_servers(&params.workspace_id)
             .await
             .map_err(supervisor_error)?),
+        Call::McpTools(params) => {
+            let id = params.workspace_id.clone();
+            let workspace = on_workspaces(services, move |all| all.get(&id)).await?;
+            let tools = services.mcp.tools(&workspace.path, &params.server).await?;
+            ok(&omfp_protocol::McpTools {
+                workspace_id: params.workspace_id,
+                server: params.server,
+                tools,
+            })
+        }
+        Call::McpCall(params) => {
+            let id = params.workspace_id.clone();
+            let workspace = on_workspaces(services, move |all| all.get(&id)).await?;
+            ok(&services
+                .mcp
+                .call(
+                    &workspace.path,
+                    &params.server,
+                    &params.tool,
+                    params.arguments.unwrap_or_default(),
+                )
+                .await?)
+        }
         Call::ThemeGet(_) => ok(&services.theme()),
         Call::ThemeSet(params) => {
             services.set_theme(params.css).await?;

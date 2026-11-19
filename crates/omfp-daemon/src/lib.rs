@@ -16,6 +16,7 @@ pub mod git;
 pub mod host_tools;
 pub mod jobs;
 pub mod live_context;
+pub mod mcp_client;
 pub mod names;
 pub mod oauth_relay;
 pub mod omp;

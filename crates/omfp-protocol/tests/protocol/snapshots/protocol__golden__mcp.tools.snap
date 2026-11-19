@@ -1,0 +1,45 @@
+---
+source: crates/omfp-protocol/tests/protocol/golden.rs
+expression: golden
+---
+{
+  "request": {
+    "id": "c42",
+    "method": "mcp.tools",
+    "params": {
+      "server": "docs",
+      "workspaceId": "01JD8X3Q4T9V2W6Y5Z7A1B3C5E"
+    },
+    "type": "request"
+  },
+  "response": {
+    "id": "c42",
+    "ok": true,
+    "result": {
+      "server": "docs",
+      "tools": [
+        {
+          "annotations": {
+            "readOnlyHint": true
+          },
+          "description": "Full-text search",
+          "inputSchema": {
+            "properties": {
+              "query": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "type": "object"
+          },
+          "name": "search",
+          "title": "Search the docs"
+        }
+      ],
+      "workspaceId": "01JD8X3Q4T9V2W6Y5Z7A1B3C5E"
+    },
+    "type": "response"
+  }
+}

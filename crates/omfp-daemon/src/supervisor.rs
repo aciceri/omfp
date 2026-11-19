@@ -129,10 +129,9 @@ pub struct SupervisorConfig {
     pub event_capacity: usize,
     /// How far a subscriber may fall behind before it must resynchronize (PRT-023).
     pub live_buffer: usize,
-    /// omfp's isolated omp agent directory, where the user's `APPEND_SYSTEM.md` lives (ARC-021, DMN-030).
+    /// omfp's isolated omp agent directory, where the user's `APPEND_SYSTEM.md` and omp's credential store `agent.db`
+    /// live (ARC-021, DMN-030, DMN-352).
     pub agent_dir: Option<PathBuf>,
-    /// The home omp runs with, where it reads the MCP configs of other tools (`~/.claude.json`, …, DMN-190).
-    pub home: Option<PathBuf>,
     /// Generate and refresh automatic titles from meaningful new conversation (DMN-073). Tests against the
     /// fake LLM turn it off unless they script the extra model calls.
     pub title_generation: bool,
@@ -153,7 +152,6 @@ impl SupervisorConfig {
             event_capacity: 2000,
             live_buffer: 4096,
             agent_dir: None,
-            home: None,
             title_generation: true,
             builtin_widgets: None,
         }
@@ -207,6 +205,12 @@ pub enum SupervisorError {
     Live { message: String, omp: String },
     #[error("the daemon is shutting down")]
     ShuttingDown,
+    #[error(
+        "MCP servers belong to the workspace: omfp never writes omp's user MCP config; add the server to the \
+         workspace's .omp/mcp.json instead (`/mcp add <name>` without `--scope user`, `/mcp enable|disable` of a \
+         server defined there)"
+    )]
+    UserMcpConfig,
     #[error(transparent)]
     Thread(#[from] ThreadError),
     #[error(transparent)]
@@ -881,9 +885,11 @@ impl Supervisor {
     }
 
     /// Sends a prompt, starting omp first when needed (DMN-070); returns at admission (PRT-030).
-    /// Admitted agent work names or reconsiders the thread's automatic title (DMN-073).
+    /// Admitted agent work names or reconsiders the thread's automatic title (DMN-073). A `/mcp` command that would
+    /// make omp write its user MCP config is refused (DMN-350).
     pub async fn prompt(&self, id: &str, command: PromptCommand) -> Result<PromptAdmission> {
         let actor = self.actor(id).await?;
+        self.refuse_user_mcp_config(id, &command.message).await?;
         let message = command.message.clone();
         let sending = Sending::new(&actor.last_prompt);
         let admission = self

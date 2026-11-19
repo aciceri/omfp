@@ -430,6 +430,9 @@ export default function Tests({ command = "make test" }: { command?: string }) {
 | `useToolRun(toolCallId)` | A tool run of the selected thread, or `useToolRun({ match: /nextest/, threadId? })` for the latest run whose command matches: `{ toolCallId, toolName, status, output, lines, isError }` or `undefined`. While a `bash` command runs, `output` is the latest tail omp streams. |
 | `useCall()` | `call(method, params)`: any daemon protocol method, e.g. `call("thread.prompt", { threadId, text })`; `call("thread.session", { threadId })` gives a thread's session id, session file, model, cwd, roots and cost without starting omp. |
 | `useCall(method, params)` | `{ data, error, refreshing, refresh }`: calls `method` on mount, whenever `params` change (compared as JSON) and on `refresh()`; `params` `null` calls nothing. A new mount (the widget mounted again, its view pushed out and shown again) shows the window's last result of the same widget instance, method and params at once with `refreshing: true` until the new one replaces it; `data` is `undefined` only before the first. A failure keeps `data` and sets `error` (a `CallError` for the daemon's errors), cleared by the next success. Show "updating…" from `refreshing` if you want; otherwise the old data simply gives way to the new. |
+| `useMcp(server, { workspaceId? })` | `{ tools, error, refreshing, refresh, call(tool, args?) }`: the tools of the workspace's MCP server `server` (`mcp.tools`, `useCall` semantics; `tools` `undefined` before the first listing, `server` `null` lists nothing); `call` runs `mcp.call` and resolves to its `{ content, structuredContent?, isError }`. The workspace is the widget's unless `workspaceId` is given (see MCP tools). |
+| `useMcpTool(server, tool, args, { workspaceId? })` | `useCall("mcp.call", { workspaceId, server, tool, arguments: args })`: `{ data, error, refreshing, refresh }`, called on mount, when `args` change (compared as JSON) and on `refresh()`; `args` `null` calls nothing. |
+| `mcpText(result)` | The text of an MCP result's `text` content blocks joined with newlines (`""` when none). |
 | `useTopic(topic)` | Follows a topic (`index`, `thread/<id>`, `workspace/<id>`, `views/<id>`, `job/<id>`, `terminal/<id>`) while mounted; returns its subscription state. The 5 threads most recently unmounted stay followed, so showing one again is immediate. |
 | `useSnapshot(select)` | `select(snapshot)` over the window's per-frame model (`connection`, `index`, `threads`, `workspaces`, `views`, `jobs` and `terminals` by id, `topics`), rendering again only when its result changes (by identity): for what no other hook gives. Return a part of the snapshot, never a new object or array (it would change on every call); `useTopic` follows what is not followed yet. |
 | `useIndex()` | Workspaces, threads, theme and settings (the `index` topic), and `models`: how many models omp can use (`null` until the daemon checked; `0` before the first login). |
@@ -475,6 +478,26 @@ export default function Tests({ command = "make test" }: { command?: string }) {
 | `OPEN_JOB` | Window key of a request to open a declared job's row (its runs) in `omfp:jobs`: set `{ workspaceId, job, nonce }` (`nonce`: a new number per request), and reveal `omfp:jobs` (`REVEAL_WIDGET`, with `workspaceId` for another workspace) to show it; `omfp:jobs` clears it once applied. The left column's job rows do this. |
 | `FOCUS_COMPOSER` | Window key of the thread whose composer takes the focus once it shows; the composer clears it. |
 | `DRAFT_THREAD` | Window key of the draft thread, `{ workspaceId }` (`undefined` without one): a new thread being written before its first message is sent. |
+
+### MCP tools
+
+`useMcp` and `useMcpTool` call the workspace's MCP servers (its `.omp/mcp.json` and the project configs omp imports,
+as `omfp:mcp` lists them). The daemon talks to `http`/`sse` servers itself, no thread needed, with the OAuth login omp
+made: on `unauthorized`, send `/mcp reauth <name>` in any thread of the workspace (Reauthorize in `omfp:mcp`). `stdio`
+servers cannot be called yet (`bad_request`); an unknown server is `not_found`.
+
+```tsx
+import { Card, EmptyState, Log } from "omfp/kit";
+import { mcpText, useMcpTool } from "omfp/sdk";
+
+export default function Issues() {
+  const issues = useMcpTool("linear", "list_issues", { limit: 10 });
+  if (issues.error !== undefined) {
+    return <EmptyState icon="inbox" title="Linear failed">{String(issues.error)}</EmptyState>;
+  }
+  return <Card title="Linear issues"><Log lines={mcpText(issues.data).split("\n")} /></Card>;
+}
+```
 
 ### Jobs
 

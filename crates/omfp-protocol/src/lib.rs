@@ -45,7 +45,8 @@ pub use envelope::{
 };
 pub use lists::{ListThreadsParams, ThreadList, WorkspaceList};
 pub use mcp::{
-    McpReconnectParams, McpScope, McpServer, McpServers, McpSource, McpState, McpTransport,
+    McpCallParams, McpCallResult, McpReconnectParams, McpServer, McpServers, McpSource, McpState,
+    McpTool, McpTools, McpToolsParams, McpTransport,
 };
 pub use method::{Call, METHODS, Method, method_description, method_schemas};
 pub use params::{

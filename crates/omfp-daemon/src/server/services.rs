@@ -124,6 +124,8 @@ pub(crate) struct Services {
     pub declared: Declared,
     /// Interactive PTY sessions (TRM-100..105).
     pub terminals: Terminals,
+    /// The daemon's MCP client of the workspaces' remote servers (DMN-351).
+    pub mcp: crate::mcp_client::McpClient,
     /// Serializes index refreshes so their events never interleave.
     refresh: Arc<tokio::sync::Mutex<()>>,
     workspace_logs: Arc<Mutex<HashMap<String, Arc<WorkspaceLog>>>>,
@@ -186,6 +188,7 @@ impl Services {
             clock,
             jiff::tz::TimeZone::system(),
         );
+        let mcp = crate::mcp_client::McpClient::new(supervisor.omp_credentials());
         let services = Self {
             store,
             threads,
@@ -209,6 +212,7 @@ impl Services {
             jobs,
             declared,
             terminals: Terminals::default(),
+            mcp,
             refresh: Arc::new(tokio::sync::Mutex::new(())),
             workspace_logs: Arc::new(Mutex::new(HashMap::new())),
             settings: Arc::new(Mutex::new(SettingsState::default())),

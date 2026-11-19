@@ -285,6 +285,12 @@ by X", a cascade stop for everything a thread spawned, and an activity log of ag
 | AGT-090 | **`useJobs(workspaceId?)`** (`omfp/sdk`, M18): the declared jobs of the widget's workspace (or `workspaceId`) live from `jobs/<id>` (PRT-200): `{ jobs, error, loaded, run(name), kill(name), enable(name, enabled) }`, the actions calling PRT-204, `jobs.kill` on the job's running run and PRT-207 and rejecting with the method's error; `jobs` is `[]` and `loaded` `false` until the topic's state arrived. A widget reads a job's runs with `useCall("jobs.runs", { workspaceId, job })` (PRT-203). |
 | AGT-091 | **Declared jobs, for agents** (M18): `omfp://docs/widgets` MUST have a Declared jobs section — the file and its schema (`omfp://schemas/jobs.json`, DMN-331) with a manual, a scheduled prompt and a service example, the methods (`jobs.define` and the others, so an agent asked to "read my mail every morning" declares a `schedule` job with a `prompt`), what a run runs in (AGT-087's environment, `cwd`), one run per job, missed times, service restarts, that jobs belong to the workspace and survive the thread that declared them — and `useJobs`, init files' `omfp.jobs` and their run events (UI-748) with the warning that an init file's listener runs once per open window and never when none is open, so it may notify or show something but must not start runs or chain jobs. The widgets note (AGT-024) MUST name the file in one line. |
 
+### MCP tools
+
+| ID | Requirement |
+| --- | --- |
+| AGT-095 | **`useMcp`, `useMcpTool`, `mcpText`** (`omfp/sdk`, M19): `useMcp(server, { workspaceId? })` gives `{ tools, error, refreshing, refresh, call(tool, args?) }`, the tools of the widget's workspace's (or `workspaceId`'s) server `server` from `mcp.tools` (PRT-220) with `useCall`'s semantics (on mount, when its params change, on `refresh`; a null server lists nothing) and `call` running `mcp.call` (PRT-221, rejecting with its error); `useMcpTool(server, tool, args, { workspaceId? })` is `useCall("mcp.call", …)`'s `{ data, error, refreshing, refresh }` (`args` null calls nothing); `mcpText(result)` joins a result's `text` blocks with newlines. `omfp://docs/widgets` documents them in an MCP tools section: the daemon calls the workspace's `http`/`sse` servers itself with omp's login, `/mcp reauth <name>` in any thread renews one, stdio servers are refused. |
+
 ### Form controls
 
 | ID | Requirement |

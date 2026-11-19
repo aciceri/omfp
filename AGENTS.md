@@ -11,10 +11,11 @@ only be reachable from the human UI.
 
 ## Read first
 
-- `docs/specs/README.md` — index, conventions, decision log (D-01…D-20), open questions.
+- `docs/specs/README.md` — index, conventions, decision log (D-01…D-22), open questions.
 - `docs/specs/07-roadmap.md` — milestones and spike results (done: M0–M8 with M2b, M5b, M5c, M5d, M6b, M8b and M8c,
-  M10, M12, M13, M14, M18 workspace jobs; in progress: M9 hardening, M11 macOS desktop, M15 downloads without Nix, M16
-  media and file viewers, M17 workspace polish; the terminal was removed, D-06); `docs/specs/milestones.toml` —
+  M10, M12, M13, M14, M18 workspace jobs, M19 workspace MCP tools; in progress: M9 hardening, M11 macOS desktop, M15
+  downloads without Nix, M16 media and file viewers, M17 workspace polish; the terminal was removed, D-06);
+  `docs/specs/milestones.toml` —
   requirement IDs and `status` per milestone (enforced by `cargo xtask spec-trace`).
 - The spec for the area you touch (`00`…`09`).
 
@@ -116,9 +117,13 @@ crates/omfp-daemon    daemon library: omp adapter (omp.rs), agent port + FakeLau
                       the relay of an OAuth sign-in's loopback callback pasted from a remote browser (oauth_relay.rs:
                       the SSRF guard and the GET; supervisor/oauth.rs: the sign-ins each thread and the login wait on;
                       server/services/oauth.rs: `oauth.callback`);
-                      the MCP servers omp loads for a workspace (omp_mcp.rs: the config files omp reads, the `/mcp test`
-                      reply; supervisor/mcp.rs: checks by the thread's omp, reconnect by restart, M13; supervisor/restart.rs:
+                      the MCP servers of a workspace (omp_mcp.rs: the workspace's config files omp reads, a remote
+                      server's entry, the refused `/mcp` commands writing the user config, the `/mcp test` reply;
+                      supervisor/mcp.rs: checks by the thread's omp, reconnect by restart, M13; supervisor/restart.rs:
                       the one restart of a thread's omp and the restarts the daemon owes, with their reasons);
+                      the daemon as an MCP client of a workspace's `http`/`sse` servers, `mcp.tools`/`mcp.call` (mcp_client.rs;
+                      mcp_client/transport.rs: Streamable HTTP and legacy SSE; mcp_client/credentials.rs: omp's OAuth
+                      logins in its `agent.db`, refreshed under omp's lease, M19);
                       `thread.session`, a thread's session facts without omp's whole state (server/dispatch/session.rs);
                       the prompt history and `prompts.history` (server/prompts.rs; store migration 0010);
                       the options of `omfp daemon` over the config file's `[daemon]` (config.rs) and the config file
@@ -280,6 +285,13 @@ tag, the `omp-rpc` git tag in `Cargo.toml`, `omfp_core::OMP_VERSION` and the rel
   `/mcp reauth <name>` runs in the background (the prompt returns at once), opens the browser on omp's host itself and
   reports in later `command_output` frames (the OAuth URL, then `✓ Reauthorized "<name>" …`); the daemon reloads a
   thread whose MCP configs changed or whose server was reauthorized once it is free (DMN-200..204).
+- omp has no RPC command to call a tool without the model. It stores MCP OAuth logins in `agent/agent.db`
+  (`auth_credentials`, provider `mcp_oauth:profile:default:<url>`, `data` JSON with `access`, `refresh`, `expires`,
+  `tokenUrl`, …) and refreshes them only on demand (a connection when the token expires within 5 min, a 401/403), under
+  a lease in `auth_credential_refresh_leases` and by compare-and-set; the daemon's MCP client follows the same protocol
+  on the same rows (DMN-352, DMN-353). omp reads Claude Code's/Cursor's `~` MCP configs only with `enabledProviders`,
+  but always its own user `agent/mcp.json` (no switch); `/mcp add --scope user` and `/mcp enable|disable` of a
+  non-project server write it, so the daemon refuses them (DMN-350).
 - Resuming a session whose saved model is unusable (no credential for its provider, absent from the catalog) makes
   `omp --mode rpc-ui` exit at startup with `SessionModelRestoreError: Could not restore model <provider/id>`
   (fail-closed restore, `sdk.ts`); an explicit `--model` skips the restore and resumes the same session with that

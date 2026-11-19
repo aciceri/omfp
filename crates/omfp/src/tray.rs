@@ -293,7 +293,7 @@ impl Daemon {
         let exe = match std::env::current_exe() {
             Ok(exe) => exe,
             Err(error) => {
-                eprintln!("omfp daemon: no {item}, cannot find this executable: {error}");
+                note!("omfp daemon: no {item}, cannot find this executable: {error}");
                 return None;
             }
         };
@@ -312,7 +312,7 @@ impl Daemon {
             Action::OpenThread(thread) => self.open_window(Some(thread)),
             Action::OpenInBrowser => open_in_browser(&self.url),
             Action::Quit => {
-                eprintln!("omfp daemon: quit from the {place}");
+                note!("omfp daemon: quit from the {place}");
                 self.stop.request();
             }
         }
@@ -359,7 +359,7 @@ pub(crate) fn spawn_detached(command: &mut Command, name: &str, from: &str) {
             // Reaped while the caller lives.
             std::thread::spawn(move || child.wait());
         }
-        Err(error) => eprintln!("{from}: cannot start {name}: {error}"),
+        Err(error) => note!("{from}: cannot start {name}: {error}"),
     }
 }
 

@@ -115,7 +115,7 @@ pub fn commit_local_storage(id: &[u8; 16]) {
     let library = PathBuf::from(objc2_foundation::NSHomeDirectory().to_string()).join("Library");
     for database in local_storage_databases(&library, id) {
         if let Err(error) = wait_for_commit(&database, STORAGE_COMMIT_TIMEOUT) {
-            eprintln!(
+            note!(
                 "omfp desktop: the window's storage may miss its last changes ({}): {error}",
                 database.display()
             );
@@ -376,7 +376,7 @@ pub fn with_app_menu(
                     "omfp desktop",
                 ),
                 Err(error) => {
-                    eprintln!("omfp desktop: no new window, cannot find this executable: {error}");
+                    note!("omfp desktop: no new window, cannot find this executable: {error}");
                 }
             },
             Some(MenuAction::Zoom(step)) => {
@@ -388,7 +388,7 @@ pub fn with_app_menu(
                 let next = zoomed(*level, step);
                 match window.set_zoom(next) {
                     Ok(()) => *level = next,
-                    Err(error) => eprintln!("omfp desktop: cannot zoom: {error}"),
+                    Err(error) => note!("omfp desktop: cannot zoom: {error}"),
                 }
             }
             None => {}

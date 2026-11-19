@@ -7,6 +7,12 @@ The version's section is also the source of the GitHub release notes.
 
 ## Unreleased
 
+### Fixed
+
+- A daemon started with `omfp daemon` from a terminal that was closed later no longer fails with `internal error:
+  task … panicked with message "failed printing to stderr: Input/output error"` when a thread is opened (or on any
+  later log line): what can no longer be printed is dropped. The tray and `omfp desktop` messages too.
+
 ## 0.4.0 — 2026-11-19
 
 ### Added

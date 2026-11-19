@@ -503,6 +503,9 @@ pub fn run_with<A>(mut cli: Cli, attach: impl FnOnce(&DaemonHandle) -> A) -> any
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .with_writer(std::io::stderr)
+        // A started-from-a-terminal daemon outlives its terminal (DMN-355): a line that cannot be written is dropped.
+        // Left on, tracing-subscriber reports the failed write with `eprintln!`, which panics the task that logged.
+        .log_internal_errors(false)
         .init();
     let xdg_config_home = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
     let home = std::env::var_os("HOME").map(PathBuf::from);

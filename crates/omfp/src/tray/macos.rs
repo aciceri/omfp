@@ -90,10 +90,10 @@ impl MenuBar {
             .and_then(|()| built.recv().map_err(|error| error.to_string()))
             .and_then(|result| result);
         if let Err(error) = result {
-            eprintln!("omfp daemon: no menu bar item: {error}");
+            note!("omfp daemon: no menu bar item: {error}");
             return None;
         }
-        eprintln!("omfp daemon: in the menu bar");
+        note!("omfp daemon: in the menu bar");
         let follow = tokio::spawn(follow(app.clone(), status, ids, shown, threads));
         Some(Self {
             app: app.clone(),
@@ -139,11 +139,11 @@ async fn follow(
             match native_menu(&on_main, &items) {
                 Ok(native) => {
                     if let Err(error) = item.set_menu(Some(native)) {
-                        eprintln!("omfp daemon: cannot update the menu: {error}");
+                        note!("omfp daemon: cannot update the menu: {error}");
                     }
                     *shown.lock().unwrap_or_else(PoisonError::into_inner) = items;
                 }
-                Err(error) => eprintln!("omfp daemon: cannot build the menu: {error}"),
+                Err(error) => note!("omfp daemon: cannot build the menu: {error}"),
             }
             let _ = item.set_tooltip(Some(summary));
             if let Some(state) = icon_change {

@@ -128,7 +128,7 @@ pub fn run(args: &Args) -> anyhow::Result<i32> {
             ThemePush::Push { target, file } => {
                 runtime.spawn(push_theme(target, file, watch::POLL));
             }
-            ThemePush::NeedsToken => eprintln!(
+            ThemePush::NeedsToken => note!(
                 "omfp desktop: the theme file of this machine is not pushed to {base}: pass --token"
             ),
             ThemePush::NoThemeFile => {}
@@ -378,7 +378,7 @@ pub async fn push_theme(target: Target, file: PathBuf, period: Duration) {
     let _watcher = watch::watch(watched, period, sender.clone());
     while let Some(css) = changes.recv().await {
         if let Err(error) = set_theme(&target, css).await {
-            eprintln!(
+            note!(
                 "omfp desktop: cannot push the theme {} to {}: {error:#}",
                 file.display(),
                 target.url
@@ -429,7 +429,7 @@ fn open_window(
     // UI-222: the Dock's and the app switcher's icon, registered before AppKit starts (a folder otherwise).
     #[cfg(target_os = "macos")]
     if !macos::register_app_icon() {
-        eprintln!("omfp desktop: cannot set the app icon");
+        note!("omfp desktop: cannot set the app icon");
     }
     let builder = tauri::Builder::default();
     // UI-281, UI-282: the app menu with New Window and the zoom items on their macOS keys.
@@ -564,7 +564,7 @@ fn on_page_load(
                     crate::tray::open_in_browser(browser.as_str());
                 }
                 if let Err(error) = window.navigate(home.clone()) {
-                    eprintln!("omfp desktop: cannot go back to {home}: {error}");
+                    note!("omfp desktop: cannot go back to {home}: {error}");
                 }
             }
         }
@@ -662,7 +662,7 @@ fn smoke_check(window: WebviewWindow, scheme: Option<String>, wait: Option<Strin
             }
             std::thread::sleep(Duration::from_millis(100));
         }
-        eprintln!("omfp desktop: the shell was not ready: {last}");
+        note!("omfp desktop: the shell was not ready: {last}");
         window.app_handle().exit(1);
     });
 }

@@ -571,6 +571,8 @@ requirements = [
   "ENV-034",
   # Deterministic thread deletion (#125)
   "DMN-039",
+  # A daemon outliving the terminal it was started from
+  "DMN-355",
 ]
 
 [M10]

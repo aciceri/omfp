@@ -105,9 +105,10 @@ impl LocalDaemon {
     /// random port (ARC-003).
     pub fn find_or_start(&self) -> anyhow::Result<SocketAddr> {
         if let Some(info) = omfp_daemon::discover(&self.data_dir)? {
-            eprintln!(
+            note!(
                 "omfp desktop: found the daemon (pid {}) on {}",
-                info.pid, info.addr
+                info.pid,
+                info.addr
             );
             return Ok(info.addr);
         }
@@ -120,7 +121,7 @@ impl LocalDaemon {
                         && let Some(fallback) =
                             fallback_bind(self.bind, self.explicit_bind, port_in_use(self.bind))
                     {
-                        eprintln!(
+                        note!(
                             "omfp desktop: {} is taken, starting the daemon on {fallback}",
                             self.bind
                         );
@@ -147,7 +148,7 @@ impl LocalDaemon {
         if let Some(mode) = create_private_dir(&self.data_dir)
             .with_context(|| format!("cannot create {}", self.data_dir.display()))?
         {
-            eprintln!(
+            note!(
                 "omfp desktop: {} was open to other users (mode {mode:o}): its mode is now 0700",
                 self.data_dir.display()
             );
@@ -163,7 +164,7 @@ impl LocalDaemon {
             .process_group(0)
             .spawn()
             .context("cannot start omfp daemon")?;
-        eprintln!(
+        note!(
             "omfp desktop: started the daemon (pid {}), log in {}",
             child.id(),
             path.display()

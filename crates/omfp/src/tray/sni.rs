@@ -362,12 +362,12 @@ fn run(
             drop(serving);
         }
         Err(error) => {
-            eprintln!("omfp daemon: no tray icon: {error:#}");
+            note!("omfp daemon: no tray icon: {error:#}");
             let _ = ready.send(None);
         }
     });
     if let Err(error) = result {
-        eprintln!("omfp daemon: no tray icon: {error}");
+        note!("omfp daemon: no tray icon: {error}");
         let _ = ready.send(None);
     }
 }
@@ -393,7 +393,7 @@ async fn serve(
             }
         }
         drop(registration);
-        eprintln!(
+        note!(
             "omfp daemon: the session bus closed: no tray icon until a session bus answers again"
         );
         registration = loop {
@@ -402,7 +402,7 @@ async fn serve(
                 break next;
             }
         };
-        eprintln!("omfp daemon: tray icon back on the session bus");
+        note!("omfp daemon: tray icon back on the session bus");
     }
 }
 
@@ -427,7 +427,7 @@ async fn follow(
             if let Err(error) =
                 connection.emit_signal(None, path, interface, signal, parameters.as_ref())
             {
-                eprintln!("omfp daemon: tray signal {signal} failed: {error}");
+                note!("omfp daemon: tray signal {signal} failed: {error}");
             }
         };
         emit(
@@ -579,7 +579,7 @@ fn own_and_watch(connection: &gio::DBusConnection) -> Option<gio::SignalSubscrip
         .and_then(|reply| reply.get::<(u32,)>())
         .is_some_and(|(reply,)| reply == NAME_PRIMARY_OWNER);
     if !owned {
-        eprintln!("omfp daemon: no tray icon: cannot own {name} on the session bus");
+        note!("omfp daemon: no tray icon: cannot own {name} on the session bus");
         return None;
     }
     let watcher = connection.signal_subscribe(
@@ -617,9 +617,7 @@ fn own_and_watch(connection: &gio::DBusConnection) -> Option<gio::SignalSubscrip
                 if reply.ok().and_then(|reply| reply.get::<(bool,)>()) == Some((true,)) {
                     register_item(&connection, &name);
                 } else {
-                    eprintln!(
-                        "omfp daemon: no StatusNotifierWatcher on the session bus: no tray icon until one appears"
-                    );
+                    note!("omfp daemon: no StatusNotifierWatcher on the session bus: no tray icon until one appears");
                 }
             }
         },
@@ -670,7 +668,7 @@ fn register_item(connection: &gio::DBusConnection, service: &str) {
         None::<&gio::Cancellable>,
         |reply| {
             if let Err(error) = reply {
-                eprintln!("omfp daemon: the StatusNotifierWatcher refused the tray icon: {error}");
+                note!("omfp daemon: the StatusNotifierWatcher refused the tray icon: {error}");
             }
         },
     );

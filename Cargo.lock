@@ -1085,7 +1085,7 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "e2e"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -1182,7 +1182,7 @@ checksum = "f0440157235aa4badd45ea073af8de2ba44ffead74bf8a7833b215533c36f08e"
 
 [[package]]
 name = "fake-llm"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2898,7 +2898,7 @@ dependencies = [
 
 [[package]]
 name = "omfp"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2923,7 +2923,7 @@ dependencies = [
 
 [[package]]
 name = "omfp-core"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "omp-rpc",
  "proptest",
@@ -2933,7 +2933,7 @@ dependencies = [
 
 [[package]]
 name = "omfp-daemon"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2979,7 +2979,7 @@ dependencies = [
 
 [[package]]
 name = "omfp-protocol"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "insta",
  "omfp-core",
@@ -2990,7 +2990,7 @@ dependencies = [
 
 [[package]]
 name = "omfp-testkit"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "fake-llm",
@@ -6602,7 +6602,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.3.1"
+version = "0.4.0"
 dependencies = [
  "anyhow",
  "clap",

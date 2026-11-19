@@ -7,6 +7,36 @@ The version's section is also the source of the GitHub release notes.
 
 ## Unreleased
 
+## 0.4.0 — 2026-11-19
+
+### Added
+
+- Widgets can call the tools of the workspace's MCP servers, with no thread running: `useMcp(server)` lists a
+  server's tools and calls them, `useMcpTool(server, tool, args)` calls one tool like `useCall`, and `mcpText(result)`
+  reads its text; agents and scripts reach the same with the protocol methods `mcp.tools` and `mcp.call`. The daemon
+  talks to `http` and `sse` servers itself with the OAuth login made with `/mcp reauth <name>` and renews it the way
+  oh-my-pi does, so threads and widgets share one login. `stdio` servers cannot be called this way yet (#205).
+- Mermaid diagrams: a `mermaid` code block in a reply, a subagent's output, a widget or a Markdown file preview is
+  drawn in the theme's colors and fonts, with a Source toggle to see its text; an invalid diagram stays code with
+  Mermaid's error below it (#200).
+
+### Changed
+
+- MCP servers belong to the workspace: `omfp:mcp` and `workspaces.mcp_servers` list only the workspace's own config
+  files (`.omp/mcp.json`, `.claude/`, `.cursor/mcp.json`, `.vscode/mcp.json`, a root `mcp.json`), no longer omfp's
+  profile `agent/mcp.json` nor Claude Code's or Cursor's configs under `~`, and `/mcp` commands that would write a
+  user-level config (`--scope user`, `/mcp enable|disable` of a server not in the workspace's `.omp/mcp.json`) are
+  refused. `McpServers` no longer carries `userConfig`, nor a server's source its `scope` (#205).
+
+  **Migration:** move servers from `<data-dir>/omp-profile/agent/mcp.json` into each workspace's `.omp/mcp.json`;
+  existing logins keep working.
+- The card of an LSP `rename` shows the old and new symbol name, the total (`6 edits in 3 files`) and each file's
+  edit count; a preview's files open as they are (the renamed file at the call's line) rather than against `HEAD`, and
+  a list of more than 8 files collapses behind a "… N more files" button (#193).
+- When the which-key panel (`Space`, `g`, …) has more keys than fit a short window, only its keys scroll, between its
+  title and the `esc` row, and the edge with more keys past it fades out, so the keys below the fold no longer go
+  unnoticed where scrollbars are hidden (#192).
+
 ### Fixed
 
 - `omfp:jobs` no longer shows "never ran" next to the running state while a job's first run is in progress (#194)
@@ -16,14 +46,19 @@ The version's section is also the source of the GitHub release notes.
   view (also of a tool's images and of `omfp:browser`'s screenshots) zooms and pans like an image file: the zoom
   buttons, `100%`, Fit, Ctrl with the wheel, two fingers on a touch screen, dragging.
 
-### Changed
+### Release limitations
 
-- The card of an LSP `rename` shows the old and new symbol name, the total (`6 edits in 3 files`) and each file's
-  edit count; a preview's files open as they are (the renamed file at the call's line) rather than against `HEAD`, and
-  a list of more than 8 files collapses behind a "… N more files" button (#193).
-- When the which-key panel (`Space`, `g`, …) has more keys than fit a short window, only its keys scroll, between its
-  title and the `esc` row, and the edge with more keys past it fades out, so the keys below the fold no longer go
-  unnoticed where scrollbars are hidden (#192).
+- macOS downloads are signed ad-hoc and are not notarized unless the release explicitly says otherwise. On first
+  launch, allow the app in System Settings → Privacy & Security → Open Anyway. Updates may request microphone
+  permission again.
+- The Flatpak deliberately runs oh-my-pi, git and job commands on the host with your account's permissions; it is
+  not an isolation boundary. Keep workspaces under your home directory. On NixOS, use the Nix package or configure
+  a compatible `omp_bin`. Job processes left behind after their shell exits are not killed on the host.
+- Standalone downloads do not cover Windows, Intel Macs or ARM Linux.
+- Multi-select prompts of the `ask` tool do not show yet which choices are checked: oh-my-pi 18.22 sends that state,
+  but omfp's prompt card does not use it yet.
+- oh-my-pi always loads its own user `agent/mcp.json` from omfp's profile: omfp never writes it and neither lists nor
+  calls its servers, but a thread's agent still sees a hand-written one.
 
 ## 0.3.1 — 2026-11-18
 

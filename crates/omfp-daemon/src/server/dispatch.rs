@@ -80,6 +80,7 @@ async fn run(services: &Services, principal: &Principal, call: Call) -> Reply {
         Call::SystemHello(_)
         | Call::Subscribe(_)
         | Call::Unsubscribe(_)
+        | Call::Watch(_)
         | Call::WidgetsReport(_)
         | Call::WindowsAnswer(_)
         | Call::ThreadLiveConnect(_)

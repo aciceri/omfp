@@ -275,8 +275,8 @@ async fn open_file_asks_the_window_last_used_on_the_thread_and_fails_without_one
     );
     assert_eq!(opened(), None, "nothing to open without a window");
 
-    let first = h.supervisor.watch(&id, 1).await.unwrap();
-    let second = h.supervisor.watch(&id, 2).await.unwrap();
+    let first = h.supervisor.watch(&id, 1, true).await.unwrap();
+    let second = h.supervisor.watch(&id, 2, true).await.unwrap();
     h.supervisor.open_file(&id, "src/a.rs", Some(12)).unwrap();
     let request = opened().unwrap();
     assert_eq!(
@@ -307,6 +307,50 @@ async fn open_file_asks_the_window_last_used_on_the_thread_and_fails_without_one
     );
 }
 
+// spec: DMN-357, DMN-060
+#[tokio::test]
+async fn the_window_last_used_ignores_subscriptions_that_only_keep_the_thread() {
+    let h = harness(|_| {});
+    let id = h.thread();
+    let log = h.log(&id).await;
+    let asked = |path: &str| {
+        h.supervisor.open_file(&id, path, None)?;
+        Ok::<_, String>(log.with_state(|state| state.open_file.clone().unwrap().connection))
+    };
+
+    let shown = h.supervisor.watch(&id, 1, true).await.unwrap();
+    let kept = h.supervisor.watch(&id, 2, false).await.unwrap();
+    assert_eq!(
+        asked("a.md"),
+        Ok(1),
+        "not the window that subscribed last, which keeps it"
+    );
+    h.supervisor.used(&id, 2);
+    assert_eq!(
+        asked("b.md"),
+        Ok(1),
+        "a keeping window that drives the thread does not count"
+    );
+
+    kept.set_watching(true);
+    assert_eq!(
+        asked("c.md"),
+        Ok(2),
+        "shown again: the window that watched it last"
+    );
+    kept.set_watching(false);
+    assert_eq!(asked("d.md"), Ok(1));
+
+    drop(shown);
+    assert_eq!(
+        asked("e.md"),
+        Err(NO_WINDOW.to_owned()),
+        "a window that only keeps the thread is no window for the agent"
+    );
+    assert_eq!(h.supervisor.watchers(&id), 0);
+    drop(kept);
+}
+
 // spec: DMN-125, DMN-126
 #[tokio::test]
 async fn notify_reaches_the_window_last_used_on_the_thread_and_fails_without_one() {
@@ -321,8 +365,8 @@ async fn notify_reaches_the_window_last_used_on_the_thread_and_fails_without_one
     );
     assert_eq!(notified(), None, "nobody to notify without a window");
 
-    let first = h.supervisor.watch(&id, 1).await.unwrap();
-    let second = h.supervisor.watch(&id, 2).await.unwrap();
+    let first = h.supervisor.watch(&id, 1, true).await.unwrap();
+    let second = h.supervisor.watch(&id, 2, true).await.unwrap();
     h.supervisor.notify(&id, "Tests", "All green").unwrap();
     let request = notified().unwrap();
     assert_eq!(
@@ -1166,7 +1210,7 @@ async fn the_reaper_stops_only_idle_settled_unwatched_threads() {
     for id in [&idle, &watched, &busy] {
         h.supervisor.start(id).await.unwrap();
     }
-    let guard = h.supervisor.watch(&watched, 1).await.unwrap();
+    let guard = h.supervisor.watch(&watched, 1, true).await.unwrap();
     assert_eq!(h.supervisor.watchers(&watched), 1);
     h.launcher.process(2).emit(vec![agent_start()]);
     h.wait(&busy, "the turn start", |state| !state.settled)
@@ -1200,6 +1244,54 @@ async fn the_reaper_stops_only_idle_settled_unwatched_threads() {
     })
     .await;
     reaper.abort();
+}
+
+// spec: DMN-356, DMN-034, PRT-222, PRT-223
+#[tokio::test(start_paused = true)]
+async fn the_reaper_stops_an_idle_thread_a_window_only_keeps_and_not_one_watched_again() {
+    let timeout = Duration::from_mins(1);
+    let h = harness(|config| config.idle_timeout = timeout);
+    let (kept, shown) = (h.thread(), h.thread());
+    for id in [&kept, &shown] {
+        h.supervisor.start(id).await.unwrap();
+    }
+    let _kept = h.supervisor.watch(&kept, 1, false).await.unwrap();
+    let shown_again = h.supervisor.watch(&shown, 1, false).await.unwrap();
+    shown_again.set_watching(true);
+    assert_eq!(
+        (h.supervisor.watchers(&kept), h.supervisor.watchers(&shown)),
+        (0, 1)
+    );
+
+    // One reaper pass once both threads are idle for the timeout: the clock and the pass are driven by the test.
+    tokio::time::advance(timeout).await;
+    h.supervisor.reap_idle().await;
+    h.wait(&kept, "the idle stop of the kept thread", |state| {
+        state.process == ProcessState::Stopped
+    })
+    .await;
+    assert!(
+        h.supervisor.is_running(&shown),
+        "a thread watched again is not stopped"
+    );
+    assert_eq!(
+        h.supervisor.status(&kept).process,
+        ProcessState::Stopped,
+        "nothing restarts a kept thread until it is used"
+    );
+
+    shown_again.set_watching(false);
+    h.supervisor.reap_idle().await;
+    assert!(
+        h.supervisor.is_running(&shown),
+        "the idle timeout counts from the moment it stopped watching"
+    );
+    tokio::time::advance(timeout).await;
+    h.supervisor.reap_idle().await;
+    h.wait(&shown, "the stop once only kept", |state| {
+        state.process == ProcessState::Stopped
+    })
+    .await;
 }
 
 // spec: DMN-005

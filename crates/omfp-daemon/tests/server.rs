@@ -619,6 +619,60 @@ async fn unsubscribe_stops_delivery_of_the_topic() {
     assert_eq!(leaked, Vec::<Value>::new());
 }
 
+// spec: PRT-222, PRT-223
+#[tokio::test(flavor = "multi_thread")]
+async fn a_thread_subscription_kept_unwatched_switches_to_watched_on_the_same_stream() {
+    let daemon = daemon(&[]).await;
+    let mut client = daemon.client("omfp/web").await;
+    let thread = create_thread(&mut client).await;
+    let topic = format!("thread/{thread}");
+    let supervisor = daemon.handle.supervisor();
+
+    let subscribed = client
+        .ok("subscribe", json!({ "topic": topic, "watch": false }))
+        .await;
+    assert_eq!(subscribed["mode"], "snapshot");
+    assert_eq!(supervisor.watchers(&thread), 0, "kept, not watched");
+
+    let shown = client
+        .ok("watch", json!({ "topic": topic, "watch": true }))
+        .await;
+    assert_eq!(shown, json!({}), "no new snapshot");
+    assert_eq!(supervisor.watchers(&thread), 1, "watched again");
+    client
+        .ok("watch", json!({ "topic": topic, "watch": false }))
+        .await;
+    assert_eq!(supervisor.watchers(&thread), 0, "kept again");
+    client.ok("subscribe", json!({ "topic": topic })).await;
+    assert_eq!(
+        supervisor.watchers(&thread),
+        1,
+        "a subscribe watches by default"
+    );
+
+    client.ok("unsubscribe", json!({ "topic": topic })).await;
+    let gone = client
+        .call("watch", json!({ "topic": topic, "watch": true }))
+        .await
+        .unwrap_err();
+    assert_eq!(gone["code"], "not_found", "{gone}");
+
+    let index = client
+        .call("subscribe", json!({ "topic": "index", "watch": false }))
+        .await
+        .unwrap_err();
+    assert_eq!(index["code"], "bad_request", "{index}");
+    client.ok("subscribe", json!({ "topic": "index" })).await;
+    client
+        .ok("watch", json!({ "topic": "index", "watch": true }))
+        .await;
+    let unwatched = client
+        .call("watch", json!({ "topic": "index", "watch": false }))
+        .await
+        .unwrap_err();
+    assert_eq!(unwatched["code"], "bad_request", "{unwatched}");
+}
+
 // spec: DMN-071, PRT-011
 #[tokio::test(flavor = "multi_thread")]
 async fn omp_errors_reach_the_client_with_omps_code() {

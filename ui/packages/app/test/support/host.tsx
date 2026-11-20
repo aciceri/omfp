@@ -48,6 +48,8 @@ export class FakeClient implements SdkClient {
   readonly calls: CallRecord[] = [];
   readonly subscribed: Topic[] = [];
   readonly unsubscribed: Topic[] = [];
+  /** Every `watch` (PRT-223): the topic and whether it watches its thread from then on. */
+  readonly watches: Array<[Topic, boolean]> = [];
   /** Answers for calls by method, applied as soon as the call is made (else the call stays pending). */
   readonly answers = new Map<CallMethod, (params: unknown) => unknown>();
   #waiters: Array<() => void> = [];
@@ -110,6 +112,10 @@ export class FakeClient implements SdkClient {
     this.unsubscribed.push(topic);
     this.model.untrack(topic);
     this.notify();
+  }
+
+  watch(topic: Topic, watch: boolean): void {
+    this.watches.push([topic, watch]);
   }
 
   readonly #transient = new Set<(frame: TransientFrame) => void>();

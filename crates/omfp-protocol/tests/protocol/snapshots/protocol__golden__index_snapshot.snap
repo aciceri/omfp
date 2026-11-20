@@ -133,7 +133,8 @@ expression: snapshot
       },
       "theme": "rose-pine",
       "showXdevNotices": true,
-      "skin": "boring"
+      "skin": "boring",
+      "recentThreads": 30
     },
     "keymap": [
       {

@@ -155,6 +155,8 @@ theme = "synth"                # synth | catppuccin | gruvbox | tokyo-night | no
                                # | paper | clay | primer | accent | matugen (the user theme below)
 show_xdev_notices = false      # informational MCP mount/unmount rows in the transcript
 skin = "crush"                 # crush | boring: the calm, neutral look (`:set skin=boring`), with any theme
+recent_threads = 20            # hidden threads a window keeps for instant switching (window memory, not omp), 0–100
+                               # or "all" (every thread opened in the window; a long thread holds several MB)
 
 [ui.fonts]                     # prose, ui, code: CSS font families
 prose = "Literata, serif"

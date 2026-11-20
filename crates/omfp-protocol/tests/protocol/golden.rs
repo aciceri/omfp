@@ -28,9 +28,9 @@ use omfp_protocol::{
 };
 use omfp_protocol::{
     AnswerWindowParams, CheckWidgetParams, CommandSource, KeymapMode, ListWindowsParams,
-    RanInWindow, RunFailure, RunInWindowParams, ViewSource, WidgetChecked, WindowAnswer,
-    WindowBinding, WindowCommand, WindowList, WindowRef, WindowReport, WindowState, WindowSummary,
-    WindowView,
+    RanInWindow, RunFailure, RunInWindowParams, ViewSource, WatchParams, WidgetChecked,
+    WindowAnswer, WindowBinding, WindowCommand, WindowList, WindowRef, WindowReport, WindowState,
+    WindowSummary, WindowView,
 };
 use omfp_protocol::{
     AuthProvider, AuthProviders, AuthStatus, LoggedIn, LoggedOut, LoginCancelled,
@@ -149,6 +149,7 @@ fn system_examples() -> Vec<(&'static str, Value)> {
                     epoch: "e7".to_owned(),
                     seq: 1200,
                 }),
+                watch: None,
             },
             &SubscribeResult::Snapshot {
                 epoch: "e9".to_owned(),
@@ -159,6 +160,13 @@ fn system_examples() -> Vec<(&'static str, Value)> {
         example::<method::Unsubscribe>(
             TopicParams {
                 topic: Topic::Index,
+            },
+            &Empty {},
+        ),
+        example::<method::Watch>(
+            WatchParams {
+                topic: Topic::Thread(THREAD_ID.to_owned()),
+                watch: false,
             },
             &Empty {},
         ),
@@ -1978,12 +1986,82 @@ fn subscribe_without_since_omits_it() {
     let call = Call::Subscribe(SubscribeParams {
         topic: Topic::Index,
         since: None,
+        watch: None,
     });
     let request = serde_json::to_value(Request::new("c7", call)).unwrap();
     assert_eq!(
         request,
         json!({ "type": "request", "id": "c7", "method": "subscribe", "params": { "topic": "index" } })
     );
+}
+
+// spec: UI-996
+#[test]
+fn recent_threads_is_a_number_or_all() {
+    for (wire, value) in [
+        (json!(7), omfp_protocol::RecentThreads::Count(7)),
+        (
+            json!("all"),
+            omfp_protocol::RecentThreads::All(omfp_protocol::AllThreads::All),
+        ),
+    ] {
+        let settings: omfp_protocol::UiSettings =
+            serde_json::from_value(json!({ "recentThreads": wire })).unwrap();
+        assert_eq!(settings.recent_threads, Some(value));
+        assert_eq!(
+            serde_json::to_value(&settings).unwrap()["recentThreads"],
+            wire
+        );
+    }
+    for wrong in [json!("some"), json!(-1), json!(true)] {
+        assert!(
+            serde_json::from_value::<omfp_protocol::UiSettings>(json!({ "recentThreads": wrong }))
+                .is_err(),
+            "{wrong}"
+        );
+    }
+}
+
+// spec: PRT-222, PRT-223
+#[test]
+fn a_thread_subscription_may_be_kept_unwatched_and_toggled() {
+    let topic = Topic::Thread(THREAD_ID.to_owned());
+    let kept = Call::Subscribe(SubscribeParams {
+        topic: topic.clone(),
+        since: None,
+        watch: Some(false),
+    });
+    let request = serde_json::to_value(Request::new("c8", kept.clone())).unwrap();
+    assert_eq!(
+        request["params"],
+        json!({ "topic": format!("thread/{THREAD_ID}"), "watch": false })
+    );
+    assert_eq!(
+        decode_request(&request.to_string()).unwrap().call,
+        kept,
+        "watch round-trips"
+    );
+    let watched = decode_request(&format!(
+        r#"{{"type":"request","id":"c9","method":"subscribe","params":{{"topic":"thread/{THREAD_ID}"}}}}"#
+    ))
+    .unwrap();
+    assert!(
+        matches!(
+            watched.call,
+            Call::Subscribe(SubscribeParams { watch: None, .. })
+        ),
+        "absent: watched"
+    );
+
+    let toggle = decode_request(&format!(
+        r#"{{"type":"request","id":"c10","method":"watch","params":{{"topic":"thread/{THREAD_ID}","watch":true}}}}"#
+    ))
+    .unwrap();
+    assert_eq!(toggle.call, Call::Watch(WatchParams { topic, watch: true }));
+    let missing = decode_request(&format!(
+        r#"{{"type":"request","id":"c11","method":"watch","params":{{"topic":"thread/{THREAD_ID}"}}}}"#
+    ));
+    assert!(missing.is_err(), "`watch` needs its flag");
 }
 
 #[test]

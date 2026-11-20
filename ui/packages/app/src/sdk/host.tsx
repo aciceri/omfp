@@ -33,21 +33,25 @@ export interface SdkClient extends ModelSource {
   /** Follows `topic`; a no-op while it is followed, unless its subscription failed (then it is retried). */
   subscribe(topic: Topic): void;
   unsubscribe(topic: Topic): void;
+  /** Whether followed thread `topic` watches its thread (PRT-222), on its live subscription (PRT-223). */
+  watch(topic: Topic, watch: boolean): void;
   /** Transient frames of followed topics (PRT-054) until the returned function is called. */
   onTransient(listener: (frame: TransientFrame) => void): () => void;
   /** The daemon's requests to this window (PRT-124) until the returned function is called. */
   onWindowRequest(listener: (frame: WindowRequestFrame) => void): () => void;
 }
 
-/** How many threads stay followed after no widget shows them any more (UI-335). */
-export const RECENT_THREADS = 5;
+/** How many threads stay followed after no widget shows them any more, without `[ui] recent_threads` (UI-335, UI-996). */
+export const DEFAULT_RECENT_THREADS = 20;
 
 /** Topics followed while at least one widget needs them. A `thread/<id>` topic stays followed after its last release,
- * among the {@link RECENT_THREADS} most recently released ones, so showing that thread again needs no new snapshot: its
- * state is already in the model and kept live (UI-335). A kept thread gone from the index (deleted) is released. Any
- * other topic goes in a microtask after its last release, unless retained again by then: a tab or view hidden while
- * another one following the same topic shows (one React commit cleans up the hidden one's effects, then runs the shown
- * one's) leaves it followed, its state in the model. */
+ * among the most recently released ones (`[ui] recent_threads`, default {@link DEFAULT_RECENT_THREADS}; `"all"`: every
+ * one, until the window closes), so showing
+ * that thread again needs no new snapshot: its state is already in the model and kept live (UI-335). A kept thread is
+ * not watched (UI-997): its omp may stop when idle, and it is watched again once a widget shows it. A kept thread gone
+ * from the index (deleted) is released. Any other topic goes in a microtask after its last release, unless retained
+ * again by then: a tab or view hidden while another one following the same topic shows (one React commit cleans up
+ * the hidden one's effects, then runs the shown one's) leaves it followed, its state in the model. */
 export class TopicRefs {
   readonly #client: SdkClient;
   readonly #counts = new Map<Topic, number>();
@@ -55,10 +59,12 @@ export class TopicRefs {
   readonly #recent = new Set<Topic>();
   /** Released topics of other kinds, unsubscribed in a microtask unless retained again. */
   readonly #released = new Set<Topic>();
+  /** How many released threads stay followed (UI-996); infinite for `"all"`. */
+  #limit = DEFAULT_RECENT_THREADS;
 
   constructor(client: SdkClient, frames: FrameStore) {
     this.#client = client;
-    frames.subscribe(() => this.#prune(frames.getSnapshot()));
+    frames.subscribe(() => this.#onFrame(frames.getSnapshot()));
   }
 
   /** Follows `topic` until the returned function is called (as many times as it was retained). */
@@ -66,7 +72,10 @@ export class TopicRefs {
     const count = this.#counts.get(topic) ?? 0;
     this.#counts.set(topic, count + 1);
     if (count === 0) {
-      this.#recent.delete(topic);
+      if (this.#recent.delete(topic)) {
+        // Shown again: watched on the same subscription (UI-997).
+        this.#client.watch(topic, true);
+      }
       this.#released.delete(topic);
       // A no-op for a kept topic, unless its subscription failed: then it is retried.
       this.#client.subscribe(topic);
@@ -87,8 +96,8 @@ export class TopicRefs {
     };
   }
 
-  /** Keeps a released thread topic followed (the oldest kept one goes over the bound); unsubscribes anything else in a
-   * microtask, unless it is retained again by then. */
+  /** Keeps a released thread topic followed but unwatched (the oldest kept ones go over the bound); unsubscribes
+   * anything else in a microtask, unless it is retained again by then. */
   #keep(topic: Topic): void {
     if (parseTopic(topic)?.kind !== "thread") {
       this.#released.add(topic);
@@ -100,8 +109,16 @@ export class TopicRefs {
       return;
     }
     this.#recent.add(topic);
+    this.#trim();
+    if (this.#recent.has(topic)) {
+      this.#client.watch(topic, false);
+    }
+  }
+
+  /** Releases the oldest kept threads over the bound. */
+  #trim(): void {
     for (const oldest of this.#recent) {
-      if (this.#recent.size <= RECENT_THREADS) {
+      if (this.#recent.size <= this.#limit) {
         break;
       }
       this.#recent.delete(oldest);
@@ -109,9 +126,15 @@ export class TopicRefs {
     }
   }
 
-  /** Releases the kept threads the live index no longer lists. */
-  #prune(snapshot: Snapshot): void {
-    if (this.#recent.size === 0 || !snapshot.dirty.index) {
+  /** Follows the bound of the settings, and releases the kept threads the live index no longer lists. */
+  #onFrame(snapshot: Snapshot): void {
+    if (!snapshot.dirty.index) {
+      return;
+    }
+    const bound = snapshot.index.settings.ui.recentThreads ?? DEFAULT_RECENT_THREADS;
+    this.#limit = bound === "all" ? Number.POSITIVE_INFINITY : bound;
+    this.#trim();
+    if (this.#recent.size === 0) {
       return;
     }
     const index = snapshot.topics.find((state) => state.topic === INDEX_TOPIC);

@@ -148,6 +148,7 @@ async fn connection_repository_and_workspace_methods_return_their_declared_resul
         .typed::<Subscribe>(SubscribeParams {
             topic: Topic::Index,
             since: None,
+            watch: None,
         })
         .await;
     assert!(matches!(subscribed, SubscribeResult::Snapshot { .. }));

@@ -246,6 +246,26 @@ pub struct UiSettings {
     /// The skin (UI-794): `crush` (absent, the default) or the opt-in `boring`; independent of `theme`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skin: Option<Skin>,
+    /// How many hidden threads each window keeps followed for a quick return (UI-996): a number (0..=100, default 20)
+    /// or `"all"`. Their states stay in the window's memory, but their omp processes are not kept alive (PRT-222).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recent_threads: Option<RecentThreads>,
+}
+
+/// How many hidden threads a window keeps followed (UI-996): at most a number (0..=100; 0 keeps none), or `"all"`,
+/// every thread shown in the window until it is closed or reloaded.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum RecentThreads {
+    Count(u8),
+    All(AllThreads),
+}
+
+/// `"all"`: no bound on the threads a window keeps (UI-996).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum AllThreads {
+    All,
 }
 
 /// Row height and spacing of the UI.

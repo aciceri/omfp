@@ -32,6 +32,7 @@ pub const CONNECTION_ONLY: &[&str] = &[
     "system.hello",
     "subscribe",
     "unsubscribe",
+    "watch",
     "widgets.report",
     "windows.answer",
     "thread.live_connect",

@@ -153,6 +153,18 @@ describe(":set", () => {
     expect(SET_KEYS.filter((key) => key.startsWith("skin="))).toEqual(["skin=crush", "skin=boring"]);
   });
 
+  // spec: UI-996, UI-097
+  test("`recent_threads=` takes 0 to 100 kept threads or all, and refuses anything else", () => {
+    expect(parseSet("recent_threads=40")).toEqual({ ok: true, patch: { ui: { recentThreads: 40 } } });
+    expect(parseSet("recent_threads=0")).toEqual({ ok: true, patch: { ui: { recentThreads: 0 } } });
+    expect(parseSet("recent_threads=all")).toEqual({ ok: true, patch: { ui: { recentThreads: "all" } } });
+    for (const value of ["101", "-1", "2.5", "many", "", "ALL"]) {
+      expect(parseSet(`recent_threads=${value}`).ok).toBe(false);
+    }
+    expect(SET_KEYS).toContain("recent_threads=");
+    expect(SET_KEYS).toContain("recent_threads=all");
+  });
+
   // spec: UI-097, UI-145
   test("unknown keys and invalid values are refused", () => {
     expect(parseSet("density")).toEqual({ ok: false, error: expect.stringContaining("Usage: :set") });

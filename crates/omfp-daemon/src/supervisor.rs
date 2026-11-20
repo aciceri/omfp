@@ -351,9 +351,11 @@ struct Actor {
     live: Mutex<Option<Live>>,
     /// Makes check-forward-record of an answer atomic (DMN-051).
     answers: Mutex<()>,
-    /// Connections watching the thread (PRT-025), one entry per subscription, the one the user last used on it last
-    /// (DMN-060).
-    watchers: Mutex<Vec<u64>>,
+    /// Subscriptions to the thread (PRT-025), one entry per subscription, the one the user last used on it last
+    /// (DMN-060); only the watching ones count as watchers (PRT-222).
+    watchers: Mutex<Vec<Watcher>>,
+    /// Tells the entries of `watchers` apart.
+    watcher_keys: AtomicU64,
     last_activity: Mutex<Instant>,
     /// A root sync was asked while the agent was busy (omp refuses `/add-dir` while streaming); it runs once the
     /// session settles (DMN-029).
@@ -410,6 +412,7 @@ impl Actor {
             live: Mutex::new(None),
             answers: Mutex::new(()),
             watchers: Mutex::new(Vec::new()),
+            watcher_keys: AtomicU64::new(0),
             last_activity: Mutex::new(Instant::now()),
             roots_pending: AtomicBool::new(false),
             title_policy: tokio::sync::Mutex::new(crate::titles::RollingTitle::default()),
@@ -450,10 +453,11 @@ impl Actor {
         *lock(&self.last_activity) = Instant::now();
     }
 
-    /// Running, settled, without pending requests and unwatched since at least `timeout` (DMN-034).
+    /// Running, settled, without pending requests and unwatched since at least `timeout` (DMN-034): subscriptions
+    /// kept only for a quick return do not count (PRT-222, DMN-356).
     fn is_idle(&self, timeout: Duration, now: Instant) -> bool {
         lock(&self.live).is_some()
-            && lock(&self.watchers).is_empty()
+            && !lock(&self.watchers).iter().any(|watcher| watcher.watching)
             && self.log.with_state(|state| {
                 state.process == ProcessState::Running
                     && state.settled
@@ -515,10 +519,19 @@ impl std::fmt::Debug for Supervisor {
     }
 }
 
-/// Counts a client watching a thread while alive (PRT-025).
+/// One subscription to a thread (PRT-025): its connection and whether it watches the thread or only keeps it for a
+/// quick return (PRT-222).
+#[derive(Debug, Clone, Copy)]
+struct Watcher {
+    key: u64,
+    connection: u64,
+    watching: bool,
+}
+
+/// Counts a client subscribed to a thread while alive (PRT-025), watching it or not (PRT-222).
 pub struct WatchGuard {
     actor: Arc<Actor>,
-    connection: u64,
+    key: u64,
 }
 
 impl std::fmt::Debug for WatchGuard {
@@ -527,16 +540,28 @@ impl std::fmt::Debug for WatchGuard {
     }
 }
 
+impl WatchGuard {
+    /// Whether the subscription watches the thread (PRT-223). Watching again makes its window the one that subscribed
+    /// most recently (DMN-060); a subscription that stops watching starts the idle timeout as an unsubscribe does
+    /// (DMN-034).
+    pub fn set_watching(&self, watching: bool) {
+        let mut watchers = lock(&self.actor.watchers);
+        let Some(index) = watchers.iter().position(|watcher| watcher.key == self.key) else {
+            return;
+        };
+        let mut watcher = watchers.remove(index);
+        watcher.watching = watching;
+        watchers.push(watcher);
+        drop(watchers);
+        if !watching {
+            self.actor.touch();
+        }
+    }
+}
+
 impl Drop for WatchGuard {
     fn drop(&mut self) {
-        let mut watchers = lock(&self.actor.watchers);
-        if let Some(index) = watchers
-            .iter()
-            .rposition(|watcher| *watcher == self.connection)
-        {
-            watchers.remove(index);
-        }
-        drop(watchers);
+        lock(&self.actor.watchers).retain(|watcher| watcher.key != self.key);
         // The idle timeout counts from the moment the last client left.
         self.actor.touch();
     }
@@ -628,31 +653,45 @@ impl Supervisor {
         Ok(Arc::clone(&self.actor(id).await?.log))
     }
 
-    /// Marks the thread as watched by connection `connection` until the guard drops (PRT-025); it becomes the
-    /// window the user last used on the thread (DMN-060).
-    pub async fn watch(&self, id: &str, connection: u64) -> Result<WatchGuard> {
+    /// Marks the thread as subscribed by connection `connection` until the guard drops (PRT-025). A `watching`
+    /// subscription watches it and makes its window the one the user last used on the thread (DMN-060); one that
+    /// only keeps the thread for a quick return does neither (PRT-222, DMN-356, DMN-357).
+    pub async fn watch(&self, id: &str, connection: u64, watching: bool) -> Result<WatchGuard> {
         let actor = self.actor(id).await?;
-        lock(&actor.watchers).push(connection);
-        Ok(WatchGuard { actor, connection })
+        let key = actor.watcher_keys.fetch_add(1, Ordering::Relaxed);
+        lock(&actor.watchers).push(Watcher {
+            key,
+            connection,
+            watching,
+        });
+        Ok(WatchGuard { actor, key })
     }
 
     /// Connection `connection` sent thread `id` something on the user's behalf: if it watches the thread, it becomes
-    /// the window the user last used on it (DMN-060).
+    /// the window the user last used on it (DMN-060); a subscription that only keeps the thread does not count
+    /// (DMN-357).
     pub fn used(&self, id: &str, connection: u64) {
         if let Some(actor) = self.lookup(id) {
             let mut watchers = lock(&actor.watchers);
-            if let Some(index) = watchers.iter().rposition(|watcher| *watcher == connection) {
+            if let Some(index) = watchers
+                .iter()
+                .rposition(|watcher| watcher.watching && watcher.connection == connection)
+            {
                 let watcher = watchers.remove(index);
                 watchers.push(watcher);
             }
         }
     }
 
-    /// Number of clients watching the thread (PRT-025).
+    /// Number of subscriptions watching the thread (PRT-025); the ones that only keep it do not count (PRT-222).
     #[must_use]
     pub fn watchers(&self, id: &str) -> usize {
-        self.lookup(id)
-            .map_or(0, |actor| lock(&actor.watchers).len())
+        self.lookup(id).map_or(0, |actor| {
+            lock(&actor.watchers)
+                .iter()
+                .filter(|watcher| watcher.watching)
+                .count()
+        })
     }
 
     /// Asks the window the user last used on thread `id` to open `path` at `line` (DMN-060): an `open_file` event
@@ -684,7 +723,7 @@ impl Supervisor {
     }
 
     /// Pushes the event `request` makes for the connection of the window the user last used on thread `id`
-    /// (DMN-060); `absent` when no window watches the thread.
+    /// (DMN-060); `absent` when no window watches the thread (a window that only keeps it does not, DMN-357).
     fn ask_last_window(
         &self,
         id: &str,
@@ -692,7 +731,12 @@ impl Supervisor {
         request: impl FnOnce(u64) -> ThreadEvent,
     ) -> Result<(), String> {
         let actor = self.lookup(id).ok_or(absent)?;
-        let connection = lock(&actor.watchers).last().copied().ok_or(absent)?;
+        let connection = lock(&actor.watchers)
+            .iter()
+            .rev()
+            .find(|watcher| watcher.watching)
+            .map(|watcher| watcher.connection)
+            .ok_or(absent)?;
         self.push(&actor, request(connection));
         Ok(())
     }

@@ -166,6 +166,51 @@ describe("session", () => {
     expect(rig.client.model.topic(THREAD_TOPIC)?.position).toEqual({ epoch: "e2", seq: 1 });
   });
 
+  // spec: PRT-222, PRT-223, UI-997
+  test("a kept thread switches watch on its live subscription and is resubscribed with its flag after a reconnect", () => {
+    const [rig, first] = following();
+    const kept = threadTopic("01KEPT");
+    rig.client.subscribe(kept);
+    first.respond(find(first.frames(), kept).id, snapshot("k1", 5, emptyThreadState()));
+
+    rig.client.watch(kept, false);
+    rig.client.watch(kept, false);
+    rig.client.watch(THREAD_TOPIC, true);
+    rig.client.watch(threadTopic("01NOTFOLLOWED"), false);
+    expect(first.frames().map((frame) => [frame.method, frame.params])).toEqual([
+      ["watch", { topic: kept, watch: false }],
+    ]);
+
+    const [second, frames] = reconnect(rig, first);
+    expect(subscribes(frames)).toEqual([
+      { topic: "index", since: { epoch: "i1", seq: 2 } },
+      { topic: THREAD_TOPIC, since: { epoch: "e1", seq: 3 } },
+      { topic: kept, since: { epoch: "k1", seq: 5 }, watch: false },
+    ]);
+    second.respond(find(frames, kept).id, { mode: "replay", epoch: "k1", fromSeq: 6 });
+
+    // Shown again while disconnected: the next subscription watches it.
+    second.close(1001);
+    rig.client.watch(kept, true);
+    rig.timer.fire();
+    const [third, again] = rig.connect();
+    expect(find(again, kept).params).toEqual({ topic: kept, since: { epoch: "k1", seq: 5 } });
+    expect(methods(again).filter((method) => method === "watch")).toEqual([]);
+
+    // Unsubscribing forgets the flag.
+    rig.client.watch(kept, false);
+    rig.client.unsubscribe(kept);
+    rig.client.subscribe(kept);
+    expect(
+      find(
+        third.frames().filter((frame) => frame.method === "subscribe"),
+        kept,
+      ).params,
+    ).toEqual({
+      topic: kept,
+    });
+  });
+
   // spec: UI-003
   test("events between the loss and the resubscription are not applied", () => {
     const [rig, first] = following();

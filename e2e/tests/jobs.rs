@@ -240,6 +240,7 @@ async fn a_declared_job_runs_from_its_row_and_a_thread_closes_keeping_its_agents
         .call::<Subscribe>(SubscribeParams {
             topic: Topic::Job(run_id.clone()),
             since: None,
+            watch: None,
         })
         .await?
     else {

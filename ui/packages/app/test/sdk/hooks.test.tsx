@@ -2,11 +2,11 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ThreadEvent } from "@omfp/core";
-import type { ThreadSummary } from "@omfp/protocol";
+import type { RecentThreads, ThreadSummary } from "@omfp/protocol";
 import { threadTopic, viewsTopic } from "@omfp/protocol";
 import { act, cleanup, screen } from "@testing-library/react";
 import { Activity, useState } from "react";
-import { RECENT_THREADS } from "../../src/sdk/host.tsx";
+import { DEFAULT_RECENT_THREADS } from "../../src/sdk/host.tsx";
 import {
   CommandRegistry,
   SCOPE_ATTRIBUTE,
@@ -184,10 +184,69 @@ describe("hooks", () => {
     expect(client.unsubscribed).toEqual([]);
   });
 
+  // spec: UI-997, PRT-223
+  test("a hidden thread is kept unwatched without resubscribing and watched again once shown", () => {
+    const { client, host } = renderWithHost(<ShownThread />, testHost());
+    act(() => host.window.set(SHOWN, "01A"));
+    expect(client.watches).toEqual([]);
+
+    act(() => host.window.set(SHOWN, "01B"));
+    expect(client.watches).toEqual([[threadTopic("01A"), false]]);
+
+    act(() => host.window.set(SHOWN, "01A"));
+    expect(client.watches).toEqual([
+      [threadTopic("01A"), false],
+      [threadTopic("01B"), false],
+      [threadTopic("01A"), true],
+    ]);
+    expect(client.subscribed).toEqual([threadTopic("01A"), threadTopic("01B")]);
+    expect(client.unsubscribed).toEqual([]);
+  });
+
+  // spec: UI-996
+  test("the number of kept threads follows the recent_threads setting", () => {
+    const { client, host, flush } = renderWithHost(<ShownThread />, testHost());
+    const settings = (recentThreads: RecentThreads) => ({ ui: { recentThreads }, keymap: [], error: null });
+    client.index({ settings: settings(2) });
+    flush();
+    for (const id of ["01T0", "01T1", "01T2", "01T3"]) {
+      act(() => host.window.set(SHOWN, id));
+    }
+    // Three hidden, two kept.
+    expect(client.unsubscribed).toEqual([threadTopic("01T0")]);
+
+    client.indexEvents({ kind: "settings_changed", settings: settings(0) });
+    flush();
+    expect(client.unsubscribed).toEqual(["01T0", "01T1", "01T2"].map(threadTopic));
+    act(() => host.window.set(SHOWN, "01T1"));
+    expect(client.unsubscribed).toEqual(["01T0", "01T1", "01T2", "01T3"].map(threadTopic));
+    expect(
+      client.watches.filter(([topic]) => topic === threadTopic("01T3")),
+      "released at once, never kept",
+    ).toEqual([]);
+  });
+
+  // spec: UI-996
+  test("with recent_threads = all no kept thread is released, but a deleted one still is", () => {
+    const { client, host, flush } = renderWithHost(<ShownThread />, testHost());
+    const ids = Array.from({ length: 3 * DEFAULT_RECENT_THREADS }, (_, index) => `01T${index}`);
+    client.index({ threads: ids.map(summary), settings: { ui: { recentThreads: "all" }, keymap: [], error: null } });
+    flush();
+    for (const id of ids) {
+      act(() => host.window.set(SHOWN, id));
+    }
+    expect(client.unsubscribed).toEqual([]);
+    expect(client.watches.filter(([, watch]) => !watch)).toHaveLength(ids.length - 1);
+
+    client.indexEvents({ kind: "thread_removed", threadId: "01T0" });
+    flush();
+    expect(client.unsubscribed).toEqual([threadTopic("01T0")]);
+  });
+
   // spec: UI-335
   test("the recent threads are bounded: the least recently shown is released first", () => {
     const { client, host } = renderWithHost(<ShownThread />, testHost());
-    const ids = Array.from({ length: RECENT_THREADS + 2 }, (_, index) => `01T${index}`);
+    const ids = Array.from({ length: DEFAULT_RECENT_THREADS + 2 }, (_, index) => `01T${index}`);
     for (const id of ids) {
       act(() => host.window.set(SHOWN, id));
     }

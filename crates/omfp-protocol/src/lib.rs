@@ -28,15 +28,15 @@ pub use auth::{
     LoginActivity, LoginCancelled, OAuthCallbackParams, OAuthCallbackRelayed, ProviderRef,
 };
 pub use dto::{
-    BuiltinTheme, CreatedBy, Density, DiffPage, FileCandidate, FileCandidates, FileChange,
-    FileContent, FileDiff, FileKind, FileMatch, FileStatus, FileWritten, FontSettings, ForkOrigin,
-    GitStatus, IndexSnapshot, JobCounts, JobDefinition, JobInfo, JobLine, JobPrompt, JobRunStatus,
-    JobRuns, JobState, JobStatus, JobStream, JobTrigger, JobView, JobViewStatus, JobsState,
-    KeymapEntry, KeymapMode, MissedPolicy, Motion, NotificationMode, PathEntry, PromptThread,
-    Provenance, RepoKind, RepoStatus, RestartPolicy, RestartReason, RunInfo, RunTrigger,
-    SeenRepository, Settings, Skin, TerminalCursor, TerminalInfo, TerminalScreen, TerminalState,
-    TerminalStatus, Theme, ThreadSummary, TitleSource, UiSettings, ViewsState, WidgetInfo,
-    WidgetSource, Workspace, WorkspaceBinding, WorkspaceRepo,
+    AllThreads, BuiltinTheme, CreatedBy, Density, DiffPage, FileCandidate, FileCandidates,
+    FileChange, FileContent, FileDiff, FileKind, FileMatch, FileStatus, FileWritten, FontSettings,
+    ForkOrigin, GitStatus, IndexSnapshot, JobCounts, JobDefinition, JobInfo, JobLine, JobPrompt,
+    JobRunStatus, JobRuns, JobState, JobStatus, JobStream, JobTrigger, JobView, JobViewStatus,
+    JobsState, KeymapEntry, KeymapMode, MissedPolicy, Motion, NotificationMode, PathEntry,
+    PromptThread, Provenance, RecentThreads, RepoKind, RepoStatus, RestartPolicy, RestartReason,
+    RunInfo, RunTrigger, SeenRepository, Settings, Skin, TerminalCursor, TerminalInfo,
+    TerminalScreen, TerminalState, TerminalStatus, Theme, ThreadSummary, TitleSource, UiSettings,
+    ViewsState, WidgetInfo, WidgetSource, Workspace, WorkspaceBinding, WorkspaceRepo,
 };
 pub use envelope::{
     ErrorBody, ErrorCode, EventFrame, IndexEvent, JobEvent, JobsEvent, ProtocolError, Request,
@@ -67,7 +67,7 @@ pub use params::{
     WidgetCopied, WidgetJobReport, WidgetReport, WidgetReportState, WorkspaceDiffParams,
     WorkspaceRef, WriteFileParams,
 };
-pub use params::{FileErrorKind, FileErrorReport, ViewErrors, WindowFileErrors};
+pub use params::{FileErrorKind, FileErrorReport, ViewErrors, WatchParams, WindowFileErrors};
 pub use params::{
     LibraryComponent, MountParams, MountPlace, MountUpdateParams, Mounted, SaveWidgetParams,
     UnmountParams, Unmounted, WidgetLibrary, WidgetSaved,

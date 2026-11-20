@@ -130,6 +130,9 @@ methods! {
     Subscribe = "subscribe" (params::SubscribeParams) -> params::SubscribeResult;
     /// Stops delivery of a topic.
     Unsubscribe = "unsubscribe" (params::TopicParams) -> params::Empty;
+    /// Sets whether the live subscription of a `thread/<id>` topic watches the thread, without a new snapshot
+    /// (PRT-223): `false` when the window only keeps it for a quick return, `true` when a widget shows it again.
+    Watch = "watch" (params::WatchParams) -> params::Empty;
     /// Repositories seen in any workspace, most recent first (DMN-021).
     ReposSuggest = "repos.suggest" (params::SuggestReposParams) -> params::RepoSuggestions;
     /// Child directories of a path on the daemon host (DMN-021).

@@ -19,6 +19,7 @@
 //!                               # | paper | clay | primer | accent | matugen (the user theme, theme.css)
 //! show_xdev_notices = false     # show informational MCP mount/unmount notices in the transcript
 //! skin = "crush"                # crush | boring
+//! recent_threads = 20           # hidden threads a window keeps followed, 0..=100 or "all"
 //!
 //! [ui.fonts]
 //! prose = "Literata, serif"
@@ -35,8 +36,8 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 use omfp_protocol::{
-    BuiltinTheme, Density, FontSettings, KeymapEntry, KeymapMode, Motion, NotificationMode,
-    SetSettingsParams, Settings, Skin, UiSettings,
+    AllThreads, BuiltinTheme, Density, FontSettings, KeymapEntry, KeymapMode, Motion,
+    NotificationMode, RecentThreads, SetSettingsParams, Settings, Skin, UiSettings,
 };
 use serde::Deserialize;
 use toml_edit::{DocumentMut, Item, Table};
@@ -111,6 +112,7 @@ struct RawUi {
     theme: Option<BuiltinTheme>,
     show_xdev_notices: Option<bool>,
     skin: Option<Skin>,
+    recent_threads: Option<RecentThreads>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -143,6 +145,13 @@ impl ConfigFile {
                 FONT_SIZES.end()
             ));
         }
+        if let Some(RecentThreads::Count(count)) = raw.ui.recent_threads
+            && count > RECENT_THREADS_MAX
+        {
+            return Err(format!(
+                "`ui.recent_threads` must be at most {RECENT_THREADS_MAX} or \"all\", not {count}"
+            ));
+        }
         let fonts = raw.ui.fonts.map(|fonts| FontSettings {
             prose: fonts.prose,
             ui: fonts.ui,
@@ -159,6 +168,7 @@ impl ConfigFile {
                 theme: raw.ui.theme,
                 show_xdev_notices: raw.ui.show_xdev_notices,
                 skin: raw.ui.skin,
+                recent_threads: raw.ui.recent_threads,
             },
             keymap: keymap(&raw.keymap)?,
         })
@@ -188,6 +198,9 @@ impl ConfigFile {
 
 /// The accepted `[ui] font_size` values in px (UI-097).
 pub const FONT_SIZES: std::ops::RangeInclusive<u8> = 10..=28;
+
+/// The largest accepted `[ui] recent_threads` (UI-996): each kept thread's state stays in the window's memory.
+pub const RECENT_THREADS_MAX: u8 = 100;
 
 const MODE_TABLES: [(&str, KeymapMode); 2] = [
     ("insert", KeymapMode::Insert),
@@ -264,6 +277,11 @@ pub fn write_back(text: &str, update: &SetSettingsParams) -> Result<String, Stri
         }
         if let Some(skin) = ui.skin {
             set(table, "skin", skin_name(skin));
+        }
+        match ui.recent_threads {
+            Some(RecentThreads::Count(count)) => set(table, "recent_threads", i64::from(count)),
+            Some(RecentThreads::All(AllThreads::All)) => set(table, "recent_threads", "all"),
+            None => {}
         }
         if let Some(fonts) = &ui.fonts {
             let table = child(table, "fonts")?;
@@ -428,6 +446,57 @@ mod tests {
         assert!(text.contains("skin = \"crush\""), "{text}");
     }
 
+    // spec: UI-996, DMN-009
+    #[test]
+    fn recent_threads_round_trips_and_is_bounded() {
+        assert_eq!(ConfigFile::parse(FILE).unwrap().ui.recent_threads, None);
+        let all = RecentThreads::All(AllThreads::All);
+        for (value, written) in [
+            (RecentThreads::Count(40), "recent_threads = 40\n"),
+            (all, "recent_threads = \"all\"\n"),
+        ] {
+            let text = write_back(
+                FILE,
+                &SetSettingsParams {
+                    ui: Some(UiSettings {
+                        recent_threads: Some(value),
+                        ..UiSettings::default()
+                    }),
+                    keymap: None,
+                },
+            )
+            .unwrap();
+            assert!(text.contains(written), "{text}");
+            let mut expected = ConfigFile::parse(FILE).unwrap();
+            expected.ui.recent_threads = Some(value);
+            assert_eq!(ConfigFile::parse(&text).unwrap(), expected);
+        }
+        let parsed = |text: &str| ConfigFile::parse(text).map(|file| file.ui.recent_threads);
+        assert_eq!(
+            parsed("[ui]\nrecent_threads = 0"),
+            Ok(Some(RecentThreads::Count(0))),
+            "no thread kept"
+        );
+        assert_eq!(parsed("[ui]\nrecent_threads = \"all\""), Ok(Some(all)));
+
+        let too_many = SetSettingsParams {
+            ui: Some(UiSettings {
+                recent_threads: Some(RecentThreads::Count(RECENT_THREADS_MAX + 1)),
+                ..UiSettings::default()
+            }),
+            keymap: None,
+        };
+        assert!(
+            write_back("", &too_many)
+                .unwrap_err()
+                .contains("ui.recent_threads")
+        );
+        for wrong in ["-1", "\"some\"", "true"] {
+            let error = parsed(&format!("[ui]\nrecent_threads = {wrong}")).unwrap_err();
+            assert!(error.contains("recent_threads"), "{wrong}: {error}");
+        }
+    }
+
     const FILE: &str = r#"# My omfp.
 [daemon]
 max_processes = 4 # enough
@@ -478,6 +547,7 @@ prose = "Literata, serif"
                 theme: Some(BuiltinTheme::Gruvbox),
                 show_xdev_notices: None,
                 skin: None,
+                recent_threads: None,
             }
         );
         assert_eq!(
@@ -610,6 +680,7 @@ prose = "Literata, serif"
                 theme: Some(BuiltinTheme::TokyoNight),
                 show_xdev_notices: None,
                 skin: Some(Skin::Boring),
+                recent_threads: None,
             }),
             keymap: Some(vec![
                 entry(KeymapMode::Normal, "Space t", "density.set"),

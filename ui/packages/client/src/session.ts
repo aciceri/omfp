@@ -62,7 +62,8 @@ export type CallFailure =
   | { kind: "connection_lost" }
   /** The client stopped (closed, unauthenticated or refused version) before the call could be sent. */
   | { kind: "closed" }
-  /** `system.hello`, `subscribe` and `unsubscribe` belong to the session; use {@link Client.subscribe}. */
+  /** `system.hello`, `subscribe`, `unsubscribe` and `watch` belong to the session; use {@link Client.subscribe} and
+   * {@link Client.watch}. */
   | { kind: "reserved"; method: string }
   /** The params did not encode or the response did not decode. */
   | { kind: "codec"; message: string };
@@ -94,12 +95,17 @@ export class CallError extends Error {
 }
 
 /** Methods the session sends itself. */
-export type SessionMethod = "system.hello" | "subscribe" | "unsubscribe";
+export type SessionMethod = "system.hello" | "subscribe" | "unsubscribe" | "watch";
 
 /** Methods a host may call. */
 export type CallMethod = Exclude<MethodName, SessionMethod>;
 
-const SESSION_METHODS: Record<SessionMethod, true> = { "system.hello": true, subscribe: true, unsubscribe: true };
+const SESSION_METHODS: Record<SessionMethod, true> = {
+  "system.hello": true,
+  subscribe: true,
+  unsubscribe: true,
+  watch: true,
+};
 
 /** How a client connects, what it says in `system.hello`, and how it retries. */
 export interface ClientOptions {
@@ -127,7 +133,8 @@ type Pending =
   | { kind: "hello" }
   | { kind: "call"; call: Call }
   | { kind: "subscribe"; topic: Topic }
-  | { kind: "unsubscribe" };
+  | { kind: "unsubscribe" }
+  | { kind: "watch" };
 
 /** How a connection ended: retry after a backoff (`ready` when it had completed its hello), or stop for good. */
 type Outcome = { kind: "lost"; error: string; ready: boolean } | { kind: "stop"; status: ConnectionStatus };
@@ -194,6 +201,8 @@ export class Client {
   #stopped = false;
   readonly #transient = new Set<(frame: TransientFrame) => void>();
   readonly #windowRequests = new Set<(frame: WindowRequestFrame) => void>();
+  /** Followed thread topics kept without watching their thread (PRT-222), for every (re)subscription. */
+  readonly #unwatched = new Set<Topic>();
 
   /** Starts connecting at once; see {@link connect}. */
   constructor(options: ClientOptions) {
@@ -281,8 +290,32 @@ export class Client {
   unsubscribe(topic: Topic): void {
     this.#command((link) => {
       link?.subscribing.delete(topic);
+      this.#unwatched.delete(topic);
       if (this.#model.untrack(topic) && link !== undefined) {
         this.#send(link, "unsubscribe", { topic }, { kind: "unsubscribe" });
+      }
+    });
+  }
+
+  /**
+   * Whether followed `topic`, a `thread/<id>`, watches its thread (PRT-222): `false` keeps it followed only for a
+   * quick return, so it keeps no omp alive (DMN-034). Changed on the live subscription with `watch` (PRT-223, no new
+   * snapshot) and kept for every resubscription; a no-op for a topic not followed or already so.
+   */
+  watch(topic: Topic, watch: boolean): void {
+    this.#command((link) => {
+      const state = this.#model.topic(topic);
+      if (state === undefined || this.#unwatched.has(topic) !== watch) {
+        return;
+      }
+      if (watch) {
+        this.#unwatched.delete(topic);
+      } else {
+        this.#unwatched.add(topic);
+      }
+      // A failed subscription has nothing to change; its retry subscribes with the flag.
+      if (link !== undefined && state.sync.kind !== "failed") {
+        this.#send(link, "watch", { topic, watch }, { kind: "watch" });
       }
     });
   }
@@ -456,11 +489,12 @@ export class Client {
     this.#send(link, "system.hello", this.#hello, { kind: "hello" });
   }
 
-  /** (Re)subscribes `topic` from its last position. */
+  /** (Re)subscribes `topic` from its last position, unwatched when it is only kept (PRT-222). */
   #subscribe(link: Link, topic: Topic): void {
     const params = this.#model.subscribeParams(topic);
     if (params !== undefined) {
-      link.subscribing.set(topic, this.#send(link, "subscribe", params, { kind: "subscribe", topic }));
+      const sent = this.#unwatched.has(topic) ? { ...params, watch: false } : params;
+      link.subscribing.set(topic, this.#send(link, "subscribe", sent, { kind: "subscribe", topic }));
     }
   }
 
@@ -553,6 +587,7 @@ export class Client {
           }
           break;
         case "unsubscribe":
+        case "watch":
         case undefined:
           break;
       }
@@ -584,6 +619,7 @@ export class Client {
         }
         return undefined;
       case "unsubscribe":
+      case "watch":
         return undefined;
     }
   }

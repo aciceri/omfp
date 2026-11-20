@@ -43,6 +43,9 @@ export type AddRepoParams = {
   workspaceId: string;
 };
 
+/** `"all"`: no bound on the threads a window keeps (UI-996). */
+export type AllThreads = "all";
+
 /** `windows.answer` params (PRT-124): a window's answer to the daemon's request `requestId`. */
 export type AnswerWindowParams = {
   answer: WindowAnswer;
@@ -1283,6 +1286,12 @@ export type ReadFileParams = {
   workspaceId: string;
 };
 
+/**
+ * How many hidden threads a window keeps followed (UI-996): at most a number (0..=100; 0 keeps none), or `"all"`,
+ * every thread shown in the window until it is closed or reloaded.
+ */
+export type RecentThreads = number | AllThreads;
+
 /** `workspaces.remove_repo` params (DMN-025). */
 export type RemoveRepoParams = {
   /** Also delete a worktree's branch. */
@@ -1595,11 +1604,18 @@ export type SubagentSteerParams = {
   threadId: string;
 };
 
-/** `subscribe` params (PRT-020). */
+/** `subscribe` params (PRT-020, PRT-222). */
 export type SubscribeParams = {
   /** Last event the client has; the daemon replays from there when it still can. */
   since?: Position | null;
   topic: Topic;
+  /**
+   * Whether the subscription watches its thread (PRT-025): absent or `true` watches it; `false` follows a
+   * `thread/<id>` the window only keeps for a quick return (no widget shows it), which neither keeps its omp from
+   * the idle reaper (DMN-034) nor makes the window the one the user last used on it (DMN-060). Only `thread/<id>`
+   * topics take `false` (PRT-222).
+   */
+  watch?: boolean | null;
 };
 
 /** `subscribe` result: catch-up from the ring buffer, or a full state (PRT-020, PRT-021). */
@@ -1909,6 +1925,11 @@ export type UiSettings = {
   fonts?: FontSettings | null;
   motion?: Motion | null;
   notifications?: NotificationMode | null;
+  /**
+   * How many hidden threads each window keeps followed for a quick return (UI-996): a number (0..=100, default 20)
+   * or `"all"`. Their states stay in the window's memory, but their omp processes are not kept alive (PRT-222).
+   */
+  recentThreads?: RecentThreads | null;
   /** Show informational xdev notices in the transcript (UI-043); absent or false hides them, without dropping events. */
   showXdevNotices?: boolean | null;
   /** The skin (UI-794): `crush` (absent, the default) or the opt-in `boring`; independent of `theme`. */
@@ -2044,6 +2065,13 @@ export type ViewsState = {
   viewFiles?: string | null;
   /** Widget folders of the workspace, then of the user library, each by name. */
   widgets: WidgetInfo[];
+};
+
+/** `watch` params: whether the live subscription of `topic` watches its thread (PRT-223). */
+export type WatchParams = {
+  topic: Topic;
+  /** `true`: watched, as a shown thread; `false`: kept only for a quick return (PRT-222). */
+  watch: boolean;
 };
 
 /** `windows.check_widget` result (PRT-124). */
@@ -2420,6 +2448,7 @@ export interface Methods {
   "system.hello": { params: HelloParams; result: HelloResult };
   "subscribe": { params: SubscribeParams; result: SubscribeResult };
   "unsubscribe": { params: TopicParams; result: Empty };
+  "watch": { params: WatchParams; result: Empty };
   "repos.suggest": { params: SuggestReposParams; result: RepoSuggestions };
   "fs.complete": { params: CompletePathParams; result: PathCompletions };
   "workspaces.create": { params: CreateWorkspaceParams; result: Workspace };
@@ -2534,6 +2563,7 @@ export const METHODS: readonly MethodName[] = [
   "system.hello",
   "subscribe",
   "unsubscribe",
+  "watch",
   "repos.suggest",
   "fs.complete",
   "workspaces.create",

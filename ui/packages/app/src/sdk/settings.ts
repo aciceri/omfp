@@ -1,6 +1,7 @@
 /**
  * UI settings kept by the daemon (DMN-009, UI-097): `[ui]` density, font size, motion, notifications, xdev notice
- * visibility, fonts, theme (UI-510) and skin (UI-794), and `[keymap]` entries, pushed on `index` so windows apply changes live.
+ * visibility, fonts, theme (UI-510), skin (UI-794) and kept threads (UI-996), and `[keymap]` entries, pushed on `index`
+ * so windows apply changes live.
  * `settings.set` merges a patch into the config file.
  */
 
@@ -33,6 +34,8 @@ export const DEFAULT_NOTIFICATIONS: NotificationMode = "background";
 export const DEFAULT_THEME: BuiltinTheme = "synth";
 /** Without a `[ui]` skin: Crush, omfp's own look (UI-120, UI-794). */
 export const DEFAULT_SKIN: Skin = "crush";
+/** The accepted `[ui]` recent_threads values, 0..=this, as the daemon checks them (UI-996). */
+export const RECENT_THREADS_MAX = 100;
 
 /** The daemon's settings (defaults until the `index` snapshot). */
 export function useSettings(): Settings {

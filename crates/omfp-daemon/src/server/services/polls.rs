@@ -463,7 +463,7 @@ mod tests {
         assert_eq!(h.full_scans(), 0);
 
         // A client on `thread/<id>`.
-        let watch = h.services.supervisor.watch(&thread, 1).await.unwrap();
+        let watch = h.services.supervisor.watch(&thread, 1, true).await.unwrap();
         until(start, 3).await;
         assert_eq!(h.full_scans(), 1);
         drop(watch);

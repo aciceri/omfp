@@ -3,8 +3,9 @@
 use omfp_core::ProcessState;
 use omfp_protocol::{
     BuiltinTheme, CreatedBy, Density, FileChange, FileStatus, FontSettings, GitStatus, JobCounts,
-    KeymapEntry, KeymapMode, Motion, NotificationMode, Provenance, RepoKind, RepoStatus, Settings,
-    Skin, Theme, ThreadSummary, TitleSource, UiSettings, Workspace, WorkspaceRepo,
+    KeymapEntry, KeymapMode, Motion, NotificationMode, Provenance, RecentThreads, RepoKind,
+    RepoStatus, Settings, Skin, Theme, ThreadSummary, TitleSource, UiSettings, Workspace,
+    WorkspaceRepo,
 };
 
 pub const WORKSPACE_ID: &str = "01JD8X3Q4T9V2W6Y5Z7A1B3C5E";
@@ -152,6 +153,7 @@ pub fn settings() -> Settings {
             theme: Some(BuiltinTheme::RosePine),
             show_xdev_notices: Some(true),
             skin: Some(Skin::Boring),
+            recent_threads: Some(RecentThreads::Count(30)),
         },
         keymap: vec![
             KeymapEntry {

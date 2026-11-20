@@ -55,7 +55,7 @@ pub struct Position {
     pub seq: u64,
 }
 
-/// `subscribe` params (PRT-020).
+/// `subscribe` params (PRT-020, PRT-222).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SubscribeParams {
@@ -63,6 +63,12 @@ pub struct SubscribeParams {
     /// Last event the client has; the daemon replays from there when it still can.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub since: Option<Position>,
+    /// Whether the subscription watches its thread (PRT-025): absent or `true` watches it; `false` follows a
+    /// `thread/<id>` the window only keeps for a quick return (no widget shows it), which neither keeps its omp from
+    /// the idle reaper (DMN-034) nor makes the window the one the user last used on it (DMN-060). Only `thread/<id>`
+    /// topics take `false` (PRT-222).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub watch: Option<bool>,
 }
 
 /// `subscribe` result: catch-up from the ring buffer, or a full state (PRT-020, PRT-021).
@@ -89,6 +95,15 @@ pub enum SubscribeResult {
 #[serde(rename_all = "camelCase")]
 pub struct TopicParams {
     pub topic: Topic,
+}
+
+/// `watch` params: whether the live subscription of `topic` watches its thread (PRT-223).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct WatchParams {
+    pub topic: Topic,
+    /// `true`: watched, as a shown thread; `false`: kept only for a quick return (PRT-222).
+    pub watch: bool,
 }
 
 /// `repos.suggest` params (DMN-021).

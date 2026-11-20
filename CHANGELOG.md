@@ -29,6 +29,14 @@ The version's section is also the source of the GitHub release notes.
   black: its background, text, cursor, selection and 16 ANSI colors come from the theme, in both skins and color
   schemes and with user themes too, and switching theme or color scheme repaints open terminals without restarting
   them. Widgets can still set their own colors through `options.theme` (#214).
+- A window keeps the 20 threads you last switched away from followed (was 5), so going back to one shows it at once,
+  and a kept thread no longer keeps its omp process alive: once idle it stops after the idle timeout like a thread no
+  window shows, its transcript stays in the window with the stopped state, and it starts again when you use it.
+  `[ui] recent_threads` (0–100, or `"all"` to keep every thread opened in the window; `:set recent_threads=<n>`)
+  sets how many threads a window keeps; each costs the window memory (about its snapshot, a few MB for a very long
+  thread, so `"all"` can reach gigabytes after hundreds of long threads, too much for a phone). Clients keep a thread
+  subscription without watching it with `subscribe { topic, watch: false }` and switch it with the new
+  `watch { topic, watch }` (#226).
 
 ### Fixed
 

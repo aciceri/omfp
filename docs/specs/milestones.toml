@@ -1298,6 +1298,13 @@ requirements = [
   "UI-986",
   "UI-987",
   "UI-988",
+  # Kept threads without their omp: kept is not watched, the number from `[ui] recent_threads` (#226)
+  "PRT-222",
+  "PRT-223",
+  "DMN-356",
+  "DMN-357",
+  "UI-996",
+  "UI-997",
 ]
 
 [M18]

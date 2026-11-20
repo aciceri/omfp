@@ -474,6 +474,7 @@ export {
   DEFAULT_THEME,
   FONT_SIZE_MAX,
   FONT_SIZE_MIN,
+  RECENT_THREADS_MAX,
   useSetSettings,
   useSettings,
 } from "./settings.ts";

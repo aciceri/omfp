@@ -1,13 +1,14 @@
 /**
  * `:set <key>=<value>` (UI-097): one setting of the daemon's `[ui]` or `[keymap]`, sent with `settings.set`. Keys:
  * `density`, `font_size` (px, 10..=28), `motion`, `notifications`, `show_xdev_notices`, `theme` (UI-510), `skin`
- * (UI-794), `fonts.prose|ui|code`, `keymap.<keys>` (normal mode) and `keymap.<mode>.<keys>`; a keymap value is a command id, `""`
+ * (UI-794), `recent_threads` (0..=100 or `all`, UI-996), `fonts.prose|ui|code`, `keymap.<keys>` (normal mode) and
+ * `keymap.<mode>.<keys>`; a keymap value is a command id, `""`
  * removes the binding.
  */
 
 import type { BuiltinTheme, Density, Motion, NotificationMode, SetSettingsParams, Skin } from "@omfp/protocol";
 import { type Mode, normalizeKeys } from "../keymap/keymap.ts";
-import { type ColorScheme, FONT_SIZE_MAX, FONT_SIZE_MIN } from "../sdk/index.ts";
+import { type ColorScheme, FONT_SIZE_MAX, FONT_SIZE_MIN, RECENT_THREADS_MAX } from "../sdk/index.ts";
 import { strings } from "../strings/index.ts";
 
 type FontRole = "prose" | "ui" | "code";
@@ -51,6 +52,8 @@ export const SET_KEYS: readonly string[] = [
   "show_xdev_notices=true",
   ...THEMES.map((theme) => `theme=${theme}`),
   ...SKINS.map((skin) => `skin=${skin}`),
+  "recent_threads=",
+  "recent_threads=all",
   ...FONT_ROLES.map((role) => `fonts.${role}=`),
   "keymap.",
 ];
@@ -126,6 +129,13 @@ export function parseSet(line: string): ParsedSet {
   if (key === "skin") {
     const skin = SKINS.find((candidate) => candidate === value);
     return skin === undefined ? invalid(key, value) : { ok: true, patch: { ui: { skin } } };
+  }
+  if (key === "recent_threads") {
+    if (value === "all") {
+      return { ok: true, patch: { ui: { recentThreads: "all" } } };
+    }
+    const recentThreads = /^\d+$/.test(value) ? Number(value) : Number.NaN;
+    return recentThreads <= RECENT_THREADS_MAX ? { ok: true, patch: { ui: { recentThreads } } } : invalid(key, value);
   }
   if (key.startsWith("fonts.")) {
     const role = FONT_ROLES.find((candidate) => `fonts.${candidate}` === key);

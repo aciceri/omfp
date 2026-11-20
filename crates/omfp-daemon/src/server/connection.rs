@@ -12,7 +12,7 @@ use omfp_protocol::{
     BashParams, BtwParams, Call, Empty, ErrorBody, ErrorCode, EventFrame, HelloResult,
     LiveConnectParams, LiveConnected, LiveStarted, MessageParams, PromptParams, Request,
     RespondParams, Response, ServerFrame, SubscribeParams, SubscribeResult, ThreadRef, Topic,
-    TopicEvent, TransientEvent, decode_request,
+    TopicEvent, TransientEvent, WatchParams, decode_request,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -194,9 +194,10 @@ fn to_value(value: &impl Serialize) -> Result<Value, ErrorBody> {
     serde_json::to_value(value).map_err(internal)
 }
 
-/// Keeps a thread (PRT-025) or a workspace (DMN-023) watched while its subscription lives.
+/// Keeps a thread (PRT-025) or a workspace (DMN-023) watched while its subscription lives; a thread's subscription may
+/// only keep it, unwatched (PRT-222).
 enum Watch {
-    Thread { _guard: WatchGuard },
+    Thread { guard: WatchGuard },
     Workspace { _guard: WorkspaceWatchGuard },
 }
 
@@ -207,7 +208,7 @@ struct Subscribed {
     task: JoinHandle<()>,
     /// Forwards the topic's transient frames (PRT-054): a thread's `live_levels` (DMN-110).
     transient: Option<JoinHandle<()>>,
-    _watch: Option<Watch>,
+    watch: Option<Watch>,
 }
 
 impl Drop for Subscribed {
@@ -319,6 +320,10 @@ impl Connection {
                 self.subscriptions.remove(&params.topic);
                 self.respond(id, to_value(&Empty {})).await;
             }
+            Call::Watch(params) => {
+                let result = self.set_watch(&params).and_then(|()| to_value(&Empty {}));
+                self.respond(id, result).await;
+            }
             Call::WidgetsReport(params) => {
                 // Kept per connection: a window replaces its own report (PRT-043).
                 services.report_widgets(self.number, self.principal.client(), params);
@@ -376,15 +381,24 @@ impl Connection {
     }
 
     async fn subscribe(&mut self, id: String, params: SubscribeParams) {
-        let SubscribeParams { topic, since } = params;
+        let SubscribeParams {
+            topic,
+            since,
+            watch,
+        } = params;
         let since = since.map(|position| Position {
             epoch: position.epoch,
             seq: position.seq,
         });
+        let watching = watch.unwrap_or(true);
+        if !watching && !matches!(topic, Topic::Thread(_)) {
+            self.respond(id, Err(unwatched_topic(&topic))).await;
+            return;
+        }
         // A new subscription replaces the previous one of the topic.
         self.subscriptions.remove(&topic);
         self.generation += 1;
-        match self.open(&id, &topic, since).await {
+        match self.open(&id, &topic, since, watching).await {
             Ok(subscribed) => {
                 self.subscriptions.insert(topic, subscribed);
             }
@@ -392,13 +406,34 @@ impl Connection {
         }
     }
 
+    /// `watch`: whether the live subscription of a thread topic watches the thread, on the same subscription (no new
+    /// snapshot, PRT-223).
+    fn set_watch(&self, params: &WatchParams) -> Result<(), ErrorBody> {
+        let Some(subscribed) = self.subscriptions.get(&params.topic) else {
+            return Err(ErrorBody::new(
+                ErrorCode::NotFound,
+                format!("this connection is not subscribed to `{}`", params.topic),
+            ));
+        };
+        match &subscribed.watch {
+            Some(Watch::Thread { guard }) => {
+                guard.set_watching(params.watch);
+                Ok(())
+            }
+            _ if params.watch => Ok(()),
+            _ => Err(unwatched_topic(&params.topic)),
+        }
+    }
+
     /// Subscribes to `topic` as subscription [`Connection::generation`], answering request `id` with where it starts,
-    /// and keeps its thread or workspace watched (PRT-025, DMN-023); an error when the topic cannot be followed.
+    /// and keeps its thread or workspace watched (PRT-025, DMN-023), a thread only when `watching` (PRT-222); an error
+    /// when the topic cannot be followed.
     async fn open(
         &self,
         id: &str,
         topic: &Topic,
         since: Option<Position>,
+        watching: bool,
     ) -> Result<Subscribed, ErrorBody> {
         let services = &self.app.services;
         let watch_workspace = |workspace_id: &str| {
@@ -418,7 +453,8 @@ impl Connection {
                     let supervisor = &services.supervisor;
                     let log = supervisor.thread_log(thread_id).await?;
                     let levels = supervisor.live_levels(thread_id).await?;
-                    Ok((log, levels, supervisor.watch(thread_id, self.number).await?))
+                    let guard = supervisor.watch(thread_id, self.number, watching).await?;
+                    Ok((log, levels, guard))
                 }
                 .await
                 .map_err(supervisor_error)?;
@@ -428,7 +464,7 @@ impl Connection {
                     levels,
                     self.out.clone(),
                 )));
-                (task, Some(Watch::Thread { _guard: guard }))
+                (task, Some(Watch::Thread { guard }))
             }
             Topic::Workspace(workspace_id) => {
                 let log = services.workspace_log(workspace_id).await?;
@@ -473,7 +509,7 @@ impl Connection {
             generation: self.generation,
             task,
             transient,
-            _watch: watch,
+            watch,
         })
     }
 
@@ -540,6 +576,13 @@ fn driven_thread(call: &Call) -> Option<&str> {
         | Call::ThreadLiveStart(ThreadRef { thread_id }) => Some(thread_id),
         _ => None,
     }
+}
+
+/// Only a thread's subscription may be kept without watching (PRT-222).
+fn unwatched_topic(topic: &Topic) -> ErrorBody {
+    bad_request(format!(
+        "only a `thread/<id>` subscription can be kept unwatched, not `{topic}`"
+    ))
 }
 
 /// How a forwarder ended.

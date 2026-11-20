@@ -1,11 +1,23 @@
 /**
  * The frame on narrow and phone-sized frames (UI-200..UI-205) and the left column's splitter (UI-207): the strip the
- * left column folds into and the drawer it opens, the phone's bottom bar of areas, the `threads.toggle` command, and
- * the visual viewport's height that keeps the composer above a phone's keyboard.
+ * left column folds into and the drawer it opens, the phone's bottom bar of areas, the `threads.toggle` and
+ * `threads.collapse` commands with the buttons that hide the wide column and show it again (UI-985..UI-987), and the
+ * visual viewport's height that keeps the composer above a phone's keyboard.
  */
 
-import { AreaBar, type AreaItem, type StripItem, ThreadStrip, useMediaQuery, useWidthClass } from "@omfp/kit";
+import {
+  AreaBar,
+  type AreaItem,
+  Icon,
+  IconButton,
+  ModeButton,
+  type StripItem,
+  ThreadStrip,
+  useMediaQuery,
+  useWidthClass,
+} from "@omfp/kit";
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { flushSync } from "react-dom";
 import { DRAFT_THREAD, SELECTED_THREAD, useCommand, useThreads, useWindowState } from "../sdk/index.ts";
 import { strings } from "../strings/index.ts";
 import type { Area } from "../view/layout.ts";
@@ -17,6 +29,7 @@ import {
   type Breakpoint,
   breakpointOf,
   COARSE_POINTER,
+  LEFT_COLLAPSED,
   LEFT_OPEN,
   MOBILE_AREA,
   SHORT_TOUCH_SCREEN,
@@ -108,21 +121,98 @@ export function useLeftDrawer(breakpoint: Breakpoint, aside: RefObject<HTMLEleme
   }, [drawer, aside, setOpen]);
 }
 
-/** Space t focuses the wide column, or toggles its drawer and focuses its selected row. */
-export function ToggleThreadsCommand({ breakpoint }: { breakpoint: Breakpoint }): ReactNode {
+/**
+ * The left column's commands. `threads.toggle` (Space t) focuses the wide column, shown first if it was collapsed
+ * (UI-987), or toggles the narrow drawer and focuses its selected row (UI-201). `threads.collapse` (Space b) hides
+ * the wide column or shows it again (UI-985); narrow and phone frames have nothing to collapse.
+ */
+export function LeftColumnCommands({ breakpoint }: { breakpoint: Breakpoint }): ReactNode {
   const [, setOpen] = useWindowState(LEFT_OPEN);
+  const [collapsed] = useWindowState(LEFT_COLLAPSED);
+  const setCollapsed = useSetCollapsed();
+  const reveal = useRevealColumn(breakpoint);
   useCommand({
     id: "threads.toggle",
     title: strings.shell.commands.toggleThreads,
     run: () => {
-      if (breakpoint === "wide") {
-        focusColumn(document.getElementById(LEFT_COLUMN_ID));
-      } else {
+      if (breakpoint !== "wide") {
         setOpen((open) => !open);
+        return;
       }
+      reveal();
+      focusColumn(document.getElementById(LEFT_COLUMN_ID));
     },
   });
+  useCommand({
+    id: "threads.collapse",
+    title: strings.shell.commands.collapseThreads,
+    enabled: () => breakpoint === "wide",
+    run: () => setCollapsed(!collapsed),
+  });
   return null;
+}
+
+/**
+ * Shows the wide column at once when it is collapsed, so a command can focus inside it: `threads.toggle` and the
+ * column's `workspace.new` (UI-987).
+ */
+export function useRevealColumn(breakpoint: Breakpoint): () => void {
+  const [collapsed] = useWindowState(LEFT_COLLAPSED);
+  const setCollapsed = useSetCollapsed();
+  return () => {
+    if (breakpoint === "wide" && collapsed) {
+      setCollapsed(false);
+    }
+  };
+}
+
+const COLLAPSE_BUTTON = "left-collapse";
+const EXPAND_BUTTON = "left-expand";
+
+/**
+ * Collapses the wide column or shows it again, rendered at once so the focus can move: from inside the column to the
+ * mode line's Show threads, from that button to the column's Hide threads (UI-985, UI-986).
+ */
+function useSetCollapsed(): (collapse: boolean) => void {
+  const [, setCollapsed] = useWindowState(LEFT_COLLAPSED);
+  return (collapse) => {
+    const from = collapse
+      ? document.getElementById(LEFT_COLUMN_ID)
+      : document.querySelector(`[data-testid="${EXPAND_BUTTON}"]`);
+    const moveFocus = from?.contains(document.activeElement) ?? false;
+    flushSync(() => setCollapsed(collapse));
+    if (moveFocus) {
+      document.querySelector<HTMLElement>(`[data-testid="${collapse ? EXPAND_BUTTON : COLLAPSE_BUTTON}"]`)?.focus();
+    }
+  };
+}
+
+/** Hide threads, on the wide column's brand row (UI-985). */
+export function HideThreadsButton(): ReactNode {
+  const setCollapsed = useSetCollapsed();
+  return (
+    <IconButton
+      label={text.hideThreads}
+      icon={<Icon name="panel-left-close" />}
+      aria-controls={LEFT_COLUMN_ID}
+      data-testid={COLLAPSE_BUTTON}
+      onPress={() => setCollapsed(true)}
+    />
+  );
+}
+
+/** Show threads, at the mode line's start while the wide column is collapsed (UI-986). */
+export function ShowThreadsButton(): ReactNode {
+  const setCollapsed = useSetCollapsed();
+  return (
+    <ModeButton
+      label={text.showThreads}
+      icon="panel-left-open"
+      aria-controls={LEFT_COLUMN_ID}
+      data-testid={EXPAND_BUTTON}
+      onPress={() => setCollapsed(false)}
+    />
+  );
 }
 
 /** The strip of a narrow frame (UI-201): brand, toggle, and the threads needing the user or running. */

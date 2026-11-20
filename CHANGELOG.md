@@ -13,6 +13,9 @@ The version's section is also the source of the GitHub release notes.
   anywhere, also while typing in the composer, whose focus moves to the new thread's composer. They go on into the
   next or previous workspace and wrap around at the ends, skipping archived threads, collapsed workspaces and the
   threads the column's filter hides. Rebindable in `keymap.json` (#217).
+- A wide window's left column collapses to nothing with *Hide threads* (the button at the end of its logo's row),
+  `Space b` or `:threads.collapse`, so the view takes the whole window; *Show threads* at the start of the mode line,
+  `Space b` again or `Space t` (which also focuses it) bring it back. Each window remembers it across reloads (#216).
 
 ### Fixed
 

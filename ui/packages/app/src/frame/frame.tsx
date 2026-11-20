@@ -67,15 +67,18 @@ import { type ModeLineViews, useMode, WindowModeLine } from "./mode-line.tsx";
 import type { NotificationPort } from "./notifications.ts";
 import { Notifier } from "./notifier.tsx";
 import { OpenedUrls } from "./opened-urls.tsx";
-import { LEFT_OPEN, MOBILE_AREA } from "./responsive.ts";
+import { LEFT_COLLAPSED, LEFT_OPEN, MOBILE_AREA } from "./responsive.ts";
 import {
   Areas,
+  HideThreadsButton,
   LEFT_COLUMN_ID,
+  LeftColumnCommands,
   LeftSplitter,
   LeftStrip,
-  ToggleThreadsCommand,
+  ShowThreadsButton,
   useFrameBreakpoint,
   useLeftDrawer,
+  useRevealColumn,
   useVisualViewport,
 } from "./responsive.tsx";
 import { ConnectionBanner, StatusLiveRegion, Toasts } from "./status.tsx";
@@ -198,8 +201,12 @@ export function Frame({
   // The frame's own width picks the layout (UI-200); a short touch screen is a phone (UI-414).
   const breakpoint = useFrameBreakpoint(appRef);
   useLeftDrawer(breakpoint, asideRef);
+  const revealColumn = useRevealColumn(breakpoint);
   useVisualViewport(breakpoint);
   const [leftOpen] = useWindowState(LEFT_OPEN);
+  // A wide frame's column collapsed to nothing (UI-985); narrow and phone frames keep their strip and drawer.
+  const [leftCollapsed] = useWindowState(LEFT_COLLAPSED);
+  const collapsed = breakpoint === "wide" && leftCollapsed;
   const [area] = useWindowState(MOBILE_AREA);
   const side = view !== undefined && chatCell(view.tree) !== undefined;
   const host = useHost();
@@ -245,14 +252,19 @@ export function Frame({
           className="omfp-frame__left"
           data-testid="left-column"
           data-open={(breakpoint !== "wide" && leftOpen) || undefined}
+          data-collapsed={collapsed || undefined}
+          hidden={collapsed}
         >
           <div className="omfp-frame__threads">
             <WidgetBoundary reference="omfp:threads">
-              <ThreadsWidget />
+              <ThreadsWidget
+                brandActions={breakpoint === "wide" ? <HideThreadsButton /> : undefined}
+                reveal={revealColumn}
+              />
             </WidgetBoundary>
           </div>
         </aside>
-        {breakpoint === "wide" && <LeftSplitter aside={asideRef} />}
+        {breakpoint === "wide" && !collapsed && <LeftSplitter aside={asideRef} />}
         <div className="omfp-frame__main">
           {keeping.views.map((entry) => {
             const shown = !welcome && view !== undefined && entry.id === listed?.id;
@@ -281,11 +293,17 @@ export function Frame({
             views={state}
             registry={registry}
           />
-          <FrameModeLine appRef={appRef} bindings={bindings} views={modeViews} whichKey={whichKey} />
+          <FrameModeLine
+            appRef={appRef}
+            bindings={bindings}
+            views={modeViews}
+            whichKey={whichKey}
+            threadsCollapsed={collapsed}
+          />
         </div>
       </main>
       {breakpoint === "mobile" && <Areas side={side} />}
-      <ToggleThreadsCommand breakpoint={breakpoint} />
+      <LeftColumnCommands breakpoint={breakpoint} />
       {view !== undefined && <SafetyNet view={view} workspaceId={workspaceId} views={state} registry={registry} />}
       <Toasts />
       <Login />
@@ -313,17 +331,22 @@ export function Frame({
   );
 }
 
-/** The mode line and the frame's `data-mode`: a mode change (focusing the composer) renders them, not the frame. */
+/**
+ * The mode line and the frame's `data-mode`: a mode change (focusing the composer) renders them, not the frame. While
+ * the wide column is collapsed the line starts with Show threads (UI-986).
+ */
 function FrameModeLine({
   appRef,
   bindings,
   views,
   whichKey,
+  threadsCollapsed,
 }: {
   appRef: RefObject<HTMLDivElement | null>;
   bindings: readonly Binding[];
   views: ModeLineViews;
   whichKey: WhichKeyState;
+  threadsCollapsed: boolean;
 }): ReactNode {
   const mode = useMode();
   const [editorMode] = useWindowState(EDITOR_MODE);
@@ -332,7 +355,13 @@ function FrameModeLine({
     appRef.current?.setAttribute("data-mode", mode);
   }, [appRef, mode]);
   return (
-    <WindowModeLine mode={mode} vim={mode === "insert" ? editorMode : undefined} bindings={bindings} views={views}>
+    <WindowModeLine
+      mode={mode}
+      vim={mode === "insert" ? editorMode : undefined}
+      bindings={bindings}
+      views={views}
+      lead={threadsCollapsed ? <ShowThreadsButton /> : undefined}
+    >
       <CommandLine bindings={bindings} />
       <WhichKey state={whichKey} bindings={bindings} />
       <FilePickerLine />

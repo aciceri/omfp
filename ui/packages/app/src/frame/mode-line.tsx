@@ -89,16 +89,18 @@ export interface ModeLineViews {
 }
 
 /**
- * The window's mode line, the kit's (UI-167, UI-441): the mode pill — the keymap's mode, or vim's while a file editor
- * has the focus (`vim`, UI-112) — then the selected thread's title and state, the window's views when it has several
- * (UI-301), and the newest notice at the right end (UI-192) with the messages button (UI-523); in command mode
- * `children` (the `:` line or the file picker) replace the segments, the views and the notice.
+ * The window's mode line, the kit's (UI-167, UI-441): `lead` (Show threads while the wide left column is collapsed,
+ * UI-986), the mode pill — the keymap's mode, or vim's while a file editor has the focus (`vim`, UI-112) — then the
+ * selected thread's title and state, the window's views when it has several (UI-301), and the newest notice at the
+ * right end (UI-192) with the messages button (UI-523); in command mode `children` (the `:` line or the file picker)
+ * replace the segments, the views and the notice.
  */
 export function WindowModeLine({
   mode,
   vim,
   bindings,
   views,
+  lead,
   children,
 }: {
   mode: Mode;
@@ -106,6 +108,7 @@ export function WindowModeLine({
   /** The window's bindings, for the key chip of `notice.open`. */
   bindings: readonly Binding[];
   views?: ModeLineViews | undefined;
+  lead?: ReactNode;
   children?: ReactNode;
 }): ReactNode {
   const shown = vim === undefined ? mode : vim === "insert" || vim === "replace" ? "insert" : "normal";
@@ -115,6 +118,7 @@ export function WindowModeLine({
     <ModeLine
       className="omfp-frame__mode"
       data-testid="mode-bar"
+      lead={lead}
       mode={pill}
       modeLabel={vim === undefined ? text.names[mode] : text.vim[vim]}
       pillProps={{ "data-testid": "mode-line", "data-vim": vim }}

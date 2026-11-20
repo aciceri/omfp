@@ -25,8 +25,11 @@ section, `Alt-Shift-ArrowUp` / `Alt-Shift-ArrowDown` the focused thread into the
 use `workspaces.reorder` and `threads.reorder`.
 Selecting a thread makes its workspace the **current workspace**: the view, the init file `.omfp/init.ts`, the keymap
 `.omfp/keymap.json` and `:widget add` all follow it. A splitter resizes the column (wide windows); under 1100 px it
-folds into a strip, on a phone it is one of the bottom bar's areas. `Space t` focuses the selected row in a wide
-window and toggles the column in a narrow one; then `za` folds its workspace and keeps focus on its head.
+folds into a strip, on a phone it is one of the bottom bar's areas. In a wide window *Hide threads* (the button at the
+end of the logo's row) or `Space b` (`:threads.collapse`) collapses it to nothing, so the view takes the whole window;
+*Show threads* at the start of the mode line or `Space b` again brings it back, and the window remembers it across
+reloads. `Space t` focuses the selected row in a wide window (showing a collapsed column first) and toggles the
+column in a narrow one; then `za` folds its workspace and keeps focus on its head.
 In the detached column (narrow windows and phones), the logo, filter and "+ workspace" field stay visible while the
 workspace sections and their threads scroll independently below them.
 
@@ -134,6 +137,7 @@ workspace; `Space v` and `Space f` directly open view and workspace-file pickers
 | `Space r`, `Space x`, `Space u`, `Space d` | Rename, archive, unarchive, delete the selected thread. |
 | `Space s`, `Space S`, `Space R` | Stop process of the thread (and of the threads it spawned); restart it. |
 | `Space t` | Focus threads (wide); show or hide threads (narrow). Then `za` acts on the focused workspace. |
+| `Space b` | Hide or show the left column (wide); the mode line's *Show threads* brings it back too. |
 | `d d`, `z a` | Delete the focused row; fold the focused workspace. |
 | `Alt-ArrowUp`, `Alt-ArrowDown` | Move the focused thread (in its workspace) or workspace up or down. |
 | `Alt-Shift-ArrowUp`, `Alt-Shift-ArrowDown` | Move the focused thread to the end of the previous workspace, the start of the next one. |

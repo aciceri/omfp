@@ -1285,6 +1285,11 @@ requirements = [
   "UI-982",
   "UI-983",
   "E2E-76",
+  # Collapse the wide left column to nothing, back from the mode line (#216)
+  "UI-985",
+  "UI-986",
+  "UI-987",
+  "UI-988",
 ]
 
 [M18]

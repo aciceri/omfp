@@ -83,7 +83,14 @@ const text = strings.shell.threads;
 const HALF_PAGE = 10;
 const NO_SNIPPETS: ReadonlyMap<string, string> = new Map();
 
-export function ThreadsWidget(_props: WidgetProps): ReactNode {
+/**
+ * The frame's hooks into its column: `brandActions` on the brand's row (Hide threads, UI-985), `reveal` showing a
+ * collapsed column before a command focuses inside it (UI-987).
+ */
+export function ThreadsWidget({
+  brandActions,
+  reveal,
+}: WidgetProps & { readonly brandActions?: ReactNode; readonly reveal?: () => void }): ReactNode {
   const threads = useThreadList();
   const workspaces = useWorkspaceList();
   const [selected] = useWindowState(SELECTED_THREAD);
@@ -144,7 +151,10 @@ export function ThreadsWidget(_props: WidgetProps): ReactNode {
     id: "workspace.new",
     title: strings.shell.commands.newWorkspace,
     aliases: ["workspace"],
-    run: () => newWorkspace.current?.focus(),
+    run: () => {
+      reveal?.();
+      newWorkspace.current?.focus();
+    },
   });
   useCommand({
     id: "threads.spawnedBy",
@@ -163,7 +173,7 @@ export function ThreadsWidget(_props: WidgetProps): ReactNode {
         data-testid="sidebar"
         data-omfp-scope="threads"
       >
-        <Brand host={location.hostname} />
+        <Brand host={location.hostname} actions={brandActions} />
         <NewWorkspace inputRef={newWorkspace} focus={loaded} />
         {loaded && (
           <p className="omfp-muted" data-testid="no-workspaces-hint">
@@ -183,7 +193,7 @@ export function ThreadsWidget(_props: WidgetProps): ReactNode {
       data-omfp-scope="threads"
       data-reordering={drag?.source.kind}
     >
-      <Brand host={location.hostname} />
+      <Brand host={location.hostname} actions={brandActions} />
       <ThreadFilterField />
       <NewWorkspace inputRef={newWorkspace} focus={false} />
       {spawnedRoot !== undefined && (

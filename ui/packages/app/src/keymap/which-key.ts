@@ -80,6 +80,7 @@ export type KeyGroup = (typeof KEY_GROUPS)[number];
 /** Command ids whose group is not their namespace's. */
 const COMMAND_GROUPS: Readonly<Record<string, KeyGroup>> = {
   "threads.toggle": "views",
+  "threads.collapse": "views",
 };
 
 /** The group of a command id's namespace (the part before its first dot). */

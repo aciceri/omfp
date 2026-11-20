@@ -108,6 +108,11 @@
     background: var(--omfp-side-bg);
   }
 
+  /* A wide frame's column collapsed to nothing (UI-985): no width, no splitter; its widget stays mounted. */
+  .omfp-frame__left[hidden] {
+    display: none;
+  }
+
   /* Narrow and phone frames (UI-201, UI-204): the left column opens over the content, right of the strip (narrow)
    * or as the whole threads area (phone); closed, it is not shown (its widget stays mounted). */
   .omfp-app:not([data-layout="wide"]) .omfp-shell {

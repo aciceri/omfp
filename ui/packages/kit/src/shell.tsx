@@ -56,6 +56,8 @@ export interface ModeLineProps extends HTMLAttributes<HTMLDivElement> {
   pillProps?: Omit<ModePillProps, "mode" | "children"> & DataAttributes;
   /** The window's views as tabs ({@link ModeViews}), after the segments. */
   views?: ReactNode;
+  /** Controls before the mode pill, at the line's start (a {@link ModeButton} that shows the hidden left column). */
+  lead?: ReactNode;
   /** A {@link ModeNotice} at the right end, outside the segments that drop when narrow. */
   notice?: ReactNode;
   /** Segments ({@link ModeSegment}), or the command line in command mode. */
@@ -66,9 +68,20 @@ export interface ModeLineProps extends HTMLAttributes<HTMLDivElement> {
  * The bottom bar (UI-167): a gradient hairline on top, the mode pill, then segments separated by `·`; segments that do
  * not fit drop from the right; the view tabs (UI-301) and a notice (UI-193) keep the right end.
  */
-export function ModeLine({ mode, modeLabel, pillProps, views, notice, className, children, ...props }: ModeLineProps) {
+export function ModeLine({
+  mode,
+  modeLabel,
+  pillProps,
+  views,
+  lead,
+  notice,
+  className,
+  children,
+  ...props
+}: ModeLineProps) {
   return (
     <div {...props} className={cx("omfp-modeline", className)} data-mode={mode}>
+      {lead}
       <ModePill {...pillProps} mode={mode}>
         {modeLabel}
       </ModePill>
@@ -161,25 +174,33 @@ export function ModeNotice({ tone, title, body, more = 0, kbd, className, ...pro
   );
 }
 
-export interface ModeMessagesProps extends Omit<AriaButtonProps, "children" | "aria-label"> {
-  /** Accessible name (`Messages`). */
+export interface ModeButtonProps extends Omit<AriaButtonProps, "children" | "aria-label"> {
+  /** Accessible name (`Messages`, `Show threads`). */
   label: string;
+  icon: IconName;
 }
+
+/** A quiet icon button of the mode line, as tall as the line allows. */
+export function ModeButton({ label, icon, className, ...props }: ModeButtonProps) {
+  return (
+    <AriaButton
+      {...props}
+      aria-label={label}
+      className={withClass("omfp-modeline__button omfp-focus-inset", className)}
+    >
+      <Icon name={icon} />
+    </AriaButton>
+  );
+}
+
+export type ModeMessagesProps = Omit<ModeButtonProps, "icon">;
 
 /**
  * The way back to the window's messages (UI-523): a quiet icon button at the right end of the mode line, after the
  * notice, that opens them.
  */
-export function ModeMessages({ label, className, ...props }: ModeMessagesProps) {
-  return (
-    <AriaButton
-      {...props}
-      aria-label={label}
-      className={withClass("omfp-modeline__messages omfp-focus-inset", className)}
-    >
-      <Icon name="message-square" />
-    </AriaButton>
-  );
+export function ModeMessages(props: ModeMessagesProps) {
+  return <ModeButton {...props} icon="message-square" />;
 }
 
 export type CommandLineProps = HTMLAttributes<HTMLSpanElement>;
@@ -271,14 +292,17 @@ export function CommandItem({
 export interface BrandProps extends HTMLAttributes<HTMLDivElement> {
   /** The daemon host, after `@`. */
   host?: string;
+  /** Controls at the row's end (the left column's Hide threads button). */
+  actions?: ReactNode;
 }
 
-/** The wordmark `omfπ` (`π` in the theme's gradient, UI-221) and `@host` (UI-170). */
-export function Brand({ host, className, ...props }: BrandProps) {
+/** The wordmark `omfπ` (`π` in the theme's gradient, UI-221), `@host` (UI-170) and `actions` flush right. */
+export function Brand({ host, actions, className, ...props }: BrandProps) {
   return (
     <div {...props} className={cx("omfp-brand", className)}>
       <Wordmark className="omfp-brand__mark" />
       {host !== undefined && <span className="omfp-brand__host">@{host}</span>}
+      {actions !== undefined && <span className="omfp-brand__actions">{actions}</span>}
     </div>
   );
 }

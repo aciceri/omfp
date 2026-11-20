@@ -229,6 +229,8 @@ export {
   HintRow,
   type HintRowProps,
   type Mode,
+  ModeButton,
+  type ModeButtonProps,
   ModeLine,
   type ModeLineProps,
   ModeMessages,

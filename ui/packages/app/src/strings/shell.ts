@@ -888,6 +888,8 @@ export const shell = {
     halfUp: "Half a page of threads up",
     help: "Show every key and command (this help)",
     toggleThreads: "Focus threads (wide); show or hide threads (narrow)",
+    /** `threads.collapse` (UI-985). */
+    collapseThreads: "Hide or show the left column",
     login: "Log in to a provider (:login [<provider>]; without one, pick it)",
     logout: "Log out of a provider (:logout <provider>)",
     messages: "Show the notices and toasts that went by (newest first)",

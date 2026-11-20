@@ -185,6 +185,7 @@ sequence. `Space` alone opens it at once: the leader menu. The leader map:
 | `Space s` / `S` / `R` | stop the thread / with the threads it spawned / restart it |
 | `Space w`, `Space p n`, `Space p r` | new workspace, again, rescan the workspace |
 | `Space t` | focus the threads column (wide), show or hide it (narrow); then `za` folds the focused workspace |
+| `Space b` | hide or show the left column (wide; `:threads.collapse`) |
 | `Space v`, `] v` / `[ v` | fuzzy view picker (visible `1`–`9`, arrows and Enter); next / previous view |
 | `Space f` | fuzzy file picker across all workspace repositories and the folder; each row shows repository and containing folder; arrows/Enter open the exact file, Escape cancels |
 | `Space h h`, `Space h k` | the help panel (`?`, `:help`), `:describe-key` |

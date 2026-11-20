@@ -157,6 +157,11 @@
     },
     {
       "mode": "normal",
+      "keys": "Space b",
+      "command": "threads.collapse"
+    },
+    {
+      "mode": "normal",
       "keys": "Space :",
       "command": "cmdline.open"
     },
@@ -844,6 +849,11 @@
       "aliases": [
         "unarchive"
       ]
+    },
+    {
+      "id": "threads.collapse",
+      "title": "Hide or show the left column",
+      "aliases": []
     },
     {
       "id": "threads.moveDown",

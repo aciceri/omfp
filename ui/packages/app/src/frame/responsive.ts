@@ -33,6 +33,14 @@ export const SHORT_TOUCH_SCREEN = "(pointer: coarse) and (max-height: 500px)";
 /** Whether the left column is open over the content (narrow) or as the threads area (mobile). */
 export const LEFT_OPEN = windowKey<boolean>("leftOpen", false);
 
+/**
+ * Whether this window's wide left column is collapsed to nothing (UI-985); narrow and phone frames ignore it. Kept
+ * across reloads, like the column's width (UI-988, UI-207).
+ */
+export const LEFT_COLLAPSED = windowKey<boolean>("leftCollapsed", false, (stored) =>
+  typeof stored === "boolean" ? stored : undefined,
+);
+
 /** The area a phone shows when the threads are closed (UI-204). */
 export const MOBILE_AREA = windowKey<Area>("mobileArea", "chat");
 

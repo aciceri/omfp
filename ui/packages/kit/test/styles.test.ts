@@ -192,6 +192,15 @@ describe("kit styles", () => {
     expect(left.declarations.get("flex")).toBe("0 0 clamp(var(--omfp-side-w), 20vw, 26rem)");
   });
 
+  // spec: UI-985
+  test("a collapsed left column takes no width: hidden, it is not displayed, whatever its flex basis", () => {
+    const appRules = parseCss(readFileSync(join(APP_SRC, "styles.css"), "utf8"));
+    const hidden = findRule(appRules, ["@layer omfp-widgets"], ".omfp-frame__left[hidden]");
+    expect(Object.fromEntries(hidden.declarations)).toEqual({ display: "none" });
+    const brandActions = findRule(kitRules, [LAYER], ".omfp-brand__actions");
+    expect(brandActions.declarations.get("margin-inline-start")).toBe("auto");
+  });
+
   // spec: UI-485
   test("the transcript and the composer's area keep the same scrollbar gutter, so their columns line up", () => {
     const chatRules = parseCss(readFileSync(join(APP_SRC, "widgets", "chat", "chat.css"), "utf8"));

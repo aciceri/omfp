@@ -74,6 +74,8 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { mode: "normal", keys: "Space R", command: "thread.restart" },
   // Focus the column in a wide window; toggle its drawer in a narrow one.
   { mode: "normal", keys: "Space t", command: "threads.toggle" },
+  // Hide the wide column, or show it again (UI-985).
+  { mode: "normal", keys: "Space b", command: "threads.collapse" },
   { mode: "normal", keys: "Space :", command: "cmdline.open" },
   // The full command line from the leader menu (UI-325); `:` stays.
   { mode: "normal", keys: "Space Space", command: "cmdline.open" },

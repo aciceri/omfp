@@ -175,6 +175,38 @@ wrap_window_delegate! {
             main.and_then(|main| main.host()).map_or(1, |host| host.try_close_browser())
         }
 
+        // cef-rs answers 0 (no) by default: a window that cannot resize or maximize is one a tiling compositor (niri)
+        // opens floating.
+        fn can_resize(&self, _window: Option<&mut Window>) -> i32 {
+            1
+        }
+
+        fn can_maximize(&self, _window: Option<&mut Window>) -> i32 {
+            1
+        }
+
+        fn can_minimize(&self, _window: Option<&mut Window>) -> i32 {
+            1
+        }
+
+        // The same app id and WM class as the Tauri window, so the compositor's rules for omfp apply.
+        fn linux_window_properties(
+            &self,
+            _window: Option<&mut Window>,
+            properties: Option<&mut LinuxWindowProperties>,
+        ) -> i32 {
+            let Some(properties) = properties else {
+                return 0;
+            };
+            if std::env::var_os("OMFP_CEF_TRACE").is_some() {
+                eprintln!("omfp-cef: linux_window_properties");
+            }
+            properties.wayland_app_id = CefString::from("omfp");
+            properties.wm_class_class = CefString::from("omfp");
+            properties.wm_class_name = CefString::from("omfp");
+            1
+        }
+
         fn window_runtime_style(&self) -> RuntimeStyle {
             RuntimeStyle::ALLOY
         }

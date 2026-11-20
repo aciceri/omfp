@@ -72,9 +72,9 @@ fn main() -> ExitCode {
 
     let mut app = SpikeApp::new(url);
     let settings = Settings {
-        // The spike runs CEF's renderers unsandboxed: its Linux sandbox needs the setuid `chrome-sandbox` or user
-        // namespaces, a packaging question this spike leaves open.
-        no_sandbox: 1,
+        // Unsandboxed unless `--sandbox`: Chromium's Linux sandbox needs user namespaces or the setuid
+        // `chrome-sandbox`, which the spike checks but does not package.
+        no_sandbox: i32::from(command_line.has_switch(Some(&CefString::from("sandbox"))) != 1),
         root_cache_path: CefString::from(profile.as_str()),
         cache_path: CefString::from(profile.as_str()),
         persist_session_cookies: 1,

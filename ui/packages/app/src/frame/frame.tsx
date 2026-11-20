@@ -16,6 +16,7 @@ import { type Binding, DEFAULT_BINDINGS } from "../keymap/keymap.ts";
 import { globalKeyTimers, type KeyTimers, WhichKeyState } from "../keymap/which-key.ts";
 import { KeymapError, useBindings } from "../keymap/workspace.tsx";
 import { useShownView } from "../sdk/active-view.ts";
+import { CardWidgetScope } from "../sdk/card.tsx";
 import {
   chooseView,
   EDITOR_MODE,
@@ -32,7 +33,7 @@ import {
 } from "../sdk/index.ts";
 import { strings } from "../strings/index.ts";
 import { useAppearance, useUserTheme } from "../theme/theme.ts";
-import { WidgetRegistryScope } from "../view/card.tsx";
+import { CardWidgetView, WidgetRegistryScope } from "../view/card.tsx";
 import { useFileView } from "../view/file-view.tsx";
 import { keepViews, NO_KEPT_VIEWS } from "../view/kept.ts";
 import { chatCell, containsWidget, hasMainSlot } from "../view/layout.ts";
@@ -219,118 +220,121 @@ export function Frame({
     }),
     [views.views, listed?.id, host],
   );
-  // Cards in the chat resolve `omfp:<name>` references in the window's registry (UI-920).
+  // Cards in the chat draw their widget with the view slot and resolve `omfp:<name>` references in the window's
+  // registry (UI-920).
   return (
     <WidgetRegistryScope value={registry}>
-      <div ref={appRef} className="omfp-app" data-testid="app" data-layout={breakpoint}>
-        <ConnectionBanner />
-        {views.error !== undefined && (
-          <div className="omfp-banner" data-tone="error" role="alert" data-testid="view-error">
-            {strings.shell.frame.invalidView(views.error)}
-          </div>
-        )}
-        <KeymapError views={state} />
-        <InitErrors errors={init.errors} />
-        {listed !== undefined && isFileView(listed) && fileError !== undefined && (
-          <div
-            className="omfp-banner"
-            data-tone="error"
-            role="alert"
-            data-testid="view-file-error"
-            data-file={listed.file}
-          >
-            {strings.init.viewFile.banner(strings.init.viewFile.path(listed.file), fileError)}
-          </div>
-        )}
-        {settings.error !== null && settings.error !== undefined && (
-          <div className="omfp-banner" data-tone="error" role="alert" data-testid="settings-error">
-            {strings.shell.settings.error(settings.error)}
-          </div>
-        )}
-        <main className="omfp-shell" data-testid="shell">
-          {breakpoint === "narrow" && <LeftStrip />}
-          <aside
-            ref={asideRef}
-            id={LEFT_COLUMN_ID}
-            className="omfp-frame__left"
-            data-testid="left-column"
-            data-open={(breakpoint !== "wide" && leftOpen) || undefined}
-            data-collapsed={collapsed || undefined}
-            hidden={collapsed}
-          >
-            <div className="omfp-frame__threads">
-              <WidgetBoundary reference="omfp:threads">
-                <ThreadsWidget
-                  brandActions={breakpoint === "wide" ? <HideThreadsButton /> : undefined}
-                  reveal={revealColumn}
-                />
-              </WidgetBoundary>
+      <CardWidgetScope value={CardWidgetView}>
+        <div ref={appRef} className="omfp-app" data-testid="app" data-layout={breakpoint}>
+          <ConnectionBanner />
+          {views.error !== undefined && (
+            <div className="omfp-banner" data-tone="error" role="alert" data-testid="view-error">
+              {strings.shell.frame.invalidView(views.error)}
             </div>
-          </aside>
-          {breakpoint === "wide" && !collapsed && <LeftSplitter aside={asideRef} />}
-          <div className="omfp-frame__main">
-            {keeping.views.map((entry) => {
-              const shown = !welcome && view !== undefined && entry.id === listed?.id;
-              return (
-                <Activity key={entry.key} mode={shown ? "visible" : "hidden"}>
-                  <ViewRenderer
-                    view={entry.view}
-                    registry={registry}
-                    workspaceId={workspaceId}
-                    views={state}
-                    area={breakpoint === "mobile" ? (side ? area : "chat") : undefined}
-                    shown={shown}
+          )}
+          <KeymapError views={state} />
+          <InitErrors errors={init.errors} />
+          {listed !== undefined && isFileView(listed) && fileError !== undefined && (
+            <div
+              className="omfp-banner"
+              data-tone="error"
+              role="alert"
+              data-testid="view-file-error"
+              data-file={listed.file}
+            >
+              {strings.init.viewFile.banner(strings.init.viewFile.path(listed.file), fileError)}
+            </div>
+          )}
+          {settings.error !== null && settings.error !== undefined && (
+            <div className="omfp-banner" data-tone="error" role="alert" data-testid="settings-error">
+              {strings.shell.settings.error(settings.error)}
+            </div>
+          )}
+          <main className="omfp-shell" data-testid="shell">
+            {breakpoint === "narrow" && <LeftStrip />}
+            <aside
+              ref={asideRef}
+              id={LEFT_COLUMN_ID}
+              className="omfp-frame__left"
+              data-testid="left-column"
+              data-open={(breakpoint !== "wide" && leftOpen) || undefined}
+              data-collapsed={collapsed || undefined}
+              hidden={collapsed}
+            >
+              <div className="omfp-frame__threads">
+                <WidgetBoundary reference="omfp:threads">
+                  <ThreadsWidget
+                    brandActions={breakpoint === "wide" ? <HideThreadsButton /> : undefined}
+                    reveal={revealColumn}
                   />
-                </Activity>
-              );
-            })}
-            {welcome && <Welcome />}
-            {view !== undefined && !hasMainSlot(view.tree) && (
-              <FloatingFile workspaceId={workspaceId} views={state} registry={registry} />
-            )}
-            <FloatingWidgets panels={views.panels} workspaceId={workspaceId} views={state} registry={registry} />
-            <RevealedWidget
-              view={view}
-              panels={views.panels}
-              workspaceId={workspaceId}
-              views={state}
-              registry={registry}
-            />
-            <FrameModeLine
-              appRef={appRef}
-              bindings={bindings}
-              views={modeViews}
-              whichKey={whichKey}
-              threadsCollapsed={collapsed}
-            />
-          </div>
-        </main>
-        {breakpoint === "mobile" && <Areas side={side} />}
-        <LeftColumnCommands breakpoint={breakpoint} />
-        {view !== undefined && <SafetyNet view={view} workspaceId={workspaceId} views={state} registry={registry} />}
-        <Toasts />
-        <Login />
-        <StatusLiveRegion />
-        <DeleteWorkspaceDialog />
-        <ResetViewsDialog />
-        <CloseThreadDialog />
-        <Help bindings={bindings} now={now} />
-        <Messages />
-        <Describe bindings={bindings} />
-        <GlobalCommands
-          viewIds={viewIds}
-          currentView={listed?.id}
-          widgets={widgetReferences(registry, state)}
-          addWidget={addWidget}
-        />
-        <Notifier port={notifications} hasFocus={hasFocus} focusWindow={focusWindow} />
-        <AgentFiles />
-        <AgentNotices />
-        <OpenedUrls />
-        <InitLoader workspaceId={workspaceId} views={state} />
-        <WindowRequests workspaceId={workspaceId} views={state} registry={registry} timers={checkTimers} />
-        {file.source}
-      </div>
+                </WidgetBoundary>
+              </div>
+            </aside>
+            {breakpoint === "wide" && !collapsed && <LeftSplitter aside={asideRef} />}
+            <div className="omfp-frame__main">
+              {keeping.views.map((entry) => {
+                const shown = !welcome && view !== undefined && entry.id === listed?.id;
+                return (
+                  <Activity key={entry.key} mode={shown ? "visible" : "hidden"}>
+                    <ViewRenderer
+                      view={entry.view}
+                      registry={registry}
+                      workspaceId={workspaceId}
+                      views={state}
+                      area={breakpoint === "mobile" ? (side ? area : "chat") : undefined}
+                      shown={shown}
+                    />
+                  </Activity>
+                );
+              })}
+              {welcome && <Welcome />}
+              {view !== undefined && !hasMainSlot(view.tree) && (
+                <FloatingFile workspaceId={workspaceId} views={state} registry={registry} />
+              )}
+              <FloatingWidgets panels={views.panels} workspaceId={workspaceId} views={state} registry={registry} />
+              <RevealedWidget
+                view={view}
+                panels={views.panels}
+                workspaceId={workspaceId}
+                views={state}
+                registry={registry}
+              />
+              <FrameModeLine
+                appRef={appRef}
+                bindings={bindings}
+                views={modeViews}
+                whichKey={whichKey}
+                threadsCollapsed={collapsed}
+              />
+            </div>
+          </main>
+          {breakpoint === "mobile" && <Areas side={side} />}
+          <LeftColumnCommands breakpoint={breakpoint} />
+          {view !== undefined && <SafetyNet view={view} workspaceId={workspaceId} views={state} registry={registry} />}
+          <Toasts />
+          <Login />
+          <StatusLiveRegion />
+          <DeleteWorkspaceDialog />
+          <ResetViewsDialog />
+          <CloseThreadDialog />
+          <Help bindings={bindings} now={now} />
+          <Messages />
+          <Describe bindings={bindings} />
+          <GlobalCommands
+            viewIds={viewIds}
+            currentView={listed?.id}
+            widgets={widgetReferences(registry, state)}
+            addWidget={addWidget}
+          />
+          <Notifier port={notifications} hasFocus={hasFocus} focusWindow={focusWindow} />
+          <AgentFiles />
+          <AgentNotices />
+          <OpenedUrls />
+          <InitLoader workspaceId={workspaceId} views={state} />
+          <WindowRequests workspaceId={workspaceId} views={state} registry={registry} timers={checkTimers} />
+          {file.source}
+        </div>
+      </CardWidgetScope>
     </WidgetRegistryScope>
   );
 }

@@ -12,6 +12,7 @@ import { type ReactNode, useState } from "react";
 import {
   type Answer,
   CardScope,
+  CardWidgetScope,
   SELECTED_THREAD,
   strings,
   useAnswer,
@@ -19,7 +20,7 @@ import {
   type WidgetComponent,
   type WidgetProps,
 } from "../../../src/sdk/index.ts";
-import { WidgetRegistryScope } from "../../../src/view/card.tsx";
+import { CardWidgetView, WidgetRegistryScope } from "../../../src/view/card.tsx";
 import type { WidgetRegistry } from "../../../src/view/resolve.ts";
 import type { ToolCard } from "../../../src/vm/tool.ts";
 import { TranscriptWidget } from "../../../src/widgets/chat/index.ts";
@@ -105,9 +106,11 @@ function setup(): Setup {
 function show(test: Setup, cards: readonly ToolCard[], openTurn = false): void {
   renderWithHost(
     <WidgetRegistryScope value={REGISTRY}>
-      {cards.map((card) => (
-        <ToolCardView key={card.toolCallId} threadId="t1" cardKey={card.toolCallId} card={card} openTurn={openTurn} />
-      ))}
+      <CardWidgetScope value={CardWidgetView}>
+        {cards.map((card) => (
+          <ToolCardView key={card.toolCallId} threadId="t1" cardKey={card.toolCallId} card={card} openTurn={openTurn} />
+        ))}
+      </CardWidgetScope>
     </WidgetRegistryScope>,
     test,
   );

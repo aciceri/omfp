@@ -14,7 +14,6 @@
 export { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 export { keyLabel } from "../keymap/keymap.ts";
 export { strings } from "../strings/index.ts";
-export { CardWidget, type CardWidgetProps } from "../view/card.tsx";
 export { type AnsiRun, ansiRuns } from "../vm/ansi.ts";
 export { type BackgroundRow, type BackgroundSections, type JobTimes, lastOutputLine } from "../vm/background.ts";
 export { type BrowserScreenshot, type BrowserTab, type BrowserView, browserView } from "../vm/browser.ts";
@@ -322,6 +321,7 @@ export {
 export { chooseView, useActiveView, useViewChoicesUpkeep } from "./active-view.ts";
 export { type Answer, type CardInfoScope, CardScope, useAnswer } from "./answer.ts";
 export { type Background, useBackground, useRunningInBackground, useSubagentRows } from "./background.ts";
+export { CardWidget, type CardWidgetProps, CardWidgetScope } from "./card.tsx";
 export { type Command, CommandRegistry, SCOPE_ATTRIBUTE, scopesAt } from "./commands.ts";
 export { type ConversationActions, conversationActions, useConversationActions } from "./conversation.ts";
 export { useThreadCost } from "./cost.ts";

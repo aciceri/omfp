@@ -6,27 +6,17 @@
 
 import { createContext, type ReactNode, useContext, useMemo } from "react";
 import { useAnswer } from "../sdk/answer.ts";
+import type { CardWidgetProps } from "../sdk/card.tsx";
 import { useThreadSummary, useViews } from "../sdk/hooks.ts";
-import type { WidgetProps } from "../sdk/widget.ts";
 import type { WidgetRegistry } from "./resolve.ts";
 import { SourceSlot, WidgetSlot } from "./slot.tsx";
 
 /** The window's built-in widgets, which a card's `omfp:<name>` reference resolves to; the frame provides its own. */
 export const WidgetRegistryScope = createContext<WidgetRegistry>(new Map());
 
-export interface CardWidgetProps {
-  readonly threadId: string;
-  readonly toolCallId: string;
-  /** The widget reference of the call (`./widgets/<name>`, `user:<name>`, `omfp:<name>`). */
-  readonly reference: string | undefined;
-  /** The one-file source of the call, used instead of `reference`. */
-  readonly code: string | undefined;
-  readonly props: WidgetProps;
-}
-
 /** A card's widget (UI-920), its answer's state (UI-921) as `data-state`; drawn again from the call's arguments
- * whenever it mounts. */
-export function CardWidget({ threadId, toolCallId, reference, code, props }: CardWidgetProps): ReactNode {
+ * whenever it mounts. The frame provides it to the SDK's `CardWidget` (`CardWidgetScope`). */
+export function CardWidgetView({ threadId, toolCallId, reference, code, props }: CardWidgetProps): ReactNode {
   const { state } = useAnswer();
   const workspaceId = useThreadSummary(threadId)?.workspaceId;
   const views = useViews(workspaceId);

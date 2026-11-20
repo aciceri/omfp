@@ -1,9 +1,11 @@
 /** A reusable xterm.js emulator surface. Process ownership and transport stay outside this component. */
 
 import { FitAddon } from "@xterm/addon-fit";
-import { type ITerminalOptions, Terminal as XTerm } from "@xterm/xterm";
+import { type ITerminalOptions, type ITheme, Terminal as XTerm } from "@xterm/xterm";
 import { type ReactNode, useEffect, useRef } from "react";
 import { cx } from "./class.ts";
+import { cssColorReader } from "./theme-colors.ts";
+import { watchTheme } from "./theme-watch.ts";
 
 export interface TerminalEmulatorProps {
   /** Identifies the output stream. A change resets the emulator before replaying `chunks`. */
@@ -14,6 +16,7 @@ export interface TerminalEmulatorProps {
   readonly onTerminalResize?: (cols: number, rows: number) => void;
   readonly cols?: number;
   readonly rows?: number;
+  /** xterm.js options; the keys of `theme` override the colors read from the theme's tokens (TRM-111). */
   readonly options?: Readonly<ITerminalOptions>;
   readonly className?: string;
   readonly ariaLabel?: string;
@@ -28,11 +31,53 @@ function decode(data: string): Uint8Array {
   return bytes;
 }
 
-function defaultTheme(element: HTMLElement): ITerminalOptions["theme"] | undefined {
-  const style = getComputedStyle(element);
-  const background = style.getPropertyValue("--omfp-terminal-bg").trim();
-  const foreground = style.getPropertyValue("--omfp-terminal-fg").trim();
-  return background === "" || foreground === "" ? undefined : { background, cursor: foreground, foreground };
+/** xterm.js theme keys and the `--omfp-terminal-` tokens they come from (TRM-110). */
+const THEME_TOKENS: readonly (readonly [Exclude<keyof ITheme, "extendedAnsi">, string])[] = [
+  ["background", "bg"],
+  ["foreground", "fg"],
+  ["cursor", "cursor"],
+  ["cursorAccent", "cursor-accent"],
+  ["selectionBackground", "selection"],
+  ["black", "black"],
+  ["red", "red"],
+  ["green", "green"],
+  ["yellow", "yellow"],
+  ["blue", "blue"],
+  ["magenta", "magenta"],
+  ["cyan", "cyan"],
+  ["white", "white"],
+  ["brightBlack", "bright-black"],
+  ["brightRed", "bright-red"],
+  ["brightGreen", "bright-green"],
+  ["brightYellow", "bright-yellow"],
+  ["brightBlue", "bright-blue"],
+  ["brightMagenta", "bright-magenta"],
+  ["brightCyan", "bright-cyan"],
+  ["brightWhite", "bright-white"],
+];
+
+/** `#rrggbb` as is, an opaque `rgb()` as `#rrggbb`; anything else goes through the reader's canvas. */
+function hexColor(color: string): string | undefined {
+  if (/^#[0-9a-f]{6}$/i.test(color)) {
+    return color;
+  }
+  const channels = /^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*1)?\)$/.exec(color)?.slice(1);
+  return channels === undefined
+    ? undefined
+    : `#${channels.map((channel) => Number(channel).toString(16).padStart(2, "0")).join("")}`;
+}
+
+/** The terminal colors of the theme as `element` sees them (TRM-110); a token that does not resolve is left out. */
+function tokenTheme(element: HTMLElement): ITheme {
+  const read = cssColorReader(element.ownerDocument, hexColor, element);
+  const theme: ITheme = {};
+  for (const [key, token] of THEME_TOKENS) {
+    const color = read(`terminal-${token}`);
+    if (color !== undefined) {
+      theme[key] = color;
+    }
+  }
+  return theme;
 }
 
 /** Longest prefix of `next` that is a suffix of `previous`, in linear time. */
@@ -180,12 +225,15 @@ export function TerminalEmulator({
     if (element === null) {
       return undefined;
     }
-    const theme = defaultTheme(element);
+    // The theme's colors under the widget's own (TRM-111); a theme change repaints the emulator in place.
+    const themed = (): ITheme => ({ ...tokenTheme(element), ...options?.theme });
+    const theme = themed();
+    let applied = JSON.stringify(theme);
     const terminal = new XTerm({
       cursorBlink: true,
       scrollback: 2000,
-      ...(theme === undefined ? {} : { theme }),
       ...options,
+      theme,
       cols,
       rows,
     });
@@ -209,7 +257,16 @@ export function TerminalEmulator({
     const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(resize);
     observer?.observe(element);
     resize();
+    const unwatch = watchTheme(element.ownerDocument, () => {
+      const next = themed();
+      const key = JSON.stringify(next);
+      if (key !== applied) {
+        applied = key;
+        terminal.options.theme = next;
+      }
+    });
     return () => {
+      unwatch();
       observer?.disconnect();
       input.dispose();
       terminal.dispose();

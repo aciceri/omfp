@@ -1213,6 +1213,9 @@ requirements = [
   # Copy and paste in the terminal: Ctrl+Shift+C/V, Cmd+C/V on macOS, past the window keymap (#213)
   "TRM-108",
   "TRM-109",
+  # The terminal follows the app's theme: colors and ANSI palette from the tokens, live on theme changes (#214)
+  "TRM-110",
+  "TRM-111",
   # Readline line-editing keys in the composer (#103)
   "UI-760",
   # The selected tab of every tabs container remembered per thread and view (#101)

@@ -702,7 +702,9 @@ blue highlight), whatever the page's styles say. `omfp_widget_check` warns about
 
 `TerminalEmulator` is the reusable xterm.js surface: pass `sessionKey`, base64 `chunks`, `onData` and
 `onTerminalResize`; optional `cols`, `rows` and xterm `options` configure it. It owns only emulation and fitting.
-Pair it with `useTerminal` for a PTY-backed CLI, as the copyable `omfp:terminal` built-in does.
+Pair it with `useTerminal` for a PTY-backed CLI, as the copyable `omfp:terminal` built-in does. Its colors (canvas,
+text, cursor, selection, the 16 ANSI colors) are the theme's `--omfp-terminal-*` tokens and follow theme and color
+scheme changes live; the colors you pass in `options.theme` win over them.
 
 | Export | What it is |
 | --- | --- |
@@ -732,7 +734,7 @@ Pair it with `useTerminal` for a PTY-backed CLI, as the copyable `omfp:terminal`
 | `ImageView` | An image fitted, zoomed (buttons, Ctrl with the wheel, a pinch) and panned by dragging: `src`, `alt`, `labels` (`{ zoomIn, zoomOut, fit, actualSize, toolbar, failed, before, after, slider }`); with `before` (`{ src, alt }`) and `compare` (`"split"` or `"slider"`) it compares the two versions side by side or under a slider. Sized like `CodeEditor`. |
 | `ImageDialog` | An image at full size in a modal dialog as large as the window, in an `ImageView` (fitted, then zoomed and panned): `image` (`{ src, alt }`, `undefined` keeps it closed), `title`, `labels` (as `ImageView`'s), `onClose` (Escape or a click outside). The chat's images open in one. |
 | `WebFrame` | A web page in a sandboxed frame under a toolbar (the URL, Reload, Open in browser), filling its container like `CodeEditor`: `url` (an absolute `http(s)` URL other than omfp's own origin; another shows why it is refused), `title` (the frame's accessible name), `loadTimeoutMs` (default 10000: then it says the site may refuse framing). `omfp:web` is one. |
-| `TerminalEmulator` | An xterm.js emulator filling its container: `sessionKey` resets replay, `chunks` are base64 bytes, `onData` forwards keyboard input, `onTerminalResize` receives fitted columns and rows, and optional `cols`, `rows`, `options` configure xterm. Pair it with `useTerminal`; `omfp:terminal` is one. |
+| `TerminalEmulator` | An xterm.js emulator filling its container, in the theme's colors: `sessionKey` resets replay, `chunks` are base64 bytes, `onData` forwards keyboard input, `onTerminalResize` receives fitted columns and rows, and optional `cols`, `rows`, `options` configure xterm (`options.theme` colors override the theme's). Pair it with `useTerminal`; `omfp:terminal` is one. |
 | `PathLink` | An inline button opening a file path: `reference` (`{ path, line }`), `onOpen` (e.g. from `useOpenFile()`). |
 | `Tabs` | Tabs with `TabList`, `Tab` and `TabPanel`. |
 | `ListBox` | A selectable list with `ListBoxItem`. |

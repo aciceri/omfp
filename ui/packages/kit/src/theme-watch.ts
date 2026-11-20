@@ -4,7 +4,7 @@ const DARK_QUERY = "(prefers-color-scheme: dark)";
  * Calls `changed` whenever the effective theme may have changed: an attribute of `<html>` (only `attributes`, when
  * given), the system's `prefers-color-scheme`, any change under `<head>` (the user theme's `<style>` text or its
  * replacement, UI-091) and any stylesheet finishing loading. For what reads the tokens from script: the contrast guard
- * (UI-196), Mermaid diagrams (UI-981). Returns the unsubscribe.
+ * (UI-196), Mermaid diagrams (UI-981), terminals (TRM-111). Returns the unsubscribe.
  */
 export function watchTheme(document: Document, changed: () => void, attributes?: readonly string[]): () => void {
   const observer = new MutationObserver(changed);

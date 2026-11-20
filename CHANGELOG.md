@@ -25,6 +25,10 @@ The version's section is also the source of the GitHub release notes.
   and shows when one of its threads needs you or failed, as do the collapsed `Jobs (N)` marks; `Space a`, the thread
   picker and the filter still find them, while `j`/`k` and `Alt-j`/`Alt-k` skip them. Archived ones stay under
   Archived, and threads of a job no longer declared stay in the list (#219).
+- The terminal (`omfp:terminal` and the kit's `TerminalEmulator`) follows the app's theme instead of drawing white on
+  black: its background, text, cursor, selection and 16 ANSI colors come from the theme, in both skins and color
+  schemes and with user themes too, and switching theme or color scheme repaints open terminals without restarting
+  them. Widgets can still set their own colors through `options.theme` (#214).
 
 ### Fixed
 

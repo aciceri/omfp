@@ -241,6 +241,39 @@ export const SEARCH_TOKENS: Readonly<Record<string, string>> = {
   "search-current-veil": "color-mix(in oklab, var(--omfp-primary) 45%, transparent)",
 };
 
+/** The terminal's colors (TRM-110), in light: all derived from the roles. */
+export const TERMINAL_TOKENS: Readonly<Record<string, string>> = {
+  "terminal-bg": "var(--omfp-code-bg)",
+  "terminal-fg": "var(--omfp-on-surface)",
+  "terminal-cursor": "var(--omfp-primary)",
+  "terminal-cursor-accent": "var(--omfp-on-primary)",
+  "terminal-selection": "color-mix(in oklab, var(--omfp-primary) 28%, var(--omfp-terminal-bg))",
+  "terminal-black": "var(--omfp-on-surface)",
+  "terminal-red": "var(--omfp-error)",
+  "terminal-green": "var(--omfp-ok)",
+  "terminal-yellow": "var(--omfp-warn)",
+  "terminal-blue": "var(--omfp-primary)",
+  "terminal-magenta": "var(--omfp-tertiary)",
+  "terminal-cyan": "color-mix(in oklab, var(--omfp-primary) 55%, var(--omfp-ok))",
+  "terminal-white": "var(--omfp-outline)",
+  "terminal-bright-black": "var(--omfp-on-surface-variant)",
+  ...Object.fromEntries(
+    ["red", "green", "yellow", "blue", "magenta", "cyan"].map((color) => [
+      `terminal-bright-${color}`,
+      `color-mix(in oklab, var(--omfp-terminal-${color}) 75%, var(--omfp-on-surface))`,
+    ]),
+  ),
+  "terminal-bright-white": "var(--omfp-outline-variant)",
+};
+
+/** What dark changes of the terminal's colors (TRM-110): black is the scheme's dark end, white its light end. */
+export const TERMINAL_DARK: Readonly<Record<string, string>> = {
+  "terminal-black": "var(--omfp-outline-variant)",
+  "terminal-white": "var(--omfp-on-surface-variant)",
+  "terminal-bright-black": "var(--omfp-outline)",
+  "terminal-bright-white": "var(--omfp-on-surface)",
+};
+
 /** The kit's earlier ad-hoc tokens, replaced by the ones above with no aliases (09-design, Tokens). */
 export const RETIRED_TOKEN = /--omfp-(?:radius-|font-size-|row-height|line-height|space-)/;
 

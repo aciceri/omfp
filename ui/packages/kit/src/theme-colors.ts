@@ -1,14 +1,18 @@
-/** Reads `--omfp-` tokens through a hidden probe, normalizing browser-only color notation through a 1×1 canvas. */
+/**
+ * Reads `--omfp-` tokens through a hidden probe, normalizing browser-only color notation through a 1×1 canvas. The
+ * probe goes in `within` (default `<body>`), so tokens a subtree overrides are read as that subtree sees them.
+ */
 export function cssColorReader<T>(
   document: Document,
   parse: (color: string) => T | undefined,
+  within: Element = document.body,
 ): (token: string) => T | undefined {
   let context: CanvasRenderingContext2D | null | undefined;
   return (token) => {
     const probe = document.createElement("span");
     probe.hidden = true;
     probe.style.color = `var(--omfp-${token})`;
-    document.body.append(probe);
+    within.append(probe);
     const computed = document.defaultView?.getComputedStyle(probe).color ?? "";
     probe.remove();
     const parsed = parse(computed);

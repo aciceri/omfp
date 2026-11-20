@@ -227,9 +227,35 @@
       0 0 0 1px color-mix(in oklab, var(--omfp-primary) 8%, transparent),
       0 0.75rem 2rem color-mix(in oklab, var(--omfp-primary) 14%, transparent);
     --omfp-kbd-bg: var(--omfp-surface-container);
-    /* Terminal canvas: stable ANSI defaults; widgets may override both tokens. */
-    --omfp-terminal-bg: #000000;
-    --omfp-terminal-fg: #ffffff;
+    /* Terminal (TRM-110), derived from the roles so every theme and user theme gets it: the canvas is the code
+       surface, text on-surface, the cursor primary with its glyph on-primary, selection primary 28 % into the canvas
+       (UI-138). The ANSI colors are UI-138's (red error, green ok, yellow warn, blue primary, magenta tertiary, cyan
+       primary 55 % into ok), each bright one 25 % toward on-surface, so it gains contrast. Black is the scheme's dark
+       end and white its light end, the bright one lighter: in light black and bright black are on-surface and
+       on-surface-variant, white and bright white outline and outline-variant; in dark black and bright black are
+       outline-variant and outline, white and bright white on-surface-variant and on-surface. Widgets override any
+       color through the emulator's `options.theme` (TRM-111). */
+    --omfp-terminal-bg: var(--omfp-code-bg);
+    --omfp-terminal-fg: var(--omfp-on-surface);
+    --omfp-terminal-cursor: var(--omfp-primary);
+    --omfp-terminal-cursor-accent: var(--omfp-on-primary);
+    --omfp-terminal-selection: color-mix(in oklab, var(--omfp-primary) 28%, var(--omfp-terminal-bg));
+    --omfp-terminal-black: var(--omfp-on-surface);
+    --omfp-terminal-red: var(--omfp-error);
+    --omfp-terminal-green: var(--omfp-ok);
+    --omfp-terminal-yellow: var(--omfp-warn);
+    --omfp-terminal-blue: var(--omfp-primary);
+    --omfp-terminal-magenta: var(--omfp-tertiary);
+    --omfp-terminal-cyan: color-mix(in oklab, var(--omfp-primary) 55%, var(--omfp-ok));
+    --omfp-terminal-white: var(--omfp-outline);
+    --omfp-terminal-bright-black: var(--omfp-on-surface-variant);
+    --omfp-terminal-bright-red: color-mix(in oklab, var(--omfp-terminal-red) 75%, var(--omfp-on-surface));
+    --omfp-terminal-bright-green: color-mix(in oklab, var(--omfp-terminal-green) 75%, var(--omfp-on-surface));
+    --omfp-terminal-bright-yellow: color-mix(in oklab, var(--omfp-terminal-yellow) 75%, var(--omfp-on-surface));
+    --omfp-terminal-bright-blue: color-mix(in oklab, var(--omfp-terminal-blue) 75%, var(--omfp-on-surface));
+    --omfp-terminal-bright-magenta: color-mix(in oklab, var(--omfp-terminal-magenta) 75%, var(--omfp-on-surface));
+    --omfp-terminal-bright-cyan: color-mix(in oklab, var(--omfp-terminal-cyan) 75%, var(--omfp-on-surface));
+    --omfp-terminal-bright-white: var(--omfp-outline-variant);
 
     /* Icons (UI-131) */
     --omfp-ic: 0.875rem;
@@ -343,6 +369,11 @@
       --omfp-warning: #ffb868;
       --omfp-on-warning: #4a2800;
       --omfp-pop-bg: var(--omfp-surface-container);
+      /* The terminal's black and white (TRM-110): the dark end is the outlines, the light end the text roles. */
+      --omfp-terminal-black: var(--omfp-outline-variant);
+      --omfp-terminal-white: var(--omfp-on-surface-variant);
+      --omfp-terminal-bright-black: var(--omfp-outline);
+      --omfp-terminal-bright-white: var(--omfp-on-surface);
     }
   }
 
@@ -388,5 +419,10 @@
     --omfp-warning: #ffb868;
     --omfp-on-warning: #4a2800;
     --omfp-pop-bg: var(--omfp-surface-container);
+    /* The terminal's black and white (TRM-110): the dark end is the outlines, the light end the text roles. */
+    --omfp-terminal-black: var(--omfp-outline-variant);
+    --omfp-terminal-white: var(--omfp-on-surface-variant);
+    --omfp-terminal-bright-black: var(--omfp-outline);
+    --omfp-terminal-bright-white: var(--omfp-on-surface);
   }
 }

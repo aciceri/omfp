@@ -15,6 +15,8 @@ import {
   SPACE_STEPS,
   SURFACE_TOKENS,
   SYNTH,
+  TERMINAL_DARK,
+  TERMINAL_TOKENS,
   TEXT_PAIRS,
   TEXT_SPACING,
   TYPE_SCALE,
@@ -310,5 +312,20 @@ describe("tokens.css", () => {
     expect(
       ["on-tertiary-container on tertiary-container", "on-primary on primary"].filter((pair) => !pairs.includes(pair)),
     ).toEqual([]);
+  });
+
+  // spec: TRM-110
+  test("the terminal's colors derive from the roles, black and white following the scheme, in every theme", () => {
+    expect(differing(light, TERMINAL_TOKENS)).toEqual({});
+    expect(differing(darkForced, TERMINAL_DARK)).toEqual({});
+    expect([...darkForced.declarations.keys()].filter((name) => name.startsWith(prop("terminal-")))).toEqual(
+      Object.keys(TERMINAL_DARK).map(prop),
+    );
+    // Built-in themes and skins set only roles, so the derivation reaches every one of them.
+    const elsewhere = cssFiles(KIT_SRC)
+      .filter((file) => file !== TOKENS_CSS)
+      .flatMap((file) => parseCss(readFileSync(file, "utf8")).flatMap((rule) => [...rule.declarations.keys()]))
+      .filter((name) => name.startsWith(prop("terminal-")));
+    expect(elsewhere).toEqual([]);
   });
 });

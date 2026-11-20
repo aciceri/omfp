@@ -42,6 +42,12 @@ The version's section is also the source of the GitHub release notes.
   thread, so `"all"` can reach gigabytes after hundreds of long threads, too much for a phone). Clients keep a thread
   subscription without watching it with `subscribe { topic, watch: false }` and switch it with the new
   `watch { topic, watch }` (#226).
+- Opening a thread no longer starts its omp: only sending something does (a message, a `/` command, a model or
+  thinking change, Restart), so browsing threads with `Alt-j`/`Alt-k` costs no omp processes. A thread shown after
+  the daemon restarted shows its conversation, read from its session file, in the stopped state; its `/` completion
+  offers the commands its omp last announced, which the daemon now keeps with the thread, and is asked only once you
+  type `/`. `thread.commands` never starts omp any more, and a window asks the usable models of stopped threads once
+  per login instead of starting a short-lived omp for every thread it shows (#231).
 
 ### Fixed
 

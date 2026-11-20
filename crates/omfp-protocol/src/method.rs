@@ -201,7 +201,8 @@ methods! {
     ThreadModels = "thread.models" (params::ThreadRef) -> wire::GetAvailableModelsResult as auth::AvailableModels;
     /// Available thinking levels (omp `get_available_thinking_levels`).
     ThreadThinkingLevels = "thread.thinking_levels" (params::ThreadRef) -> wire::GetAvailableThinkingLevelsResult as Value;
-    /// Available slash commands (omp `get_available_commands`).
+    /// Available slash commands (omp `get_available_commands`); never starts omp: without a running omp, the commands
+    /// it last announced.
     ThreadCommands = "thread.commands" (params::ThreadRef) -> wire::GetAvailableCommandsResult as Value;
     /// Compacts the context (omp `compact`).
     ThreadCompact = "thread.compact" (params::CompactParams) -> wire::CompactionResult as Value;

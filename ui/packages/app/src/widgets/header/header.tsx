@@ -249,18 +249,22 @@ function More({
   );
 }
 
-/** Reads thread details while running, otherwise discovers models without starting a thread; after a failed start, the
- * model it resumes with (`thread.session`, UI-751). Login/logout changes refresh either list; the session (model,
- * thinking and context usage) is read again whenever the thread settles or starts working and whenever a compaction
- * ends (UI-030); the function refreshes it after a model or thinking change. */
+/** Reads thread details while running, otherwise the usable models without starting a thread (shared by the window,
+ * {@link usableModels}); after a failed start, the model it resumes with (`thread.session`, UI-751). Login/logout
+ * changes refresh either list; the session (model, thinking and context usage) is read again whenever the thread
+ * settles or starts working and whenever a compaction ends (UI-030); the function refreshes it after a model or
+ * thinking change. */
 function useThreadDetails(
   threadId: string | undefined,
   process: ThreadSummary["process"]["state"] | undefined,
 ): [ThreadDetails, () => void] {
+  const host = useHost();
   const call = useCall();
   const [details, setDetails] = useState<ThreadDetails>(NO_DETAILS);
   const [saved, setSaved] = useState<string | undefined>(undefined);
   const [authRevision] = useWindowState(AUTH_REVISION);
+  // The daemon's count of usable models (PRT-141) follows the logins of every window.
+  const usableCount = useSnapshot((snapshot) => snapshot.index.models);
   const report = useReportError();
   const running = process === "running";
   const failed = process === "failed";
@@ -273,14 +277,13 @@ function useThreadDetails(
   });
   useEffect(() => {
     // Read again on every login or logout.
-    void authRevision;
     let live = true;
     const request =
       running && threadId !== undefined
         ? fetchDetails(call, threadId)
-        : call("auth.models", {}).then((result) => ({
+        : usableModels(host, call, `${authRevision}:${usableCount}`).then((models) => ({
             ...NO_DETAILS,
-            models: decodeModels(result),
+            models,
             modelsLoaded: true,
           }));
     void request.then(
@@ -298,7 +301,7 @@ function useThreadDetails(
     return () => {
       live = false;
     };
-  }, [call, threadId, running, authRevision, report]);
+  }, [host, call, threadId, running, authRevision, usableCount, report]);
   useEffect(() => {
     // Read again on every login or logout, turn boundary and compaction: omp sends no event with the context usage.
     void authRevision;
@@ -365,6 +368,32 @@ async function fetchDetails(call: SdkClient["call"], threadId: string): Promise<
     thinkingLevels: levels.status === "fulfilled" ? decodeThinkingLevels(levels.value) : [],
     saved: undefined,
   };
+}
+
+/** Each window's last `auth.models` answer and the login state it is for. */
+const USABLE_MODELS = new WeakMap<
+  object,
+  { readonly state: string; readonly models: Promise<ThreadDetails["models"]> }
+>();
+
+/**
+ * The usable models a thread without a running omp offers (`auth.models`, UI-030), asked once per window and login
+ * `state` rather than for every thread shown: each answer comes from a short-lived omp (UI-998). A failed ask is
+ * asked again next time.
+ */
+function usableModels(host: object, call: SdkClient["call"], state: string): Promise<ThreadDetails["models"]> {
+  const kept = USABLE_MODELS.get(host);
+  if (kept?.state === state) {
+    return kept.models;
+  }
+  const models = call("auth.models", {}).then(decodeModels);
+  USABLE_MODELS.set(host, { state, models });
+  void models.catch(() => {
+    if (USABLE_MODELS.get(host)?.models === models) {
+      USABLE_MODELS.delete(host);
+    }
+  });
+  return models;
 }
 
 /** The title, or its editor while renaming (`Space r`, `:rename`, the `⋯` popover's Rename). Saving or cancelling

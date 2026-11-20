@@ -47,6 +47,7 @@ mod oauth;
 mod process;
 mod restart;
 mod roots;
+mod stopped;
 
 pub use cards::CardWait;
 pub use login::{AuthOmp, LOGIN_MODEL};

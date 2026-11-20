@@ -645,10 +645,23 @@ impl Journey {
     }
 
     /// Creates a thread in a new workspace named `workspace` through the protocol (no repository, no first message),
-    /// then opens it from the left column; returns its id. Journeys about creating threads use
-    /// [`Self::new_linked_workspace`].
+    /// starts its omp (showing a thread starts none, DMN-070: the launcher's next run plays now) and opens it from the
+    /// left column; returns its id. Journeys about creating threads use [`Self::new_linked_workspace`].
     pub async fn create_thread(&self, workspace: &str) -> anyhow::Result<String> {
         self.create_thread_with(workspace, None).await
+    }
+
+    /// Starts thread `thread_id`'s omp through the protocol (`thread.restart`), as a user's Restart does: showing a
+    /// thread starts none (DMN-070).
+    pub async fn start_omp(&self, thread_id: &str) -> anyhow::Result<()> {
+        let mut connection = self.connect().await?;
+        connection
+            .call::<omfp_protocol::method::ThreadRestart>(omfp_protocol::ThreadRef {
+                thread_id: thread_id.to_owned(),
+            })
+            .await?;
+        connection.close().await?;
+        Ok(())
     }
 
     /// Waits until a thread not in `before` is selected and open; returns its id.
@@ -663,7 +676,8 @@ impl Journey {
     }
 
     /// Creates a thread whose omp asks before every tool (`always-ask`; the UI keeps the `yolo` default, DMN-074)
-    /// through the protocol, then opens it from the left column; returns its id.
+    /// through the protocol, starts its omp and opens it from the left column, as [`Self::create_thread`]; returns its
+    /// id.
     pub async fn create_asking_thread(&self, workspace: &str) -> anyhow::Result<String> {
         self.create_thread_with(workspace, Some(ApprovalMode::AlwaysAsk))
             .await
@@ -690,6 +704,7 @@ impl Journey {
             })
             .await?;
         connection.close().await?;
+        self.start_omp(&thread.id).await?;
         self.click(&row(&thread.id)).await?;
         self.opened(&thread.id).await?;
         Ok(thread.id)

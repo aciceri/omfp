@@ -511,18 +511,25 @@ function imageInput(
 }
 
 /**
- * The thread's `/` commands: those of the last `available_commands_update` (UI-060), or `thread.commands` asked once
- * while the state has none yet.
+ * The thread's `/` commands: those of the last `available_commands_update` (UI-060), or, while the state has none,
+ * `thread.commands` asked once the draft starts with `/` (`slash`): showing or focusing the composer asks nothing
+ * (UI-998).
  */
 function useThreadCommands(
   threadId: string,
   known: readonly AvailableSlashCommand[],
+  slash: boolean,
 ): readonly AvailableSlashCommand[] {
   const call = useCall();
   const [fetched, setFetched] = useState<readonly AvailableSlashCommand[]>([]);
+  const [wanted, setWanted] = useState(false);
   const missing = known.length === 0;
+  if (missing && slash && !wanted) {
+    setWanted(true);
+  }
+  const ask = missing && wanted;
   useEffect(() => {
-    if (!missing) {
+    if (!ask) {
       return;
     }
     let live = true;
@@ -538,7 +545,7 @@ function useThreadCommands(
     return () => {
       live = false;
     };
-  }, [call, missing, threadId]);
+  }, [call, ask, threadId]);
   return missing ? fetched : known;
 }
 
@@ -592,7 +599,7 @@ export const Composer = memo(function Composer({
   }, [focusRequest, threadId, setFocusRequest]);
   const mode = sendMode(busy, queueHeld);
   const other = alternative(mode);
-  const commands = useThreadCommands(threadId, known);
+  const commands = useThreadCommands(threadId, known, draft.text.startsWith("/"));
   const pastes = usePastes(draft, setDraft, inputRef);
   const completions = useCompletions({
     inputRef,

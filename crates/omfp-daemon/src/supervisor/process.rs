@@ -7,6 +7,7 @@ use std::sync::atomic::Ordering;
 use std::sync::{Arc, Weak};
 
 use omfp_core::{ProcessState, ThreadEvent};
+use omp_rpc::RpcNotification;
 use tokio::sync::{mpsc, watch};
 use tracing::{info, warn};
 
@@ -17,6 +18,7 @@ use super::{
 use crate::agent::{AgentProcess, Lease};
 use crate::host_tools;
 use crate::omp::{LaunchSpec, startup_events, thread_event};
+use crate::session_file::SessionRead;
 use crate::store::{Thread, new_id};
 
 /// Lines of `omp.log` reported with a crash (DMN-035).
@@ -278,25 +280,34 @@ impl Supervisor {
     /// without omp, as the `history` event omp's start would have given (DMN-337), and knows the model that session
     /// restores (DMN-338). Without a session file nothing changes; an unreadable one is only logged.
     async fn history_from_file(&self, actor: &Actor, thread: &Thread) {
+        if let Some(read) = self.read_session_file(actor, thread).await {
+            *lock(&actor.session_model) = read.model;
+            self.push(
+                actor,
+                ThreadEvent::History {
+                    session: read.session,
+                    messages: read.messages,
+                },
+            );
+        }
+    }
+
+    /// The stored session's current branch and saved model, read from its file without omp (DMN-337); `None`
+    /// without a session file, an unreadable one only logged.
+    pub(super) async fn read_session_file(
+        &self,
+        actor: &Actor,
+        thread: &Thread,
+    ) -> Option<SessionRead> {
         let dir = thread.session_dir.clone();
         let session_id = thread.omp_session_id.clone();
         let read = blocking(move || crate::session_file::read(&dir, session_id.as_deref()))
             .await
             .and_then(|read| read.map_err(|error| SupervisorError::Internal(error.to_string())));
-        match read {
-            Ok(Some(read)) => {
-                *lock(&actor.session_model) = read.model;
-                self.push(
-                    actor,
-                    ThreadEvent::History {
-                        session: read.session,
-                        messages: read.messages,
-                    },
-                );
-            }
-            Ok(None) => {}
-            Err(error) => warn!(thread = %actor.id, %error, "cannot read the session file"),
-        }
+        read.unwrap_or_else(|error| {
+            warn!(thread = %actor.id, %error, "cannot read the session file");
+            None
+        })
     }
 
     fn set_process(&self, actor: &Actor, state: ProcessState) {
@@ -332,6 +343,13 @@ impl Supervisor {
         let supervisor = self.clone();
         tokio::spawn(async move {
             while let Some(event) = receiver.recv().await {
+                // Kept before the state shows them, so whoever saw them finds them kept (DMN-358).
+                if let ThreadEvent::Omp {
+                    frame: RpcNotification::AvailableCommandsUpdate(update),
+                } = &event
+                {
+                    supervisor.keep_commands(&actor.id, &update.commands).await;
+                }
                 supervisor.push(&actor, event);
             }
             // A live session ends with its process (DMN-103).

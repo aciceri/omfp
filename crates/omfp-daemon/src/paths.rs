@@ -57,6 +57,12 @@ impl DataDir {
         self.thread(thread_id).join("omp.log")
     }
 
+    /// The `/` commands the thread's omp last announced, kept for a stopped thread (DMN-358).
+    #[must_use]
+    pub fn thread_commands(&self, thread_id: &str) -> PathBuf {
+        self.thread(thread_id).join("commands.json")
+    }
+
     /// The user's widget library, `user:<name>` (AGT-023).
     #[must_use]
     pub fn widgets(&self) -> PathBuf {

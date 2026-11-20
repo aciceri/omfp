@@ -1,7 +1,8 @@
 //! Reopening a thread whose saved model omp cannot use (E2E-73, issue #95), against a daemon on the fake launcher:
-//! every start without an explicit model fails as omp's `SessionModelRestoreError` does. Opening the thread still shows
-//! its conversation, read from the session file (DMN-337); the header marks the saved model unavailable and offers the
-//! usable ones and Log in (UI-751); picking one stores it and starts omp with it on the same conversation (DMN-339).
+//! every start without an explicit model fails as omp's `SessionModelRestoreError` does. Opening the thread starts no
+//! omp and shows its conversation, read from the session file (DMN-359); sending a message fails the start, the
+//! conversation still readable (DMN-337); the header marks the saved model unavailable and offers the usable ones and
+//! Log in (UI-751); picking one stores it and starts omp with it on the same conversation (DMN-339).
 
 use e2e::{Journey, row};
 use omfp_core::wire::AgentMessage;
@@ -103,7 +104,22 @@ async fn saved_thread(journey: &Journey, launcher: &FakeLauncher) -> anyhow::Res
     Ok(thread)
 }
 
-// spec: E2E-73, UI-751, DMN-337, DMN-338, DMN-339
+/// The starts of the thread's own omp (not the short-lived ones listing the usable models).
+fn thread_launches(launcher: &FakeLauncher, thread: &str) -> usize {
+    launcher
+        .launches()
+        .iter()
+        .filter(|launch| {
+            launch
+                .spec
+                .session_dir
+                .parent()
+                .is_some_and(|dir| dir.ends_with(thread))
+        })
+        .count()
+}
+
+// spec: E2E-73, UI-751, DMN-337, DMN-338, DMN-339, DMN-359
 #[tokio::test(flavor = "multi_thread")]
 async fn a_thread_whose_saved_model_is_unavailable_opens_readable_and_resumes_with_a_picked_model()
 -> anyhow::Result<()> {
@@ -111,12 +127,21 @@ async fn a_thread_whose_saved_model_is_unavailable_opens_readable_and_resumes_wi
     let journey = Journey::start_fake(launcher.clone()).await?;
     journey.connected().await?;
     let thread = saved_thread(&journey, &launcher).await?;
-    // Opening it fails omp's start, yet the conversation reads from the session file.
+    // Opening it starts no omp, yet the conversation reads from the session file.
     journey.click(&row(&thread)).await?;
     journey.opened(&thread).await?;
     journey.reply("We decided to ship on Friday.").await?;
+    journey.status(&thread, "stopped").await?;
+    assert_eq!(
+        thread_launches(&launcher, &thread),
+        0,
+        "showing starts nothing"
+    );
+    // Sending fails omp's start; the conversation stays.
+    journey.send("Shall we?").await?;
     journey.element(NOTE).await?;
     journey.status(&thread, "failed").await?;
+    journey.reply("We decided to ship on Friday.").await?;
     assert_eq!(
         journey.text(NOTE).await?,
         format!(

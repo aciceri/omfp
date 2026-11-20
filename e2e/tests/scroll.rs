@@ -177,7 +177,8 @@ async fn stays_at(
     Ok(())
 }
 
-/// Creates a thread in a new workspace through the protocol (the launcher's next run plays it); returns its id.
+/// Creates a thread in a new workspace through the protocol and starts its omp (the launcher's next run plays it);
+/// returns its id.
 async fn create_thread(journey: &Journey) -> anyhow::Result<String> {
     let mut connection = journey.connect().await?;
     let thread = connection
@@ -196,6 +197,7 @@ async fn create_thread(journey: &Journey) -> anyhow::Result<String> {
         .await?
         .id;
     connection.close().await?;
+    journey.start_omp(&thread).await?;
     Ok(thread)
 }
 

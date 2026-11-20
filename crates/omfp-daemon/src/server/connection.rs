@@ -451,6 +451,8 @@ impl Connection {
             Topic::Thread(thread_id) => {
                 let (log, levels, guard) = async {
                     let supervisor = &services.supervisor;
+                    // A thread shown or kept starts no omp: its history comes from its session file (DMN-359).
+                    supervisor.read_history(thread_id).await?;
                     let log = supervisor.thread_log(thread_id).await?;
                     let levels = supervisor.live_levels(thread_id).await?;
                     let guard = supervisor.watch(thread_id, self.number, watching).await?;

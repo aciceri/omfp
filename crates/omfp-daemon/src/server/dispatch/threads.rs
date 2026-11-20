@@ -290,7 +290,8 @@ async fn queue(
     empty()
 }
 
-/// Methods acting on a thread's agent; every omp command starts omp when needed (DMN-070).
+/// Methods acting on a thread's agent; every omp command starts omp when needed (DMN-070), except `thread.commands`
+/// (DMN-358).
 #[allow(clippy::too_many_lines)] // One arm per method.
 pub(super) async fn thread(services: &Services, principal: &Principal, call: Call) -> Reply {
     let supervisor = &services.supervisor;
@@ -379,7 +380,10 @@ pub(super) async fn thread(services: &Services, principal: &Principal, call: Cal
         Call::ThreadThinkingLevels(params) => {
             forward(params.thread_id, OmpCall::ThinkingLevels).await
         }
-        Call::ThreadCommands(params) => forward(params.thread_id, OmpCall::Commands).await,
+        Call::ThreadCommands(params) => supervisor
+            .commands(&params.thread_id)
+            .await
+            .map_err(supervisor_error),
         Call::ThreadCompact(params) => {
             let command = CompactCommand {
                 custom_instructions: params.instructions,

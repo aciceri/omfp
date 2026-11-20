@@ -227,7 +227,8 @@ async fn install_probe(journey: &Journey) -> anyhow::Result<()> {
     journey.connected().await
 }
 
-/// Creates a thread in a new workspace through the protocol (the launcher's next run plays it); returns its id.
+/// Creates a thread in a new workspace through the protocol and starts its omp (the launcher's next run plays it);
+/// returns its id.
 async fn create_thread(journey: &Journey, workspace: &str) -> anyhow::Result<String> {
     let mut connection = journey.connect().await?;
     let thread = connection
@@ -245,6 +246,7 @@ async fn create_thread(journey: &Journey, workspace: &str) -> anyhow::Result<Str
         })
         .await?;
     connection.close().await?;
+    journey.start_omp(&thread.id).await?;
     until_present(journey, &row(&thread.id)).await?;
     Ok(thread.id)
 }

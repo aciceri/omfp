@@ -1316,6 +1316,10 @@ requirements = [
   "UI-921",
   "UI-922",
   "E2E-77",
+  # Showing a thread starts no omp: `/` commands and history without omp, one `auth.models` per window (#231)
+  "DMN-358",
+  "DMN-359",
+  "UI-998",
 ]
 
 [M18]

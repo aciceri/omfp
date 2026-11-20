@@ -416,7 +416,7 @@ Mapping between protocol commands ([03](03-protocol.md)) and omp RPC commands. A
 | `thread.queue.remove` / `thread.queue.promote` | `remove_queued_message` / `promote_queued_message` |
 | `thread.set_model` / `thread.set_thinking` | `set_model` / `set_thinking_level` (also stored on the thread); without a running omp, `thread.set_model` stores the model and starts omp with `--model` instead (DMN-339) |
 | `thread.models` / `thread.thinking_levels` | `get_available_models` / `get_available_thinking_levels` |
-| `thread.commands` | `get_available_commands` |
+| `thread.commands` | `get_available_commands` (while omp runs; else the commands it last announced, DMN-358) |
 | `thread.compact` | `compact` |
 | `thread.tree` / `thread.navigate` / `thread.fork` / `thread.label` | `get_tree` / `navigate_tree` / `fork` / `set_label` |
 | `thread.subagents` / `.messages` / `.steer` / `.cancel` | `get_subagents` / `get_subagent_messages` / `steer_subagent` / `cancel_subagent` |
@@ -430,7 +430,9 @@ Mapping between protocol commands ([03](03-protocol.md)) and omp RPC commands. A
 
 | ID | Requirement |
 | --- | --- |
-| DMN-070 | A command on a `Stopped` thread that needs omp (e.g. `thread.prompt`) MUST start the process first. Read-only commands on a stopped thread (e.g. `thread.tree`) MAY start it. |
+| DMN-070 | A command on a `Stopped` thread that needs omp (e.g. `thread.prompt`) MUST start the process first. Showing or keeping a thread MUST NOT start it: only what the user sends (a message, steer or follow-up, a `/` command, a model or thinking change, a restart) or a read the caller explicitly asked for that only omp answers (`thread.state`, `thread.tree`, `thread.models`, `thread.subagent_messages`, …) starts a stopped thread's omp; `thread.commands` (DMN-358), `thread.session` (DMN-214), `thread.mcp_servers` and a `thread/<id>` subscription (DMN-359) never do. A window issues no starting read to show a thread (UI-998). |
+| DMN-358 | **`/` commands without omp**: `thread.commands` MUST answer a running omp's `get_available_commands`; without a running omp, the commands of the last `available_commands_update` the thread's omp sent — kept in the thread's state while the daemon runs and in `threads/<id>/commands.json` (written before the state shows them, read after a daemon restart) — else `{ commands: [] }`. It never starts omp and is no activity of the thread (DMN-034). |
+| DMN-359 | **History on show**: subscribing to `thread/<id>` (watching or keeping it, PRT-222) when the thread's log holds no session since the daemon started (its omp never ran, no start failed) MUST read the stored session's current branch from its file without omp, as a failed start does (DMN-337), and record it as the thread's `history` event before answering, so a thread shown after a daemon restart is readable without starting omp. It leaves the saved model of DMN-338 unset (no start failed), reads nothing while a start or stop is under way (that gives the history), and never reads over a history omp gave. |
 | DMN-071 | omp errors (`success: false`, with `code` when present: `session_busy`, `stale_cursor`, `entry_not_found`, …) MUST reach the UI with the same `code`. |
 | DMN-072 | After a `fork` the daemon MUST re-read `get_state` and update `omp_session_id` (fork moves the process to a new session file). |
 | DMN-111 | omp announces no event when `fork` or `navigate_tree` changes the branch a session shows. After either succeeded (neither `cancelled` nor `aborted`), the daemon MUST read the session (`get_state`: `sessionId`, `sessionFile`) and its messages (`get_messages`) again and record them as a `history` event, so every client's transcript and todo list (PRT-057) follow the new branch; a fork stores the new session id first (DMN-072). |

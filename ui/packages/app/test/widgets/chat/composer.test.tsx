@@ -117,20 +117,28 @@ describe("composer", () => {
     ).toEqual(["/zebra Stripes"]);
   });
 
-  // spec: UI-060
-  test("a thread without announced commands asks thread.commands once", async () => {
+  // spec: UI-998, UI-060
+  test("a thread without announced commands asks thread.commands once `/` is typed, not when shown", async () => {
     const { client } = renderThread(<ComposerWidget />, []);
+    await userEvent.click(input());
+    await userEvent.keyboard("hi");
+    expect(client.calls.map((call) => call.method)).toEqual([]);
+
+    await userEvent.clear(input());
+    await userEvent.keyboard("/");
     const [asked, ...again] = client.callsTo("thread.commands");
     expect([asked?.params, again.length]).toEqual([{ threadId: THREAD }, 0]);
     await act(async () => asked?.resolve({ commands: [{ name: "compost", source: "custom" }] }));
-    await userEvent.click(input());
-    await userEvent.keyboard("/comp");
+    await userEvent.keyboard("comp");
     const menu = await screen.findByTestId("slash-suggestions");
     expect(
       within(menu)
         .getAllByTestId("slash-suggestion")
         .map((item) => item.textContent),
     ).toEqual(["/compost"]);
+    await userEvent.clear(input());
+    await userEvent.keyboard("/");
+    expect(client.callsTo("thread.commands").length).toBe(1);
   });
 
   // spec: UI-978

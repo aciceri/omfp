@@ -595,6 +595,101 @@ async fn a_session_open_elsewhere_still_shows_its_history() {
     );
 }
 
+/// omp's `available_commands_update` announcing custom commands `names`.
+fn commands_update(names: &[&str]) -> RpcNotification {
+    let commands: Vec<Value> = names
+        .iter()
+        .map(|name| json!({ "name": name, "source": "custom" }))
+        .collect();
+    RpcNotification::AvailableCommandsUpdate(
+        serde_json::from_value(json!({ "commands": commands })).unwrap(),
+    )
+}
+
+/// The names of a `thread.commands` answer.
+fn command_names(answer: &Value) -> Vec<&str> {
+    answer["commands"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|command| command["name"].as_str().unwrap())
+        .collect()
+}
+
+// spec: DMN-358, DMN-070
+#[tokio::test]
+async fn a_stopped_thread_answers_its_last_commands_without_starting_omp() {
+    let h = harness(|_| {});
+    let id = h.thread();
+
+    let none = h.supervisor.commands(&id).await.unwrap();
+    assert_eq!(none, json!({ "commands": [] }));
+    assert_eq!(h.launcher.launches().len(), 0, "asking starts nothing");
+
+    h.supervisor.prompt(&id, prompt("hi")).await.unwrap();
+    assert_eq!(h.launcher.launches().len(), 1, "a prompt starts omp");
+    h.launcher
+        .process(0)
+        .emit(vec![commands_update(&["zebra", "zest"])]);
+    h.wait(&id, "the commands", |state| state.commands.len() == 2)
+        .await;
+    h.supervisor.stop(&id).await.unwrap();
+
+    let known = h.supervisor.commands(&id).await.unwrap();
+    assert_eq!(command_names(&known), ["zebra", "zest"]);
+    assert_eq!(h.launcher.launches().len(), 1, "no start for the answer");
+
+    // Another daemon on the same data: the list the thread's omp last announced was kept with the thread.
+    let launcher = FakeLauncher::new();
+    let restarted = Supervisor::new(
+        Arc::new(launcher.clone()),
+        Arc::clone(&h.threads),
+        Arc::clone(&h.workspaces),
+        h.data.clone(),
+        SupervisorConfig::new("omp"),
+    );
+    let kept = restarted.commands(&id).await.unwrap();
+    assert_eq!(command_names(&kept), ["zebra", "zest"]);
+    assert_eq!(launcher.launches().len(), 0);
+}
+
+// spec: DMN-359
+#[tokio::test]
+async fn a_shown_stopped_thread_reads_its_history_from_the_session_file_without_omp() {
+    let h = harness(|_| {});
+    let id = h.thread();
+    saved_session(&h, &id, "S-old", "anthropic/claude-opus-5-5");
+
+    h.supervisor.read_history(&id).await.unwrap();
+
+    assert_eq!(
+        transcript(&h, &id).await,
+        ["user: old question", "assistant: old answer"]
+    );
+    assert_eq!(h.launcher.launches().len(), 0, "no omp for it");
+    let (process, session) = h
+        .log(&id)
+        .await
+        .with_state(|state| (state.process.clone(), state.session.clone()));
+    assert_eq!(process, ProcessState::Stopped);
+    assert_eq!(
+        session.map(|session| session.session_id).as_deref(),
+        Some("S-old")
+    );
+    assert_eq!(
+        h.supervisor.session_model(&id),
+        None,
+        "only a failed start reports the saved model"
+    );
+
+    // Once omp gave the thread its history, showing it again reads no file over it.
+    h.supervisor.start(&id).await.unwrap();
+    h.supervisor.stop(&id).await.unwrap();
+    h.supervisor.read_history(&id).await.unwrap();
+    assert_eq!(transcript(&h, &id).await, Vec::<String>::new(), "omp's");
+    assert_eq!(h.launcher.launches().len(), 1);
+}
+
 // spec: DMN-038
 #[tokio::test]
 async fn starting_beyond_the_process_limit_fails_explicitly() {

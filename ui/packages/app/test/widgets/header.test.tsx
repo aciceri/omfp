@@ -523,6 +523,31 @@ describe("omfp:header", () => {
     await screen.findByTestId("model-select");
     expect(screen.queryAllByTestId("models-login").length).toBe(0);
   });
+
+  // spec: UI-998, UI-030
+  test("stopped threads shown one after the other read the usable models once, again after a login", async () => {
+    const base = testHost();
+    answer(base.client);
+    base.client.answers.set("auth.models", () => ({ models: [opus] }));
+    base.host.window.set(SELECTED_THREAD, "t1");
+    const { client, host, flush } = renderWithHost(<HeaderWidget />, base);
+    client.connected();
+    const stopped = { process: { state: "stopped" } } as const;
+    client.index({
+      workspaces: [workspace("w1")],
+      threads: [thread("t1", "one", "w1", stopped), thread("t2", "two", "w1", stopped)],
+    });
+    flush();
+    await screen.findByTestId("model-select");
+    act(() => host.window.set(SELECTED_THREAD, "t2"));
+    await waitFor(() => expect(screen.getByTestId("thread-header").dataset.threadId).toBe("t2"));
+    await screen.findByTestId("model-select");
+    // Each `auth.models` starts a short-lived omp; nothing asked would start a thread's.
+    expect(client.calls.map((call) => call.method)).toEqual(["auth.models"]);
+
+    act(() => host.window.set(AUTH_REVISION, (revision) => revision + 1));
+    await waitFor(() => expect(client.callsTo("auth.models").length).toBe(2));
+  });
 });
 
 describe("`:model`, omp's `/model` in omfp", () => {

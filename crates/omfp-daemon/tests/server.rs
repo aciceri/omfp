@@ -1939,7 +1939,7 @@ async fn a_thread_whose_saved_model_is_unusable_reads_its_history_and_takes_anot
         "SessionModelRestoreError: Could not restore model anthropic/claude-opus-5-5\n",
     );
     let error = client
-        .call("thread.commands", json!({ "threadId": thread }))
+        .call("thread.state", json!({ "threadId": thread }))
         .await
         .unwrap_err();
     assert_eq!(error["code"], "thread_failed");
@@ -1968,6 +1968,65 @@ async fn a_thread_whose_saved_model_is_unusable_reads_its_history_and_takes_anot
     let launches = daemon.launcher.launches();
     assert_eq!(launches.len(), 1);
     assert_eq!(launches[0].spec.model.as_deref(), Some("fake/scripted"));
+}
+
+// spec: DMN-070, DMN-358, DMN-359, DMN-214
+#[tokio::test(flavor = "multi_thread")]
+async fn showing_a_stopped_thread_starts_no_omp_and_a_prompt_does() {
+    let daemon = daemon(&[]).await;
+    let mut client = daemon.client("omfp/web").await;
+    let thread = create_thread(&mut client).await;
+    let session_dir = daemon
+        .dir
+        .path()
+        .join("threads")
+        .join(&thread)
+        .join("sessions");
+    let lines = [
+        json!({ "type": "session", "version": 3, "id": "S-old", "timestamp": "2026-11-11T23:25:36.429Z" }),
+        json!({ "type": "message", "id": "u1", "parentId": null, "timestamp": "2026-11-11T23:25:36.751Z",
+                "message": { "role": "user", "content": "old question", "timestamp": 1 } }),
+    ];
+    let text: Vec<String> = lines.iter().map(ToString::to_string).collect();
+    std::fs::write(
+        session_dir.join("2026-11-11T23-25-36-429Z_S-old.jsonl"),
+        text.join("\n"),
+    )
+    .unwrap();
+    let topic = format!("thread/{thread}");
+
+    // What a window does to show a thread, keep it and offer its `/` commands.
+    let shown = client.ok("subscribe", json!({ "topic": topic })).await;
+    let mut other = daemon.client("omfp/web").await;
+    other
+        .ok("subscribe", json!({ "topic": topic, "watch": false }))
+        .await;
+    let commands = client
+        .ok("thread.commands", json!({ "threadId": thread }))
+        .await;
+    let session = client
+        .ok("thread.session", json!({ "threadId": thread }))
+        .await;
+    client
+        .ok("thread.mcp_servers", json!({ "threadId": thread }))
+        .await;
+
+    assert_eq!(daemon.launcher.launches().len(), 0, "nothing started omp");
+    assert_eq!(
+        shown["state"]["transcript"].as_array().map(Vec::len),
+        Some(1),
+        "the history of the session file: {shown}"
+    );
+    assert_eq!(commands, json!({ "commands": [] }));
+    assert_eq!(session["process"]["state"], "stopped");
+
+    client
+        .ok(
+            "thread.prompt",
+            json!({ "threadId": thread, "text": "hello" }),
+        )
+        .await;
+    assert_eq!(daemon.launcher.launches().len(), 1, "a prompt starts omp");
 }
 
 // spec: DMN-029

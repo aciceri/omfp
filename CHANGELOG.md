@@ -37,6 +37,9 @@ The version's section is also the source of the GitHub release notes.
 - Copy and paste work in the terminal (`omfp:terminal`): Ctrl+Shift+C copies the selection and Ctrl+Shift+V pastes,
   Cmd+C and Cmd+V on macOS, in the browser and in the desktop window. Plain Ctrl+C and Ctrl+V still reach the program
   (#213).
+- A terminal (`omfp:terminal`, the kit's `TerminalEmulator`) closed or re-created right after it opened, e.g. by
+  switching tabs quickly, no longer reports an uncaught `TypeError` (`this._renderer.value.dimensions`) from
+  xterm.js among the window's errors (#225).
 
 ## 0.4.1 — 2026-11-19
 

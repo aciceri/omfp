@@ -1216,6 +1216,8 @@ requirements = [
   # The terminal follows the app's theme: colors and ANSI palette from the tokens, live on theme changes (#214)
   "TRM-110",
   "TRM-111",
+  # A terminal closed right after it opened throws nothing from xterm.js's queued work (#225)
+  "TRM-112",
   # Readline line-editing keys in the composer (#103)
   "UI-760",
   # The selected tab of every tabs container remembered per thread and view (#101)

@@ -243,6 +243,10 @@ export function TerminalEmulator({
       clipboardKeys(terminal, { mac: MAC, clipboard: pageClipboard, session: () => stream.current.sessionKey }),
     );
     terminal.open(element);
+    // xterm.js 5.5's viewport syncs its scroll area in a zero-delay timer that `open` starts and `dispose` does not
+    // cancel (xtermjs/xterm.js#5011): disposed before it runs, the terminal throws from it. A timer started right
+    // after it, from the same task, runs after it (TRM-112).
+    const opened = new Promise<void>((resolve) => setTimeout(resolve));
     emulator.current = terminal;
     const currentStream = stream.current;
     for (const chunk of currentStream.chunks) {
@@ -269,8 +273,9 @@ export function TerminalEmulator({
       unwatch();
       observer?.disconnect();
       input.dispose();
-      terminal.dispose();
       emulator.current = null;
+      terminal.element?.remove();
+      void opened.then(() => terminal.dispose());
     };
   }, [cols, options, rows]);
 

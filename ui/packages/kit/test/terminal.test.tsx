@@ -1,7 +1,11 @@
-/** L1: the terminal emulator's clipboard keys (TRM-108) and what reaches the program. */
+/**
+ * L1: the terminal emulator's clipboard keys (TRM-108) and what reaches the program; its teardown right after it
+ * opened (TRM-112).
+ */
 
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { Terminal } from "@xterm/xterm";
 import { TerminalEmulator } from "../src/index.ts";
 import { type ClipboardTerminal, clipboardKeys, type TerminalClipboard } from "../src/terminal.tsx";
 
@@ -215,5 +219,35 @@ describe("TerminalEmulator", () => {
       await read.promise;
       expect(onData.mock.calls).toEqual([]);
     });
+  });
+
+  // spec: TRM-112
+  test("re-created or unmounted right after it opened, an emulator leaves the page at once and throws nothing later", async () => {
+    const errors: string[] = [];
+    const listener = (event: ErrorEvent) => errors.push(String(event.error ?? event.message));
+    window.addEventListener("error", listener);
+    const open = spyOn(Terminal.prototype, "open");
+    const dispose = spyOn(Terminal.prototype, "dispose");
+    try {
+      const chunks = [btoa("hello\r\n")];
+      const { container, rerender, unmount } = render(
+        <TerminalEmulator sessionKey="one" chunks={chunks} onData={() => undefined} />,
+      );
+      // New dimensions re-create the emulator in the same element.
+      rerender(<TerminalEmulator sessionKey="one" chunks={chunks} onData={() => undefined} rows={12} />);
+      expect(container.querySelectorAll(".xterm").length).toBe(1);
+      unmount();
+      // Queued after xterm.js's zero-delay timers of both `open`s, so it runs once they have.
+      const later = Promise.withResolvers<void>();
+      setTimeout(later.resolve);
+      await later.promise;
+      // Each emulator this test opened is disposed (an earlier test's may be too).
+      const disposed = open.mock.contexts.map((terminal) => dispose.mock.contexts.includes(terminal));
+      expect([disposed, errors]).toEqual([[true, true], []]);
+    } finally {
+      open.mockRestore();
+      dispose.mockRestore();
+      window.removeEventListener("error", listener);
+    }
   });
 });

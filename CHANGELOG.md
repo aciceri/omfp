@@ -21,6 +21,9 @@ The version's section is also the source of the GitHub release notes.
 
 - Boring skin: the focused composer shows one accent ring around its rounded box instead of a misaligned second
   ring around the text area inside it (#215).
+- Copy and paste work in the terminal (`omfp:terminal`): Ctrl+Shift+C copies the selection and Ctrl+Shift+V pastes,
+  Cmd+C and Cmd+V on macOS, in the browser and in the desktop window. Plain Ctrl+C and Ctrl+V still reach the program
+  (#213).
 
 ## 0.4.1 — 2026-11-19
 

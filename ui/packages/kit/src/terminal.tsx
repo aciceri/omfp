@@ -67,6 +67,91 @@ function chunkOverlap(previous: readonly string[], next: readonly string[]): num
   return matched;
 }
 
+/** The page's clipboard as the terminal uses it. */
+export type TerminalClipboard = Pick<Clipboard, "readText" | "writeText">;
+
+/** What the clipboard keys need of the emulator. */
+export type ClipboardTerminal = Pick<XTerm, "hasSelection" | "getSelection" | "paste">;
+
+export interface ClipboardKeyOptions {
+  /** macOS takes Cmd chords; elsewhere Ctrl+Shift ones. */
+  readonly mac: boolean;
+  /** The page's clipboard at the time of the key press; `undefined` where it has none (an insecure origin). */
+  readonly clipboard: () => TerminalClipboard | undefined;
+  /** The output stream the terminal shows now: a paste whose clipboard read ends after it changed is dropped. */
+  readonly session: () => unknown;
+}
+
+/** Whether the page runs on macOS (`navigator.platform` `MacIntel`, also in the desktop window's WKWebView). */
+const MAC = typeof navigator !== "undefined" && navigator.platform.startsWith("Mac");
+
+/** `navigator.clipboard`, which only secure origins have, whatever its type says. */
+function pageClipboard(): TerminalClipboard | undefined {
+  return typeof navigator === "undefined" ? undefined : (navigator.clipboard as Clipboard | undefined);
+}
+
+function clipboardAction(event: KeyboardEvent, mac: boolean): "copy" | "paste" | undefined {
+  const chord = mac
+    ? event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
+    : event.ctrlKey && event.shiftKey && !event.altKey && !event.metaKey;
+  if (!chord) {
+    return undefined;
+  }
+  const key = event.key.toLowerCase();
+  return key === "c" ? "copy" : key === "v" ? "paste" : undefined;
+}
+
+/**
+ * xterm.js's custom key handler for the clipboard keys (TRM-108): Ctrl+Shift+C / Cmd+C copies the selection and
+ * Ctrl+Shift+V pastes the clipboard through `paste`, bracketed when the program asked for it. macOS's Cmd+V, and
+ * Ctrl+Shift+V without a clipboard API, are left to the platform's own paste, whose `paste` event xterm.js pastes the
+ * same way: WKWebView and Safari would confirm every `readText` of another app's text. A handled key is prevented, so
+ * the window keymap leaves it alone; any other key, plain Ctrl+C and Ctrl+V included, goes on to the program. A paste
+ * whose clipboard read (maybe behind a confirmation) ends after the session changed is dropped: it was meant for the
+ * previous program.
+ */
+export function clipboardKeys(
+  terminal: ClipboardTerminal,
+  { mac, clipboard, session }: ClipboardKeyOptions,
+): (event: KeyboardEvent) => boolean {
+  return (event) => {
+    const action = clipboardAction(event, mac);
+    if (action === undefined) {
+      return true;
+    }
+    if (event.type !== "keydown") {
+      return false;
+    }
+    const target = clipboard();
+    if (action === "paste") {
+      if (!mac && target !== undefined) {
+        event.preventDefault();
+        const asked = session();
+        target.readText().then(
+          (text) => {
+            if (session() === asked) {
+              terminal.paste(text);
+            }
+          },
+          () => undefined,
+        );
+      }
+      return false;
+    }
+    event.preventDefault();
+    if (!terminal.hasSelection()) {
+      return false;
+    }
+    if (target === undefined) {
+      // xterm.js answers the `copy` event with its selection.
+      document.execCommand("copy");
+    } else {
+      target.writeText(terminal.getSelection()).catch(() => undefined);
+    }
+    return false;
+  };
+}
+
 /** An xterm.js terminal that replays byte chunks and forwards input and measured PTY dimensions. */
 export function TerminalEmulator({
   sessionKey,
@@ -106,6 +191,9 @@ export function TerminalEmulator({
     });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
+    terminal.attachCustomKeyEventHandler(
+      clipboardKeys(terminal, { mac: MAC, clipboard: pageClipboard, session: () => stream.current.sessionKey }),
+    );
     terminal.open(element);
     emulator.current = terminal;
     const currentStream = stream.current;

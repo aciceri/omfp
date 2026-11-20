@@ -445,6 +445,10 @@ fn open_window(
     let builder = WebviewWindowBuilder::new(&app, "main", WebviewUrl::External(url.clone()))
         .title("omfp")
         .inner_size(1280.0, 800.0)
+        // TRM-109: WebKitGTK refuses `navigator.clipboard.readText`, the terminal's Ctrl+Shift+V, unless the page may
+        // read the clipboard. The window only shows the daemon's UI (DMN-182), whose widgets can already run commands.
+        // WKWebView has no such setting: on macOS, Cmd+V pastes through the Edit menu.
+        .enable_clipboard_access()
         .on_page_load(on_page_load(Arc::clone(&page), origin.clone(), url))
         // WebKitGTK denies requests nobody handles: allow the UI's thread notifications. WKWebView answers an unhandled
         // media request with its own prompt on every page load: grant the microphone (live voice, UI-251); macOS still

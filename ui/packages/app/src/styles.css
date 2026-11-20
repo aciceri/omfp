@@ -865,6 +865,11 @@
     overflow: auto;
   }
 
+  /* A card's widget (UI-920) draws at the app's size, not the small print of the tool card's section around it. */
+  .omfp-card-widget {
+    font-size: var(--omfp-fs-md);
+  }
+
   /* A widget that failed to compile, load or render, or is missing (AGT-014): an error card in its place. */
   .omfp-widget__error {
     display: flex;

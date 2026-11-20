@@ -248,6 +248,9 @@ methods! {
     ThreadLiveMute = "thread.live_mute" (params::LiveMuteParams) -> params::LiveMuted;
     /// Answers an interactive request; `already_resolved` if another client answered first.
     InteractionRespond = "interaction.respond" (params::RespondParams) -> params::Empty;
+    /// Ends the wait of a thread's `omfp_card` call with a submitted value or a cancel; `already_resolved` when the
+    /// call does not wait (PRT-224).
+    CardAnswer = "card.answer" (params::CardAnswerParams) -> params::Empty;
     /// The user's theme CSS (DMN-075).
     ThemeGet = "theme.get" (params::Empty) -> Theme;
     /// Replaces the user's theme CSS; `null` restores the built-in themes (DMN-075).
@@ -264,6 +267,8 @@ methods! {
     WidgetsStateSet = "widgets.state_set" (params::SetWidgetStateParams) -> params::Empty;
     /// Reports what this window shows of a workspace's widgets; replaces its previous report (PRT-043).
     WidgetsReport = "widgets.report" (params::ReportWidgetsParams) -> params::Empty;
+    /// Compiles a card's one-file widget source to an ES module, writing nothing (PRT-225).
+    WidgetsCompile = "widgets.compile" (params::CompileWidgetParams) -> params::CompiledWidget;
     /// Runs a shell command in the workspace folder as a job (DMN-080).
     JobsStart = "jobs.start" (params::StartJobParams) -> JobInfo;
     /// Kills a job's process group (DMN-081).

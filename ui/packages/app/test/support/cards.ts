@@ -64,3 +64,22 @@ export function lspCard(args: JsonObject, answer: string, success = true): ToolC
   };
   return toolCard("call_lsp", undefined, run, undefined, undefined);
 }
+
+/**
+ * The card of an `omfp_card` call (AGT-096) built by hand: its arguments, its run's status and, once it ended, the text
+ * of its result (`{"status":"shown"}`, omp's error).
+ */
+export function omfpCard(args: JsonObject, status: ToolRun["status"], answer?: string, id = "call_card"): ToolCard {
+  const run: ToolRun = {
+    tool_call_id: id,
+    tool_name: "omfp_card",
+    args,
+    intent: null,
+    status,
+    partial_result: null,
+    preview: null,
+    result: answer === undefined ? null : { content: [{ type: "text", text: answer }] },
+    background: null,
+  };
+  return toolCard(id, undefined, run, undefined, undefined);
+}

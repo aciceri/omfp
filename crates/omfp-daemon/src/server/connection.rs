@@ -9,10 +9,10 @@ use axum::extract::ws::{CloseFrame, Message, WebSocket};
 use futures::{SinkExt, StreamExt};
 use omfp_core::LiveOwner;
 use omfp_protocol::{
-    BashParams, BtwParams, Call, Empty, ErrorBody, ErrorCode, EventFrame, HelloResult,
-    LiveConnectParams, LiveConnected, LiveStarted, MessageParams, PromptParams, Request,
-    RespondParams, Response, ServerFrame, SubscribeParams, SubscribeResult, ThreadRef, Topic,
-    TopicEvent, TransientEvent, WatchParams, decode_request,
+    BashParams, BtwParams, Call, CardAnswerParams, Empty, ErrorBody, ErrorCode, EventFrame,
+    HelloResult, LiveConnectParams, LiveConnected, LiveStarted, MessageParams, PromptParams,
+    Request, RespondParams, Response, ServerFrame, SubscribeParams, SubscribeResult, ThreadRef,
+    Topic, TopicEvent, TransientEvent, WatchParams, decode_request,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -572,6 +572,7 @@ fn driven_thread(call: &Call) -> Option<&str> {
         | Call::ThreadBash(BashParams { thread_id, .. })
         | Call::ThreadBtw(BtwParams { thread_id, .. })
         | Call::InteractionRespond(RespondParams { thread_id, .. })
+        | Call::CardAnswer(CardAnswerParams { thread_id, .. })
         | Call::ThreadLiveConnect(LiveConnectParams { thread_id, .. })
         | Call::ThreadLiveStart(ThreadRef { thread_id }) => Some(thread_id),
         _ => None,

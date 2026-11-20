@@ -951,6 +951,17 @@ JavaScript and CSS grows from 1.14 MiB to 2.60 MiB, within UI-090's 3 MiB target
 default is kept, so diagrams look as they do elsewhere. Drawn in headless Chromium and in WebKitGTK 2.54 (`MiniBrowser`,
 the engine of `omfp desktop`): the three diagrams of [00](00-overview.md) draw in both.
 
+## Cards in the chat
+
+M17 lets an agent draw a widget in the card of its own `omfp_card` call (#229, AGT-096..098, PRT-224, PRT-225, DMN-911,
+UI-920..922, E2E-77): something for one moment of the conversation, a terminal, a chart, a question with its own
+controls. omp's `ask` could not carry that: omp walks the form as `select`/`input`/`editor` dialogs and omfp never sees
+it. A card is not a mount: nothing goes into `views.json` and no file is written. Its source stays in the call's
+arguments in the session, so a window mounts it again from them; `code` is compiled per window with
+`widgets.compile` and loaded from a `blob:` URL, its bare imports resolved by the window's import map. A waiting
+card's wait lives in the daemon's memory only, keyed by omp's tool call id; the thread needs the user meanwhile, as
+with a pending `ask`.
+
 ## Later (noted, not scheduled)
 
 - Helix-style modal editing in the composer (UI-095 keeps a keymap with modes, so it fits later).

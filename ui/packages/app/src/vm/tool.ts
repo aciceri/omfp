@@ -65,9 +65,16 @@ export interface CardImage extends ResultImage {
   readonly alt: string;
 }
 
-/** Failed cards and live file mutations start open; successful history starts collapsed (UI-052, UI-695). */
-export function expandedByDefault(card: ToolCard): boolean {
+/**
+ * Failed cards and live file mutations start open; successful history starts collapsed (UI-052, UI-695). A card of
+ * `omfp_card` is open while it runs and while `openTurn`, its message being in the turn the thread still works on (no
+ * user message after it, UI-922); otherwise collapsed, failed or not.
+ */
+export function expandedByDefault(card: ToolCard, openTurn = false): boolean {
   const active = card.status === "composing" || card.status === "pending" || card.status === "running";
+  if (card.view.kind === "card") {
+    return active || openTurn;
+  }
   return card.status === "failed" || (active && (card.view.kind === "edit" || card.view.kind === "write"));
 }
 

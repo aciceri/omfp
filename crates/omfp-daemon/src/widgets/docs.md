@@ -146,6 +146,56 @@ views.json: mounting an id again replaces it, omfp_ui_update { id, props } drive
 - Widgets reach the same through `useCall()`, with the same arguments (`place` included) plus `workspaceId`:
   `views.mount`, `views.mount_update`, `views.unmount`, `widgets.save`, `widgets.library`.
 
+## Cards in the chat
+
+For something the user needs for one moment of the conversation, a terminal to show something, a chart of a result,
+a question with its own controls, draw a **card**: `omfp_card { widget | code, props?, title?, wait?,
+timeoutSeconds? }` puts the widget in the card of that very tool call in the chat. Nothing goes into `views.json` and
+no file is written; later messages push the card up like any other, and once the turn ends it collapses. Content
+that should stay belongs in a mount instead (`omfp_ui_mount`).
+
+- `widget` is a reference (`./widgets/<name>`, a bare name, `user:<name>`, `omfp:<name>`); `code` is the source of
+  a one-file component (default export) that the daemon compiles at the call: a compile error is the tool's error
+  (`card.tsx:line:column: message`). Only `react`, `react-dom`, `omfp/sdk` and `omfp/kit` can be imported, no
+  relative file. `props` are the component's props, `title` the card's title.
+- Without `wait` the tool answers `{"status":"shown"}` at once and the card stays live, e.g. a terminal:
+  `useTerminal(command)` with `TerminalEmulator`.
+- With `wait: true` the tool waits for the user's answer: the widget calls `submit(value)` (any JSON) or `cancel()`
+  of `useAnswer()`, and the tool answers `{"status":"submitted","value":…}` or `{"status":"cancelled"}`. With
+  `timeoutSeconds` it answers `{"status":"timeout"}` once they passed. Meanwhile the thread needs the user, as with
+  `ask`; the card always offers Cancel outside the widget, and the first answer from any window wins.
+- The widget mounts again from the call's arguments whenever the card is shown open: after a reload, in another
+  window, when the user opens a collapsed card. A waiting widget must therefore draw its finished state from
+  `useAnswer().state` (`submitted`, `cancelled`, `timeout`, `aborted`) instead of asking again. Its `useStored`
+  state is kept under the instance `card:<toolCallId>`.
+
+```tsx
+import { Button, Card, Checkbox } from "omfp/kit";
+import { useAnswer } from "omfp/sdk";
+import { useState } from "react";
+export default function PickFiles({ files }: { files: string[] }) {
+  const answer = useAnswer();
+  const [picked, setPicked] = useState<string[]>([]);
+  if (answer.state !== "waiting") {
+    const chosen = answer.state === "submitted" ? (answer.value as string[]) : [];
+    return <Card title="Files">{answer.state === "submitted" ? chosen.join(", ") || "none" : answer.state}</Card>;
+  }
+  return (
+    <Card title="Which files go in?" actions={<Button onPress={() => answer.submit(picked)}>Include</Button>}>
+      {files.map((file) => (
+        <Checkbox
+          key={file}
+          isSelected={picked.includes(file)}
+          onChange={(on) => setPicked(on ? [...picked, file] : picked.filter((f) => f !== file))}
+        >
+          {file}
+        </Checkbox>
+      ))}
+    </Card>
+  );
+}
+```
+
 ## Keys
 
 `<workspace>/.omfp/keymap.json` binds keys to commands in the windows showing this workspace, over the default keys and
@@ -424,6 +474,7 @@ export default function Tests({ command = "make test" }: { command?: string }) {
 | Export | What it gives |
 | --- | --- |
 | `useWidget()` | `{ instance, reference, workspaceId }` of the calling widget. |
+| `useAnswer()` | `{ state, value, submit(value), cancel() }` for the chat card the widget is drawn in (see Cards in the chat): `state` is `"waiting"` while its `omfp_card` call with `wait` runs, `"submitted"` (`value` is what was submitted), `"cancelled"`, `"timeout"`, `"aborted"` (the call ended in an error: omp cancelled it, the thread stopped) or `"none"` (a card without `wait`, or a widget outside a card). `submit(value)` and `cancel()` answer the card (`card.answer`) and reject with the daemon's error (`already_resolved` when another window answered first); they reject at once unless `state` is `"waiting"`. |
 | `useStored(key, initial)` | `[value, set, loaded]`: JSON state the daemon keeps per workspace, widget instance and key, shared live by every window and kept across reloads and restarts. `set(value)` or `set((previous) => next)`; `set(null)` deletes the key. `loaded` is `false` while the state has not arrived yet (`value` is then `initial`). |
 | `useJob(command, { key? })` | `{ status, lines, stdout, stderr, exitCode, signal, runs, startedAt, endedAt, state, refreshing, restart, kill }` for `sh -c <command>` run by the daemon in the workspace folder (environment, limits and retention: see Jobs below). `status` is `"pending"` (no job yet, or a start or restart on its way), `"running"`, `"succeeded"` (exit code 0) or `"failed"` (another code, or a signal). The first mount starts the job; reloads, other windows and moving the widget follow the same job (stored as `job:<command>`: `{ id, runs }`). `lines` are stdout and stderr interleaved, `stdout` and `stderr` each one's lines; `runs` counts the jobs started (a restart adds one), `startedAt`/`endedAt` (ms) date the current one; `restart()` kills a running job and starts a new one; `state` is the raw `job/<id>` state. A mount following the job again (the widget mounted again, its view shown again) shows the window's last copy of it at once, `refreshing: true`, until the daemon's state of the job arrives. Without `key` every distinct command is its own job and its own stored key, so a command built from input (a search per query) leaves one job behind per query: pass `key` (``useJob(`rg -n ${query}`, { key: "search" })``) to keep one job slot (stored as `jobkey:<key>`: `{ id, runs, command }`): a new command under the key replaces the previous job (stopped if it still runs, its output gone; `pending` with no lines until the new one is known), and `restart()` replaces it the same way. `omfp_widget_check` shows each job's status and last lines. |
 | `useJobs(workspaceId?)` | `{ jobs, error, loaded, run(name), kill(name), enable(name, enabled) }`: the jobs the widget's workspace (or `workspaceId`) declares in `.omfp/jobs.json`, live from `jobs/<id>` (see Declared jobs). `jobs` is `[]` and `loaded` `false` until the state arrived; `error` says why the file is refused. `run` calls `jobs.run`, `kill` `jobs.kill` on the job's running run, `enable` `jobs.enable`; each rejects with the method's error. A job's runs: `useCall("jobs.runs", { workspaceId, job })`. |

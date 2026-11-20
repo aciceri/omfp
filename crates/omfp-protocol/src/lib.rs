@@ -67,6 +67,7 @@ pub use params::{
     WidgetCopied, WidgetJobReport, WidgetReport, WidgetReportState, WorkspaceDiffParams,
     WorkspaceRef, WriteFileParams,
 };
+pub use params::{CardAnswer, CardAnswerParams, CompileWidgetParams, CompiledWidget};
 pub use params::{FileErrorKind, FileErrorReport, ViewErrors, WatchParams, WindowFileErrors};
 pub use params::{
     LibraryComponent, MountParams, MountPlace, MountUpdateParams, Mounted, SaveWidgetParams,

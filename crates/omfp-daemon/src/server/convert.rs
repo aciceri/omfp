@@ -132,7 +132,9 @@ pub(crate) fn supervisor_error(error: SupervisorError) -> ErrorBody {
             }
             return body;
         }
-        SupervisorError::AlreadyResolved(_) => ErrorCode::AlreadyResolved,
+        SupervisorError::AlreadyResolved(_) | SupervisorError::CardNotWaiting(_) => {
+            ErrorCode::AlreadyResolved
+        }
         SupervisorError::InvalidResponse(_)
         | SupervisorError::EmptyOffer
         | SupervisorError::UserMcpConfig => ErrorCode::BadRequest,

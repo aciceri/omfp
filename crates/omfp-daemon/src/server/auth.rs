@@ -87,6 +87,7 @@ pub fn permission(method: &str) -> Option<Permission> {
         | "theme.get"
         | "settings.get"
         | "widgets.library"
+        | "widgets.compile"
         | "terminals.screen"
         | "jobs.list"
         | "jobs.runs"
@@ -153,6 +154,7 @@ pub fn permission(method: &str) -> Option<Permission> {
         | "thread.mcp_reconnect"
         | "mcp.call"
         | "interaction.respond"
+        | "card.answer"
         | "jobs.start"
         | "jobs.kill"
         | "jobs.run"
@@ -368,6 +370,13 @@ mod tests {
         assert_eq!(permission("thread.prompt"), Some(Permission::Drive));
         assert_eq!(permission("thread.state"), Some(Permission::Read));
         assert_eq!(permission("no.such.method"), None);
+    }
+
+    // spec: PRT-224, PRT-225
+    #[test]
+    fn a_card_is_answered_like_an_interaction_and_compiling_one_only_reads() {
+        assert_eq!(permission("card.answer"), permission("interaction.respond"));
+        assert_eq!(permission("widgets.compile"), Some(Permission::Read));
     }
 
     // spec: PRT-034

@@ -42,6 +42,7 @@ impl AgentHost for ServicesAgentHost {
                 client: CLIENT.to_owned(),
             },
             workspace_id: Some(workspace_id.to_owned()),
+            tool_call_id: None,
         };
         registry()
             .iter()
@@ -50,8 +51,8 @@ impl AgentHost for ServicesAgentHost {
     }
 }
 
-/// `tool` as a host tool running with `context` on `runtime`: the handler thread blocks on the body, which is dropped
-/// once omp cancels the call.
+/// `tool` as a host tool running with `context`, in the agent's tool call, on `runtime`: the handler thread blocks on
+/// the body, which is dropped once omp cancels the call.
 fn host_tool(tool: &AgentTool, context: ToolContext, runtime: Handle) -> HostTool {
     let parameters = tool.parameters.as_object().cloned().unwrap_or_default();
     let run = tool.run;
@@ -60,7 +61,11 @@ fn host_tool(tool: &AgentTool, context: ToolContext, runtime: Handle) -> HostToo
         tool.description,
         parameters,
         move |arguments, call| {
-            let body = run(context.clone(), arguments);
+            let context = ToolContext {
+                tool_call_id: Some(call.tool_call_id().to_owned()),
+                ..context.clone()
+            };
+            let body = run(context, arguments);
             runtime
                 .block_on(until_cancelled(body, || call.is_cancelled()))
                 .map(HostToolOutput::Text)

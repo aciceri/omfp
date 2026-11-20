@@ -243,6 +243,18 @@ widget (`useCall`) or an MCP client reaches the same.
 | AGT-065 | **`omfp_component_list {}`** (`widgets.library`, PRT-084): the user library by name, each with its reference `user:<name>`, entry, files, version and description: the entry's leading comment (its `//` lines or first `/* … */` block, whitespace collapsed, at most 200 characters; empty without one). The `omfp_component_save` description asks the agent to start a component with such a comment saying what it shows and which props it takes. |
 | AGT-066 | The mount and library tools are tools of the agent tool registry (an adapter over the methods above, called as the thread's agent principal) with the calling thread's workspace; without one (the MCP principal, AGT-051) `workspaceId` is required. `omfp://docs/widgets` (AGT-025) documents panels, mounts and the library. |
 
+### Cards in the chat (M17)
+
+An agent puts something in front of the user for one moment of the conversation with a **card**: a widget drawn in
+the card of its own tool call in the transcript (#229), never in `views.json`, so later messages push it up like any
+other card. A card may wait for an answer, which becomes the tool's result.
+
+| ID | Requirement |
+| --- | --- |
+| AGT-096 | **`omfp_card { widget? \| code?, props?, title?, wait?, timeoutSeconds? }`** (agent tool, AGT-040): exactly one of `widget`, a reference (a bare name means `./widgets/<name>`; `user:<name>`, `omfp:<name>`), and `code`, the source of a one-file component (default export) that the daemon compiles at the call as `card.tsx` with the rules of DMN-085 and no relative import (`widgets.compile`, PRT-225); a compile error is the tool's error (`card.tsx:line:column: message`). `props` (an object) are the component's props, `title` the card's title. It writes no file and no view. It needs a calling thread: without one (the MCP principal, AGT-051) it is an error. Its text answer is JSON: `{"status":"shown"}` at once without `wait`; with `wait: true`, once the card is answered (AGT-097), `{"status":"submitted","value":<value>}`, `{"status":"cancelled"}` or, after `timeoutSeconds` (an integer ≥ 1, only with `wait`), `{"status":"timeout"}`. Any other argument shape is an error naming the rule. |
+| AGT-097 | **Waiting cards**: while an `omfp_card` call waits, its thread needs the user (`needsAttention`, DMN-911), as with a pending `ask`: `omfp_thread_wait` on it answers `needs_attention` (AGT-043). The first `card.answer` (PRT-224) from any window or agent ends the wait with its answer; the timeout and omp's cancellation of the call (DMN-151) end it too, and a later answer is `already_resolved`. The wait lives in the daemon's memory only: a daemon or thread restart ends the call as omp ends it. |
+| AGT-098 | `omfp://docs/widgets` (AGT-025) MUST document cards: `omfp_card`, `useAnswer` (UI-921) and that a card's widget mounts again from the call's arguments whenever the transcript shows it, so a widget that waits for an answer draws its finished state from `useAnswer().state` instead of asking again. The widgets note (AGT-024) MUST give one line to `omfp_card`: content of one moment of the conversation (a terminal to show something, a chart, a question with its own controls) goes in a card, content that stays goes in a mount (`omfp_ui_mount`). |
+
 ## Permissions and limits
 
 Agents run in **full-access mode by default** (D-17): an agent principal may call every method, and so may the UI pieces

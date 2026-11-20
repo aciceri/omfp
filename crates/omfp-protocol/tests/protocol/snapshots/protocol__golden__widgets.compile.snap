@@ -1,0 +1,22 @@
+---
+source: crates/omfp-protocol/tests/protocol/golden.rs
+expression: golden
+---
+{
+  "request": {
+    "id": "c42",
+    "method": "widgets.compile",
+    "params": {
+      "code": "export default () => <p>Hi</p>;\n"
+    },
+    "type": "request"
+  },
+  "response": {
+    "id": "c42",
+    "ok": true,
+    "result": {
+      "module": "import { jsx as _jsx } from \"react/jsx-runtime\";\nexport default () => /* @__PURE__ */ _jsx(\"p\", { children: \"Hi\" });\n"
+    },
+    "type": "response"
+  }
+}

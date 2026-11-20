@@ -21,6 +21,8 @@ import {
   type AstMatch,
   ansiRuns,
   type CardImage,
+  CardScope,
+  CardWidget,
   type Diagnostic,
   type EditedFile,
   type LspResult,
@@ -31,8 +33,10 @@ import {
   type TodoPhase,
   type ToolCard,
   type ToolView,
+  useAnswer,
   useCurrentWorkspaceId,
   useOpenFile,
+  useReportError,
   useWorkspaces,
 } from "omfp/sdk";
 import { type ReactNode, useMemo, useState } from "react";
@@ -122,6 +126,8 @@ export function ToolSubject({ view }: { view: ToolView }): ReactNode {
       return <Subject>{view.pattern}</Subject>;
     case "resolve":
       return <Subject>{view.label ?? view.action}</Subject>;
+    case "card":
+      return <Subject>{cardTitle(view)}</Subject>;
     case "lsp":
       return <LspSubject view={view} />;
     case "task":
@@ -208,8 +214,11 @@ function WriteContent({ content, language }: { content: string; language: string
   );
 }
 
-/** The body of a specialized card; its sections are split by labelled rules on the card's border (UI-187). */
-export function ToolBody({ card }: { card: ToolCard }): ReactNode {
+/**
+ * The body of a specialized card; its sections are split by labelled rules on the card's border (UI-187). `threadId`
+ * is the thread whose transcript shows the card.
+ */
+export function ToolBody({ threadId, card }: { threadId: string; card: ToolCard }): ReactNode {
   const { view } = card;
   switch (view.kind) {
     case "bash":
@@ -254,7 +263,7 @@ export function ToolBody({ card }: { card: ToolCard }): ReactNode {
               {card.result}
             </div>
           )}
-          <ToolSection card={card} view={view} />
+          <ToolSection threadId={threadId} card={card} view={view} />
         </div>
       );
   }
@@ -262,9 +271,11 @@ export function ToolBody({ card }: { card: ToolCard }): ReactNode {
 
 /** The section of a card other than `bash`'s and the fallback's, after its error. */
 function ToolSection({
+  threadId,
   card,
   view,
 }: {
+  threadId: string;
   card: ToolCard;
   view: Exclude<ToolView, { kind: "bash" | "generic" }>;
 }): ReactNode {
@@ -429,7 +440,64 @@ function ToolSection({
           ))}
         </ul>
       );
+    case "card":
+      return <CardSection threadId={threadId} toolCallId={card.toolCallId} view={view} />;
   }
+}
+
+type CardView = Extract<ToolView, { kind: "card" }>;
+
+/** What a card is called (UI-920): its title, else its widget reference, else "card". */
+function cardTitle(view: CardView): string {
+  return view.title ?? view.reference ?? text.card;
+}
+
+/**
+ * An `omfp_card` call's widget (UI-920) in the scope `useAnswer` reads (UI-921), and while the call waits, Cancel
+ * outside the widget, so a broken widget never blocks the agent (UI-922).
+ */
+function CardSection({
+  threadId,
+  toolCallId,
+  view,
+}: {
+  threadId: string;
+  toolCallId: string;
+  view: CardView;
+}): ReactNode {
+  const { answer } = view;
+  const scope = useMemo(
+    () => ({ threadId, toolCallId, state: answer.state, value: answer.value }),
+    [threadId, toolCallId, answer],
+  );
+  return (
+    <CardScope value={scope}>
+      <CardWidget
+        threadId={threadId}
+        toolCallId={toolCallId}
+        reference={view.reference}
+        code={view.code}
+        props={view.props}
+      />
+      {answer.state === "waiting" && <CardCancel title={cardTitle(view)} />}
+    </CardScope>
+  );
+}
+
+/** The Cancel of a waiting card: `card.answer` with `cancel` (UI-922); a refusal goes to the error toasts. */
+function CardCancel({ title }: { title: string }): ReactNode {
+  const { cancel } = useAnswer();
+  const reportError = useReportError();
+  return (
+    <Button
+      size="sm"
+      aria-label={text.cancelCardLabel(title)}
+      data-testid="card-cancel"
+      onPress={() => cancel().catch(reportError)}
+    >
+      {text.cancelCard}
+    </Button>
+  );
 }
 
 /**

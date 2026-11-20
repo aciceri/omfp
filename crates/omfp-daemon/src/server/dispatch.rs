@@ -231,6 +231,16 @@ async fn run(services: &Services, principal: &Principal, call: Call) -> Reply {
         Call::ViewsMountUpdate(params) => ok(&services.mount_update(params).await?),
         Call::ViewsUnmount(params) => ok(&services.unmount(params).await?),
         Call::WidgetsSave(params) => ok(&services.save_widget(params).await?),
+        Call::WidgetsCompile(params) => {
+            let widgets = Arc::clone(&services.widgets);
+            let module = blocking(move || {
+                widgets
+                    .compile_card(&params.code)
+                    .map_err(|error| bad_request(error.to_string()))
+            })
+            .await?;
+            ok(&omfp_protocol::CompiledWidget { module })
+        }
         Call::WidgetsLibrary(_) => ok(&omfp_protocol::WidgetLibrary {
             components: services.widget_library().await?,
         }),

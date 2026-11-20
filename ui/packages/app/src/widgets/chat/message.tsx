@@ -34,20 +34,25 @@ import { fileTarget, ToolBody, ToolImages, ToolSubject } from "./tool-cards.tsx"
 
 const text = strings.chat;
 
-/** One message: name line, blocks, error (UI-171). One that `continues` its turn has no name line (UI-470). `cardKey`
- * prefixes the keys of its collapsible blocks. While it streams, a block caret follows the last character (UI-147).
- * `actions` act on the message (fork from here, UI-660). */
+/** One message of thread `threadId`: name line, blocks, error (UI-171). One that `continues` its turn has no name line
+ * (UI-470). `cardKey` prefixes the keys of its collapsible blocks. While it streams, a block caret follows the last
+ * character (UI-147). `actions` act on the message (fork from here, UI-660). `openTurn`: the message is in the turn
+ * its thread still works on, whose cards stay open (UI-922). */
 export function MessageRow({
+  threadId,
   cardKey,
   view,
   streaming,
   continues,
+  openTurn = false,
   actions,
 }: {
+  threadId: string;
   cardKey: string;
   view: MessageView;
   streaming: boolean;
   continues: boolean;
+  openTurn?: boolean;
   actions?: ReactNode;
 }) {
   const name = (
@@ -65,12 +70,14 @@ export function MessageRow({
       // Blocks only grow at the end while streaming, so the index is a stable key.
       // biome-ignore lint/suspicious/noArrayIndexKey: see above
       key={index}
+      threadId={threadId}
       rowKey={cardKey}
       cardKey={blockCardKey(cardKey, block, index)}
       role={view.role}
       block={block}
       streaming={streaming}
       last={index === view.blocks.length - 1}
+      openTurn={openTurn}
     />
   ));
   const error = view.error === undefined ? undefined : <span data-testid="message-error">{view.error}</span>;
@@ -133,13 +140,16 @@ function toolCardKey(rowKey: string, toolCallId: string, fallback: string): stri
 /** One block; renders again only when the block changes (the view model keeps unchanged blocks, UI-191), so a
  * streaming delta renders the growing block only. */
 const BlockView = memo(function BlockView({
+  threadId,
   rowKey,
   cardKey,
   role,
   block,
   streaming,
   last,
+  openTurn,
 }: {
+  threadId: string;
   /** The message's key, which its tool cards' keys start with. */
   rowKey: string;
   cardKey: string;
@@ -148,6 +158,7 @@ const BlockView = memo(function BlockView({
   streaming: boolean;
   /** The message's last block: a streaming text then trails the caret (UI-147). */
   last: boolean;
+  openTurn: boolean;
 }) {
   const openFile = useOpenFile();
   // Paths in the assistant's text open the file (UI-116).
@@ -174,9 +185,9 @@ const BlockView = memo(function BlockView({
     case "image":
       return <MessageImage src={`data:${block.mime};base64,${block.data}`} />;
     case "tool":
-      return <ToolCardView cardKey={cardKey} card={block.card} />;
+      return <ToolCardView threadId={threadId} cardKey={cardKey} card={block.card} openTurn={openTurn} />;
     case "readGroup":
-      return <ReadGroupView rowKey={rowKey} cardKey={cardKey} group={block} />;
+      return <ReadGroupView threadId={threadId} rowKey={rowKey} cardKey={cardKey} group={block} />;
     case "record":
       return <RecordBlock cardKey={cardKey} summary={block.summary} json={block.json} />;
   }
@@ -267,11 +278,24 @@ function markStatus(status: Card["status"]): ToolStatus {
   }
 }
 
-/** A tool card (UI-050, UI-163): collapsible, failed cards distinct and expanded by default (UI-052); tools with a
- * recorded shape show their specialized body, others the fallback's arguments and result. The result's images show
- * under it, open or not (UI-473). In a read group (`grouped`) a read's head adds its path's selector (UI-765). */
-export function ToolCardView({ cardKey, card, grouped = false }: { cardKey: string; card: Card; grouped?: boolean }) {
-  const [expanded, setExpanded] = useExpanded(cardKey, expandedByDefault(card));
+/** A tool card of thread `threadId` (UI-050, UI-163): collapsible, failed cards distinct and expanded by default
+ * (UI-052); tools with a recorded shape show their specialized body, others the fallback's arguments and result. The
+ * result's images show under it, open or not (UI-473). In a read group (`grouped`) a read's head adds its path's
+ * selector (UI-765). An `omfp_card` call's card stays open while `openTurn` (UI-922). */
+export function ToolCardView({
+  threadId,
+  cardKey,
+  card,
+  grouped = false,
+  openTurn = false,
+}: {
+  threadId: string;
+  cardKey: string;
+  card: Card;
+  grouped?: boolean;
+  openTurn?: boolean;
+}) {
+  const [expanded, setExpanded] = useExpanded(cardKey, expandedByDefault(card, openTurn));
   // `:open` on the focused card opens its file (UI-116).
   const target = fileTarget(card.view);
   const exitCode = card.view.kind === "bash" ? card.view.exitCode : undefined;
@@ -313,7 +337,7 @@ export function ToolCardView({ cardKey, card, grouped = false }: { cardKey: stri
         }
         meta={<ToolMeta card={card} exitCode={exitCode} />}
       >
-        <ToolBody card={card} />
+        <ToolBody threadId={threadId} card={card} />
       </ToolCard>
       {card.images.length > 0 && <ToolImages card={card} />}
     </div>
@@ -328,10 +352,12 @@ export function ToolCardView({ cardKey, card, grouped = false }: { cardKey: stri
  * live reads are observed while it is collapsed (UI-695).
  */
 export function ReadGroupView({
+  threadId,
   rowKey,
   cardKey,
   group,
 }: {
+  threadId: string;
   rowKey: string;
   cardKey: string;
   group: Extract<Block, { type: "readGroup" }>;
@@ -368,7 +394,7 @@ export function ReadGroupView({
         <ul className="omfp-read-group__reads" data-testid="read-group-reads">
           {group.cards.map((card, index) => (
             <li key={card.toolCallId}>
-              <ToolCardView cardKey={readKey(card, index)} card={card} grouped />
+              <ToolCardView threadId={threadId} cardKey={readKey(card, index)} card={card} grouped />
             </li>
           ))}
         </ul>
@@ -376,7 +402,13 @@ export function ReadGroupView({
       {!expanded && (failed.length > 0 || images.length > 0) && (
         <div className="omfp-read-group__shown" data-testid="read-group-shown">
           {failed.map(({ card, index }) => (
-            <ToolCardView key={card.toolCallId} cardKey={readKey(card, index)} card={card} grouped />
+            <ToolCardView
+              key={card.toolCallId}
+              threadId={threadId}
+              cardKey={readKey(card, index)}
+              card={card}
+              grouped
+            />
           ))}
           {images.map((card) => (
             <ToolImages key={card.toolCallId} card={card} />

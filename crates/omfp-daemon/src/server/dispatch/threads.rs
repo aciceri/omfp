@@ -517,6 +517,13 @@ pub(super) async fn thread(services: &Services, principal: &Principal, call: Cal
                 .map_err(supervisor_error)?;
             empty()
         }
+        Call::CardAnswer(params) => {
+            supervisor
+                .answer_card(&params.thread_id, &params.tool_call_id, params.answer)
+                .await
+                .map_err(supervisor_error)?;
+            empty()
+        }
         other => Err(internal(format!(
             "`{}` is not a thread method",
             other.method()
@@ -834,6 +841,106 @@ mod tests {
         assert_eq!(
             services.store.spawned_thread_ids(&by_job).unwrap(),
             Vec::<String>::new()
+        );
+    }
+
+    // spec: PRT-224, DMN-911
+    #[tokio::test]
+    async fn card_answer_ends_a_waiting_card_once_and_is_not_found_for_an_unknown_thread() {
+        use omfp_protocol::{CardAnswer, CardAnswerParams, ErrorCode};
+
+        let dir = tempfile::tempdir().unwrap();
+        let services = services(&dir).await;
+        let ws = services
+            .workspaces
+            .create(NewWorkspace::new())
+            .unwrap()
+            .workspace
+            .id;
+        let thread = services
+            .threads
+            .create(NewThread::new("t", &ws))
+            .unwrap()
+            .id;
+        let answer = |thread_id: &str, value: serde_json::Value| {
+            Call::CardAnswer(CardAnswerParams {
+                thread_id: thread_id.to_owned(),
+                tool_call_id: "toolu_1".to_owned(),
+                answer: CardAnswer::Submit { value },
+            })
+        };
+
+        let unknown = dispatch(&services, &owner(), answer("01NOTHREAD", json!(1)))
+            .await
+            .unwrap_err();
+        assert_eq!(unknown.code, ErrorCode::NotFound, "{unknown:?}");
+        let never = dispatch(&services, &owner(), answer(&thread, json!(1)))
+            .await
+            .unwrap_err();
+        assert_eq!(never.code, ErrorCode::AlreadyResolved, "{never:?}");
+
+        let mut wait = services
+            .supervisor
+            .wait_card(&thread, "toolu_1")
+            .await
+            .unwrap();
+        assert!(services.supervisor.status(&thread).needs_attention);
+        let answered = dispatch(&services, &owner(), answer(&thread, json!({ "ok": true }))).await;
+        assert_eq!(answered, Ok(json!({})));
+        assert!(!services.supervisor.status(&thread).needs_attention);
+        assert_eq!(
+            wait.answer().await.unwrap(),
+            CardAnswer::Submit {
+                value: json!({ "ok": true })
+            }
+        );
+        let second = dispatch(&services, &owner(), answer(&thread, json!(2)))
+            .await
+            .unwrap_err();
+        assert_eq!(second.code, ErrorCode::AlreadyResolved, "{second:?}");
+    }
+
+    // spec: PRT-225
+    #[tokio::test]
+    async fn widgets_compile_answers_the_module_or_a_bad_request_at_card_tsx() {
+        use omfp_protocol::{CompileWidgetParams, ErrorCode};
+
+        let dir = tempfile::tempdir().unwrap();
+        let services = services(&dir).await;
+        let compile = |code: &str| {
+            Call::WidgetsCompile(CompileWidgetParams {
+                code: code.to_owned(),
+            })
+        };
+        let compiled = dispatch(
+            &services,
+            &owner(),
+            compile("import { Card } from \"omfp/kit\";\nexport default () => <Card />;\n"),
+        )
+        .await
+        .unwrap();
+        let module = compiled["module"].as_str().unwrap();
+        assert!(module.contains("from \"react/jsx-runtime\""), "{module}");
+        assert!(module.contains("//# sourceMappingURL=data:"), "{module}");
+
+        let error = dispatch(&services, &owner(), compile("export {};\nconst = 1;\n"))
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, ErrorCode::BadRequest);
+        assert!(error.message.starts_with("card.tsx:2:"), "{error:?}");
+        let error = dispatch(
+            &services,
+            &owner(),
+            compile("import a from \"../a\";\nexport default a;\n"),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.code, ErrorCode::BadRequest);
+        assert!(
+            error
+                .message
+                .starts_with("card.tsx:1:15: cannot import \"../a\": a card is one file"),
+            "{error:?}"
         );
     }
 }

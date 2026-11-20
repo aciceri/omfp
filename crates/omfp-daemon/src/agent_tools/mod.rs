@@ -2,6 +2,7 @@
 //! and an async body over the daemon's services — for the adapters that hand them to agents: the RPC host tools of
 //! every thread ([`rpc`], DMN-151) and the MCP server.
 
+pub(crate) mod cards;
 pub mod catalog;
 pub(crate) mod checks;
 #[cfg(test)]
@@ -50,13 +51,15 @@ pub(crate) fn not_for_agents(method: &str) -> Option<String> {
     ))
 }
 
-/// What a tool runs with: the daemon's services, the principal it acts as (DMN-150) and the calling thread's
-/// workspace (`None` when no thread calls, e.g. MCP with a user token).
+/// What a tool runs with: the daemon's services, the principal it acts as (DMN-150), the calling thread's workspace
+/// (`None` when no thread calls, e.g. MCP with a user token) and the id of the agent's tool call (`None` outside an
+/// RPC host tool call).
 #[derive(Clone)]
 pub(crate) struct ToolContext {
     pub services: Services,
     pub principal: Principal,
     pub workspace_id: Option<String>,
+    pub tool_call_id: Option<String>,
 }
 
 impl ToolContext {
@@ -89,6 +92,7 @@ pub(crate) struct AgentTool {
 pub(crate) fn registry() -> Vec<AgentTool> {
     let mut tools = vec![omfp_call::tool(), wait::tool()];
     tools.extend(mounts::tools());
+    tools.push(cards::tool());
     tools.extend(checks::tools());
     tools.extend(windows::tools());
     tools
@@ -136,6 +140,9 @@ pub(super) mod tests {
     use crate::threads::{NewThread, Threads};
     use crate::widgets::Widgets;
     use crate::workspaces::{NewWorkspace, Workspaces};
+
+    /// The tool call id of [`Harness::context`].
+    pub const TOOL_CALL_ID: &str = "toolu_01";
 
     /// Services on the fake launcher with one workspace and one thread in it, the caller.
     pub struct Harness {
@@ -198,7 +205,7 @@ pub(super) mod tests {
             }
         }
 
-        /// The context of the caller thread's host tools.
+        /// The context of the caller thread's host tools, in its tool call [`TOOL_CALL_ID`].
         pub fn context(&self) -> ToolContext {
             ToolContext {
                 services: self.services.clone(),
@@ -207,6 +214,7 @@ pub(super) mod tests {
                     client: "omp".to_owned(),
                 },
                 workspace_id: Some(self.workspace.clone()),
+                tool_call_id: Some(TOOL_CALL_ID.to_owned()),
             }
         }
     }

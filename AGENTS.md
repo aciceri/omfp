@@ -81,8 +81,8 @@ crates/omfp-daemon    daemon library: omp adapter (omp.rs), agent port + FakeLau
                       live_context.rs: omp's vendored live prompt live_instructions.txt + the thread's conversation),
                       supervisor (supervisor.rs: the thread actors and their operations; supervisor/process.rs: launch
                       in the workspace folder, event pump, crash and stop; supervisor/roots.rs: root sync;
-                      supervisor/dialogs.rs: answers to omp's dialogs; supervisor/naming.rs: thread titles and session
-                      names), agent
+                      supervisor/dialogs.rs: answers to omp's dialogs; supervisor/cards.rs: the waiting `omfp_card`
+                      calls and their answers; supervisor/naming.rs: thread titles and session names), agent
                       conventions and the widget-builder agent (conventions.rs),
                       event log, store (+ migrations, store/migrate.rs; activity log and prompt history,
                       store/history.rs), workspaces (folder scanner in
@@ -93,7 +93,8 @@ crates/omfp-daemon    daemon library: omp adapter (omp.rs), agent port + FakeLau
                       omp after a failed start (session_file.rs), threads, git port + FakeGit, host tools and the `omfp://` host URIs
                       (host_tools.rs), the agent tool registry (agent_tools/: `omfp_call`, `omfp_thread_wait`, the
                       method catalogue `omfp://protocol/methods`, the RPC host tool adapter, the mount tools, the
-                      check tools `omfp_widget_check`/`omfp_views_errors` in agent_tools/checks.rs, the window tools `omfp_windows`/`omfp_window_run` in agent_tools/windows.rs),
+                      check tools `omfp_widget_check`/`omfp_views_errors` in agent_tools/checks.rs, the window tools `omfp_windows`/`omfp_window_run` in agent_tools/windows.rs,
+                      `omfp_card`, a widget in the card of its own call in the chat, in agent_tools/cards.rs),
                       jobs (jobs.rs: shell commands of a workspace, `job/<id>`), widgets (widgets.rs: views manifest
                       check, widget folders and versions, oxc transpiling and the `/widgets/<key>/…` route, copies;
                       widgets/docs.md is `omfp://docs/widgets`, widgets/shell.md `omfp://docs/shell`,
@@ -179,7 +180,7 @@ ui/packages/app       @omfp/app: the web app; src/sdk (widget SDK `omfp/sdk`: ho
                       widget hooks useStored/useJob/useToolRun, files: useFile/useOpenFile and the file tabs, live.ts:
                       the window's live voice session `LiveClient` and its browser `LiveMedia`, init.ts: the init files'
                       runs and their API, init-views.ts: the views they build, layout.tsx: the layout components of
-                      TSX views, results.ts: the data hooks' last results), vm
+                      TSX views, results.ts: the data hooks' last results, answer.ts: `useAnswer` of the chat cards), vm
                       (view models), widgets (built-ins, each folder copyable: value imports only from react,
                       omfp/sdk, omfp/kit; widgets/file is `omfp:file`, the CodeMirror viewer/editor), frame (left
                       column, mode line with the view tabs, the `:` line and file picker, `:widget add` (layout.tsx),
@@ -193,7 +194,8 @@ ui/packages/app       @omfp/app: the web app; src/sdk (widget SDK `omfp/sdk`: ho
                       commands run and out-of-sight widget checks), view (layout tree, `:widget add`'s
                       manifest edit (edit.ts), reference resolution, widget slot,
                       the `main` slot's file tabs and the widget tabs reveals open there (opened-tab.tsx: their label
-                      and close gestures); file-view.tsx: TSX views; kept.ts: the views kept mounted, hidden;
+                      and close gestures); file-view.tsx: TSX views; card.tsx: the widget of a chat card (`omfp_card`);
+                      kept.ts: the views kept mounted, hidden;
                       sizes.ts and splitter.tsx:
                       the window's splitter sizes), gallery
                       (the `/kit` page, UI-173: params, contrast measuring, the matugen-forest fixture theme, the

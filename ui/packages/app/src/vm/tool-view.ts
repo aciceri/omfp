@@ -146,7 +146,29 @@ export type ToolView =
       readonly kind: "ask";
       readonly questions: readonly { readonly question: string; readonly answer: string | undefined }[];
     }
-  | { readonly kind: "task"; readonly context: string | undefined; readonly agents: readonly SubagentRun[] };
+  | { readonly kind: "task"; readonly context: string | undefined; readonly agents: readonly SubagentRun[] }
+  | {
+      readonly kind: "card";
+      /** The widget reference of an `omfp_card` call (AGT-096), a bare name as `./widgets/<name>`; `undefined` for a
+       * `code` card. */
+      readonly reference: string | undefined;
+      /** The source of a one-file card (PRT-225). */
+      readonly code: string | undefined;
+      /** The component's props. */
+      readonly props: Readonly<Record<string, unknown>>;
+      readonly title: string | undefined;
+      readonly wait: boolean;
+      readonly answer: CardAnswerView;
+    };
+
+/** Where the answer of a card stands (UI-921), what `useAnswer().state` says. */
+export type AnswerState = "none" | "waiting" | "submitted" | "cancelled" | "timeout" | "aborted";
+
+/** A card's answer: its state and, once `submitted`, the submitted value. */
+export interface CardAnswerView {
+  readonly state: AnswerState;
+  readonly value: unknown;
+}
 
 /** A phase of the `todo` list. */
 export interface TodoPhase {
@@ -360,6 +382,7 @@ const SHOWN_ARGUMENTS: Readonly<Record<string, readonly string[]>> = {
   lsp: ["action", "file", "line", "symbol"],
   web_search: ["query"],
   ask: ["html"],
+  omfp_card: ["widget", "code", "props", "title"],
 };
 
 /** The arguments of a call of tool `name` its card shows elsewhere than the header's summary; `undefined` if none. */
@@ -588,8 +611,55 @@ export function toolView(
     }
     case "task":
       return { kind: "task", context: str(input.context), agents: subagents(input, details, ended) };
+    case "omfp_card": {
+      const widget = str(input.widget);
+      const wait = input.wait === true;
+      return {
+        kind: "card",
+        // A bare name means the workspace's `./widgets/<name>` (AGT-096).
+        reference:
+          widget === undefined || widget.includes(":") || widget.startsWith("./") ? widget : `./widgets/${widget}`,
+        code: str(input.code),
+        props: isRecord(input.props) ? input.props : {},
+        title: str(input.title),
+        wait,
+        answer: cardAnswer(wait, ended, succeeded, output?.text),
+      };
+    }
     default:
       return { kind: "generic" };
+  }
+}
+
+const NO_ANSWER: CardAnswerView = { state: "none", value: undefined };
+
+/**
+ * The answer of an `omfp_card` call (UI-921): `waiting` while a `wait` call runs, `aborted` once it ended in an error,
+ * else what its JSON text says (`{"status":"submitted","value":…}`, `cancelled`, `timeout`; `shown` is `none`).
+ */
+function cardAnswer(wait: boolean, ended: boolean, succeeded: boolean, answer: string | undefined): CardAnswerView {
+  if (!ended) {
+    return wait ? { state: "waiting", value: undefined } : NO_ANSWER;
+  }
+  if (!succeeded) {
+    return { state: "aborted", value: undefined };
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(answer ?? "");
+  } catch {
+    return NO_ANSWER;
+  }
+  const record: Readonly<Record<string, unknown>> = isRecord(parsed) ? parsed : {};
+  switch (record.status) {
+    case "submitted":
+      return { state: "submitted", value: record.value };
+    case "cancelled":
+      return { state: "cancelled", value: undefined };
+    case "timeout":
+      return { state: "timeout", value: undefined };
+    default:
+      return NO_ANSWER;
   }
 }
 

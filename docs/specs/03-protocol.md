@@ -160,6 +160,7 @@ previous settings stay). A thread summary carries `title` (`""` until the first 
 | `thread.live_stop` | `threadId` | `{}`; succeeds without a session and never starts omp (DMN-102) |
 | `thread.live_mute` | `threadId`, `muted` | `{ muted }`; `conflict` without a live session (DMN-102) |
 | `interaction.respond` | `threadId`, `interactionId`, `response` (`value` \| `confirmed` \| `cancelled` \| `answers`) | `{}` or `already_resolved` |
+| `card.answer` | `threadId`, `toolCallId`, `answer` (`{ kind: "submit", value }` \| `{ kind: "cancel" }`) | `{}` or `already_resolved` (PRT-224) |
 | `theme.get` | — | `{ css }`: the user's theme CSS, `null` when none (DMN-075) |
 | `theme.set` | `css` (string, at most 1 MiB, else `bad_request`; `null` restores the built-in themes) | `{}`; every client gets `theme_changed` on `index` |
 | `settings.get` | — | `settings` (DMN-009, UI-097) |
@@ -167,6 +168,7 @@ previous settings stay). A thread summary carries `title` (`""` until the first 
 | `views.set` | `workspaceId`, `manifest` (AGT-010) | `{}`; writes `.omfp/views.json` (DMN-083) |
 | `widgets.copy` | `workspaceId`, `widget` (`omfp:<name>` \| `user:<name>`), `name?` | `{ name }`: the new folder `.omfp/widgets/<name>/` (DMN-087) |
 | `widgets.state_set` | `workspaceId`, `instance`, `key`, `value` (JSON; `null` deletes) | `{}`; `widget_stored` on `views/<id>` (DMN-086) |
+| `widgets.compile` | `code` | `{ module }`: the ES module of a card's one-file widget (PRT-225) |
 | `widgets.report` | `workspaceId`, `views` (the `{ epoch, seq }` of `views/<workspaceId>` the window rendered, `null` before it arrived), `widgets` (per instance: `reference`, `instance`, `source`, `name`, `version`, `state`, `errors`, `console`, `text`, `jobs`), `fileErrors?` (`[{ kind, file, message }]`, PRT-115), `window?` (`{ threadId, focused, activeView, defaultView, views, commands }`, PRT-122) | `{}`; replaces this connection's report (PRT-043, AGT-026) |
 | `views.errors` | `workspaceId` | `ViewErrors { windows: [{ client, errors: [{ kind, file, message }] }] }`: the init file and TSX view errors of every window showing the workspace (PRT-116) |
 | `jobs.start` | `workspaceId`, `command`, `replaces?` | the job: `{ id, workspaceId, command, startedAt, status }` (DMN-080); `replaces` is a job it takes the place of (DMN-215) |
@@ -318,6 +320,8 @@ the tool definitions and the system prompt).
 | PRT-082 | `views.unmount { workspaceId, id }` → `Unmounted { views, removedViews, panel }` (AGT-063): the ids of the views it changed and of those it removed, and whether it removed the panel `id`; written and published like PRT-080. |
 | PRT-083 | `widgets.save { name, workspaceId?, widget?, code?, replace? }` → `WidgetSaved { name, reference }` (AGT-064): `workspaceId` is required with `widget`; `bad_request` for a bad name or both or neither of `widget` and `code`, `not_found` for a missing widget, `conflict` for an existing component without `replace`. |
 | PRT-084 | `widgets.library {}` → `WidgetLibrary { components: [{ name, reference, entry, files, version, description }] }` (AGT-065), by name; `entry` is `null` for a folder without one. |
+| PRT-224 | (M17) `card.answer { threadId, toolCallId, answer }` (permission as `interaction.respond`) ends the wait of the thread's `omfp_card` call `toolCallId` (AGT-097) with `answer`: `{ kind: "submit", value }` (any JSON) or `{ kind: "cancel" }`, and answers `{}`; a call that does not wait (answered, timed out, cancelled, never waiting or unknown) is `already_resolved`, an unknown thread `not_found`. |
+| PRT-225 | (M17) `widgets.compile { code }` (permission `Read`) MUST answer `{ module }`, `code` compiled as the widget file `card.tsx` (DMN-084, DMN-085: types stripped, JSX on the automatic runtime, an inline source map), refusing relative imports (a card is one file): a compile error is a `bad_request` whose message is `card.tsx:line:column: message`. It reads and writes no file; a window loads the module from a `blob:` URL, its bare imports resolved by the window's import map. |
 
 ## Declared jobs (M18)
 

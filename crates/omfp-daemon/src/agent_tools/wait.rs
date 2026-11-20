@@ -25,7 +25,7 @@ pub(super) fn tool() -> AgentTool {
                       included, finished and its session settled (call it once thread.prompt answered, not in the \
                       same batch of parallel tool calls). Answers JSON { threadId, status, prompt?, \
                       lastAssistantText }; status is done, needs_attention (it waits for an answer: see \
-                      interaction.respond), stopped, failed or timeout.",
+                      interaction.respond, or a card of omfp_card: see card.answer), stopped, failed or timeout.",
         parameters: json!({
             "type": "object",
             "properties": {
@@ -104,6 +104,8 @@ fn run(context: ToolContext, arguments: Map<String, Value>) -> ToolFuture {
             .map_err(|error| error_text(&supervisor_error(error)))?;
         let explicit = wait.prompt_id.is_some();
         let mut events = log.listen();
+        // A waiting card needs the user without an event in the log: its start is a status change (DMN-911).
+        let mut changes = supervisor.subscribe_changes();
         let deadline = tokio::time::Instant::now() + wait.timeout;
         loop {
             let last = prompts.borrow_and_update().clone();
@@ -113,9 +115,10 @@ fn run(context: ToolContext, arguments: Map<String, Value>) -> ToolFuture {
             };
             // Without promptId, a prompt still on its way to omp is about to be the thread's last one (DMN-152).
             let sending = !explicit && last.sending > 0;
+            let attention = supervisor.status(&wait.thread_id).needs_attention;
             if !sending
                 && let Some(status) =
-                    log.with_state(|state| status(state, target.as_deref(), explicit))
+                    log.with_state(|state| status(state, target.as_deref(), explicit, attention))
             {
                 return Ok(answer(status));
             }
@@ -131,14 +134,22 @@ fn run(context: ToolContext, arguments: Map<String, Value>) -> ToolFuture {
                         return Ok(answer("stopped"));
                     }
                 }
+                // Any thread's status change, a card starting to wait among them (AGT-097); missed ones are re-read.
+                _ = changes.recv() => {}
                 () = tokio::time::sleep_until(deadline) => return Ok(answer("timeout")),
             }
         }
     })
 }
 
-/// Whether the wait is over, and why (AGT-043): `None` while the thread works on.
-fn status(state: &ThreadState, target: Option<&str>, explicit: bool) -> Option<&'static str> {
+/// Whether the wait is over, and why (AGT-043): `None` while the thread works on. `attention`: the thread needs the
+/// user, for a pending interaction or a waiting card (DMN-911).
+fn status(
+    state: &ThreadState,
+    target: Option<&str>,
+    explicit: bool,
+    attention: bool,
+) -> Option<&'static str> {
     let done = match target {
         Some(id) => state.prompts.contains_key(id) && (explicit || state.settled),
         None => state.settled,
@@ -146,7 +157,7 @@ fn status(state: &ThreadState, target: Option<&str>, explicit: bool) -> Option<&
     if done {
         return Some("done");
     }
-    if !state.interactions.is_empty() {
+    if attention {
         return Some("needs_attention");
     }
     match state.process {
@@ -444,6 +455,29 @@ mod tests {
             "title": "Delete the branch?",
             "options": ["Yes", "No"]
         })]));
+
+        assert_eq!(waiting.await.unwrap().unwrap()["status"], "needs_attention");
+    }
+
+    // spec: AGT-097, AGT-043
+    #[tokio::test]
+    async fn a_card_that_starts_waiting_ends_the_wait_with_needs_attention() {
+        let harness = Harness::new().await;
+        let worker = harness.worker();
+        harness.prompt(&worker).await;
+        let process = harness.launcher.process(0);
+        process.emit(frames(vec![json!({ "type": "agent_start" })]));
+
+        let waiting = tokio::spawn(wait(harness.context(), json!({ "threadId": worker })));
+        tokio::task::yield_now().await;
+        assert!(!waiting.is_finished(), "the worker works on");
+        // No event in the worker's log: only its status changes.
+        let _card = harness
+            .services
+            .supervisor
+            .wait_card(&worker, "toolu_card")
+            .await
+            .unwrap();
 
         assert_eq!(waiting.await.unwrap().unwrap()["status"], "needs_attention");
     }

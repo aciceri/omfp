@@ -13,6 +13,7 @@ import {
   type Block,
   daySeparator,
   type Item,
+  inOpenTurn,
   items,
   type MessageView,
   messageView,
@@ -314,6 +315,28 @@ describe("turns", () => {
     expect(turnMarks({ ...state, streaming }).at(-1)).toBe("assistant+");
     const asked = { ...state, transcript: state.transcript.slice(0, 7), streaming };
     expect(turnMarks(asked).slice(-2)).toEqual(["user", "assistant"]);
+  });
+});
+
+describe("open turn", () => {
+  const open = (state: ThreadState) => items(state).map((item) => inOpenTurn(state, item));
+
+  // spec: UI-922
+  test("rows from the last user message on are in the open turn while the thread works, none once it settles", () => {
+    const working = { ...turns(), settled: false };
+    expect(open(working)).toEqual([false, false, false, false, true, true]);
+    expect(open({ ...working, settled: true })).toEqual([false, false, false, false, false, false]);
+  });
+
+  // spec: UI-922
+  test("the streaming reply is in it; a notice never is", () => {
+    const streaming: ThreadState["streaming"] = {
+      message_id: "live",
+      message: { role: "assistant", content: [{ type: "text", text: "…" }] },
+    };
+    const frame: NoticeFrame = { type: "unknown", data: { type: "mystery" } };
+    const working = { ...turns(), settled: false, streaming, notices: [{ position: 8, frame }] };
+    expect(open(working).slice(-3)).toEqual([true, false, true]);
   });
 });
 

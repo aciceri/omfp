@@ -112,6 +112,10 @@ pub fn widgets_note(path: &Path, user_library: &Path) -> String {
          (`user:<name>`). {VERIFY_LOOP} omfp_widget_check also checks init files (`init`, `user:init`) and TSX views \
          (`views/<file>`); omfp_views_errors lists the runtime errors windows show for them. omfp_window_run runs \
          only registered commands, never code.\n\
+         - Cards: content of one moment of the conversation (a terminal to show something, a chart, a question with \
+         its own controls) goes in a card, omfp_card {{ widget | code, props?, title?, wait? }}, drawn in your tool \
+         call in the chat (with wait: true the user's answer is its result); content that stays goes in a mount \
+         (omfp_ui_mount). Details: omfp://docs/widgets (Cards in the chat).\n\
          - Keys: {display}/.omfp/keymap.json (schema omfp://schemas/keymap.json) binds keys to commands, built-in or a \
          widget's useCommand, in windows showing this workspace; give a widget a command and bind it there.\n\
          - Jobs: a workspace's recurring commands, schedules, watchers and prompts are declared in \
@@ -320,7 +324,7 @@ mod tests {
             example.lines().count() <= 11,
             "a ten-line example: {example}"
         );
-        assert!(text.lines().count() <= 30, "short: {text}");
+        assert!(text.lines().count() <= 31, "short: {text}");
         assert!(!text.ends_with('\n'));
     }
 
@@ -605,6 +609,25 @@ mod tests {
                 assert!(text.contains(rule), "{rule:?} missing: {text}");
             }
         }
+    }
+
+    // spec: AGT-098
+    #[test]
+    fn the_widgets_note_gives_one_line_to_cards_for_content_of_one_moment() {
+        let text = widgets_note(Path::new("/ws"), Path::new("/data/omfp/widgets"));
+        let cards: Vec<&str> = text
+            .lines()
+            .filter(|line| line.contains("omfp_card"))
+            .collect();
+        assert_eq!(
+            cards,
+            [
+                "- Cards: content of one moment of the conversation (a terminal to show something, a chart, a \
+                 question with its own controls) goes in a card, omfp_card { widget | code, props?, title?, wait? }, \
+                 drawn in your tool call in the chat (with wait: true the user's answer is its result); content that \
+                 stays goes in a mount (omfp_ui_mount). Details: omfp://docs/widgets (Cards in the chat)."
+            ]
+        );
     }
 
     // spec: AGT-029, DMN-107

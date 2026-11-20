@@ -14,6 +14,7 @@
 export { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 export { keyLabel } from "../keymap/keymap.ts";
 export { strings } from "../strings/index.ts";
+export { CardWidget, type CardWidgetProps } from "../view/card.tsx";
 export { type AnsiRun, ansiRuns } from "../vm/ansi.ts";
 export { type BackgroundRow, type BackgroundSections, type JobTimes, lastOutputLine } from "../vm/background.ts";
 export { type BrowserScreenshot, type BrowserTab, type BrowserView, browserView } from "../vm/browser.ts";
@@ -236,7 +237,9 @@ export {
 export { type GoalView, type TodoPhaseView, type TodoRow, type TodosView, todosView } from "../vm/todos.ts";
 export { type CardImage, expandedByDefault, formatDuration, type ToolCard } from "../vm/tool.ts";
 export {
+  type AnswerState,
   type AstEditFile,
+  type CardAnswerView,
   type RepoPath,
   repoPath,
   type SearchFile,
@@ -251,6 +254,7 @@ export {
   type DaySeparator,
   daySeparator,
   type Item as TranscriptItem,
+  inOpenTurn as transcriptOpenTurn,
   items as transcriptItems,
   type MessageView,
   type Role as MessageRole,
@@ -316,6 +320,7 @@ export {
   useUrlActions,
 } from "./actions.ts";
 export { chooseView, useActiveView, useViewChoicesUpkeep } from "./active-view.ts";
+export { type Answer, type CardInfoScope, CardScope, useAnswer } from "./answer.ts";
 export { type Background, useBackground, useRunningInBackground, useSubagentRows } from "./background.ts";
 export { type Command, CommandRegistry, SCOPE_ATTRIBUTE, scopesAt } from "./commands.ts";
 export { type ConversationActions, conversationActions, useConversationActions } from "./conversation.ts";

@@ -249,6 +249,31 @@ export function items(state: ThreadState, showXdevNotices = false): readonly Ite
   return result;
 }
 
+const LAST_USER = new WeakMap<readonly TranscriptEntry[], Derived<number>>();
+
+/** The index of the transcript's last user message, `-1` without one; computed once per transcript array. */
+function lastUserIndex(transcript: readonly TranscriptEntry[]): number {
+  return derive(LAST_USER, transcript, [], () => transcript.findLastIndex(({ message }) => message.role === "user"));
+}
+
+/**
+ * Whether `item` belongs to the turn its thread still works on (UI-922): the thread is not settled and no user message
+ * follows the item's message. The reply being streamed belongs to it while the thread works; a notice never does.
+ */
+export function inOpenTurn(state: ThreadState, item: Item): boolean {
+  if (state.settled) {
+    return false;
+  }
+  switch (item.kind.type) {
+    case "streaming":
+      return true;
+    case "message":
+      return item.kind.index >= lastUserIndex(state.transcript);
+    case "notice":
+      return false;
+  }
+}
+
 /** A message's send time (omp's `timestamp`, ms): none when absent or not positive (recorded fixtures zero them). */
 function sentAt(message: AgentMessage): number | undefined {
   const { timestamp } = message;

@@ -433,6 +433,7 @@ mod tests {
                     client: "omp".to_owned(),
                 },
                 workspace_id: Some(view.workspace.id),
+                tool_call_id: None,
             },
             folder: view.workspace.path,
             library,

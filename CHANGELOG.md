@@ -16,6 +16,11 @@ The version's section is also the source of the GitHub release notes.
 - A wide window's left column collapses to nothing with *Hide threads* (the button at the end of its logo's row),
   `Space b` or `:threads.collapse`, so the view takes the whole window; *Show threads* at the start of the mode line,
   `Space b` again or `Space t` (which also focuses it) bring it back. Each window remembers it across reloads (#216).
+- Agents can draw a widget right in the chat with the `omfp_card` tool: a terminal to show you something, a chart, a
+  question with its own controls. The card lives in the conversation only (never in your views), collapses once the
+  turn ends and comes back live when you open it. With `wait` the agent waits for your answer, given through the
+  widget (`useAnswer()` in `omfp/sdk`) or the card's Cancel, optionally with a timeout; meanwhile the thread needs
+  you, as with a question (#229).
 
 ### Changed
 

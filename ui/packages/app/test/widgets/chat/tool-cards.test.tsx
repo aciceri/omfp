@@ -39,7 +39,7 @@ function show(toolCard: ToolCard, clock?: Clock): HTMLElement {
     threads: [thread("t1", "cards", "w1")],
   });
   test.host.window.set(SELECTED_THREAD, "t1");
-  const card = <ToolCardView cardKey={toolCard.toolCallId} card={toolCard} />;
+  const card = <ToolCardView threadId="t1" cardKey={toolCard.toolCallId} card={toolCard} />;
   renderWithHost(clock === undefined ? card : <ClockContext value={clock}>{card}</ClockContext>, test);
   test.flush();
   return screen.getByTestId("tool-card");
@@ -72,7 +72,7 @@ function EditLifecycleCard() {
       >
         settle
       </button>
-      <ToolCardView cardKey={current.toolCallId} card={current} />
+      <ToolCardView threadId="t1" cardKey={current.toolCallId} card={current} />
     </>
   );
 }
@@ -717,6 +717,7 @@ describe("result images", () => {
   test("a message's image is a button opening it zoomable; Escape closes it, back to the image", async () => {
     renderWithHost(
       <MessageRow
+        threadId="t1"
         cardKey="m1"
         streaming={false}
         continues={false}
@@ -751,6 +752,7 @@ describe("result images", () => {
   test("a message's image and a result's thumbnail show at most at their natural size: never stretched, never upscaled", () => {
     renderWithHost(
       <MessageRow
+        threadId="t1"
         cardKey="m1"
         streaming={false}
         continues={false}
@@ -833,6 +835,7 @@ describe("opening files from cards", () => {
     renderWithHost(
       <>
         <MessageRow
+          threadId="t1"
           cardKey="m1"
           streaming={false}
           continues={false}
@@ -845,6 +848,7 @@ describe("opening files from cards", () => {
           }}
         />
         <MessageRow
+          threadId="t1"
           cardKey="m2"
           streaming={false}
           continues={false}
@@ -904,6 +908,7 @@ describe("read group card", () => {
     test.host.window.set(SELECTED_THREAD, "t1");
     renderWithHost(
       <MessageRow
+        threadId="t1"
         cardKey="m1"
         streaming={false}
         continues={false}
@@ -1027,6 +1032,7 @@ describe("read group card", () => {
     renderWithHost(
       <ClockContext value={clock}>
         <MessageRow
+          threadId="t1"
           cardKey="m2"
           streaming
           continues={false}
@@ -1089,6 +1095,7 @@ describe("read group card", () => {
     const running = streaming("read_tool_calls", "call_read_3");
     render(
       <MessageRow
+        threadId="t1"
         cardKey="m4"
         streaming
         continues={false}
@@ -1128,7 +1135,7 @@ function GrowingReply({ first, second }: { first: ToolCard; second: ToolCard }) 
       <button type="button" data-testid="second-read" onClick={() => setReads([first, second])}>
         second
       </button>
-      <MessageRow cardKey="m3" streaming continues={false} view={readsReply(reads)} />
+      <MessageRow threadId="t1" cardKey="m3" streaming continues={false} view={readsReply(reads)} />
     </>
   );
 }

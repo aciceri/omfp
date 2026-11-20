@@ -4,11 +4,11 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { replay } from "@omfp/core";
+import { type JsonObject, replay, type ToolRun } from "@omfp/core";
 import { astMatches } from "../../src/vm/code-intel.ts";
 import { expandedByDefault, type ToolCard } from "../../src/vm/tool.ts";
 import { deviceCall, ompDiffLines, quietFailure, repoPath, type ToolView, toolView } from "../../src/vm/tool-view.ts";
-import { card, cards, lspCard, streaming } from "../support/cards.ts";
+import { card, cards, lspCard, omfpCard, streaming } from "../support/cards.ts";
 import { repo, workspace } from "../support/fixtures.ts";
 import { fixtureEvents, isFrame } from "../widgets/chat/fixtures.ts";
 
@@ -790,5 +790,68 @@ describe("paths in repositories", () => {
     expect(repoPath("fe/x", undefined)).toEqual({ repo: undefined, path: "fe/x" });
     const rooted = workspace("w2", [{ ...repo("w2", "w2", "main"), isRoot: true }]);
     expect(repoPath("src/a.rs", rooted)).toEqual({ repo: "w2", path: "src/a.rs" });
+  });
+});
+
+describe("card of omfp_card", () => {
+  // spec: UI-920, AGT-096
+  test("a bare widget name is the workspace's widget; other references, props and the title stay as given", () => {
+    const shown = '{"status":"shown"}';
+    const bare = omfpCard({ widget: "chart", props: { points: [1, 2] }, title: "Load" }, "succeeded", shown);
+    expect(view(bare, "card")).toEqual({
+      kind: "card",
+      reference: "./widgets/chart",
+      code: undefined,
+      props: { points: [1, 2] },
+      title: "Load",
+      wait: false,
+      answer: { state: "none", value: undefined },
+    });
+    for (const reference of ["user:clock", "omfp:file", "./widgets/tests"]) {
+      expect(view(omfpCard({ widget: reference }, "succeeded", shown), "card").reference).toBe(reference);
+    }
+    const code = view(omfpCard({ code: "export default () => null;" }, "succeeded", shown), "card");
+    expect([code.reference, code.code, code.props, code.title]).toEqual([
+      undefined,
+      "export default () => null;",
+      {},
+      undefined,
+    ]);
+  });
+
+  // spec: UI-920
+  test("the summary leaves out what the card shows elsewhere: its widget, code, props and title", () => {
+    const called = omfpCard(
+      { widget: "chart", title: "Load", props: { a: 1 }, wait: true, timeoutSeconds: 30 },
+      "running",
+    );
+    expect(called.summary).toBe("timeoutSeconds: 30, wait: true");
+  });
+
+  // spec: UI-921, AGT-096
+  test("the answer: waiting while a wait call runs, then the JSON status of its result, aborted when it failed", () => {
+    const answer = (args: JsonObject, status: ToolRun["status"], text?: string) =>
+      view(omfpCard(args, status, text), "card").answer;
+    const waits = { widget: "ask", wait: true };
+    expect(answer(waits, "running")).toEqual({ state: "waiting", value: undefined });
+    expect(answer({ widget: "ask" }, "running")).toEqual({ state: "none", value: undefined });
+    expect(answer({ widget: "ask" }, "succeeded", '{"status":"shown"}')).toEqual({ state: "none", value: undefined });
+    expect(answer(waits, "succeeded", '{"status":"submitted","value":{"pick":2}}')).toEqual({
+      state: "submitted",
+      value: { pick: 2 },
+    });
+    expect(answer(waits, "succeeded", '{"status":"cancelled"}')).toEqual({ state: "cancelled", value: undefined });
+    expect(answer(waits, "succeeded", '{"status":"timeout"}')).toEqual({ state: "timeout", value: undefined });
+    expect(answer(waits, "failed", "cancelled")).toEqual({ state: "aborted", value: undefined });
+    expect(answer(waits, "succeeded", "not json")).toEqual({ state: "none", value: undefined });
+  });
+
+  // spec: UI-922
+  test("open by default while it runs or its turn is open; collapsed otherwise, even failed", () => {
+    const running = omfpCard({ widget: "ask", wait: true }, "running");
+    const done = omfpCard({ widget: "ask" }, "succeeded", '{"status":"shown"}');
+    const failed = omfpCard({ widget: "ask", wait: true }, "failed", "cancelled");
+    expect([running, done, failed].map((found) => expandedByDefault(found))).toEqual([true, false, false]);
+    expect([running, done, failed].map((found) => expandedByDefault(found, true))).toEqual([true, true, true]);
   });
 });

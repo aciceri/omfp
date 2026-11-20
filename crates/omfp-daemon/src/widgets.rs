@@ -547,6 +547,12 @@ impl Widgets {
         self.compile_errors(folder).collect()
     }
 
+    /// A card's one-file widget `code` as an ES module, against the bundle's exports; reads and writes no file
+    /// (PRT-225, AGT-096).
+    pub fn compile_card(&self, code: &str) -> Result<String, CompileError> {
+        compile::compile_card(code, self.exports.as_ref())
+    }
+
     /// The compile errors of the compiled files of `folder`, in path order, compiled one by one as they are taken.
     fn compile_errors<'a>(&'a self, folder: &'a Path) -> impl Iterator<Item = CompileError> + 'a {
         files(folder)

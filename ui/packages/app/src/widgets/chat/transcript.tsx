@@ -21,6 +21,7 @@ import {
   halfPageScrollTop,
   highlightRegistry,
   type ItemEdges,
+  transcriptOpenTurn as inOpenTurn,
   isScrollUpKey,
   transcriptItems as items,
   keyScrollTop,
@@ -662,6 +663,7 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
                     cardKey={`${threadId}/${row.key}`}
                     content={content}
                     forkIndex={forkIndex(state, row)}
+                    openTurn={inOpenTurn(state, row)}
                     onFork={forkAt}
                     {...(row.kind.type === "message" && row.kind.day !== undefined ? { day: row.kind.day, today } : {})}
                   />
@@ -717,12 +719,14 @@ function firstLine(view: MessageView): string {
   return line.length > 80 ? `${line.slice(0, 79)}…` : line;
 }
 
-/** One row; renders again only when its content changes (a streaming delta changes the streaming row's only). */
+/** One row; renders again only when its content changes (a streaming delta changes the streaming row's only) or it
+ * leaves the turn its thread works on (`openTurn`, UI-922). */
 const Row = memo(function Row({
   threadId,
   cardKey,
   content,
   forkIndex,
+  openTurn,
   onFork,
   day,
   today,
@@ -731,13 +735,14 @@ const Row = memo(function Row({
   cardKey: string;
   content: RowContent;
   forkIndex: number | undefined;
+  openTurn: boolean;
   onFork: (index: number) => void;
   /** The message's day mark, with the start of today to label it (UI-750). */
   day?: DayMark;
   today?: number;
 }) {
   const separator = day === undefined || today === undefined ? undefined : daySeparator(day, today);
-  const body = rowBody(threadId, cardKey, content, forkIndex, onFork);
+  const body = rowBody(threadId, cardKey, content, forkIndex, openTurn, onFork);
   return separator === undefined ? (
     body
   ) : (
@@ -756,6 +761,7 @@ function rowBody(
   cardKey: string,
   content: RowContent,
   forkIndex: number | undefined,
+  openTurn: boolean,
   onFork: (index: number) => void,
 ): ReactNode {
   switch (content.type) {
@@ -775,10 +781,12 @@ function rowBody(
         );
       return (
         <MessageRow
+          threadId={threadId}
           cardKey={cardKey}
           view={content.view}
           streaming={content.streaming}
           continues={content.continues}
+          openTurn={openTurn}
           {...(actions === undefined ? {} : { actions })}
         />
       );

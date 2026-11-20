@@ -1,7 +1,8 @@
 //! Widget files to browser ES modules with oxc (DMN-084, DMN-085): types stripped, JSX on the automatic runtime
 //! (`react/jsx-runtime`, resolved by the window's import map), an inline source map, no down-levelling. A file fails
 //! on oxc's syntax and semantic errors, on an import that is neither relative (inside the folder) nor in the import
-//! map, and on a name the bundle's module does not export; a failing widget is replaced by a stand-in module.
+//! map, and on a name the bundle's module does not export; a failing widget is replaced by a stand-in module. A card's
+//! one-file widget (PRT-225) compiles as `card.tsx` under the same rules, without relative imports.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
@@ -35,6 +36,30 @@ pub struct CompileError {
     pub line: Option<u32>,
     pub column: Option<u32>,
     pub message: String,
+}
+
+impl std::fmt::Display for CompileError {
+    /// `file:line:column: message`, or `file: message` without a position.
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match (self.line, self.column) {
+            (Some(line), Some(column)) => {
+                write!(f, "{}:{line}:{column}: {}", self.file, self.message)
+            }
+            _ => write!(f, "{}: {}", self.file, self.message),
+        }
+    }
+}
+
+/// The file name a card's one-file widget compiles as (PRT-225).
+pub const CARD_FILE: &str = "card.tsx";
+
+/// Which imports besides the import map a file may have.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Imports {
+    /// Files of its widget folder (AGT-012).
+    Folder,
+    /// None: a card is one file (PRT-225).
+    ImportMapOnly,
 }
 
 /// Parses `widget-exports.json`: `{ "<specifier>": ["name", …] }`.
@@ -72,6 +97,25 @@ pub fn compile(
     source: &str,
     exports: Option<&Exports>,
 ) -> Result<String, CompileError> {
+    compile_with(relative, source, exports, Imports::Folder)
+}
+
+/// Compiles a card's one-file widget as [`CARD_FILE`] (PRT-225): [`compile`]'s rules, and no relative import.
+pub fn compile_card(source: &str, exports: Option<&Exports>) -> Result<String, CompileError> {
+    compile_with(
+        Path::new(CARD_FILE),
+        source,
+        exports,
+        Imports::ImportMapOnly,
+    )
+}
+
+fn compile_with(
+    relative: &Path,
+    source: &str,
+    exports: Option<&Exports>,
+    imports: Imports,
+) -> Result<String, CompileError> {
     let file = display(relative);
     let error_at = |offset: Option<u32>, message: String| {
         let (line, column) = offset.and_then(|offset| position(source, offset)).unzip();
@@ -102,9 +146,10 @@ pub fn compile(
     if let Some(diagnostic) = semantic.diagnostics.errors().next() {
         return Err(from_diagnostic(diagnostic));
     }
-    if let Some((offset, message)) = import_errors(relative, source, &parsed.module_record, exports)
-        .into_iter()
-        .min_by_key(|(offset, _)| *offset)
+    if let Some((offset, message)) =
+        import_errors(relative, source, &parsed.module_record, exports, imports)
+            .into_iter()
+            .min_by_key(|(offset, _)| *offset)
     {
         return Err(error_at(Some(offset), message));
     }
@@ -134,16 +179,18 @@ pub fn compile(
 }
 
 /// Every import of the module that breaks AGT-012, with its byte offset: a specifier neither relative (inside the
-/// folder) nor in the import map, or a name its import-map module does not export.
+/// folder, when `imports` allows files of the folder) nor in the import map, or a name its import-map module does not
+/// export.
 fn import_errors(
     relative: &Path,
     source: &str,
     record: &ModuleRecord<'_>,
     exports: Option<&Exports>,
+    imports: Imports,
 ) -> Vec<(u32, String)> {
     let mut errors = Vec::new();
     let mut check_specifier = |specifier: &str, offset: u32| {
-        if let Some(reason) = specifier_error(relative, specifier) {
+        if let Some(reason) = specifier_error(relative, specifier, imports) {
             errors.push((offset, reason));
         }
     };
@@ -207,9 +254,15 @@ fn import_errors(
 }
 
 /// Why a widget file may not import `specifier`, if it may not.
-fn specifier_error(relative: &Path, specifier: &str) -> Option<String> {
+fn specifier_error(relative: &Path, specifier: &str, imports: Imports) -> Option<String> {
     if IMPORT_MAP.contains(&specifier) {
         return None;
+    }
+    if imports == Imports::ImportMapOnly {
+        return Some(format!(
+            "cannot import \"{specifier}\": a card is one file and imports only {}",
+            IMPORT_MAP.join(", ")
+        ));
     }
     if specifier.starts_with("./") || specifier.starts_with("../") {
         return leaves_folder(relative, specifier)
@@ -261,12 +314,8 @@ fn position(source: &str, offset: u32) -> Option<(u32, u32)> {
 /// rendering it.
 #[must_use]
 pub fn stand_in(error: &CompileError) -> String {
-    let at = match (error.line, error.column) {
-        (Some(line), Some(column)) => format!("{}:{line}:{column}", error.file),
-        _ => error.file.clone(),
-    };
     let error_json = serde_json::to_string(error).unwrap_or_else(|_| "null".to_owned());
-    let text = serde_json::Value::String(format!("{at}: {}", error.message));
+    let text = serde_json::Value::String(error.to_string());
     format!(
         "import {{ createElement }} from \"react\";\n\
          export const compileError = {error_json};\n\
@@ -418,5 +467,41 @@ mod tests {
         );
         // The stand-in itself compiles and imports only from the import map.
         assert!(compiled("stand-in.js", &module).is_ok());
+    }
+
+    // spec: PRT-225, AGT-096
+    #[test]
+    fn a_card_compiles_as_card_tsx_and_imports_only_from_the_import_map() {
+        let module = compile_card(
+            "import { Card } from \"omfp/kit\";\nimport { useAnswer } from \"omfp/sdk\";\n\
+             export default function Ask({ q }: { q: string }) { const a = useAnswer(); return <Card title={q}>{a.state}</Card>; }\n",
+            None,
+        )
+        .unwrap();
+        assert!(module.contains("from \"react/jsx-runtime\""), "{module}");
+        assert!(
+            module.contains("//# sourceMappingURL=data:application/json;"),
+            "{module}"
+        );
+
+        let error = compile_card(
+            "export {};\nimport { helper } from \"./helper\";\n",
+            Some(&exports()),
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "card.tsx:2:24: cannot import \"./helper\": a card is one file and imports only react, \
+             react/jsx-runtime, react-dom, omfp/sdk, omfp/kit"
+        );
+        let error = compile_card("const = ;", None).unwrap_err();
+        assert_eq!((error.file.as_str(), error.line), (CARD_FILE, Some(1)));
+        assert!(error.to_string().starts_with("card.tsx:1:"), "{error}");
+        let error = compile_card(
+            "import { Gauge } from \"omfp/kit\"; export { Gauge };",
+            Some(&exports()),
+        )
+        .unwrap_err();
+        assert_eq!(error.message, "omfp/kit has no export named Gauge");
     }
 }

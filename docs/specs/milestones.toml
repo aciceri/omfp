@@ -1305,6 +1305,17 @@ requirements = [
   "DMN-357",
   "UI-996",
   "UI-997",
+  # Cards in the chat: an agent's widget in its tool call's card, optionally waiting for an answer (#229)
+  "AGT-096",
+  "AGT-097",
+  "AGT-098",
+  "PRT-224",
+  "PRT-225",
+  "DMN-911",
+  "UI-920",
+  "UI-921",
+  "UI-922",
+  "E2E-77",
 ]
 
 [M18]

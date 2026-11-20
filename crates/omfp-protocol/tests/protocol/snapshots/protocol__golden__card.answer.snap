@@ -1,0 +1,29 @@
+---
+source: crates/omfp-protocol/tests/protocol/golden.rs
+expression: golden
+---
+{
+  "request": {
+    "id": "c42",
+    "method": "card.answer",
+    "params": {
+      "answer": {
+        "kind": "submit",
+        "value": {
+          "files": [
+            "src/lib.rs"
+          ]
+        }
+      },
+      "threadId": "01JD8X3Q4T9V2W6Y5Z7A1B3C4D",
+      "toolCallId": "toolu_01"
+    },
+    "type": "request"
+  },
+  "response": {
+    "id": "c42",
+    "ok": true,
+    "result": {},
+    "type": "response"
+  }
+}

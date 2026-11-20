@@ -202,6 +202,7 @@ dialogs).
 | DMN-052 | A `cancel` from omp (with `targetId`) MUST close the matching request in every client. |
 | DMN-053 | Presentation-only methods (`notify`, `setStatus`, `setWidget`, `set_editor_text`, `open_url`, `setTitle`) MUST become UI events with no reply to omp. |
 | DMN-054 | `ask` answers MUST match omp's required shape (one entry per question, in order, exact labels); the daemon MUST validate them before forwarding and reject malformed ones with an error. Note: omp 18.22.0's `ask` tool takes one HTML form and walks it with `select`/`input`/`editor` dialogs instead of the RPC `ask` dialog (contract scenario `ask_answered`); the `ask` method stays supported for extensions that use it. |
+| DMN-911 | (M17) **Waiting cards need the user**: the supervisor MUST keep, per thread and in memory, the `omfp_card` calls that wait for an answer (AGT-097); a thread's `needsAttention` is true while it has a pending interaction or a waiting card, and a card starting or ending its wait publishes the thread's status like any other change of it, so windows, notifications (UI-096) and init files' `attention` events see it. The first answer (PRT-224) removes the call before the tool answers, so a second one is `already_resolved`; a dropped call (omp cancelled it, DMN-151) removes it too. |
 
 ### Daemon-provided tools (host tools)
 

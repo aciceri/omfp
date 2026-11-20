@@ -35,6 +35,7 @@ use crate::store::{Thread, TitleSource, new_id};
 use crate::threads::{ThreadError, Threads};
 use crate::workspaces::{WorkspaceError, Workspaces};
 
+mod cards;
 mod dialogs;
 mod fork;
 mod live;
@@ -47,6 +48,7 @@ mod process;
 mod restart;
 mod roots;
 
+pub use cards::CardWait;
 pub use login::{AuthOmp, LOGIN_MODEL};
 pub use oauth::OAuthOwner;
 pub use restart::Restart;
@@ -101,6 +103,7 @@ const READ_ONLY_TOOLS: &[&str] = &[
     crate::agent_tools::checks::VIEWS_ERRORS,
     crate::agent_tools::windows::WINDOWS,
     crate::agent_tools::mounts::COMPONENT_LIST,
+    crate::agent_tools::cards::CARD,
 ];
 
 /// How many `live_levels` a slow subscriber may miss before it skips to the latest (DMN-110).
@@ -184,6 +187,10 @@ pub enum SupervisorError {
     ProcessGone(String),
     #[error("interaction {0} is not pending (already answered or cancelled)")]
     AlreadyResolved(String),
+    #[error(
+        "tool call {0} does not wait for an answer (answered, timed out, cancelled, never waiting or unknown)"
+    )]
+    CardNotWaiting(String),
     #[error("{0}")]
     InvalidResponse(String),
     #[error("thread.live_connect needs a non-empty sdpOffer")]
@@ -395,6 +402,8 @@ struct Actor {
     /// The OAuth sign-ins the running omp started that wait for their loopback callback (DMN-340); cleared when omp
     /// starts or stops.
     oauth: Mutex<crate::oauth_relay::Flows>,
+    /// The `omfp_card` calls waiting for an answer, by tool call id (DMN-911, AGT-097).
+    cards: Mutex<HashMap<String, tokio::sync::oneshot::Sender<omfp_protocol::CardAnswer>>>,
 }
 
 impl Actor {
@@ -430,6 +439,7 @@ impl Actor {
             fork_source: Mutex::new(None),
             session_model: Mutex::new(None),
             oauth: Mutex::new(crate::oauth_relay::Flows::default()),
+            cards: Mutex::new(HashMap::new()),
         }
     }
 
@@ -441,10 +451,11 @@ impl Actor {
 
     fn status(&self) -> ThreadStatus {
         let restart_pending = lock(&self.restart).pending();
+        let waiting_card = !lock(&self.cards).is_empty();
         self.log.with_state(|state| ThreadStatus {
             process: state.process.clone(),
             settled: state.settled,
-            needs_attention: !state.interactions.is_empty(),
+            needs_attention: !state.interactions.is_empty() || waiting_card,
             restart_pending,
         })
     }

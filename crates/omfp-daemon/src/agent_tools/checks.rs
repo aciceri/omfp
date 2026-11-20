@@ -120,6 +120,7 @@ mod tests {
                 client: "claude".to_owned(),
             },
             workspace_id: None,
+            tool_call_id: None,
         };
         for run in [run_widget_check, run_views_errors] {
             let error = run(mcp.clone(), args(json!({ "name": "tests" })))

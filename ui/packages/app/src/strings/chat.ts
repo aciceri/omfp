@@ -113,6 +113,11 @@ export const chat = {
     /** A long list of changed files' expander (UI-919). */
     moreFiles: (count: number) => `… ${count} more ${count === 1 ? "file" : "files"}`,
     fewerFiles: "Show fewer files",
+    /** The subject of an `omfp_card` call without a title nor a widget reference (UI-920). */
+    card: "card",
+    /** The Cancel of a waiting card, outside its widget (UI-922). */
+    cancelCard: "Cancel",
+    cancelCardLabel: (title: string) => `Cancel the card ${title}`,
   },
   duration: {
     ms: (ms: number) => `${ms.toFixed(0)} ms`,

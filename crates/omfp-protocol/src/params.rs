@@ -656,6 +656,39 @@ pub struct LiveMuted {
     pub muted: bool,
 }
 
+/// `card.answer` params (PRT-224): the answer to the thread's waiting `omfp_card` call `tool_call_id` (AGT-097).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CardAnswerParams {
+    pub thread_id: String,
+    pub tool_call_id: String,
+    pub answer: CardAnswer,
+}
+
+/// What the user answered a waiting card (PRT-224).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CardAnswer {
+    /// The card's value, any JSON: the tool answers `{"status":"submitted","value":…}`.
+    Submit { value: Value },
+    /// The user declined: the tool answers `{"status":"cancelled"}`.
+    Cancel,
+}
+
+/// `widgets.compile` params (PRT-225): the source of a card's one-file widget.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CompileWidgetParams {
+    pub code: String,
+}
+
+/// `widgets.compile` result (PRT-225): the ES module, with an inline source map.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct CompiledWidget {
+    pub module: String,
+}
+
 /// `interaction.respond` params (DMN-051).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]

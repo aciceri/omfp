@@ -275,6 +275,7 @@ fn tool_call(
         services: services.clone(),
         principal,
         workspace_id: None,
+        tool_call_id: None,
     };
     Ok(ToolCall {
         body: (tool.run)(context, arguments),

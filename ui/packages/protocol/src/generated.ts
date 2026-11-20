@@ -162,6 +162,25 @@ export type BuiltinTheme =
   /** The user theme (DMN-075: `theme.set`, the theme file matugen writes) over Synth; Synth without one. */
   | "matugen";
 
+/** What the user answered a waiting card (PRT-224). */
+export type CardAnswer =
+  /** The card's value, any JSON: the tool answers `{"status":"submitted","value":…}`. */
+  | {
+    kind: "submit";
+    value: unknown;
+  }
+  /** The user declined: the tool answers `{"status":"cancelled"}`. */
+  | {
+    kind: "cancel";
+  };
+
+/** `card.answer` params (PRT-224): the answer to the thread's waiting `omfp_card` call `tool_call_id` (AGT-097). */
+export type CardAnswerParams = {
+  answer: CardAnswer;
+  threadId: string;
+  toolCallId: string;
+};
+
 /** `windows.check_widget` params (PRT-124). */
 export type CheckWidgetParams = {
   /** The widget reference: `./widgets/<name>` or `user:<name>`. */
@@ -188,6 +207,16 @@ export type CommandSource =
 export type CompactParams = {
   instructions?: string | null;
   threadId: string;
+};
+
+/** `widgets.compile` params (PRT-225): the source of a card's one-file widget. */
+export type CompileWidgetParams = {
+  code: string;
+};
+
+/** `widgets.compile` result (PRT-225): the ES module, with an inline source map. */
+export type CompiledWidget = {
+  module: string;
 };
 
 /** `fs.complete` params (DMN-021). */
@@ -2504,6 +2533,7 @@ export interface Methods {
   "thread.live_stop": { params: ThreadRef; result: Empty };
   "thread.live_mute": { params: LiveMuteParams; result: LiveMuted };
   "interaction.respond": { params: RespondParams; result: Empty };
+  "card.answer": { params: CardAnswerParams; result: Empty };
   "theme.get": { params: Empty; result: Theme };
   "theme.set": { params: Theme; result: Empty };
   "settings.get": { params: Empty; result: Settings };
@@ -2512,6 +2542,7 @@ export interface Methods {
   "widgets.copy": { params: CopyWidgetParams; result: WidgetCopied };
   "widgets.state_set": { params: SetWidgetStateParams; result: Empty };
   "widgets.report": { params: ReportWidgetsParams; result: Empty };
+  "widgets.compile": { params: CompileWidgetParams; result: CompiledWidget };
   "jobs.start": { params: StartJobParams; result: JobInfo };
   "jobs.kill": { params: JobRef; result: Empty };
   "terminals.start": { params: StartTerminalParams; result: TerminalInfo };
@@ -2619,6 +2650,7 @@ export const METHODS: readonly MethodName[] = [
   "thread.live_stop",
   "thread.live_mute",
   "interaction.respond",
+  "card.answer",
   "theme.get",
   "theme.set",
   "settings.get",
@@ -2627,6 +2659,7 @@ export const METHODS: readonly MethodName[] = [
   "widgets.copy",
   "widgets.state_set",
   "widgets.report",
+  "widgets.compile",
   "jobs.start",
   "jobs.kill",
   "terminals.start",

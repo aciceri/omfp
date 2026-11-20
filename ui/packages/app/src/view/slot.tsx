@@ -244,7 +244,13 @@ export function WidgetSlot({
       body = <WidgetLoading reference={reference} />;
       break;
     case "module":
-      body = moduleBody(reference, props, module, report);
+      // A new version is a new boundary: a render error of the previous one does not stick (AGT-014).
+      body =
+        module === undefined ? (
+          <WidgetLoading reference={reference} />
+        ) : (
+          loadedBody(reference, props, module.loaded, module.version, report)
+        );
       break;
   }
   const moduleAttributes =
@@ -268,16 +274,14 @@ export function WidgetSlot({
   );
 }
 
-function moduleBody(
+/** A settled module in its place: its error, else the component in a boundary keyed `key`. */
+function loadedBody(
   reference: string,
   props: WidgetProps,
-  module: Shown | undefined,
+  loaded: LoadedWidget,
+  key: string,
   report: SlotReport | undefined,
 ): ReactNode {
-  if (module === undefined) {
-    return <WidgetLoading reference={reference} />;
-  }
-  const { loaded } = module;
   if (loaded.kind === "error") {
     const { error } = loaded;
     return (
@@ -290,12 +294,76 @@ function moduleBody(
     );
   }
   const Widget = loaded.component;
-  // A new version is a new boundary: a render error of the previous one does not stick (AGT-014).
   return (
-    <WidgetBoundary key={module.version} reference={reference} report={report}>
+    <WidgetBoundary key={key} reference={reference} report={report}>
       <Widget {...props} />
     </WidgetBoundary>
   );
+}
+
+/** What a card's one-file widget is named in its slot and its errors: the file the daemon compiles (PRT-225). */
+export const SOURCE_REFERENCE = "card.tsx";
+
+export interface SourceSlotProps {
+  /** The widget's source: one file whose default export is the component (AGT-096). */
+  readonly code: string;
+  readonly props: WidgetProps;
+  /** Where the slot is (`card/<toolCallId>`). */
+  readonly path: string;
+  /** The workspace the widget keeps its state in (`useStored`). */
+  readonly workspaceId: string | undefined;
+}
+
+/**
+ * The slot of a card's one-file widget (UI-920): its source compiled by the daemon (`widgets.compile`, PRT-225) and
+ * imported once per source, then shown as a module widget is (its {@link WidgetScope}, loading, errors in place); it
+ * has no widget folder, so no report.
+ */
+export function SourceSlot({ code, props, path, workspaceId }: SourceSlotProps): ReactNode {
+  const instance = typeof props.instance === "string" ? props.instance : SOURCE_REFERENCE;
+  const scope = useMemo(() => ({ instance, reference: SOURCE_REFERENCE, workspaceId }), [instance, workspaceId]);
+  const loaded = useSourceModule(code);
+  return (
+    <div
+      className="omfp-widget"
+      data-testid="widget"
+      data-widget={SOURCE_REFERENCE}
+      data-instance={instance}
+      data-path={path}
+    >
+      <WidgetScope value={scope}>
+        {loaded === undefined ? (
+          <WidgetLoading reference={SOURCE_REFERENCE} />
+        ) : (
+          // A new source is a new boundary, like a new version of a folder's.
+          loadedBody(SOURCE_REFERENCE, props, loaded, code, undefined)
+        )}
+      </WidgetScope>
+    </div>
+  );
+}
+
+/** The module of the card source `code`, compiled and imported once per source; `undefined` while it loads. */
+function useSourceModule(code: string): LoadedWidget | undefined {
+  const { client, modules } = useHost();
+  const [shown, setShown] = useState<{ code: string; loaded: LoadedWidget } | undefined>(undefined);
+  useEffect(() => {
+    if (modules.getSource(code) !== undefined) {
+      return;
+    }
+    let live = true;
+    const compile = (source: string) =>
+      client.call("widgets.compile", { code: source }).then((compiled) => compiled.module);
+    void modules.loadSource(code, compile).then((loaded) => {
+      if (live) {
+        setShown({ code, loaded });
+      }
+    });
+    return () => {
+      live = false;
+    };
+  }, [client, modules, code]);
+  return modules.getSource(code) ?? (shown?.code === code ? shown.loaded : undefined);
 }
 
 function WidgetLoading({ reference }: { reference: string }): ReactNode {

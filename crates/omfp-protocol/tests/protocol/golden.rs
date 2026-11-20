@@ -36,6 +36,7 @@ use omfp_protocol::{
     AuthProvider, AuthProviders, AuthStatus, LoggedIn, LoggedOut, LoginCancelled,
     OAuthCallbackParams, OAuthCallbackRelayed, ProviderRef,
 };
+use omfp_protocol::{CardAnswer, CardAnswerParams, CompileWidgetParams, CompiledWidget};
 use omfp_protocol::{
     CloseJobs, DefineJobParams, EnableJobParams, JobDefinition, JobNameParams, JobPrompt,
     JobRemoveParams, JobRunStatus, JobRuns, JobRunsParams, JobTrigger, JobView, JobViewStatus,
@@ -655,6 +656,16 @@ fn live_examples() -> Vec<(&'static str, Value)> {
             },
             &Empty {},
         ),
+        example::<method::CardAnswer>(
+            CardAnswerParams {
+                thread_id: THREAD_ID.to_owned(),
+                tool_call_id: "toolu_01".to_owned(),
+                answer: CardAnswer::Submit {
+                    value: json!({ "files": ["src/lib.rs"] }),
+                },
+            },
+            &Empty {},
+        ),
     ]
 }
 
@@ -873,6 +884,16 @@ fn widget_examples() -> Vec<(&'static str, Value)> {
                 window: Some(window_report()),
             },
             &Empty {},
+        ),
+        example::<method::WidgetsCompile>(
+            CompileWidgetParams {
+                code: "export default () => <p>Hi</p>;\n".to_owned(),
+            },
+            &CompiledWidget {
+                module: "import { jsx as _jsx } from \"react/jsx-runtime\";\n\
+                         export default () => /* @__PURE__ */ _jsx(\"p\", { children: \"Hi\" });\n"
+                    .to_owned(),
+            },
         ),
         example::<method::JobsStart>(
             StartJobParams {

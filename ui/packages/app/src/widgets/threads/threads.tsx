@@ -8,7 +8,8 @@
  * collapsed set is window-local and survives reloads. Threads and sections are dragged (and moved by keys) into
  * another place, a thread into another workspace (UI-621..UI-627, `reorder.ts`). Its
  * `threads` scope answers `nav.*` (j/k, gg/G, Ctrl-d/u, UI-095), which are also the global fallback, `dd` and `za` on
- * the focused row or section; it registers `nav.search` (`/`) and `workspace.new` (`Space w`).
+ * the focused row or section; it registers `nav.search` (`/`), `workspace.new` (`Space w`) and the global
+ * `thread.next` / `thread.prev` (`Alt-j` / `Alt-k`, UI-989..UI-991), which follow its order from anywhere.
  */
 
 import {
@@ -29,9 +30,12 @@ import {
 } from "@omfp/kit";
 import { INDEX_TOPIC, type ThreadSummary, type Workspace } from "@omfp/protocol";
 import { type ReactNode, type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { modeAt } from "../../keymap/handler.ts";
 import {
+  currentWorkspaceId,
   DELETE_WORKSPACE,
   DRAFT_THREAD,
+  FOCUS_COMPOSER,
   SELECTED_THREAD,
   threadActions,
   useCall,
@@ -48,6 +52,7 @@ import {
 import { strings } from "../../strings/index.ts";
 import type { ReorderSource } from "../../vm/order.ts";
 import {
+  adjacentThread,
   ConversationSearch,
   displayTitle,
   focusAfterRemoval,
@@ -132,6 +137,7 @@ export function ThreadsWidget(_props: WidgetProps): ReactNode {
   const { drag, start } = useReorderDrag(root, !filtering, reorder);
   useMoveCommands(sections, filtering, reorder);
   useNavCommands(order, root);
+  useStepCommands(sections, collapsed, filter, root);
   useSectionCommands();
   useFocusAfterRemoval(sections, root, newWorkspace);
   useCommand({
@@ -288,6 +294,58 @@ const NAV_MOVES: ReadonlyArray<readonly [string, string, Move]> = [
   ["nav.halfDown", strings.shell.commands.halfDown, HALF_PAGE],
   ["nav.halfUp", strings.shell.commands.halfUp, -HALF_PAGE],
 ];
+
+/**
+ * `thread.next` / `thread.prev` (UI-989..UI-991): global, so they work from the composer, the transcript and with the
+ * column hidden. Pressed in a text field outside the column, the new thread's composer takes the focus; on a row of
+ * the column, the new row does; anywhere else the focus stays.
+ */
+function useStepCommands(
+  sections: readonly Section[],
+  collapsed: readonly string[],
+  filter: ThreadFilter,
+  root: RefObject<HTMLElement | null>,
+): void {
+  const host = useHost();
+  const actions = useThreadActions();
+  const step = (by: 1 | -1) => {
+    const target = adjacentThread(
+      sections,
+      collapsed,
+      filter,
+      host.window.get(SELECTED_THREAD),
+      currentWorkspaceId(host),
+      by,
+    );
+    if (target === undefined) {
+      return;
+    }
+    const focused = document.activeElement;
+    const inColumn = root.current?.contains(focused) === true;
+    actions.select(target);
+    const row = root.current?.querySelector<HTMLElement>(
+      `[data-testid="thread-row"][data-thread-id="${CSS.escape(target)}"]`,
+    );
+    if (inColumn && focused?.closest("[data-thread-id]") !== null) {
+      row?.focus();
+    } else if (!inColumn && modeAt(focused) === "insert") {
+      host.window.set(FOCUS_COMPOSER, target);
+    }
+    row?.scrollIntoView?.({ block: "nearest" });
+  };
+  useCommand({
+    id: "thread.next",
+    title: strings.shell.commands.nextThread,
+    aliases: ["next-thread"],
+    run: () => step(1),
+  });
+  useCommand({
+    id: "thread.prev",
+    title: strings.shell.commands.prevThread,
+    aliases: ["prev-thread"],
+    run: () => step(-1),
+  });
+}
 
 /** `dd` (delete the focused thread, draft or workspace) and `za` (collapse the focused section), UI-020, UI-022. */
 function useSectionCommands(): void {

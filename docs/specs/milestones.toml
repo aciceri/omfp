@@ -1115,6 +1115,10 @@ requirements = [
   "UI-626",
   "UI-627",
   "E2E-60",
+  # Alt-j / Alt-k: next and previous thread of the left column from anywhere, across workspaces (#217)
+  "UI-989",
+  "UI-990",
+  "UI-991",
   # Fork a thread into a new one (threads.fork), the source untouched; lineage in the header and the left column
   "DMN-300",
   "DMN-301",

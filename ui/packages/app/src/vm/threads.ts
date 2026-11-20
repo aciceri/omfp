@@ -1,7 +1,7 @@
 /**
  * The left column (UI-020..023, UI-026): state badges, workspace chips, one section per workspace with its threads and
  * its archived ones, the full-text filter (local fields plus `threads.search`), collapsed sections, unread marks and
- * the "next thread needing attention" shortcut.
+ * the "next thread needing attention" and next/previous thread shortcuts.
  */
 
 import type { ThreadState as MarkState } from "@omfp/kit";
@@ -393,6 +393,50 @@ export function moveSelection(order: readonly string[], current: string | undefi
     target = Math.min(last, Math.max(0, position + move));
   }
   return order[target];
+}
+
+/** A place of the left column for {@link adjacentThread}: a thread row, or the end of a workspace's section. */
+interface ColumnPlace {
+  readonly id?: string;
+  readonly end?: string;
+  readonly selectable: boolean;
+}
+
+/**
+ * The thread `thread.next` (`step` 1) or `thread.prev` (-1) selects from anywhere (UI-989, UI-990): the next or
+ * previous one in the left column's order across workspaces, wrapping around at both ends; archived threads, the
+ * threads of collapsed sections and, while filtering, those that do not match (the sections leave them out) are
+ * skipped. The start is `current` where the column lists it, else the end of `workspaceId`'s section (a draft thread,
+ * a thread the filter hides), else the top (next) or the bottom (previous). `current` itself only when it is the
+ * only one.
+ */
+export function adjacentThread(
+  sections: readonly Section[],
+  collapsed: readonly string[],
+  filter: ThreadFilter,
+  current: string | undefined,
+  workspaceId: string | undefined,
+  step: 1 | -1,
+): string | undefined {
+  // Every place of the column in order, each section's end included (where its draft row and "+ thread" sit).
+  const places = sections.flatMap((section): ColumnPlace[] => {
+    const open = !isCollapsed(section.workspace.id, collapsed, filter);
+    return [
+      ...section.threadIds.map((id) => ({ id, selectable: open })),
+      ...section.archivedIds.map((id) => ({ id, selectable: false })),
+      { end: section.workspace.id, selectable: false },
+    ];
+  });
+  const listed = current === undefined ? -1 : places.findIndex((place) => place.id === current);
+  const end = places.findIndex((place) => place.end !== undefined && place.end === workspaceId);
+  const start = listed >= 0 ? listed : end >= 0 ? end : step > 0 ? -1 : places.length;
+  for (let offset = 1; offset <= places.length; offset += 1) {
+    const place = places[(((start + step * offset) % places.length) + places.length) % places.length];
+    if (place?.selectable === true && place.id !== undefined) {
+      return place.id;
+    }
+  }
+  return undefined;
 }
 
 /**

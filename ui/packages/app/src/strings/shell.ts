@@ -850,6 +850,8 @@ export const shell = {
     compactDescription:
       "Has omp summarize the selected thread's conversation so far and continue from the summary, freeing context. Words after :compact tell the summary what to focus on; a first word soft, remote or snapcompact picks omp's method for this once (snapcompact takes no focus). Refused while the thread works; the transcript shows the compaction as a notice.",
     nextAttention: "Next thread needing attention",
+    nextThread: "Next thread",
+    prevThread: "Previous thread",
     /** The job commands (UI-745). */
     jobRun: "Run a job of the current workspace (:job-run <name>)",
     jobKill: "Stop the running run of a job of the current workspace (:job-kill <name>)",

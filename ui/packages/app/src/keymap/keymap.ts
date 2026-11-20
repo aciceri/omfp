@@ -95,6 +95,11 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   // One chord reaches the next waiting thread from anywhere, even while typing (UI-021).
   { mode: "normal", keys: "Alt-a", command: "thread.nextAttention" },
   { mode: "insert", keys: "Alt-a", command: "thread.nextAttention" },
+  // The next and previous thread of the left column, across workspaces, from anywhere (UI-989).
+  { mode: "normal", keys: "Alt-j", command: "thread.next" },
+  { mode: "insert", keys: "Alt-j", command: "thread.next" },
+  { mode: "normal", keys: "Alt-k", command: "thread.prev" },
+  { mode: "insert", keys: "Alt-k", command: "thread.prev" },
   { mode: "normal", keys: "Alt-n", command: "thread.new" },
   { mode: "insert", keys: "Alt-n", command: "thread.new" },
   // readline's line editing in the composer (UI-760); `Ctrl-Shift-a` keeps select-all. A browser tab never gets

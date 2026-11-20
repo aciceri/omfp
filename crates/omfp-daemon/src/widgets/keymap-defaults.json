@@ -232,6 +232,26 @@
     },
     {
       "mode": "normal",
+      "keys": "Alt-j",
+      "command": "thread.next"
+    },
+    {
+      "mode": "insert",
+      "keys": "Alt-j",
+      "command": "thread.next"
+    },
+    {
+      "mode": "normal",
+      "keys": "Alt-k",
+      "command": "thread.prev"
+    },
+    {
+      "mode": "insert",
+      "keys": "Alt-k",
+      "command": "thread.prev"
+    },
+    {
+      "mode": "normal",
       "keys": "Alt-n",
       "command": "thread.new"
     },
@@ -762,6 +782,13 @@
       ]
     },
     {
+      "id": "thread.next",
+      "title": "Next thread",
+      "aliases": [
+        "next-thread"
+      ]
+    },
+    {
       "id": "thread.nextAttention",
       "title": "Next thread needing attention",
       "aliases": [
@@ -773,6 +800,13 @@
       "title": "Pick the thread's model (opens the header's model list)",
       "aliases": [
         "model"
+      ]
+    },
+    {
+      "id": "thread.prev",
+      "title": "Previous thread",
+      "aliases": [
+        "prev-thread"
       ]
     },
     {

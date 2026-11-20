@@ -5,6 +5,7 @@ import type { ThreadSummary, Workspace, WorkspaceRepo } from "@omfp/protocol";
 import { type KeyValueStorage, windowKey } from "../../src/sdk/index.ts";
 import { WindowStore } from "../../src/sdk/window-store.ts";
 import {
+  adjacentThread,
   ConversationSearch,
   decodeIds,
   displayTitle,
@@ -254,6 +255,61 @@ describe("thread list", () => {
     answers.get("retry")?.([{ threadId: "t3", snippet: "retry" }]);
     await Promise.resolve();
     expect(reported).toHaveLength(2);
+  });
+
+  /** Workspaces a, b, c (in that order) and an empty d: a1, a2 and the archived a0 in a; b1; c1, c2. */
+  function column(typed: ThreadFilter = NO_FILTER) {
+    const workspaces = ["a", "b", "c", "d"].map((id, position) => ({ ...workspace(id), position }));
+    const threads = [
+      thread("a0", "zero", "a", { archivedAt: 3, position: 0 }),
+      thread("a1", "one", "a", { position: 1 }),
+      thread("a2", "two", "a", { position: 2 }),
+      thread("b1", "bee", "b"),
+      thread("c1", "one", "c", { position: 1 }),
+      thread("c2", "two", "c", { position: 2 }),
+    ];
+    return sidebarSections(threads, workspaces, typed);
+  }
+
+  // spec: UI-989
+  test("next and previous thread follow the column across workspaces and wrap around", () => {
+    const all = column();
+    const next = (current: string) => adjacentThread(all, [], NO_FILTER, current, undefined, 1);
+    const prev = (current: string) => adjacentThread(all, [], NO_FILTER, current, undefined, -1);
+    expect(["a1", "a2", "b1", "c1", "c2"].map(next)).toEqual(["a2", "b1", "c1", "c2", "a1"]);
+    expect(["a1", "a2", "b1", "c1", "c2"].map(prev)).toEqual(["c2", "a1", "a2", "b1", "c1"]);
+    // Nothing selected: next starts at the top, previous at the bottom.
+    expect(adjacentThread(all, [], NO_FILTER, undefined, undefined, 1)).toBe("a1");
+    expect(adjacentThread(all, [], NO_FILTER, undefined, undefined, -1)).toBe("c2");
+    // The only thread wraps onto itself; an empty column has none.
+    const one = column(filter("bee"));
+    expect(adjacentThread(one, [], filter("bee"), "b1", "b", 1)).toBe("b1");
+    expect(adjacentThread([], [], NO_FILTER, undefined, undefined, 1)).toBeUndefined();
+  });
+
+  // spec: UI-990
+  test("next and previous thread skip archived threads, collapsed sections, unmatched threads and drafts", () => {
+    const all = column();
+    // The archived a0 is never chosen, but an archived selection starts from its place.
+    expect(adjacentThread(all, [], NO_FILTER, "a1", "a", -1)).toBe("c2");
+    expect(adjacentThread(all, [], NO_FILTER, "a0", "a", 1)).toBe("b1");
+    // b collapsed: a2 → c1 and back; a thread of a collapsed section moves out of it.
+    expect(adjacentThread(all, ["b"], NO_FILTER, "a2", "a", 1)).toBe("c1");
+    expect(adjacentThread(all, ["b"], NO_FILTER, "c1", "c", -1)).toBe("a2");
+    expect(adjacentThread(all, ["b"], NO_FILTER, "b1", "b", 1)).toBe("c1");
+    expect(adjacentThread(all, ["a", "b", "c"], NO_FILTER, "a1", "a", 1)).toBeUndefined();
+    // A draft thread in a sits after a's threads: next is b's first, previous a's last.
+    expect(adjacentThread(all, [], NO_FILTER, undefined, "a", 1)).toBe("b1");
+    expect(adjacentThread(all, [], NO_FILTER, undefined, "a", -1)).toBe("a2");
+    // Filtering: only the matching threads, collapsed sections included (they show while filtering); a selection the
+    // filter hides starts from the end of its workspace, or from an end of the column when no thread of it matches.
+    const typed = filter("two");
+    const matching = column(typed);
+    expect(adjacentThread(matching, ["a"], typed, "a2", "a", 1)).toBe("c2");
+    expect(adjacentThread(matching, ["a"], typed, "c2", "c", 1)).toBe("a2");
+    expect(adjacentThread(matching, [], typed, "a1", "a", 1)).toBe("c2");
+    expect(adjacentThread(matching, [], typed, "b1", "b", -1)).toBe("c2");
+    expect(adjacentThread(matching, [], typed, "b1", "b", 1)).toBe("a2");
   });
 
   // spec: UI-021

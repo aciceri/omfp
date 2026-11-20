@@ -129,6 +129,7 @@ workspace; `Space v` and `Space f` directly open view and workspace-file pickers
 | `] v`, `[ v` | Next / previous view (round the list). |
 | `Space f` | Fuzzy file picker across every workspace repository and the folder. Each row shows basename, repository and containing folder; type a path subsequence, arrows/Enter choose, Escape cancels. The query searches all eligible files before the 50-result limit; refine it when the list says more matches exist. |
 | `Space a`, `] a`, `Alt-a` | Next thread needing the user. |
+| `Alt-j`, `Alt-k` | Next / previous thread of the left column, across workspaces (round the list), from anywhere; archived threads, folded workspaces and threads the filter hides are skipped. |
 | `Space n`, `Alt-n` | New thread; `Space w` or `Space p n` new workspace, `Space p r` rescan it. |
 | `Space r`, `Space x`, `Space u`, `Space d` | Rename, archive, unarchive, delete the selected thread. |
 | `Space s`, `Space S`, `Space R` | Stop process of the thread (and of the threads it spawned); restart it. |
@@ -140,7 +141,8 @@ workspace; `Space v` and `Space f` directly open view and workspace-file pickers
 | `u` | In normal mode restore this thread's last Ctrl-c-cleared composer draft, including images and paste chips, merged with any new text. Not general undo. Leave the composer with Esc first; the recovery hint stays while the draft can be restored. |
 
 In insert mode `Esc` leaves the text field (in the composer too, while the agent works: it never aborts), `Ctrl-c` in
-the composer clears the draft, then aborts, `Alt-a` / `Alt-n` work too; in the composer
+the composer clears the draft, then aborts, `Alt-a` / `Alt-n` / `Alt-j` / `Alt-k` work too (the new thread's composer
+keeps the focus); in the composer
 Enter sends; while the agent works it steers the running turn, and Ctrl-Enter (⌘-Enter), Shift-Enter or Ctrl-Q
 queue a follow-up for after the turn instead. Alt-Enter adds a line. A paste of more than 10 lines or 1000
 characters becomes a chip (`Pasted text #1 · 120 lines`) and a `[Paste #1, +120 lines]` token, expanded when the

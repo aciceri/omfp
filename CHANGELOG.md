@@ -7,6 +7,13 @@ The version's section is also the source of the GitHub release notes.
 
 ## Unreleased
 
+### Added
+
+- `Alt-j` / `Alt-k` (`:next-thread` / `:prev-thread`) select the next or previous thread of the left column from
+  anywhere, also while typing in the composer, whose focus moves to the new thread's composer. They go on into the
+  next or previous workspace and wrap around at the ends, skipping archived threads, collapsed workspaces and the
+  threads the column's filter hides. Rebindable in `keymap.json` (#217).
+
 ## 0.4.1 — 2026-11-19
 
 ### Fixed

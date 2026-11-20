@@ -10,6 +10,7 @@ import type { NotificationPort } from "../../src/frame/notifications.ts";
 import { COARSE_POINTER, SHORT_TOUCH_SCREEN } from "../../src/frame/responsive.ts";
 import {
   chooseView,
+  currentWorkspaceId,
   DRAFT_THREAD,
   ERRORS,
   FOCUS_COMPOSER,
@@ -28,6 +29,7 @@ import { VIEW_CHOICES } from "../../src/sdk/keys.ts";
 import { markTabEdges } from "../../src/view/render.tsx";
 import type { WidgetRegistry } from "../../src/view/resolve.ts";
 import { DEFAULT_MANIFEST } from "../../src/view/views.ts";
+import { COLLAPSED_WORKSPACES } from "../../src/widgets/threads/index.ts";
 import { thread, workspace } from "../support/fixtures.ts";
 import { type FakeClient, ManualTimers, released, renderWithHost, testHost } from "../support/host.tsx";
 import { installResizeObserver, resize } from "../support/resize.ts";
@@ -1705,5 +1707,67 @@ describe("focus after a jump", () => {
       host.commands.run("notice.open");
     });
     expect([host.window.get(SELECTED_THREAD), host.window.get(FOCUS_COMPOSER)]).toEqual(["t2", "t2"]);
+  });
+});
+
+describe("next and previous thread", () => {
+  let restore = () => {};
+  beforeEach(() => {
+    restore = installResizeObserver();
+  });
+  afterEach(() => restore());
+
+  // spec: UI-989, UI-990, UI-991
+  test("Alt-j / Alt-k walk the column across workspaces from the composer, the column and a folded column", () => {
+    const { client, flush, host } = setup({ registry: new Map([...registry, ["omfp:chat", StubComposer]]) });
+    client.indexEvents({ kind: "thread_upserted", thread: thread("t3", "deploy", "w2") });
+    client.indexEvents({ kind: "thread_upserted", thread: thread("t4", "old", "w2", { archivedAt: 5 }) });
+    flush();
+    const state = () => [host.window.get(SELECTED_THREAD), host.window.get(FOCUS_COMPOSER)];
+    const step = (key: "j" | "k") => {
+      act(() => host.window.set(FOCUS_COMPOSER, undefined));
+      press(key, { altKey: true, code: key === "j" ? "KeyJ" : "KeyK" });
+    };
+    select({ host, flush }, "t1");
+    // Typing in the composer (insert mode): the new thread's composer takes the focus.
+    press("i");
+    expect(document.activeElement?.getAttribute("data-testid")).toBe("stub-input");
+    step("j");
+    expect(state()).toEqual(["t2", "t2"]);
+    // Past w1's last thread, w2's first: w2 becomes the current workspace; the archived t4 is skipped.
+    step("j");
+    expect(state()).toEqual(["t3", "t3"]);
+    expect(currentWorkspaceId(host)).toBe("w2");
+    step("j");
+    expect(state()).toEqual(["t1", "t1"]);
+    step("k");
+    expect(state()).toEqual(["t3", "t3"]);
+    // Normal mode outside the column: the selection moves, the focus stays.
+    act(() => (document.activeElement as HTMLElement | null)?.blur());
+    step("k");
+    expect(state()).toEqual(["t2", undefined]);
+    // A collapsed workspace is skipped.
+    act(() => host.window.set(COLLAPSED_WORKSPACES, ["w1"]));
+    step("j");
+    expect(state()).toEqual(["t3", undefined]);
+    step("j");
+    expect(state()).toEqual(["t3", undefined]);
+    act(() => host.window.set(COLLAPSED_WORKSPACES, []));
+    // On a row of the column, the focus follows to the new row.
+    act(() =>
+      screen
+        .getAllByTestId("thread-row")
+        .find((row) => row.dataset.threadId === "t3")
+        ?.focus(),
+    );
+    step("k");
+    expect(state()).toEqual(["t2", undefined]);
+    expect(document.activeElement?.closest<HTMLElement>("[data-thread-id]")?.dataset.threadId).toBe("t2");
+    // A narrow window with the column folded away: the keys still work.
+    resize(screen.getByTestId("app"), 900);
+    expect(screen.getByTestId("left-column").dataset.open).toBeUndefined();
+    act(() => (document.activeElement as HTMLElement | null)?.blur());
+    step("k");
+    expect(state()).toEqual(["t1", undefined]);
   });
 });

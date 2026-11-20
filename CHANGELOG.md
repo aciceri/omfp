@@ -14,6 +14,11 @@ The version's section is also the source of the GitHub release notes.
   next or previous workspace and wrap around at the ends, skipping archived threads, collapsed workspaces and the
   threads the column's filter hides. Rebindable in `keymap.json` (#217).
 
+### Fixed
+
+- Boring skin: the focused composer shows one accent ring around its rounded box instead of a misaligned second
+  ring around the text area inside it (#215).
+
 ## 0.4.1 — 2026-11-19
 
 ### Fixed

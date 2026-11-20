@@ -186,4 +186,26 @@ describe("the boring skin", () => {
       .join(" ");
     expect(entrances.filter((base) => !new RegExp(`${base.replace(".", "\\.")}\\b`).test(undone))).toEqual([]);
   });
+
+  // spec: UI-984, UI-150, UI-172
+  test("the focused composer shows one ring: its box's, not the text area's inside it", () => {
+    const ring = "0 0 0 3px color-mix(in oklab, var(--omfp-primary) 22%, transparent)";
+    const field = findRule(
+      boringRules,
+      ["@layer omfp-kit"],
+      `${SKIN} :is(.omfp-input-box:focus-within, .omfp-field.is-focus .omfp-input-box):not(.omfp-compose__field *)`,
+    );
+    expect(field.declarations.get("box-shadow")).toBe(ring);
+    const leaks = boringRules.filter(
+      (rule) => rule.declarations.has("box-shadow") && rule.selector.includes("input-box") && rule !== field,
+    );
+    expect(leaks.map((rule) => rule.selector)).toEqual([]);
+    const compose = findRule(boringRules, ["@layer omfp-kit"], `${SKIN} .omfp-compose:focus-within`);
+    expect(Object.fromEntries(compose.declarations)).toEqual({ "box-shadow": ring });
+    // Crush is unchanged: its composer text area draws no ring of its own either.
+    const crush = parseCss(readFileSync(join(APP_SRC, "widgets/chat/chat.css"), "utf8")).filter((rule) =>
+      rule.selector.includes(".omfp-compose__field .omfp-input-box"),
+    );
+    expect(crush.some((rule) => rule.declarations.has("box-shadow"))).toBe(false);
+  });
 });

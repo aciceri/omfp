@@ -99,8 +99,10 @@
     background: var(--omfp-press);
   }
 
-  /* Fields (UI-150): a soft border and, focused, a soft accent ring around it. */
-  :root[data-skin="boring"] :is(.omfp-input-box:focus-within, .omfp-field.is-focus .omfp-input-box) {
+  /* Fields (UI-150): a soft border and, focused, a soft accent ring around it; not the composer's borderless text
+     area, whose box draws the ring (UI-984). */
+  :root[data-skin="boring"]
+    :is(.omfp-input-box:focus-within, .omfp-field.is-focus .omfp-input-box):not(.omfp-compose__field *) {
     box-shadow: 0 0 0 3px color-mix(in oklab, var(--omfp-primary) 22%, transparent);
   }
 
@@ -488,6 +490,10 @@
   :root[data-skin="boring"] .omfp-compose {
     border-color: var(--omfp-rule);
     border-radius: calc(var(--omfp-unit) * 3);
+  }
+
+  :root[data-skin="boring"] .omfp-compose:focus-within {
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--omfp-primary) 22%, transparent);
   }
 
   :root[data-skin="boring"] .omfp-compose[data-mode="insert"] {

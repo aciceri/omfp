@@ -17,6 +17,15 @@ The version's section is also the source of the GitHub release notes.
   `Space b` or `:threads.collapse`, so the view takes the whole window; *Show threads* at the start of the mode line,
   `Space b` again or `Space t` (which also focuses it) bring it back. Each window remembers it across reloads (#216).
 
+### Changed
+
+- The threads a prompt job makes no longer fill their workspace's thread list in the left column: they are listed
+  under their job in `Jobs (N)`, whose row gets an Open thread button next to Run that selects the job's thread (the
+  latest run's for a job making a new thread per run). The job's row is the current one while its thread is selected,
+  and shows when one of its threads needs you or failed, as do the collapsed `Jobs (N)` marks; `Space a`, the thread
+  picker and the filter still find them, while `j`/`k` and `Alt-j`/`Alt-k` skip them. Archived ones stay under
+  Archived, and threads of a job no longer declared stay in the list (#219).
+
 ### Fixed
 
 - Boring skin: the focused composer shows one accent ring around its rounded box instead of a misaligned second

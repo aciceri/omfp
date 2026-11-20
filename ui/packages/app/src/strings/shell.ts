@@ -254,6 +254,11 @@ export const shell = {
     countManual: (count: number) => `${count} manual`,
     countRunning: (count: number) => `${count} running`,
     countFailed: (count: number) => `${count} failed`,
+    /** The threads listed under the jobs (UI-992) awaiting the user, or failed (UI-995). */
+    countThreadsAwaiting: (count: number) => `${count} ${count === 1 ? "thread" : "threads"} awaiting input`,
+    countThreadsFailed: (count: number) => `${count} ${count === 1 ? "thread" : "threads"} failed`,
+    /** A job's row in the left column while one of its threads awaits the user or failed (UI-995). */
+    threadState: { awaiting: "thread awaiting input", failed: "thread failed" },
     invalid: (error: string | undefined) =>
       error === undefined ? "jobs.json is invalid" : `jobs.json is invalid: ${error}`,
     /** A row's trigger (UI-742). */
@@ -304,6 +309,8 @@ export const shell = {
     runLabel: (name: string) => `Run ${name}`,
     startLabel: (name: string) => `Start ${name}`,
     stopLabel: (name: string) => `Stop ${name}`,
+    /** A job's row in the left column: selects its thread (UI-993). */
+    openThreadLabel: (name: string) => `Open the thread of ${name}`,
     enableLabel: (name: string) => `Enable ${name}`,
     disableLabel: (name: string) => `Disable ${name}`,
     runs: (name: string) => `Runs of ${name}`,

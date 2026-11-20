@@ -361,6 +361,76 @@ describe("thread list", () => {
   });
 });
 
+describe("threads made by jobs", () => {
+  const COUNTS = { total: 2, manual: 2, schedule: 0, service: 0, running: 0, failing: 0, error: false };
+  const byJob = (job: string) => ({ provenance: { createdBy: { kind: "job" as const, job }, client: "omfp-daemon" } });
+  const jobIndex = () => {
+    const workspaces = [
+      { ...workspace("w-jobs"), name: "jobs", jobs: COUNTS },
+      { ...workspace("w-plain"), name: "plain" },
+    ];
+    const threads = [
+      thread("t-own", "own", "w-jobs"),
+      thread("t-mail-1", "mail · 07:00", "w-jobs", { ...byJob("mail"), position: 1 }),
+      thread("t-mail-old", "mail · yesterday", "w-jobs", { ...byJob("mail"), position: 2, archivedAt: 5 }),
+      thread("t-gone", "gone · 06:00", "w-jobs", { ...byJob("gone"), position: 3 }),
+      thread("t-moved", "moved", "w-plain", byJob("mail")),
+    ];
+    return { workspaces, threads };
+  };
+  const ids = (filter: ThreadFilter, declared?: ReadonlyMap<string, ReadonlySet<string>>) => {
+    const { workspaces, threads } = jobIndex();
+    return sidebarSections(threads, workspaces, filter, declared).map((section) => [
+      section.workspace.name,
+      section.threadIds,
+      section.archivedIds,
+      section.jobThreadIds,
+    ]);
+  };
+
+  // spec: UI-992, UI-026
+  test("a declared job's non-archived threads leave the section's list for its job; archived ones stay under Archived", () => {
+    const declared = new Map([["w-jobs", new Set(["mail"])]]);
+    expect(ids(NO_FILTER, declared)).toEqual([
+      ["jobs", ["t-own", "t-gone"], ["t-mail-old"], ["t-mail-1"]],
+      ["plain", ["t-moved"], [], []],
+    ]);
+    // Before the workspace's jobs are read, every job thread waits under the jobs.
+    expect(ids(NO_FILTER)).toEqual([
+      ["jobs", ["t-own"], ["t-mail-old"], ["t-mail-1", "t-gone"]],
+      ["plain", ["t-moved"], [], []],
+    ]);
+    const { workspaces, threads } = jobIndex();
+    const all = sidebarSections(threads, workspaces, NO_FILTER, declared);
+    expect(visibleOrder(all, [], ["w-jobs"], NO_FILTER)).toEqual(["t-own", "t-gone", "t-mail-old", "t-moved"]);
+  });
+
+  // spec: UI-992, UI-995, UI-022
+  test("the column filter lists a job's matching threads among the section's", () => {
+    const declared = new Map([["w-jobs", new Set(["mail", "gone"])]]);
+    expect(ids(filter("mail"), declared)).toEqual([["jobs", ["t-mail-1"], ["t-mail-old"], ["t-mail-1", "t-gone"]]]);
+  });
+
+  // spec: UI-995, UI-021
+  test("next needing attention reaches a job's thread though the column lists it under its job", () => {
+    const { threads } = jobIndex();
+    const waiting = threads.map((summary) =>
+      summary.id === "t-mail-1" ? { ...summary, needsAttention: true } : summary,
+    );
+    expect(nextNeedingAttention(waiting, "t-own")).toBe("t-mail-1");
+  });
+
+  // spec: UI-992, UI-990
+  test("next and previous thread skip a job's threads; from one they start at the end of its workspace", () => {
+    const { workspaces, threads } = jobIndex();
+    const all = sidebarSections(threads, workspaces, NO_FILTER, new Map([["w-jobs", new Set(["mail", "gone"])]]));
+    expect(adjacentThread(all, [], NO_FILTER, "t-own", "w-jobs", 1)).toBe("t-moved");
+    expect(adjacentThread(all, [], NO_FILTER, "t-moved", "w-plain", -1)).toBe("t-own");
+    expect(adjacentThread(all, [], NO_FILTER, "t-mail-1", "w-jobs", 1)).toBe("t-moved");
+    expect(adjacentThread(all, [], NO_FILTER, "t-mail-1", "w-jobs", -1)).toBe("t-own");
+  });
+});
+
 describe("spawned tree (UI-240)", () => {
   const by = (threadId: string) => ({ provenance: { createdBy: { kind: "thread" as const, threadId } } });
   const root = thread("root", "orchestrator", "w1");

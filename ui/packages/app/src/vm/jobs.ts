@@ -6,7 +6,7 @@
 import type { ThreadState as MarkState } from "@omfp/kit";
 import type { CreatedBy, JobCounts, JobRunStatus, JobView, RunInfo, ThreadSummary } from "@omfp/protocol";
 import { strings } from "../strings/index.ts";
-import { displayTitle } from "./threads.ts";
+import { displayTitle, threadStatus } from "./threads.ts";
 import { formatDuration } from "./tool.ts";
 
 const text = strings.shell.jobs;
@@ -17,11 +17,14 @@ export function threadJob(thread: Pick<ThreadSummary, "provenance">): string | u
   return createdBy.kind === "job" ? createdBy.job : undefined;
 }
 
-/** The marks at the right end of a workspace's `Jobs (N)` row in the left column (UI-740). */
+/** The marks at the right end of a workspace's `Jobs (N)` row in the left column (UI-740, UI-995). */
 export interface JobCountsView {
   /** Runs running now; shown with the running mark when some run. */
   readonly running: number;
-  /** Enabled jobs whose last run failed; shown with the failed mark when some failed. */
+  /** Threads listed under the jobs (UI-992) awaiting the user; shown with the awaiting mark when some do. */
+  readonly awaiting: number;
+  /** Enabled jobs whose last run failed, plus the threads listed under the jobs whose omp failed; shown with the
+   * failed mark when some failed. */
   readonly failing: number;
   /** The file is refused: the warn mark. */
   readonly error: boolean;
@@ -29,8 +32,16 @@ export interface JobCountsView {
   readonly label: string;
 }
 
-/** The marks of `counts` (PRT-210); `error` is why the file is refused when the workspace's `jobs/<id>` says so. */
-export function jobCountsView(counts: JobCounts, error: string | null | undefined): JobCountsView {
+/** The marks of `counts` (PRT-210) and of `threads`, the workspace's threads listed under its jobs (UI-992); `error`
+ * is why the file is refused when the workspace's `jobs/<id>` says so. */
+export function jobCountsView(
+  counts: JobCounts,
+  error: string | null | undefined,
+  threads: readonly ThreadSummary[] = [],
+): JobCountsView {
+  const statuses = threads.map(threadStatus);
+  const awaiting = statuses.filter((status) => status === "awaiting").length;
+  const failedThreads = statuses.filter((status) => status === "failed").length;
   const kinds = [
     counts.service > 0 ? text.countService(counts.service) : undefined,
     counts.schedule > 0 ? text.countSchedule(counts.schedule) : undefined,
@@ -39,12 +50,15 @@ export function jobCountsView(counts: JobCounts, error: string | null | undefine
   const parts = [
     counts.total > 0 ? text.counts(counts.total, kinds.join(", ")) : undefined,
     counts.running > 0 ? text.countRunning(counts.running) : undefined,
+    awaiting > 0 ? text.countThreadsAwaiting(awaiting) : undefined,
     counts.failing > 0 ? text.countFailed(counts.failing) : undefined,
+    failedThreads > 0 ? text.countThreadsFailed(failedThreads) : undefined,
     counts.error ? text.invalid(error ?? undefined) : undefined,
   ].filter((part) => part !== undefined);
   return {
     running: counts.running,
-    failing: counts.failing,
+    awaiting,
+    failing: counts.failing + failedThreads,
     error: counts.error,
     label: parts.join(" · "),
   };
@@ -156,36 +170,57 @@ export function jobRow(job: JobView, now: number): JobRow {
   };
 }
 
-/** A job's row under a workspace's expanded `Jobs (N)` in the left column (UI-740). */
+/** A job's row under a workspace's expanded `Jobs (N)` in the left column (UI-740, UI-993..UI-995). */
 export interface JobSideRow {
   readonly name: string;
   readonly description: string | undefined;
-  /** Running while a run runs, else failed while it counts as failing (PRT-210), awaiting while a service waits to
-   * restart, else idle. */
+  /** Awaiting while one of its threads awaits the user, else failed while one of them failed (UI-995); else running
+   * while a run runs, failed while it counts as failing (PRT-210), awaiting while a service waits to restart, idle. */
   readonly mark: MarkState;
-  /** Flush right: the state in words (`running`, without a duration that would need a clock), or the next time of a
-   * scheduled job at rest. */
+  /** Flush right: the state in words (`thread awaiting input`, `thread failed`, `running` without a duration that
+   * would need a clock…), or the next time of a scheduled job at rest. */
   readonly meta: string;
   /** The running run, which Stop kills. */
   readonly run: RunInfo | undefined;
   /** Run starts it now: `start` for a stopped or waiting service. */
   readonly start: "run" | "start";
   readonly enabled: boolean;
+  /** The thread its Open thread button selects (UI-993): the newest of its threads (a `reuse` job's one thread);
+   * `undefined` while it has none. */
+  readonly threadId: string | undefined;
+  /** One of its threads is the selected thread (UI-994). */
+  readonly current: boolean;
 }
 
-export function jobSideRow(job: JobView, now: number): JobSideRow {
+/** The row of `job`; `threads` are the workspace's threads listed under its jobs (UI-992), `selected` the selected
+ * thread. */
+export function jobSideRow(
+  job: JobView,
+  now: number,
+  threads: readonly ThreadSummary[] = [],
+  selected?: string,
+): JobSideRow {
   const row = jobRow(job, now);
+  const own = threads.filter((thread) => threadJob(thread) === job.name);
+  const statuses = own.map(threadStatus);
+  const attention = statuses.includes("awaiting") ? "awaiting" : statuses.includes("failed") ? "failed" : undefined;
   const failing = row.enabled && row.lastRunStatus === "failed";
-  const mark = row.run !== undefined ? "running" : failing ? "failed" : row.mark;
+  const mark = attention ?? (row.run !== undefined ? "running" : failing ? "failed" : row.mark);
   const next = job.nextAt === undefined || job.nextAt === null ? undefined : formatWhen(job.nextAt, now);
   const meta =
-    mark === "running"
-      ? text.status.running(undefined)
-      : mark === "failed"
-        ? text.runStatus.failed
-        : job.status === "idle" && next !== undefined
-          ? text.next(next)
-          : row.statusText;
+    attention !== undefined
+      ? text.threadState[attention]
+      : mark === "running"
+        ? text.status.running(undefined)
+        : mark === "failed"
+          ? text.runStatus.failed
+          : job.status === "idle" && next !== undefined
+            ? text.next(next)
+            : row.statusText;
+  const newest = own.reduce<ThreadSummary | undefined>(
+    (found, thread) => (found === undefined || thread.createdAt > found.createdAt ? thread : found),
+    undefined,
+  );
   return {
     name: row.name,
     description: row.description,
@@ -194,6 +229,8 @@ export function jobSideRow(job: JobView, now: number): JobSideRow {
     run: row.run,
     start: row.start,
     enabled: row.enabled,
+    threadId: newest?.id,
+    current: own.some((thread) => thread.id === selected),
   };
 }
 

@@ -28,18 +28,21 @@ describe("job counts", () => {
     const counts = { ...NONE, total: 3, manual: 1, schedule: 1, service: 1 };
     expect(jobCountsView(counts, null)).toEqual({
       running: 0,
+      awaiting: 0,
       failing: 0,
       error: false,
       label: "3 jobs: 1 service, 1 scheduled, 1 manual",
     });
     expect(jobCountsView({ ...counts, running: 1, failing: 1 }, null)).toEqual({
       running: 1,
+      awaiting: 0,
       failing: 1,
       error: false,
       label: "3 jobs: 1 service, 1 scheduled, 1 manual · 1 running · 1 failed",
     });
     expect(jobCountsView({ ...NONE, total: 1, service: 2, error: true }, "jobs.a: unknown key")).toEqual({
       running: 0,
+      awaiting: 0,
       failing: 0,
       error: true,
       label: "1 job: 2 services · jobs.json is invalid: jobs.a: unknown key",
@@ -82,6 +85,51 @@ describe("job rows in the left column", () => {
       enabled: true,
     });
     expect(jobSideRow(jobView("watch", {}, { status: "running", run }), NOON).run?.id).toBe("r2");
+  });
+
+  // spec: UI-993, UI-994, UI-995
+  test("a job's threads: the newest one opens, the row is current while one is selected, attention and failure show", () => {
+    const made = (id: string, job: string, extra: Parameters<typeof thread>[3] = {}) =>
+      thread(id, `${job} · ${id}`, "w1", { provenance: { createdBy: { kind: "job", job }, client: null }, ...extra });
+    const prompt = { command: null, prompt: { text: "Read my mail", thread: "new" as const } };
+    const mail = jobView("mail", prompt);
+    const threads = [made("t1", "mail", { createdAt: 10 }), made("t2", "mail", { createdAt: 20 }), made("t3", "lint")];
+    const row = jobSideRow(mail, NOON, threads, "t1");
+    expect([row.threadId, row.current, row.mark, row.meta]).toEqual(["t2", true, "idle", "idle"]);
+    expect(jobSideRow(mail, NOON, threads, "t3").current).toBe(false);
+    // Without a thread (a command job never has one), nothing opens and nothing is current.
+    expect(jobSideRow(jobView("deploy"), NOON, threads, "t1")).toMatchObject({ threadId: undefined, current: false });
+    expect(jobSideRow(mail, NOON).threadId).toBeUndefined();
+    const running = runInfo("r2", "mail", { command: null, threadId: "t2" });
+    const awaiting = [made("t1", "mail", { createdAt: 10, needsAttention: true }), ...threads.slice(1)];
+    expect(jobSideRow({ ...mail, status: "running", run: running }, NOON, awaiting)).toMatchObject({
+      mark: "awaiting",
+      meta: "thread awaiting input",
+    });
+    const failed = [made("t1", "mail", { createdAt: 10, process: { state: "failed", message: "boom" } })];
+    expect(jobSideRow({ ...mail, status: "running", run: running }, NOON, failed)).toMatchObject({
+      mark: "failed",
+      meta: "thread failed",
+    });
+  });
+
+  // spec: UI-995, UI-740
+  test("Jobs (N)'s marks count the job threads awaiting the user and those that failed", () => {
+    const made = (id: string, extra: Parameters<typeof thread>[3]) =>
+      thread(id, id, "w1", { provenance: { createdBy: { kind: "job", job: "mail" }, client: null }, ...extra });
+    const counts = { ...NONE, total: 1, schedule: 1, failing: 1 };
+    const threads = [
+      made("t1", { needsAttention: true }),
+      made("t2", { process: { state: "failed", message: "boom" } }),
+      made("t3", {}),
+    ];
+    expect(jobCountsView(counts, null, threads)).toEqual({
+      running: 0,
+      awaiting: 1,
+      failing: 2,
+      error: false,
+      label: "1 job: 1 scheduled · 1 thread awaiting input · 1 failed · 1 thread failed",
+    });
   });
 });
 

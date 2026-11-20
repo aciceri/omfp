@@ -36,6 +36,9 @@ const registry: WidgetRegistry = new Map<string, WidgetComponent>([
 ]);
 
 const COUNTS: JobCounts = { total: 3, manual: 1, schedule: 1, service: 1, running: 1, failing: 1, error: false };
+/** A prompt job's definition, and the provenance of the threads job `mail` made (PRT-209). */
+const PROMPT = { command: null, prompt: { text: "Read my mail", thread: "new" as const } };
+const BY_MAIL = { provenance: { createdBy: { kind: "job" as const, job: "mail" }, client: "omfp-daemon" } };
 const USER_URL = initUrl("/widgets/test", "user", "u1");
 
 let heard: string[] = [];
@@ -67,10 +70,7 @@ function setup(answers: readonly CallMethod[] = ["threads.archive", "threads.del
   test.client.connected();
   test.client.index({
     workspaces: [{ ...workspace("w1"), jobs: COUNTS }, workspace("w2"), { ...workspace("w3"), jobs: { ...COUNTS } }],
-    threads: [
-      thread("t1", "checkout", "w1"),
-      thread("t2", "mail", "w1", { provenance: { createdBy: { kind: "job", job: "mail" }, client: "omfp-daemon" } }),
-    ],
+    threads: [thread("t1", "checkout", "w1"), thread("t2", "mail", "w1", BY_MAIL)],
     init: "u1",
   });
   act(() => base.host.window.set(SELECTED_THREAD, "t1"));
@@ -259,11 +259,142 @@ describe("jobs in the left column", () => {
     expect(test.host.window.get(ERRORS)).toEqual(["deploy is running (conflict)"]);
   });
 
-  // spec: UI-746
-  test("a thread a job made says so in its row's tooltip", () => {
-    setup();
+  // spec: UI-746, UI-992
+  test("a thread a job made says so in its row's tooltip where the column lists it, under Archived (N)", async () => {
+    const test = setup();
+    test.client.indexEvents({
+      kind: "thread_upserted",
+      thread: thread("t3", "mail · old", "w1", { ...BY_MAIL, archivedAt: 5, position: 2 }),
+    });
+    test.flush();
+    await press(test.user, inSection("w1", "archived-toggle"));
     const rows = screen.getAllByTestId("thread-row");
-    expect(rows.map((row) => row.getAttribute("title"))).toEqual([null, "mail · job mail"]);
+    expect(rows.map((row) => row.getAttribute("title"))).toEqual([null, "mail · old · job mail"]);
+  });
+
+  // spec: UI-992, UI-020
+  test("a job's threads are out of its workspace's list and count, its archived ones under Archived (N)", async () => {
+    const test = setup();
+    const listed = () => screen.getAllByTestId("thread-row").map((row) => row.getAttribute("data-thread-id"));
+    const count = () =>
+      screen
+        .getAllByTestId("workspace-section")
+        .find((section) => section.dataset.workspaceId === "w1")
+        ?.querySelector(".omfp-wsection__count")?.textContent;
+    expect([listed(), count()]).toEqual([["t1"], "1"]);
+    test.client.jobs("w1", { jobs: [jobView("mail", PROMPT)] });
+    test.client.indexEvents({
+      kind: "thread_upserted",
+      thread: thread("t3", "mail · old", "w1", { ...BY_MAIL, archivedAt: 5, position: 2 }),
+    });
+    test.flush();
+    expect([listed(), count()]).toEqual([["t1"], "1"]);
+    expect(inSection("w1", "archived-toggle")?.textContent).toBe("Archived (1)");
+    await press(test.user, inSection("w1", "archived-toggle"));
+    expect(listed()).toEqual(["t1", "t3"]);
+    // A job no longer declared leaves its threads in the list: no job row would reach them.
+    test.client.jobs("w1", { jobs: [jobView("lint")] });
+    test.flush();
+    expect([listed(), count()]).toEqual([["t1", "t2", "t3"], "2"]);
+  });
+
+  // spec: UI-993, UI-994, UI-415
+  test("a job's row opens its newest thread next to Run, absent for a command job, and is current while one is selected", async () => {
+    const test = setup();
+    test.client.indexEvents({
+      kind: "thread_upserted",
+      thread: thread("t4", "mail · later", "w1", { ...BY_MAIL, createdAt: 50, position: 3 }),
+    });
+    test.client.jobs("w1", { jobs: [jobView("mail", PROMPT), jobView("deploy")] });
+    test.flush();
+    await press(test.user, inSection("w1", "jobs-toggle"));
+    const [mail, deploy] = jobRows("w1");
+    expect(within(deploy as HTMLElement).queryByTestId("job-side-thread")).toBeNull();
+    const open = within(mail as HTMLElement).getByTestId("job-side-thread");
+    // In the actions shown on hover and focus, before Run.
+    expect([
+      open.getAttribute("aria-label"),
+      open.closest(".omfp-nested-row__actions") !== null,
+      open.nextElementSibling?.getAttribute("data-testid"),
+    ]).toEqual(["Open the thread of mail", true, "job-side-run"]);
+    const current = () =>
+      jobRows("w1").map((row) => [
+        row.dataset.job,
+        row.hasAttribute("data-selected"),
+        row.querySelector("[data-testid='job-side-open']")?.getAttribute("aria-current") ?? null,
+      ]);
+    expect(current()).toEqual([
+      ["mail", false, null],
+      ["deploy", false, null],
+    ]);
+    await press(test.user, open);
+    expect(test.host.window.get(SELECTED_THREAD)).toBe("t4");
+    expect(test.host.window.get(REVEAL_WIDGET)).toBeUndefined();
+    expect(current()).toEqual([
+      ["mail", true, "true"],
+      ["deploy", false, null],
+    ]);
+    act(() => test.host.window.set(SELECTED_THREAD, "t2"));
+    expect(current()[0]).toEqual(["mail", true, "true"]);
+    act(() => test.host.window.set(SELECTED_THREAD, "t1"));
+    expect(current()[0]).toEqual(["mail", false, null]);
+  });
+
+  // spec: UI-995, UI-740
+  test("a job's thread awaiting the user or failed shows on its job's row and on Jobs (N)'s marks", async () => {
+    const test = setup();
+    test.client.indexEvents({
+      kind: "workspace_upserted",
+      workspace: { ...workspace("w1"), jobs: { ...COUNTS, running: 0, failing: 0 } },
+    });
+    test.client.jobs("w1", { jobs: [jobView("mail", PROMPT)] });
+    test.client.indexEvents({
+      kind: "thread_upserted",
+      thread: thread("t2", "mail", "w1", { ...BY_MAIL, needsAttention: true }),
+    });
+    test.flush();
+    const parts = () =>
+      [...(inSection("w1", "job-counts")?.querySelectorAll("[data-part]") ?? [])].map((part) => [
+        part.getAttribute("data-part"),
+        part.querySelector("[data-state]")?.getAttribute("data-state"),
+        part.textContent,
+      ]);
+    expect(parts()).toEqual([["awaiting", "awaiting", "1"]]);
+    expect(inSection("w1", "job-counts")?.getAttribute("aria-label")).toBe(
+      "3 jobs: 1 service, 1 scheduled, 1 manual · 1 thread awaiting input",
+    );
+    await press(test.user, inSection("w1", "jobs-toggle"));
+    const mark = () => {
+      const row = jobRows("w1")[0];
+      return [row?.dataset.state, row?.querySelector(".omfp-state-mark")?.getAttribute("aria-label")];
+    };
+    expect(mark()).toEqual(["awaiting", "thread awaiting input"]);
+    test.client.indexEvents({
+      kind: "thread_upserted",
+      thread: thread("t2", "mail", "w1", { ...BY_MAIL, process: { state: "failed", message: "boom" } }),
+    });
+    test.flush();
+    expect(mark()).toEqual(["failed", "thread failed"]);
+    expect(parts()).toEqual([["failing", "failed", "1"]]);
+  });
+
+  // spec: UI-995, UI-021, UI-022
+  test("the thread picker and the next thread needing attention still reach a job's thread", () => {
+    const test = setup();
+    test.client.indexEvents({
+      kind: "thread_upserted",
+      thread: thread("t2", "mail", "w1", { ...BY_MAIL, needsAttention: true }),
+    });
+    test.flush();
+    act(() => {
+      test.host.commands.run("thread.nextAttention");
+    });
+    expect(test.host.window.get(SELECTED_THREAD)).toBe("t2");
+    act(() => test.host.window.set(SELECTED_THREAD, "t1"));
+    act(() => {
+      test.host.commands.run("threads.pick");
+    });
+    expect(screen.getAllByTestId("thread-picker-option").map((option) => option.dataset.id)).toEqual(["t1", "t2"]);
   });
 });
 
@@ -299,14 +430,14 @@ describe("closing a thread with its runs", () => {
     });
     expect(test.host.window.get(SELECTED_THREAD)).toBeUndefined();
 
-    // The row's ×: Keep them running.
-    await test.user.click(screen.getAllByTestId("row-archive-thread")[1] ?? document.body);
+    // The row's ×: Keep them running (the job's thread `t2` is under its job, UI-992: `t1` is the only row).
+    await test.user.click(screen.getAllByTestId("row-archive-thread")[0] ?? document.body);
     await act(async () => {
       test.client.callsTo("threads.archive")[2]?.reject(conflict);
       await Promise.resolve();
     });
     await test.user.click(await screen.findByTestId("close-runs-keep"));
-    expect(test.client.callsTo("threads.archive")[3]?.params).toEqual({ threadId: "t2", jobs: "keep" });
+    expect(test.client.callsTo("threads.archive")[3]?.params).toEqual({ threadId: "t1", jobs: "keep" });
 
     // Cancel: nothing more is called; a conflict without runs is an error as before.
     act(() => test.host.window.set(SELECTED_THREAD, "t1"));

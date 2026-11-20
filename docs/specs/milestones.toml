@@ -1339,6 +1339,11 @@ requirements = [
   "UI-747",
   "UI-748",
   "UI-749",
+  # Job threads under their job: out of the thread list, Open thread, the current job, attention (#219)
+  "UI-992",
+  "UI-993",
+  "UI-994",
+  "UI-995",
   # Agents: useJobs and the Declared jobs docs
   "AGT-090",
   "AGT-091",

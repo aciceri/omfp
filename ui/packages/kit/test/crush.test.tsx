@@ -874,6 +874,26 @@ describe("shell", () => {
     expect(onSelect).toHaveBeenCalledTimes(1);
   });
 
+  // spec: UI-994
+  test("a selected nested row is the current row, as a selected thread row is", () => {
+    const { rerender } = render(
+      <RowList>
+        <NestedRow state="idle" title="mail" selected selectProps={{ "data-testid": "select" }} data-testid="row" />
+      </RowList>,
+    );
+    const current = () => [
+      screen.getByTestId("row").hasAttribute("data-selected"),
+      screen.getByTestId("select").getAttribute("aria-current"),
+    ];
+    expect(current()).toEqual([true, "true"]);
+    rerender(
+      <RowList>
+        <NestedRow state="idle" title="mail" selectProps={{ "data-testid": "select" }} data-testid="row" />
+      </RowList>,
+    );
+    expect(current()).toEqual([false, null]);
+  });
+
   // spec: UI-171
   test("a thinking block expands to its text", async () => {
     const user = userEvent.setup();

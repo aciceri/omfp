@@ -3,12 +3,12 @@
  * brand, the full-text filter (`/`), the "+ workspace" field, the "spawned by" filter in force, then one section per
  * workspace in the daemon's order (UI-620) — `▾`/`▸`, name (the current one in gradient text), path as its tooltip,
  * the thread count flush right, which a menu with rename and remove and a delete button replace on hover and focus,
- * its threads (state mark, title, time; unread titles bold), its draft thread, "+ thread", then the collapsed
- * "Jobs (N)" (UI-740, `job-rows.tsx`) and "Archived (N)" rows. Sections collapse (`za`); the
- * collapsed set is window-local and survives reloads. Threads and sections are dragged (and moved by keys) into
- * another place, a thread into another workspace (UI-621..UI-627, `reorder.ts`). Its
- * `threads` scope answers `nav.*` (j/k, gg/G, Ctrl-d/u, UI-095), which are also the global fallback, `dd` and `za` on
- * the focused row or section; it registers `nav.search` (`/`), `workspace.new` (`Space w`) and the global
+ * its threads (state mark, title, time; unread titles bold) but those listed under their job (UI-992), its draft
+ * thread, "+ thread", then the collapsed "Jobs (N)" (UI-740, `job-rows.tsx`) and "Archived (N)" rows. Sections
+ * collapse (`za`); the collapsed set is window-local and survives reloads. Threads and sections are dragged (and moved
+ * by keys) into another place, a thread into another workspace (UI-621..UI-627, `reorder.ts`). Its `threads` scope
+ * answers `nav.*` (j/k, gg/G, Ctrl-d/u, UI-095) over the rows it lists, which are also the global fallback, `dd` and
+ * `za` on the focused row or section; it registers `nav.search` (`/`), `workspace.new` (`Space w`) and the global
  * `thread.next` / `thread.prev` (`Alt-j` / `Alt-k`, UI-989..UI-991), which follow its order from anywhere.
  */
 
@@ -54,6 +54,7 @@ import type { ReorderSource } from "../../vm/order.ts";
 import {
   adjacentThread,
   ConversationSearch,
+  type DeclaredJobs,
   displayTitle,
   focusAfterRemoval,
   isCollapsed,
@@ -121,7 +122,11 @@ export function ThreadsWidget({
     [query, conversation, spawned],
   );
   const seen = useSeen(threads, selected);
-  const sections = useMemo(() => sidebarSections(threads, workspaces, filter), [threads, workspaces, filter]);
+  const declared = useDeclaredJobs();
+  const sections = useMemo(
+    () => sidebarSections(threads, workspaces, filter, declared),
+    [threads, workspaces, filter, declared],
+  );
   const order = useMemo(
     () => visibleOrder(sections, collapsed, archivedOpen, filter),
     [sections, collapsed, archivedOpen, filter],
@@ -228,6 +233,15 @@ function useThreadList(): readonly ThreadSummary[] {
 function useWorkspaceList(): readonly Workspace[] {
   const workspaces = useWorkspaces();
   return useMemo(() => [...workspaces.values()], [workspaces]);
+}
+
+/** The declared jobs' names of the workspaces whose `jobs/<id>` the window holds (UI-992). */
+function useDeclaredJobs(): DeclaredJobs {
+  const held = useSnapshot((snapshot) => snapshot.workspaceJobs);
+  return useMemo(
+    () => new Map([...held].map(([id, jobs]) => [id, new Set(jobs.state.jobs.map((job) => job.name))])),
+    [held],
+  );
 }
 
 /** Unread baselines, kept in step with the index; showing a thread marks it seen (UI-020). */
@@ -677,7 +691,11 @@ function WorkspaceRows({
         {text.addThread}
       </ActionRow>
       {workspace.jobs !== undefined && workspace.jobs !== null && (
-        <WorkspaceJobs workspaceId={workspace.id} counts={workspace.jobs} />
+        <WorkspaceJobs
+          workspaceId={workspace.id}
+          counts={workspace.jobs}
+          threads={section.jobThreadIds.flatMap((id) => byId.get(id) ?? [])}
+        />
       )}
       {section.archivedIds.length > 0 && (
         <>

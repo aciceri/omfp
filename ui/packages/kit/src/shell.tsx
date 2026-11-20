@@ -572,6 +572,8 @@ export interface NestedRowProps extends Omit<HTMLAttributes<HTMLLIElement>, "tit
   title: ReactNode;
   /** The state or a time, flush right; the actions replace it on hover and focus. */
   meta?: ReactNode;
+  /** The current row, as a selected thread row is (`aria-current`): a job while one of its threads is selected. */
+  selected?: boolean;
   /** Presses the row: its button. */
   onSelect?: () => void;
   /** Props of the select button: a test id, a label, data attributes. */
@@ -589,6 +591,7 @@ export function NestedRow({
   stateLabel,
   title,
   meta,
+  selected = false,
   onSelect,
   selectProps,
   actions,
@@ -596,11 +599,17 @@ export function NestedRow({
   ...props
 }: NestedRowProps) {
   return (
-    <li {...props} className={cx("omfp-row omfp-nested-row omfp-focus-item", className)} data-state={state}>
+    <li
+      {...props}
+      className={cx("omfp-row omfp-nested-row omfp-focus-item", className)}
+      data-state={state}
+      data-selected={selected || undefined}
+    >
       <button
         {...selectProps}
         type="button"
         className="omfp-nested-row__select omfp-focus-item__target"
+        aria-current={selected ? "true" : undefined}
         onClick={onSelect}
       >
         <StateMark state={state} {...stateLabelProp(stateLabel)} />

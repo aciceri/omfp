@@ -193,10 +193,31 @@ export function newWorkspaceParams(input: string): CreateWorkspaceParams {
 /** One workspace of the column. */
 export interface Section {
   readonly workspace: Workspace;
-  /** Its non-archived threads that pass the filter, by `position` (UI-620). */
+  /** Its non-archived threads that pass the filter, by `position` (UI-620); without a filter, not those listed under
+   * its jobs (UI-992). */
   readonly threadIds: readonly string[];
   /** Its archived threads that pass the filter, by `position` (UI-026, UI-620). */
   readonly archivedIds: readonly string[];
+  /** Its threads listed under their job's row rather than among its threads, filter or not (UI-992). */
+  readonly jobThreadIds: readonly string[];
+}
+
+/** The names of the declared jobs by workspace id, for the workspaces whose `jobs/<id>` (PRT-200) the window holds. */
+export type DeclaredJobs = ReadonlyMap<string, ReadonlySet<string>>;
+
+const NO_DECLARED_JOBS: DeclaredJobs = new Map();
+
+/**
+ * `thread` is listed under its job's row in the left column rather than among its workspace's threads (UI-992): a
+ * non-archived thread a job made (PRT-209) in a workspace with jobs, while that workspace declares the job, or its jobs
+ * are not read yet. A thread of a job no longer declared stays in the list, where nothing else would reach it.
+ */
+export function isListedUnderJob(thread: ThreadSummary, workspace: Workspace, declared: DeclaredJobs): boolean {
+  const { createdBy } = thread.provenance;
+  if (createdBy.kind !== "job" || isArchived(thread) || workspace.jobs === undefined || workspace.jobs === null) {
+    return false;
+  }
+  return declared.get(workspace.id)?.has(createdBy.job) ?? true;
 }
 
 /** What takes the focus when the thread or workspace under it leaves the column (UI-285). */
@@ -250,12 +271,14 @@ export function focusAfterRemoval(before: readonly Section[], after: readonly Se
 /**
  * Every workspace with its threads (UI-020), in the daemon's order (`position`, UI-620; equal ones by name); while
  * filtering, only threads that match and only workspaces with one (UI-022). Threads of an unknown workspace are not
- * listed.
+ * listed; the threads of a declared job (`declared`) are listed under its row instead, unless they match a filter
+ * (UI-992).
  */
 export function sidebarSections(
   threads: readonly ThreadSummary[],
   workspaces: readonly Workspace[],
   filter: ThreadFilter,
+  declared: DeclaredJobs = NO_DECLARED_JOBS,
 ): Section[] {
   const filtering = isFiltering(filter);
   const ordered = [...threads].sort((a, b) => a.position - b.position);
@@ -264,13 +287,16 @@ export function sidebarSections(
       (a, b) => a.position - b.position || compare(a.name.toLowerCase(), b.name.toLowerCase()) || compare(a.id, b.id),
     )
     .map((workspace) => {
-      const own = ordered.filter(
-        (thread) => thread.workspaceId === workspace.id && matchesFilter(thread, workspace, filter),
-      );
+      const own = ordered.filter((thread) => thread.workspaceId === workspace.id);
+      const underJobs = own.filter((thread) => isListedUnderJob(thread, workspace, declared));
+      const shown = own.filter((thread) => matchesFilter(thread, workspace, filter));
       return {
         workspace,
-        threadIds: own.filter((thread) => !isArchived(thread)).map((thread) => thread.id),
-        archivedIds: own.filter(isArchived).map((thread) => thread.id),
+        threadIds: shown
+          .filter((thread) => !isArchived(thread) && (filtering || !underJobs.includes(thread)))
+          .map((thread) => thread.id),
+        archivedIds: shown.filter(isArchived).map((thread) => thread.id),
+        jobThreadIds: underJobs.map((thread) => thread.id),
       };
     })
     .filter((section) => !filtering || section.threadIds.length + section.archivedIds.length > 0);

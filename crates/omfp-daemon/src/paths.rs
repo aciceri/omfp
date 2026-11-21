@@ -95,6 +95,12 @@ impl DataDir {
     pub fn login(&self) -> PathBuf {
         self.root.join("login")
     }
+
+    /// The working directory, session directory and stderr log of the omp answering `prompts.predict_word` (DMN-361).
+    #[must_use]
+    pub fn predictor(&self) -> PathBuf {
+        self.root.join("predict")
+    }
 }
 
 /// Group and other permission bits.

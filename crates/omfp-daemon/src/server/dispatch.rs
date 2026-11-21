@@ -263,6 +263,26 @@ async fn run(services: &Services, principal: &Principal, call: Call) -> Reply {
         | Call::TerminalsKill(_)) => terminals(services, principal, call).await,
         Call::ActivityList(params) => ok(&activity::list(services, params).await?),
         Call::PromptsHistory(params) => ok(&prompts::history(services, params).await?),
+        Call::PromptsPredictWord(params) => ok(&omfp_protocol::PredictedWord {
+            suffix: services
+                .supervisor
+                .predict_word(params.text, params.cursor)
+                .await
+                .map_err(supervisor_error)?,
+        }),
+        Call::PromptsPredictWordFeedback(params) => {
+            services
+                .supervisor
+                .predict_word_feedback(
+                    params.text,
+                    params.cursor,
+                    params.suggestion,
+                    params.accepted,
+                )
+                .await
+                .map_err(supervisor_error)?;
+            empty()
+        }
         Call::AuthStatus(_) => ok(&services.auth_status().await?),
         Call::AuthModels(_) => ok(&services.auth_models().await?),
         Call::AuthProviders(_) => ok(&services.auth_providers().await?),

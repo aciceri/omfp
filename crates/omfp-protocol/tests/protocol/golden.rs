@@ -4,8 +4,9 @@
 use omfp_core::ProcessState;
 use omfp_core::wire::{AskAnswer, GoalOp, ImageContent, QueuedMessageQueue, ThinkingLevel};
 use omfp_protocol::{
-    ActivityEntry, ActivityPage, ListActivityParams, PromptHistory, PromptHistoryEntry,
-    PromptHistoryParams, StopThreadParams, ThreadsStopped,
+    ActivityEntry, ActivityPage, ListActivityParams, PredictWordFeedbackParams, PredictWordParams,
+    PredictedWord, PromptHistory, PromptHistoryEntry, PromptHistoryParams, StopThreadParams,
+    ThreadsStopped,
 };
 use omfp_protocol::{
     AddRepoParams, ApprovalMode, BashParams, BtwParams, Call, CompactParams, CompletePathParams,
@@ -1458,6 +1459,24 @@ fn activity_examples() -> Vec<(&'static str, Value)> {
                     at: 1_731_000_000_000,
                 }],
             },
+        ),
+        example::<method::PromptsPredictWord>(
+            PredictWordParams {
+                text: "Run the te".to_owned(),
+                cursor: 10,
+            },
+            &PredictedWord {
+                suffix: Some("sts".to_owned()),
+            },
+        ),
+        example::<method::PromptsPredictWordFeedback>(
+            PredictWordFeedbackParams {
+                text: "Run the te".to_owned(),
+                cursor: 10,
+                suggestion: "sts".to_owned(),
+                accepted: true,
+            },
+            &Empty {},
         ),
     ]
 }

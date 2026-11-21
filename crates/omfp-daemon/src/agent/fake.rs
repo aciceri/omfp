@@ -787,6 +787,7 @@ fn default_data(command: &str, session_id: &str) -> Value {
         "get_login_providers" => json!({ "providers": [] }),
         "get_logout_accounts" => json!({ "accounts": [] }),
         "logout" => json!({}),
+        "predict_word" => json!({ "suffix": null }),
         _ => Value::Null,
     }
 }

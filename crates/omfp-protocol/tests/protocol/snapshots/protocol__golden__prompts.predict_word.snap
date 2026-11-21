@@ -1,0 +1,23 @@
+---
+source: crates/omfp-protocol/tests/protocol/golden.rs
+expression: golden
+---
+{
+  "request": {
+    "id": "c42",
+    "method": "prompts.predict_word",
+    "params": {
+      "cursor": 10,
+      "text": "Run the te"
+    },
+    "type": "request"
+  },
+  "response": {
+    "id": "c42",
+    "ok": true,
+    "result": {
+      "suffix": "sts"
+    },
+    "type": "response"
+  }
+}

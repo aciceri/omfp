@@ -327,6 +327,10 @@ methods! {
     /// The prompts the user sent from omfp: the thread's first, then its workspace's, then the rest, newest first
     /// within each (PRT-127, DMN-216).
     PromptsHistory = "prompts.history" (activity::PromptHistoryParams) -> activity::PromptHistory;
+    /// Completes the word ending at the composer's caret, as omp's word autocomplete does (PRT-226, DMN-360).
+    PromptsPredictWord = "prompts.predict_word" (activity::PredictWordParams) -> activity::PredictedWord;
+    /// Tells omp's word predictor that a shown completion was accepted or typed past (PRT-227, DMN-360).
+    PromptsPredictWordFeedback = "prompts.predict_word_feedback" (activity::PredictWordFeedbackParams) -> params::Empty;
     /// Thread summaries as on the `index` topic, without archived threads unless asked (PRT-090).
     ThreadsList = "threads.list" (lists::ListThreadsParams) -> lists::ThreadList;
     /// Every workspace as on the `index` topic (PRT-091).

@@ -3142,6 +3142,55 @@ async fn a_check_that_cannot_start_omp_fails_with_its_stderr_and_the_next_one_ch
     );
 }
 
+// spec: PRT-226, PRT-227, DMN-361
+#[tokio::test(flavor = "multi_thread")]
+async fn word_completion_answers_omps_suffix_without_a_thread() {
+    let daemon = daemon(&[]).await;
+    daemon
+        .launcher
+        .reply("predict_word", FakeReply::Ok(json!({ "suffix": "sts" })));
+    let mut client = daemon.client("test").await;
+
+    let predicted = client
+        .ok(
+            "prompts.predict_word",
+            json!({ "text": "Run the te", "cursor": 10 }),
+        )
+        .await;
+    let feedback = client
+        .ok(
+            "prompts.predict_word_feedback",
+            json!({ "text": "Run the te", "cursor": 10, "suggestion": "sts", "accepted": false }),
+        )
+        .await;
+
+    assert_eq!(predicted, json!({ "suffix": "sts" }));
+    assert_eq!(feedback, json!({}));
+    let launches = daemon.launcher.launches();
+    assert_eq!(launches.len(), 1, "one predictor omp, no thread");
+    assert_eq!(
+        launches[0].spec.cwd,
+        daemon.dir.path().join("predict").join("work")
+    );
+}
+
+// spec: PRT-226, DMN-362
+#[tokio::test(flavor = "multi_thread")]
+async fn word_completion_without_omp_fails_with_its_stderr() {
+    let daemon = daemon(&[]).await;
+    daemon.launcher.fail_next_launch("first attempt");
+    daemon.launcher.fail_next_launch("fatal: out of memory");
+    let mut client = daemon.client("test").await;
+
+    let error = client
+        .call("prompts.predict_word", json!({ "text": "a", "cursor": 1 }))
+        .await
+        .unwrap_err();
+
+    assert_eq!(error["code"], "thread_failed", "{error}");
+    assert_eq!(error["details"]["stderrTail"], "fatal: out of memory");
+}
+
 // spec: DMN-236
 #[tokio::test(flavor = "multi_thread")]
 async fn a_login_or_a_logout_checks_the_usable_models_again_once_someone_asked() {

@@ -1238,6 +1238,29 @@ export type Position = {
   seq: number;
 };
 
+/** `prompts.predict_word_feedback` params (PRT-227): a shown completion the user accepted or typed past. */
+export type PredictWordFeedbackParams = {
+  accepted: boolean;
+  cursor: number;
+  /** The completion shown (a [`PredictedWord::suffix`]). */
+  suggestion: string;
+  /** The text and caret the completion was predicted for. */
+  text: string;
+};
+
+/** `prompts.predict_word` params (PRT-226): the composer's text and its caret. */
+export type PredictWordParams = {
+  /** The caret, in UTF-16 code units of `text` (a JavaScript string index). */
+  cursor: number;
+  text: string;
+};
+
+/** `prompts.predict_word` result (PRT-226). */
+export type PredictedWord = {
+  /** The characters completing the word that ends at the caret; `null` when no completion applies. */
+  suffix?: string | null;
+};
+
 /** How a prompt sent while the agent is busy is queued. */
 export type PromptBehavior = "steer" | "followUp";
 
@@ -2587,6 +2610,8 @@ export interface Methods {
   "widgets.library": { params: Empty; result: WidgetLibrary };
   "activity.list": { params: ListActivityParams; result: ActivityPage };
   "prompts.history": { params: PromptHistoryParams; result: PromptHistory };
+  "prompts.predict_word": { params: PredictWordParams; result: PredictedWord };
+  "prompts.predict_word_feedback": { params: PredictWordFeedbackParams; result: Empty };
   "threads.list": { params: ListThreadsParams; result: ThreadList };
   "workspaces.list": { params: Empty; result: WorkspaceList };
   "workspaces.mcp_servers": { params: WorkspaceRef; result: McpServers };
@@ -2706,6 +2731,8 @@ export const METHODS: readonly MethodName[] = [
   "widgets.library",
   "activity.list",
   "prompts.history",
+  "prompts.predict_word",
+  "prompts.predict_word_feedback",
   "threads.list",
   "workspaces.list",
   "workspaces.mcp_servers",

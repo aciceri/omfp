@@ -374,6 +374,22 @@ the profile anew.
 | DMN-341 | **The SSRF guard**: `oauth.callback` (PRT-212) MUST relay a pasted address only when, after the URL standard's normalization (`LOCALHOST`, `127.1` and `./` segments normalize), its scheme is `http`, it carries no user name or password, its host is `localhost` or `127.0.0.1` (not `localhost.`, `[::1]`, `0.0.0.0` or any other address or name), and its port (80 when absent) and path equal those of a sign-in of that thread (or of the running login) still waiting (DMN-340); its query is passed as pasted, its fragment dropped. Anything else is refused before any request: `conflict` when nothing waits, else `bad_request`. |
 | DMN-342 | **The relay**: an accepted address MUST be requested once with `GET` on `127.0.0.1` at that port and path (omp's listener for `localhost` binds it too), without a proxy (environment proxies ignored), without following redirects, with a 10 s timeout; a 2xx answer completes the sign-in (DMN-340) and answers `{ status }`, another status or no answer is `omp_error` and the sign-in keeps waiting (omp may refuse a state mismatch with 500 and still wait). |
 
+## Word completion (M17)
+
+omp 18.22.0's TUI completes the word being typed from a local predictor (`spelling.autocomplete`: `auto`, the default,
+and `ngram` learn from the profile's prompt history and Claude Code's and Codex's; `smollm` adds a small on-device
+model; `off`) and offers it over RPC as `predict_word { text, cursor }` → `{ suffix }` and `predict_word_feedback`.
+Every omp only relays them to one machine-wide text-prediction daemon of its agent directory, which answers within
+milliseconds once warm, so any omp of omfp's profile serves every composer, the draft thread's included
+(`supervisor/predict.rs`). omp's composer predictions (the whole next message after a turn) are TUI-only in 18.22.0.
+
+| ID | Requirement |
+| --- | --- |
+| DMN-360 | **Relaying omp's word completion**: `prompts.predict_word { text, cursor }` (PRT-226) MUST answer omp's `predict_word` with the same text and caret (UTF-16 code units, as omp counts them), its `suffix` or `null`; `prompts.predict_word_feedback` (PRT-227) MUST send omp's `predict_word_feedback` unchanged. omp's own error is the method's error (`omp_error`); omp's `spelling.autocomplete` setting in omfp's profile decides whether and how it completes (`off`: always `null`). |
+| DMN-361 | **The predictor omp**: both methods MUST go to one omp of the daemon's own, started on the first request like the login omp (DMN-219: the threads' environment, `--model anthropic/claude-sonnet-4-5`, else without it; no roots, conventions, extension or host tools), in `predict/work` with `predict/sessions` and its stderr in `predict/omp.log`, never a thread's omp, so a request starts no thread (DMN-070) and works without one. Concurrent first requests wait for one start. A request that fails other than by omp's refusal (the process exited, a timeout) MUST drop that omp, so the next request starts another. |
+| DMN-362 | **A failed start**: when the predictor omp cannot start, the request fails with omp's start error (`thread_failed` with `stderrTail`, DMN-212), and every request during the next minute MUST answer that error without starting omp again. |
+| DMN-363 | **Idle and shutdown**: the idle reaper (DMN-034) MUST stop the predictor omp once no request used it for the idle timeout (a start in progress is left alone), and the daemon's shutdown (DMN-005) MUST stop it without waiting for a start in progress, within its grace period: an omp whose start ends once the shutdown began is stopped at once and its request fails with `internal` ("the daemon is shutting down"); the next request starts another. |
+
 ## Views and widgets (M4)
 
 The daemon reads, checks and serves what the window shows: the views manifest, the widget folders of the workspace

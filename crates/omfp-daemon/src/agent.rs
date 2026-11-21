@@ -21,9 +21,10 @@ use omp_rpc::{
     GetStateCommand, GetSubagentMessagesCommand, GetSubagentsCommand, GetSubagentsResult,
     GetTreeCommand, GoalCommand, HostTool, HostUri, LiveConnectCommand, LiveMuteCommand,
     LiveMuteResult, LiveStartCommand, LiveStartResult, LiveStopCommand, LoginCommand, LoginResult,
-    LogoutCommand, NavigateTreeCommand, PromoteQueuedMessageCommand, PromptCommand,
-    RemoveQueuedMessageCommand, RpcInbound, SetLabelCommand, SetModelCommand,
-    SetSessionNameCommand, SetThinkingLevelCommand, SteerCommand, SteerSubagentCommand,
+    LogoutCommand, NavigateTreeCommand, PredictWordCommand, PredictWordFeedbackCommand,
+    PredictWordResult, PromoteQueuedMessageCommand, PromptCommand, RemoveQueuedMessageCommand,
+    RpcInbound, SetLabelCommand, SetModelCommand, SetSessionNameCommand, SetThinkingLevelCommand,
+    SteerCommand, SteerSubagentCommand,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -87,6 +88,10 @@ pub enum OmpCall {
     LogoutAccounts(GetLogoutAccountsCommand),
     /// Removes one stored credential (`logout`, DMN-223).
     Logout(LogoutCommand),
+    /// The completion of the word ending at the caret (`predict_word`, DMN-360).
+    PredictWord(PredictWordCommand),
+    /// A shown word completion accepted or typed past (`predict_word_feedback`, DMN-360).
+    PredictWordFeedback(PredictWordFeedbackCommand),
 }
 
 impl OmpCall {
@@ -126,6 +131,8 @@ impl OmpCall {
             Self::LiveMute(_) => "live_mute",
             Self::LoginProviders => "get_login_providers",
             Self::Login(_) => "login",
+            Self::PredictWord(_) => "predict_word",
+            Self::PredictWordFeedback(_) => "predict_word_feedback",
             Self::LogoutAccounts(_) => "get_logout_accounts",
             Self::Logout(_) => "logout",
         }
@@ -591,6 +598,10 @@ impl AgentProcess for OmpAgent {
                 self.run_as(command, |accounts| GetLogoutAccountsResult { accounts })
             }
             OmpCall::Logout(command) => self.run(command),
+            OmpCall::PredictWord(command) => {
+                self.run_as(command, |suffix| PredictWordResult { suffix })
+            }
+            OmpCall::PredictWordFeedback(command) => self.run(command),
         }
     }
 

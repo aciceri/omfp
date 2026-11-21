@@ -45,6 +45,7 @@ mod mcp;
 mod models;
 mod naming;
 mod oauth;
+mod predict;
 mod process;
 mod restart;
 mod roots;
@@ -529,6 +530,8 @@ struct Inner {
     credential_writes: tokio::sync::Mutex<()>,
     /// What the daemon knows of the models omp can use (DMN-235..DMN-237).
     models: models::UsableModels,
+    /// The omp answering `prompts.predict_word` (DMN-360..DMN-363).
+    predictor: predict::Predictor,
 }
 
 /// The agent supervisor. Cheap to clone.
@@ -649,6 +652,7 @@ impl Supervisor {
                 models: models::UsableModels::default(),
                 logins: AtomicU64::new(0),
                 credential_writes: tokio::sync::Mutex::new(()),
+                predictor: predict::Predictor::default(),
             }),
         }
     }
@@ -1088,6 +1092,7 @@ impl Supervisor {
         lock(&self.inner.widget_host).take();
         lock(&self.inner.agent_host).take();
         self.cancel_login(None);
+        self.stop_predictor();
         let actors: Vec<Arc<Actor>> = lock(&self.inner.actors).values().cloned().collect();
         let stops = actors.iter().map(|actor| async move {
             let _lifecycle = actor.lifecycle.lock().await;
@@ -1128,6 +1133,7 @@ impl Supervisor {
     async fn reap_idle(&self) {
         let timeout = self.inner.config.idle_timeout;
         let actors: Vec<Arc<Actor>> = lock(&self.inner.actors).values().cloned().collect();
+        self.reap_predictor(timeout);
         for actor in actors {
             if !actor.is_idle(timeout, Instant::now()) {
                 continue;

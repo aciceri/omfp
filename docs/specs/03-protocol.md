@@ -191,6 +191,8 @@ previous settings stay). A thread summary carries `title` (`""` until the first 
 | `jobs.enable` | `workspaceId`, `name`, `enabled` | the `JobView` once `.omfp/jobs.json` says so (PRT-207) |
 | `activity.list` | `threadId?`, `before?`, `after?`, `limit?` | `{ entries: [{ seq, at, threadId, client, method, params, error }], more }`: the activity log, newest first (PRT-086) |
 | `prompts.history` | `threadId?`, `workspaceId?`, `query?`, `limit?` | `{ prompts: [{ text, threadId, workspaceId, at }] }`: the user's prompts, the thread's first, then its workspace's, then the others (PRT-127) |
+| `prompts.predict_word` | `text`, `cursor` | `{ suffix }`: omp's completion of the word ending at the caret, `null` when none (PRT-226) |
+| `prompts.predict_word_feedback` | `text`, `cursor`, `suggestion`, `accepted` | `{}` once omp took the feedback (PRT-227) |
 | `workspaces.mcp_servers` | `workspaceId` | `McpServers`: the MCP servers configured for the workspace, unchecked (PRT-110) |
 | `thread.mcp_servers` | `threadId` | `McpServers`: the servers of the thread's workspace, checked by its running omp (PRT-111) |
 | `thread.mcp_reconnect` | `threadId`, `name?` | `McpServers` after restarting the idle thread; `conflict` while it works (PRT-112) |
@@ -245,6 +247,8 @@ record (`get_available_models` → `{ models }`, not `[ModelInfo]`).
 | PRT-086 | `activity.list { threadId?, before?, after?, limit? }` (permission `Read`) MUST answer `{ entries, more }` from the activity log (DMN-160), newest first: each entry `{ seq, at, threadId, client, method, params, error }` (`error` `null` for a success); `threadId` keeps the entries of that calling thread, `before` those with a smaller `seq`, `after` those with a greater one; `limit` defaults to 50 and is capped at 500; `more` tells whether entries matching the query were left out by the limit. |
 | PRT-127 | `prompts.history { threadId?, workspaceId?, query?, limit? }` (permission `Read`) MUST answer `PromptHistory { prompts }` read as DMN-217 orders it: `threadId` and `workspaceId` rank the prompts (this thread's first, then this workspace's, then the rest; newest first within each), `query` filters them, `limit` (default 100, at most 1,000) cuts the list. |
 | PRT-128 | A `PromptHistoryEntry` MUST carry `text`, `threadId` (the thread it was last sent to), `workspaceId` (that thread's workspace then) and `at` (when, Unix ms); each text appears once (DMN-216). |
+| PRT-226 | (M17) `prompts.predict_word { text, cursor }` (permission `Read`) MUST answer `PredictedWord { suffix }`: the characters completing the word that ends at `cursor` (UTF-16 code units of `text`, a JavaScript string index), `null` when no completion applies (DMN-360). It needs no thread; a failure to start omp is `thread_failed` (DMN-362). |
+| PRT-227 | (M17) `prompts.predict_word_feedback { text, cursor, suggestion, accepted }` (permission `Drive`: it changes what the predictor learned) MUST answer `{}` once omp took the feedback: `suggestion`, the suffix `prompts.predict_word` answered for that `text` and `cursor`, was accepted or typed past (DMN-360). |
 
 ## MCP servers (M13, M19)
 

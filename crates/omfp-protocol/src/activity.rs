@@ -109,3 +109,32 @@ pub struct PromptHistoryEntry {
     /// When it was last sent (Unix milliseconds).
     pub at: i64,
 }
+
+/// `prompts.predict_word` params (PRT-226): the composer's text and its caret.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PredictWordParams {
+    pub text: String,
+    /// The caret, in UTF-16 code units of `text` (a JavaScript string index).
+    pub cursor: u32,
+}
+
+/// `prompts.predict_word` result (PRT-226).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PredictedWord {
+    /// The characters completing the word that ends at the caret; `null` when no completion applies.
+    pub suffix: Option<String>,
+}
+
+/// `prompts.predict_word_feedback` params (PRT-227): a shown completion the user accepted or typed past.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PredictWordFeedbackParams {
+    /// The text and caret the completion was predicted for.
+    pub text: String,
+    pub cursor: u32,
+    /// The completion shown (a [`PredictedWord::suffix`]).
+    pub suggestion: String,
+    pub accepted: bool,
+}

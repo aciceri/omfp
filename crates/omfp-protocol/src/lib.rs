@@ -20,8 +20,9 @@ mod topic;
 mod windows;
 
 pub use activity::{
-    ActivityEntry, ActivityPage, ListActivityParams, PromptHistory, PromptHistoryEntry,
-    PromptHistoryParams, StopThreadParams, ThreadsStopped,
+    ActivityEntry, ActivityPage, ListActivityParams, PredictWordFeedbackParams, PredictWordParams,
+    PredictedWord, PromptHistory, PromptHistoryEntry, PromptHistoryParams, StopThreadParams,
+    ThreadsStopped,
 };
 pub use auth::{
     AuthProvider, AuthProviders, AuthStatus, AvailableModel, AvailableModels, LoggedIn, LoggedOut,

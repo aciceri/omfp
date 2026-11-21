@@ -19,6 +19,8 @@ use crate::store::{Store, StoreError};
 use crate::threads::NewThread;
 use crate::workspaces::{NewWorkspace, Workspaces};
 
+#[path = "tests/predict.rs"]
+mod predict;
 #[path = "tests/rolling_titles.rs"]
 mod rolling_titles;
 

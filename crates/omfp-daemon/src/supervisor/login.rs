@@ -46,8 +46,8 @@ pub(super) struct Running {
 }
 
 impl Supervisor {
-    fn auth_spec(&self, model: Option<&str>) -> LaunchSpec {
-        let dir = self.inner.data.login();
+    /// The spec of an omp of the daemon's own (not a thread's) working in `dir`: the login omp, the predictor omp.
+    fn helper_spec(&self, dir: &std::path::Path, model: Option<&str>) -> LaunchSpec {
         LaunchSpec {
             program: self.inner.config.omp_program.clone(),
             cwd: dir.join("work"),
@@ -86,13 +86,26 @@ impl Supervisor {
         + Sync
         + 'static,
     ) -> Result<T> {
+        self.on_helper_omp(self.inner.data.login(), start).await
+    }
+
+    /// Runs `start` on the spec of an omp of the daemon's own working in `dir`, with [`LOGIN_MODEL`] and else without
+    /// it: the login omp (DMN-219) and the predictor omp (DMN-361).
+    pub(super) async fn on_helper_omp<T: Send + 'static>(
+        &self,
+        dir: std::path::PathBuf,
+        start: impl Fn(&dyn AgentLauncher, &LaunchSpec) -> std::result::Result<T, StartError>
+        + Send
+        + Sync
+        + 'static,
+    ) -> Result<T> {
         if self.inner.shutting_down.load(Ordering::SeqCst) {
             return Err(SupervisorError::ShuttingDown);
         }
         let start = Arc::new(start);
         let mut failure = None;
         for model in [Some(LOGIN_MODEL), None] {
-            let spec = self.auth_spec(model);
+            let spec = self.helper_spec(&dir, model);
             let launcher = Arc::clone(&self.inner.launcher);
             let log = spec.stderr_log.clone();
             let start = Arc::clone(&start);
@@ -105,7 +118,7 @@ impl Supervisor {
             match started.await? {
                 Ok(started) => return Ok(started),
                 Err(error) => {
-                    warn!(?model, %error, "the login omp did not start");
+                    warn!(?model, %error, dir = %dir.display(), "a helper omp did not start");
                     let tail = blocking(move || stderr_tail(&log, STDERR_TAIL_LINES))
                         .await
                         .unwrap_or_default();
@@ -116,7 +129,7 @@ impl Supervisor {
                 }
             }
         }
-        Err(failure.unwrap_or_else(|| SupervisorError::Internal("no login omp start".into())))
+        Err(failure.unwrap_or_else(|| SupervisorError::Internal("no helper omp start".into())))
     }
 
     /// Waits for and holds the right to write omfp's credential store (DMN-230): `auth.import` holds it for its whole

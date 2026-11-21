@@ -54,11 +54,12 @@ async fn finished_background_jobs_collapse_and_clear_finished_hides_them_across_
     let journey = Journey::start_fake(launcher.clone()).await?;
     journey.connected().await?;
     let thread = journey.create_thread("background").await?;
-    let mut frames = Vec::new();
+    // The running job starts first, so the badge stays mounted while the finished ones come and go: it renders nothing
+    // while nothing runs, and a badge found between two jobs would be gone when clicked (#236).
+    let mut frames = job(8, false)?;
     for n in 1..=7 {
         frames.extend(job(n, true)?);
     }
-    frames.extend(job(8, false)?);
     let process = journey.fake_process(&launcher, &thread).await?;
     process.emit(frames);
 

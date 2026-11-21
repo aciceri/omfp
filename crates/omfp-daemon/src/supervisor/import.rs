@@ -334,11 +334,22 @@ const PENDING_BYTE: i64 = 0x4000_0000;
 const SHARED_FIRST: i64 = PENDING_BYTE + 2;
 const SHARED_SIZE: i64 = 510;
 
-/// Sets (`kind`: `F_RDLCK`, `F_UNLCK`) a POSIX record lock on `len` bytes of `file` from `start`, without waiting.
-fn record_lock(file: &File, kind: std::ffi::c_int, start: i64, len: i64) -> nix::Result<()> {
+/// A POSIX record lock's kind: `libc`'s `F_RDLCK` and `F_UNLCK` are `c_int` on Linux and `c_short` on macOS.
+#[derive(Clone, Copy)]
+enum RecordLock {
+    Read,
+    Unlock,
+}
+
+/// Sets (`kind`) a POSIX record lock on `len` bytes of `file` from `start`, without waiting.
+fn record_lock(file: &File, kind: RecordLock, start: i64, len: i64) -> nix::Result<()> {
     use nix::fcntl::{FcntlArg, fcntl};
     use nix::libc;
     use std::os::fd::AsRawFd as _;
+    let kind = match kind {
+        RecordLock::Read => libc::F_RDLCK,
+        RecordLock::Unlock => libc::F_UNLCK,
+    };
     let lock = libc::flock {
         l_type: libc::c_short::try_from(kind).map_err(|_| nix::errno::Errno::EINVAL)?,
         l_whence: libc::c_short::try_from(libc::SEEK_SET).map_err(|_| nix::errno::Errno::EINVAL)?,
@@ -361,11 +372,10 @@ fn record_lock(file: &File, kind: std::ffi::c_int, start: i64, len: i64) -> nix:
 /// with `file`.
 fn lock_shared(file: &File, deadline: Instant) -> Result<(), CopyError> {
     use nix::errno::Errno;
-    use nix::libc::{F_RDLCK, F_UNLCK};
     loop {
-        let taken = record_lock(file, F_RDLCK, PENDING_BYTE, 1).and_then(|()| {
-            let shared = record_lock(file, F_RDLCK, SHARED_FIRST, SHARED_SIZE);
-            record_lock(file, F_UNLCK, PENDING_BYTE, 1)?;
+        let taken = record_lock(file, RecordLock::Read, PENDING_BYTE, 1).and_then(|()| {
+            let shared = record_lock(file, RecordLock::Read, SHARED_FIRST, SHARED_SIZE);
+            record_lock(file, RecordLock::Unlock, PENDING_BYTE, 1)?;
             shared
         });
         match taken {
@@ -392,14 +402,13 @@ const SHM_CHECKPOINT_BYTE: i64 = (22 + 8) * 4 + 1;
 /// [`lock_shared`] is held, so one that opens meanwhile leaves it behind for [`Snapshot::copy_with`] to see.
 fn hold_checkpoints(shm: &Path, deadline: Instant) -> Result<Option<File>, CopyError> {
     use nix::errno::Errno;
-    use nix::libc::F_RDLCK;
     let file = match File::open(shm) {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(CopyError::Io(error)),
     };
     loop {
-        match record_lock(&file, F_RDLCK, SHM_CHECKPOINT_BYTE, 1) {
+        match record_lock(&file, RecordLock::Read, SHM_CHECKPOINT_BYTE, 1) {
             Ok(()) => return Ok(Some(file)),
             Err(Errno::EAGAIN | Errno::EACCES) => {}
             Err(errno) => return Err(CopyError::Io(errno.into())),

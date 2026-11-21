@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { AvailableSlashCommand } from "@omfp/core";
 import {
+  acceptGhost,
   activityOf,
   alternative,
   base64,
@@ -11,6 +12,7 @@ import {
   completeFile,
   fileMention,
   fileSuggestions,
+  followGhost,
   fuzzyMatches,
   INTERRUPT_WINDOW_MS,
   imageAttachment,
@@ -25,6 +27,9 @@ import {
   restoredTexts,
   restoreFailedPrompt,
   slashSuggestions,
+  type WordGhost,
+  wordAt,
+  wordGhost,
 } from "../../src/vm/composer.ts";
 import { fixture, fixtureUntil, isFrame } from "../widgets/chat/fixtures.ts";
 
@@ -188,6 +193,99 @@ describe("composer", () => {
       true,
     );
     expect(canAbort(queued)).toBe(true);
+  });
+
+  // spec: UI-175
+  test("a word ends at the caret as omp asks: letters, marks and apostrophes, nothing word-like after", () => {
+    expect(wordAt("hel", 3)).toBe("hel");
+    expect(wordAt("say hel", 7)).toBe("hel");
+    expect(wordAt("don't", 5)).toBe("don't");
+    expect(wordAt("café", 4)).toBe("café");
+    expect(wordAt("cafe\u0301", 5)).toBe("cafe\u0301");
+    expect(wordAt("email me@work", 13)).toBe("work");
+    expect(wordAt("hello", 3)).toBeUndefined();
+    expect(wordAt("hel'", 3)).toBeUndefined();
+    expect(wordAt("hel ", 4)).toBeUndefined();
+    expect(wordAt("abc1", 4)).toBeUndefined();
+    expect(wordAt("", 0)).toBeUndefined();
+    expect(wordAt("hel", 0)).toBeUndefined();
+  });
+
+  // spec: UI-175
+  test("a word completes only at the end of its line, where the ghost covers no text", () => {
+    expect(wordAt("say hel\nmore", 7)).toBe("hel");
+    expect(wordAt("say hel\r\nmore", 7)).toBeUndefined();
+    expect(wordAt("hel world", 3)).toBeUndefined();
+    expect(wordAt("hel.", 3)).toBeUndefined();
+    expect(wordAt("hel ", 3)).toBeUndefined();
+  });
+
+  // spec: UI-175, UI-732
+  test("a word never completes inside a `@` file mention", () => {
+    expect(wordAt("@src", 4)).toBeUndefined();
+    expect(wordAt("look at @ma", 11)).toBeUndefined();
+    expect(wordAt('look at @"my fi', 15)).toBeUndefined();
+    expect(wordAt("look at @main.rs then", 21)).toBe("then");
+  });
+
+  // spec: UI-175, UI-060
+  test("a word never completes in the bare `/command` token", () => {
+    expect(wordAt("/comp", 5)).toBeUndefined();
+    expect(wordAt("/model\nnext", 11)).toBe("next");
+    expect(wordAt("/compact focus", 14)).toBe("focus");
+    expect(wordAt("see /usr", 8)).toBe("usr");
+  });
+
+  // spec: UI-175
+  test("an answer becomes a ghost only with a suffix", () => {
+    expect(wordGhost("say hel", 7, "lo")).toEqual({ text: "say hel", cursor: 7, suffix: "lo" });
+    expect(wordGhost("say hel", 7, "")).toBeUndefined();
+    expect(wordGhost("say hel", 7, null)).toBeUndefined();
+    expect(wordGhost("say hel", 7, undefined)).toBeUndefined();
+  });
+
+  // spec: UI-175, UI-177
+  test("typing the ghost's next characters narrows it; anything else ends it", () => {
+    const ghost: WordGhost = { text: "say hel!", cursor: 7, suffix: "lo" };
+    expect(followGhost(ghost, "say hel!", 7)).toEqual({ type: "keep", ghost });
+    expect(followGhost(ghost, "say hell!", 8)).toEqual({
+      type: "keep",
+      ghost: { text: "say hell!", cursor: 8, suffix: "o" },
+    });
+    // As omp projects it: case-insensitively.
+    expect(followGhost(ghost, "say helL!", 8)).toEqual({
+      type: "keep",
+      ghost: { text: "say helL!", cursor: 8, suffix: "o" },
+    });
+    expect(followGhost(ghost, "say hello!", 9)).toEqual({ type: "typed" });
+    expect(followGhost(ghost, "say helx!", 8)).toEqual({ type: "past" });
+    expect(followGhost(ghost, "say hel !", 8)).toEqual({ type: "past" });
+    expect(followGhost(ghost, "say he!", 6)).toEqual({ type: "past" });
+    expect(followGhost(ghost, "say hel!", 3)).toEqual({ type: "past" });
+    expect(followGhost(ghost, "say hell!", 7)).toEqual({ type: "past" });
+    expect(followGhost(ghost, "Say hell!", 8)).toEqual({ type: "past" });
+    expect(followGhost(ghost, "say hell?", 8)).toEqual({ type: "past" });
+  });
+
+  // spec: UI-176
+  test("accepting a ghost inserts its suffix at the caret, with or without a space, the caret after it", () => {
+    const ghost: WordGhost = { text: "say hel, ok", cursor: 7, suffix: "lo" };
+    expect(acceptGhost(ghost, true)).toEqual({ text: "say hello , ok", caret: 10 });
+    expect(acceptGhost(ghost, false)).toEqual({ text: "say hello, ok", caret: 9 });
+  });
+
+  // spec: UI-176, UI-060, UI-732
+  test("with a ghost, tab accepts it with a space and arrow right without; an open list keeps tab", () => {
+    const ghost = { ...IDLE, ghost: true };
+    expect(keyAction("Tab", PLAIN, ghost)).toEqual({ type: "accept", space: true });
+    expect(keyAction("ArrowRight", PLAIN, ghost)).toEqual({ type: "accept", space: false });
+    expect(keyAction("Tab", PLAIN, { ...ghost, hasSuggestions: true })).toEqual({ type: "complete" });
+    expect(keyAction("Tab", { ...PLAIN, shift: true }, ghost)).toEqual({ type: "none" });
+    expect(keyAction("ArrowRight", { ...PLAIN, shift: true }, ghost)).toEqual({ type: "none" });
+    expect(keyAction("ArrowRight", { ...PLAIN, ctrl: true }, ghost)).toEqual({ type: "none" });
+    expect(keyAction("ArrowRight", { ...PLAIN, alt: true }, ghost)).toEqual({ type: "none" });
+    expect(keyAction("ArrowRight", PLAIN, IDLE)).toEqual({ type: "none" });
+    expect(keyAction("Tab", PLAIN, { ...IDLE, ghost: false })).toEqual({ type: "none" });
   });
 
   // spec: UI-060, UI-978

@@ -930,6 +930,34 @@
     caret-color: var(--omfp-primary);
   }
 
+  /* Word completion (UI-175, UI-179): a copy of the text area's text over its padding box, transparent, so it wraps
+   * as the text area's does; word-completion.tsx gives it the text area's font, padding, box and scroll, so it lines up
+   * in every skin; it takes no room and no pointer. The dimmed rest of the word (colored as the placeholder) hangs out
+   * of the flow from a zero-width anchor at the caret, at its static position right after it: it never rewraps the
+   * text, and one too long for the line is cut at the copy's edge rather than wrapped. */
+  .omfp-compose__ghost-host {
+    position: relative;
+  }
+
+  .omfp-compose__ghost {
+    position: absolute;
+    box-sizing: border-box;
+    margin: 0;
+    border: 0;
+    overflow: hidden;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    color: transparent;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .omfp-compose__ghost-suffix {
+    position: absolute;
+    white-space: pre;
+    color: color-mix(in oklab, var(--omfp-on-surface-variant) 78%, transparent);
+  }
+
   .omfp-composer__interrupt {
     color: var(--omfp-warn);
   }

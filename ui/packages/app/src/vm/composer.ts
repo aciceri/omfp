@@ -1,7 +1,7 @@
 /**
  * The composer (UI-060..064): send mode while busy, `/` command completion, `@` file completion (UI-732), key bindings,
- * image attachments, drafts restored after an abort or a failed send, and `Ctrl-C` clearing the draft, then aborting
- * (UI-063).
+ * omp's word completion as ghost text (UI-175..UI-177), image attachments, drafts restored after an abort or a failed
+ * send, and `Ctrl-C` clearing the draft, then aborting (UI-063).
  */
 
 import type { AvailableSlashCommand, ImageContent, ThreadState } from "@omfp/core";
@@ -185,7 +185,9 @@ export type KeyAction =
   /** Esc: leave the composer (`focus.leave`, UI-095), busy or not; it never aborts (UI-063). */
   | { readonly type: "leave" }
   /** Tab with suggestions: complete the first one. */
-  | { readonly type: "complete" };
+  | { readonly type: "complete" }
+  /** Tab (`space`) or ArrowRight with a word completion shown: insert it (UI-176). */
+  | { readonly type: "accept"; readonly space: boolean };
 
 /** What the composer knows when a key is pressed. */
 export interface KeyContext {
@@ -198,6 +200,8 @@ export interface KeyContext {
    * left to the text area (a line break) and the send button sends.
    */
   readonly touch?: boolean;
+  /** A word completion shows after the caret (UI-175). */
+  readonly ghost?: boolean;
 }
 
 /** The composer's key bindings. */
@@ -216,13 +220,96 @@ export function keyAction(key: string, modifiers: Modifiers, context: KeyContext
     case "Escape":
       return { type: "leave" };
     case "Tab":
-      return context.hasSuggestions && !modifiers.shift ? { type: "complete" } : { type: "none" };
+    case "ArrowRight": {
+      if (key === "Tab" && context.hasSuggestions && !modifiers.shift) {
+        return { type: "complete" };
+      }
+      const plain = !modifiers.shift && !modifiers.alt && !modifiers.ctrl && !modifiers.meta;
+      return context.ghost === true && plain ? { type: "accept", space: key === "Tab" } : { type: "none" };
+    }
     default:
       if (context.busy && isQueueChord(key, modifiers)) {
         return context.repeat === true ? { type: "ignore" } : { type: "send", mode: "follow-up" };
       }
       return { type: "none" };
   }
+}
+
+/** The word omp's word completion extends (`wordQueryAt`): letters, combining marks, apostrophes. */
+const WORD_TAIL = /[\p{L}\p{M}']+$/u;
+
+/**
+ * The word completed at `cursor` in `text` (UI-175): the letters, marks and apostrophes ending exactly at the caret, as
+ * omp finds it, when the caret ends its line (the ghost then covers no text) and is neither in a `@` file mention
+ * (UI-732) nor in the bare `/command` token (UI-060), which their suggestion lists complete; `undefined` otherwise.
+ */
+export function wordAt(text: string, cursor: number): string | undefined {
+  const next = text[cursor];
+  if (
+    cursor <= 0 ||
+    cursor > text.length ||
+    (next !== undefined && next !== "\n") ||
+    fileMention(text, cursor) !== undefined ||
+    (text.startsWith("/") && !/\s/.test(text.slice(0, cursor)))
+  ) {
+    return undefined;
+  }
+  return WORD_TAIL.exec(text.slice(0, cursor))?.[0];
+}
+
+/** A word completion shown as ghost text (UI-175): `suffix` completes the word ending at `cursor` in `text`. */
+export interface WordGhost {
+  readonly text: string;
+  readonly cursor: number;
+  readonly suffix: string;
+}
+
+/** The ghost of a `prompts.predict_word` answer for `text` and `cursor`; none without a suffix. */
+export function wordGhost(text: string, cursor: number, suffix: string | null | undefined): WordGhost | undefined {
+  return suffix === null || suffix === undefined || suffix === "" ? undefined : { text, cursor, suffix };
+}
+
+/** What becomes of a shown ghost after an edit or a caret move (UI-175, UI-177). */
+export type GhostChange =
+  /** It still shows: unchanged, or narrowed to the rest of its suffix the user is typing. */
+  | { readonly type: "keep"; readonly ghost: WordGhost }
+  /** The user typed all of it: it is gone, neither accepted nor refused. */
+  | { readonly type: "typed" }
+  /** The user typed past it (a character not continuing it, a deletion, a caret move): gone, refused. */
+  | { readonly type: "past" };
+
+/**
+ * `ghost` once the text is `text` and the caret `cursor` (UI-175, UI-177): kept while they are unchanged; narrowed
+ * when the edit typed the start of its suffix at the caret (case-insensitively, as omp projects it); otherwise gone.
+ */
+export function followGhost(ghost: WordGhost, text: string, cursor: number): GhostChange {
+  if (text === ghost.text && cursor === ghost.cursor) {
+    return { type: "keep", ghost };
+  }
+  const typed = text.length - ghost.text.length;
+  if (
+    typed <= 0 ||
+    typed > ghost.suffix.length ||
+    cursor !== ghost.cursor + typed ||
+    !text.startsWith(ghost.text.slice(0, ghost.cursor)) ||
+    !text.endsWith(ghost.text.slice(ghost.cursor)) ||
+    text.slice(ghost.cursor, cursor).toLocaleLowerCase() !== ghost.suffix.slice(0, typed).toLocaleLowerCase()
+  ) {
+    return { type: "past" };
+  }
+  if (typed === ghost.suffix.length) {
+    return { type: "typed" };
+  }
+  return { type: "keep", ghost: { text, cursor, suffix: ghost.suffix.slice(typed) } };
+}
+
+/** The text after accepting `ghost` (UI-176): its suffix, then a space with `space`, at the caret, the caret after them. */
+export function acceptGhost(ghost: WordGhost, space: boolean): { text: string; caret: number } {
+  const inserted = space ? `${ghost.suffix} ` : ghost.suffix;
+  return {
+    text: `${ghost.text.slice(0, ghost.cursor)}${inserted}${ghost.text.slice(ghost.cursor)}`,
+    caret: ghost.cursor + inserted.length,
+  };
 }
 
 /** One `/` completion. */

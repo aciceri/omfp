@@ -405,3 +405,23 @@ describe("draft thread readline keys", () => {
     }
   });
 });
+
+describe("draft thread word completion", () => {
+  // spec: UI-175, UI-176, UI-023
+  test("the draft's composer asks for the word too, and Tab accepts it", async () => {
+    const { client, user } = setup();
+    const field = screen.getByTestId("composer-input") as HTMLTextAreaElement;
+    await waitFor(() => expect(document.activeElement === field).toBe(true));
+    await user.keyboard("fix the che");
+    const asked = client.callsTo("prompts.predict_word");
+    expect(asked.at(-1)?.params).toEqual({ text: "fix the che", cursor: 11 });
+    await act(async () => asked.at(-1)?.resolve({ suffix: "ckout" }));
+    expect(screen.getByTestId("composer-ghost").textContent).toBe("ckout");
+    await user.keyboard("{Tab}");
+    expect(field.value).toBe("fix the checkout ");
+    expect(client.callsTo("prompts.predict_word_feedback").map((call) => call.params)).toEqual([
+      { text: "fix the che", cursor: 11, suggestion: "ckout", accepted: true },
+    ]);
+    expect(screen.queryByTestId("composer-ghost")).toBeNull();
+  });
+});

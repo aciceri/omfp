@@ -1,10 +1,11 @@
 /**
  * `omfp:composer`: queue chips (UI-062) and the composer (UI-060..064) of the selected thread. Multi-line input with
  * image paste/drop, large pastes as chips (UI-357..UI-360), `/` command and `@` file completion (React Aria
- * `Autocomplete` + `TextArea` + `Menu` in a non-modal `Popover`, S-11, UI-732), the send mode on the send button, Esc
- * leaving the composer (never aborting), `Ctrl-C` clearing the draft (restored by `u`) then aborting without restoring
- * the queue (UI-063), `thread.abort` restoring it (the Abort button, `Ctrl-C` in normal mode, UI-368), and drafts per
- * thread. With no thread selected, the composer of the draft thread (UI-023): its first message creates the thread.
+ * `Autocomplete` + `TextArea` + `Menu` in a non-modal `Popover`, S-11, UI-732), omp's word completion as ghost text
+ * (UI-175..UI-179), the send mode on the send button, Esc leaving the composer (never aborting), `Ctrl-C` clearing the
+ * draft (restored by `u`) then aborting without restoring the queue (UI-063), `thread.abort` restoring it (the Abort
+ * button, `Ctrl-C` in normal mode, UI-368), and drafts per thread. With no thread selected, the composer of the draft
+ * thread (UI-023): its first message creates the thread.
  */
 
 import type { AvailableSlashCommand, ImageContent } from "@omfp/core";
@@ -72,6 +73,7 @@ import {
   useThreadActions,
   useThreadSummary,
   useWindowState,
+  type WordGhost,
 } from "omfp/sdk";
 import {
   type ClipboardEvent,
@@ -94,6 +96,7 @@ import { testId, type WidgetProps } from "./props.ts";
 import { QueueChips } from "./queue.tsx";
 import { clearedDraftKey, useClock, useObservedElapsed, useSelectedThread } from "./state.ts";
 import { useCoarsePointer } from "./touch.ts";
+import { GhostText, useWordCompletion } from "./word-completion.tsx";
 
 const text = strings.chat.composer;
 
@@ -163,6 +166,7 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
     if (sending || (isBlank(message) && reads.size === 0)) {
       return;
     }
+    word.dismiss();
     setSending(true);
     // Images still being read join the message before it is sent; a draft discarded meanwhile is not sent, nor is
     // the one opened after it (the user did not submit that).
@@ -192,9 +196,11 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
     threadId: undefined,
     onChange: pastes.onChange,
   });
+  const word = useWordCompletion({ inputRef, value: message.text, enabled: !touch && !completions.open });
   const typed = (value: string) => {
     pastes.onChange(value);
     completions.typed();
+    word.typed();
   };
   useLineKeys(inputRef, typed, message.pastes);
   const images = imageInput((files) => {
@@ -224,7 +230,15 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
     if (completions.onKeyDown(event, inputRef.current)) {
       return;
     }
-    composerKey(event, inputRef.current, { busy: false, touch, onChange: pastes.onChange, send, leave });
+    composerKey(event, inputRef.current, {
+      busy: false,
+      touch,
+      ghost: word.ghost !== undefined,
+      onChange: pastes.onChange,
+      send,
+      leave,
+      accept: (space) => word.accept(space, pastes.onChange),
+    });
   };
   return (
     <form
@@ -234,7 +248,10 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
       data-touch={touch || undefined}
       data-workspace-id={draft.workspaceId}
       {...{ [SCOPE_ATTRIBUTE]: "composer" }}
-      onSelect={completions.onSelect}
+      onSelect={(event) => {
+        completions.onSelect(event);
+        word.onSelect(event);
+      }}
       onSubmit={(event) => {
         event.preventDefault();
         send();
@@ -249,13 +266,17 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
         <Autocomplete inputValue={message.text} onInputChange={typed}>
           <ComposerTextArea
             touch={touch}
-            keys="Enter Alt+Enter Escape Tab"
+            keys="Enter Alt+Enter Escape Tab ArrowRight"
             placeholder={labels.placeholder}
             onFocus={() => setInsert(true)}
-            onBlur={() => setInsert(false)}
+            onBlur={() => {
+              setInsert(false);
+              word.dismiss();
+            }}
             isReadOnly={sending}
             inputRef={inputRef}
             onPaste={images.onPaste}
+            ghost={word.ghost}
           />
           {completions.menu}
         </Autocomplete>
@@ -351,8 +372,8 @@ function modifiersOf(event: KeyboardEvent): Modifiers {
 
 /**
  * The composer's own keys once its suggestions and prompt history had theirs (UI-060, UI-095): Enter sends (`send`
- * gets the mode), Alt+Enter breaks the line, Esc leaves; other keys stay in the text area, except the chords that do
- * not send, which go on to the keymap.
+ * gets the mode), Alt+Enter breaks the line, Esc leaves, Tab and ArrowRight accept a shown word completion (`accept`,
+ * UI-176); other keys stay in the text area, except the chords that do not send, which go on to the keymap.
  */
 function composerKey(
   event: KeyboardEvent<HTMLElement>,
@@ -360,9 +381,11 @@ function composerKey(
   actions: {
     busy: boolean;
     touch: boolean;
+    ghost: boolean;
     onChange: (text: string) => void;
     send: (mode: SendMode) => void;
     leave: () => void;
+    accept: (space: boolean) => void;
   },
 ): void {
   const modifiers = modifiersOf(event);
@@ -371,6 +394,7 @@ function composerKey(
     hasSuggestions: false,
     repeat: event.repeat,
     touch: actions.touch,
+    ghost: actions.ghost,
   });
   if ((modifiers.ctrl || modifiers.alt || modifiers.meta) && event.key !== "Enter" && action.type !== "send") {
     return;
@@ -386,6 +410,8 @@ function composerKey(
     insertLineBreak(input, actions.onChange);
   } else if (action.type === "leave") {
     actions.leave();
+  } else if (action.type === "accept") {
+    actions.accept(action.space);
   }
 }
 
@@ -396,35 +422,42 @@ function useFocusCommands(inputRef: RefObject<HTMLTextAreaElement | null>, leave
 }
 
 interface ComposerTextAreaProps
-  extends Omit<TextAreaProps, "className" | "label" | "hideLabel" | "rows" | "inputProps" | "onPaste"> {
+  extends Omit<TextAreaProps, "className" | "label" | "hideLabel" | "rows" | "inputProps" | "inputRef" | "onPaste"> {
   readonly touch: boolean;
   /** The keys it answers, as `aria-keyshortcuts` writes them; the raw paste keys follow. */
   readonly keys: string;
+  readonly inputRef: RefObject<HTMLTextAreaElement | null>;
   readonly onPaste: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
+  /** The word completion drawn after the caret (UI-175). */
+  readonly ghost: WordGhost | undefined;
 }
 
-/** The text area of a composer, the thread's and the draft's (UI-060, UI-422). */
-function ComposerTextArea({ touch, keys, onPaste, ...props }: ComposerTextAreaProps) {
+/** The text area of a composer, the thread's and the draft's (UI-060, UI-422), with its word completion (UI-175). */
+function ComposerTextArea({ touch, keys, inputRef, onPaste, ghost, ...props }: ComposerTextAreaProps) {
   return (
-    <TextArea
-      {...props}
-      className="omfp-compose__field"
-      label={text.label}
-      hideLabel
-      rows={2}
-      inputProps={{
-        ...testId("composer-input"),
-        // Prose (UI-422): autocorrect, capitals and the spell check on, which React Aria's `Autocomplete` would turn
-        // off as for a search field; the on-screen keyboard's Enter reads "enter" on a touch screen, where it makes a
-        // new line (UI-421), else "send".
-        autoCorrect: "on",
-        autoCapitalize: "sentences",
-        spellCheck: true,
-        enterKeyHint: touch ? "enter" : "send",
-        "aria-keyshortcuts": `${keys} ${ariaKeys(rawPasteKeys())}`,
-        onPaste,
-      }}
-    />
+    <div className="omfp-compose__ghost-host">
+      <TextArea
+        {...props}
+        className="omfp-compose__field"
+        label={text.label}
+        hideLabel
+        rows={2}
+        inputRef={inputRef}
+        inputProps={{
+          ...testId("composer-input"),
+          // Prose (UI-422): autocorrect, capitals and the spell check on, which React Aria's `Autocomplete` would turn
+          // off as for a search field; the on-screen keyboard's Enter reads "enter" on a touch screen, where it makes a
+          // new line (UI-421), else "send".
+          autoCorrect: "on",
+          autoCapitalize: "sentences",
+          spellCheck: true,
+          enterKeyHint: touch ? "enter" : "send",
+          "aria-keyshortcuts": `${keys} ${ariaKeys(rawPasteKeys())}`,
+          onPaste,
+        }}
+      />
+      {ghost !== undefined && <GhostText inputRef={inputRef} ghost={ghost} />}
+    </div>
   );
 }
 
@@ -639,6 +672,7 @@ export const Composer = memo(function Composer({
       return;
     }
     history.end();
+    word.dismiss();
     setDraft(EMPTY_DRAFT);
     if (slash.type === "route") {
       routeSlash(slash.name, slash.route);
@@ -737,17 +771,26 @@ export const Composer = memo(function Composer({
   });
 
   const history = usePromptHistory(threadId, draft, setDraft, inputRef);
+  const word = useWordCompletion({ inputRef, value: draft.text, enabled: !touch && !completions.open });
   const typed = (value: string) => {
     pastes.onChange(value);
     completions.typed();
+    word.typed();
     // Typing ends a history walk; the recalled text stays as the draft (UI-362).
     history.end();
     // Typing ends a `Ctrl-C` sequence: the next press clears what was typed rather than aborting (UI-063).
     lastInterrupt.current = undefined;
     setInterruptHint(false);
   };
-  // `Ctrl-p` / `Ctrl-n` walk the prompt history at the first / last line, unless the suggestions are open (UI-760).
-  useLineKeys(inputRef, typed, draft.pastes, (direction) => !completions.open && history.step(direction));
+  // `Ctrl-p` / `Ctrl-n` walk the prompt history at the first / last line, unless the suggestions are open (UI-760); a
+  // recall ends the word completion (UI-177).
+  useLineKeys(inputRef, typed, draft.pastes, (direction) => {
+    if (completions.open || !history.step(direction)) {
+      return false;
+    }
+    word.dismiss();
+    return true;
+  });
   // Captured before React Aria's Autocomplete: while no suggestion list is open the text area keeps its own keys
   // (arrows move the caret), and the composer's bindings apply. Chords other than the send ones (Ctrl-C, Alt-a, …)
   // go on to the keymap (UI-095).
@@ -763,10 +806,19 @@ export const Composer = memo(function Composer({
     }
     // Up on the first line, Down on the last line: the prompt history (UI-361, UI-362).
     if (history.onKey(event)) {
+      word.dismiss();
       event.stopPropagation();
       return;
     }
-    composerKey(event, inputRef.current, { busy, touch, onChange: pastes.onChange, send, leave });
+    composerKey(event, inputRef.current, {
+      busy,
+      touch,
+      ghost: word.ghost !== undefined,
+      onChange: pastes.onChange,
+      send,
+      leave,
+      accept: (space) => word.accept(space, pastes.onChange),
+    });
   };
   const { onPaste, onDrop } = imageInput((files) => void attachImages(files, setDraft), pastes.onPaste);
 
@@ -779,7 +831,10 @@ export const Composer = memo(function Composer({
       data-touch={touch || undefined}
       data-tight={tight || undefined}
       {...{ [SCOPE_ATTRIBUTE]: "composer" }}
-      onSelect={completions.onSelect}
+      onSelect={(event) => {
+        completions.onSelect(event);
+        word.onSelect(event);
+      }}
       onSubmit={(event) => {
         event.preventDefault();
         send(mode);
@@ -805,15 +860,17 @@ export const Composer = memo(function Composer({
         <Autocomplete inputValue={draft.text} onInputChange={typed}>
           <ComposerTextArea
             touch={touch}
-            keys="Enter Control+Enter Meta+Enter Shift+Enter Control+Q Alt+Enter Escape Tab"
+            keys="Enter Control+Enter Meta+Enter Shift+Enter Control+Q Alt+Enter Escape Tab ArrowRight"
             placeholder={busy ? (touch ? text.placeholderBusyTouch : text.placeholderBusy) : text.placeholderIdle}
             inputRef={inputRef}
             onFocus={() => setInsert(true)}
             onBlur={() => {
               setQueueHeld(false);
               setInsert(false);
+              word.dismiss();
             }}
             onPaste={onPaste}
+            ghost={word.ghost}
           />
           {completions.menu}
         </Autocomplete>

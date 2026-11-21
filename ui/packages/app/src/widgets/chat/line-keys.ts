@@ -23,9 +23,9 @@ let killBuffer = "";
 /**
  * Replaces `from..to` with `insert` as typing would: through `insertText` / `delete`, which keep the field's undo stack
  * and fire the `input` event the composer's draft path listens to (pastes, Autocomplete); where the page has no
- * `execCommand`, the value is set and `onChange` told.
+ * `execCommand`, the value is set and `onChange` told. The word completion's accept inserts through it too (UI-176).
  */
-function replace(
+export function replace(
   input: HTMLTextAreaElement,
   edit: Extract<LineEdit, { kind: "edit" }>,
   onChange: (text: string) => void,

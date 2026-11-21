@@ -1330,6 +1330,19 @@ requirements = [
   "UI-505",
   "UI-506",
   "E2E-74",
+  # Word completion in the composer, as omp's TUI (#235)
+  "DMN-360",
+  "DMN-361",
+  "DMN-362",
+  "DMN-363",
+  "PRT-226",
+  "PRT-227",
+  "UI-175",
+  "UI-176",
+  "UI-177",
+  "UI-178",
+  "UI-179",
+  "E2E-78",
 ]
 
 [M18]

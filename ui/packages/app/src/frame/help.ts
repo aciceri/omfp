@@ -116,7 +116,7 @@ export function builtinDescription(id: string): string | undefined {
 
 const keys = text.keys;
 
-/** Keys the composer handles itself (UI-060, UI-061). */
+/** Keys the composer handles itself (UI-060, UI-061, UI-176). */
 const COMPOSER_KEYS: readonly HelpRow[] = [
   { keys: [keyLabel("Enter")], description: keys.send },
   {
@@ -125,6 +125,7 @@ const COMPOSER_KEYS: readonly HelpRow[] = [
   },
   { keys: [keyLabel("Alt-Enter")], description: keys.newline },
   { keys: [keyLabel("Tab")], description: keys.complete },
+  { keys: [keyLabel("ArrowRight")], description: keys.acceptWord },
   { keys: [keyLabel(rawPasteKeys())], description: keys.pasteRaw },
   { keys: [keyLabel("ArrowUp"), keyLabel("ArrowDown")], description: keys.history },
 ];

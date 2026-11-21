@@ -977,6 +977,19 @@ arguments in the session, so a window mounts it again from them; `code` is compi
 card's wait lives in the daemon's memory only, keyed by omp's tool call id; the thread needs the user meanwhile, as
 with a pending `ask`.
 
+## Word completion
+
+M17 completes the word being typed in the composer as omp's TUI does (#235, DMN-360..363, PRT-226, PRT-227,
+UI-175..179): dimmed ghost text after the caret, `Tab` accepts it with a space, `→` without. omp 18.22.0 has two
+features of the kind; only its word autocomplete is on RPC (`predict_word`, `predict_word_feedback`), while its
+composer predictions (the whole next message, a side turn on the session's model) are TUI-only. A print-mode run
+(`omp -p --model @smol`) took 4.7–6.3 s and a warm RPC omp 3.3–5.9 s per suggestion on the user's `@smol`, too slow
+for typing; `predict_word` answered in under a millisecond once warm (the first call of a fresh predictor answers
+`null`). Every omp relays it to one machine-wide predictor of its agent directory, so the daemon keeps one omp of its
+own for it instead of asking threads' omps, which may be stopped or missing (the draft thread). omp's predictor learns
+from its profile's `history.db` and from Claude Code's and Codex's prompt histories; omp writes no RPC prompt to
+`history.db` (omfp keeps its own, DMN-216), so in omfp it learns from those histories and the feedback only.
+
 ## Later (noted, not scheduled)
 
 - Helix-style modal editing in the composer (UI-095 keeps a keymap with modes, so it fits later).

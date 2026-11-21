@@ -156,7 +156,9 @@ message is sent; `Ctrl-Shift-v` (`Cmd-Shift-v` on macOS) pastes it as plain text
 composer's first line recalls the prompts you sent (this thread's first, then its workspace's, then every other, newest
 first within each); `Down` on the last line goes back and, past the newest, restores what you had typed. `@` and part
 of a path suggest the workspace's files (fuzzy, like `Space f`); Tab or Enter inserts `@<path>`, which omp reads into
-the prompt's context.
+the prompt's context. As in omp's terminal UI, the rest of the word being typed shows dimmed after the caret (omp's
+word autocomplete, `spelling.autocomplete` in omfp's omp profile; not on touch screens): Tab inserts it with a space,
+`→` without one.
 
 `/` at the start of the message suggests omp's commands. omp runs most of them, but some only work in its terminal UI:
 omfp runs its own equivalent for `/login`, `/logout`, `/model` (the header's model list), `/compact [<mode>] [<focus>]` (`:compact`),

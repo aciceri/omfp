@@ -36,6 +36,7 @@ export type {
   SourceLine,
 } from "../vm/code-intel.ts";
 export {
+  acceptGhost,
   activityOf,
   alternative,
   behavior,
@@ -46,6 +47,7 @@ export {
   type FileMention,
   fileMention,
   fileSuggestions,
+  followGhost,
   INTERRUPT_WINDOW_MS,
   imageAttachment,
   interruptAction,
@@ -64,6 +66,9 @@ export {
   sendMode,
   slashSuggestions,
   type ThreadActivity,
+  type WordGhost,
+  wordAt,
+  wordGhost,
 } from "../vm/composer.ts";
 export {
   type DebugBreakpointRow,

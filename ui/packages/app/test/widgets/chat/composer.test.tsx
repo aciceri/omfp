@@ -9,6 +9,7 @@ import { DEFAULT_BINDINGS } from "../../../src/keymap/keymap.ts";
 import { draftKey, ERRORS, FOCUS_COMPOSER, type OmfpHost, SELECTED_THREAD } from "../../../src/sdk/index.ts";
 import { FILE_QUERY_DELAY_MS } from "../../../src/widgets/chat/completion.tsx";
 import { ChatWidget, ComposerWidget } from "../../../src/widgets/chat/index.ts";
+import type { FakeClient } from "../../support/host.tsx";
 import { PointerMedia } from "../../support/pointer.ts";
 import { installResizeObserver, resize } from "../../support/resize.ts";
 import { candidates, eventsUntil, fixtureEvents, isFrame } from "./fixtures.ts";
@@ -122,7 +123,10 @@ describe("composer", () => {
     const { client } = renderThread(<ComposerWidget />, []);
     await userEvent.click(input());
     await userEvent.keyboard("hi");
-    expect(client.calls.map((call) => call.method)).toEqual([]);
+    // Only the word completion asks while plain words are typed (UI-175).
+    expect(client.calls.filter((call) => call.method !== "prompts.predict_word").map((call) => call.method)).toEqual(
+      [],
+    );
 
     await userEvent.clear(input());
     await userEvent.keyboard("/");
@@ -1131,5 +1135,230 @@ describe("readline keys", () => {
     expect(document.activeElement === input()).toBe(false);
     ctrl("a");
     expect(input().value).toBe("abc");
+  });
+});
+
+describe("word completion", () => {
+  let pointer: PointerMedia | undefined;
+
+  afterEach(() => {
+    pointer?.restore();
+    pointer = undefined;
+  });
+
+  const ghost = () => screen.queryByTestId("composer-ghost")?.textContent ?? null;
+  const asked = (client: FakeClient) => client.callsTo("prompts.predict_word");
+  const feedback = (client: FakeClient) => client.callsTo("prompts.predict_word_feedback").map((call) => call.params);
+
+  /** The thread's composer with `text` typed and the answer `suffix` for it shown. */
+  async function showing(text: string, suffix: string) {
+    const rendered = renderThread(<ComposerWidget />, fixtureEvents("text_reply"));
+    await userEvent.click(input());
+    await userEvent.keyboard(text);
+    const last = asked(rendered.client).at(-1);
+    expect(last?.params).toEqual({ text, cursor: text.length });
+    await act(async () => last?.resolve({ suffix }));
+    expect(ghost()).toBe(suffix);
+    return rendered;
+  }
+
+  // spec: UI-175
+  test("typing at a word's end asks for the rest of the word and shows it dimmed after the caret, not in the value", async () => {
+    const { client } = await showing("say hel", "lo");
+    // Asked after each edit ending a word; not after the space.
+    expect(asked(client).map((call) => call.params)).toEqual(
+      ["s", "sa", "say", "say h", "say he", "say hel"].map((text) => ({ text, cursor: text.length })),
+    );
+    expect(input().value).toBe("say hel");
+    const mirror = screen.getByTestId("composer-ghost-text");
+    expect(mirror.getAttribute("aria-hidden")).toBe("true");
+    expect(mirror.textContent).toBe("say hello\u200b");
+    expect(input().getAttribute("aria-keyshortcuts")?.split(" ")).toContain("ArrowRight");
+  });
+
+  // spec: UI-179
+  test("the suffix hangs from a zero-width anchor at the caret, out of the text's flow", async () => {
+    await showing("say hel", "lo");
+    const anchor = screen.getByTestId("composer-ghost").parentElement;
+    expect(anchor?.className).toBe("omfp-compose__ghost-anchor");
+    expect(anchor?.textContent).toBe("lo");
+    // The text before the anchor is exactly the text before the caret, so it wraps as the text area's does.
+    expect(anchor?.previousSibling?.textContent).toBe("say hel");
+    expect(anchor?.parentElement?.getAttribute("data-testid")).toBe("composer-ghost-text");
+  });
+
+  // spec: UI-175
+  test("typing at a word's end with text after it on the same line asks nothing", async () => {
+    const { client } = renderThread(<ComposerWidget />, fixtureEvents("text_reply"));
+    await userEvent.click(input());
+    await userEvent.keyboard("hel world");
+    const before = asked(client).length;
+    act(() => input().setSelectionRange(3, 3));
+    await userEvent.keyboard("p");
+    expect(input().value).toBe("help world");
+    expect(asked(client)).toHaveLength(before);
+    expect(ghost()).toBeNull();
+  });
+
+  // spec: UI-175
+  test("an answer for an older text is dropped; a failed one shows nothing and no error", async () => {
+    const { client, host } = renderThread(<ComposerWidget />, fixtureEvents("text_reply"));
+    await userEvent.click(input());
+    await userEvent.keyboard("hel");
+    await act(async () => asked(client)[1]?.resolve({ suffix: "llo" }));
+    expect(ghost()).toBeNull();
+    await act(async () => asked(client)[2]?.reject(new Error("omp not started")));
+    expect(ghost()).toBeNull();
+    expect(host.window.get(ERRORS)).toEqual([]);
+  });
+
+  // spec: UI-175, UI-177
+  test("typing the ghost's next character shortens it at once and asks again; the rest typed reports nothing", async () => {
+    const { client } = await showing("hel", "lo");
+    await userEvent.keyboard("l");
+    expect(ghost()).toBe("o");
+    expect(asked(client).at(-1)?.params).toEqual({ text: "hell", cursor: 4 });
+    await act(async () => asked(client).at(-1)?.resolve({ suffix: "o" }));
+    expect(ghost()).toBe("o");
+    await userEvent.keyboard("o");
+    expect(ghost()).toBeNull();
+    expect(feedback(client)).toEqual([]);
+  });
+
+  // spec: UI-176, UI-177
+  test("Tab inserts the suffix and a space, the caret after them, and reports it accepted", async () => {
+    const { client } = await showing("say hel", "lo");
+    await userEvent.keyboard("{Tab}");
+    expect(input().value).toBe("say hello ");
+    expect([input().selectionStart, input().selectionEnd]).toEqual([10, 10]);
+    expect(ghost()).toBeNull();
+    expect(feedback(client)).toEqual([{ text: "say hel", cursor: 7, suggestion: "lo", accepted: true }]);
+    expect(document.activeElement === input()).toBe(true);
+  });
+
+  // spec: UI-176, UI-177
+  test("an accept inserts through the text area's own edit, so it can be undone, and is reported accepted once", async () => {
+    const { client, host } = await showing("say hel", "lo");
+    const original = document.execCommand;
+    const commands: Array<[string, string | undefined]> = [];
+    // As a browser does: the text replaces the selection, the caret after it, and the field fires `input`.
+    document.execCommand = (command: string, _ui?: boolean, value?: string) => {
+      commands.push([command, value]);
+      const field = input();
+      const { selectionStart, selectionEnd, value: text } = field;
+      const inserted = value ?? "";
+      fireEvent.input(field, {
+        target: { value: `${text.slice(0, selectionStart)}${inserted}${text.slice(selectionEnd)}` },
+      });
+      field.setSelectionRange(selectionStart + inserted.length, selectionStart + inserted.length);
+      return true;
+    };
+    try {
+      await userEvent.keyboard("{Tab}");
+      expect(commands).toEqual([["insertText", "lo "]]);
+      expect(input().value).toBe("say hello ");
+      expect([input().selectionStart, input().selectionEnd]).toEqual([10, 10]);
+      expect(host.window.get(draftKey(THREAD)).text).toBe("say hello ");
+      expect(ghost()).toBeNull();
+      expect(feedback(client)).toEqual([{ text: "say hel", cursor: 7, suggestion: "lo", accepted: true }]);
+
+      // The insertion's own `input` neither refuses the accepted ghost nor asks for the completed word. (Typed as a
+      // browser's text input does, through `insertText`.)
+      act(() => void document.execCommand("insertText", false, "wor"));
+      await act(async () => asked(client).at(-1)?.resolve({ suffix: "ld" }));
+      expect(ghost()).toBe("ld");
+      const before = asked(client).length;
+      press("ArrowRight");
+      expect(commands.at(-1)).toEqual(["insertText", "ld"]);
+      expect(input().value).toBe("say hello world");
+      expect(asked(client)).toHaveLength(before);
+      expect(ghost()).toBeNull();
+      expect(feedback(client)).toEqual([
+        { text: "say hel", cursor: 7, suggestion: "lo", accepted: true },
+        { text: "say hello wor", cursor: 13, suggestion: "ld", accepted: true },
+      ]);
+    } finally {
+      document.execCommand = original;
+    }
+  });
+
+  // spec: UI-176, UI-177
+  test("ArrowRight inserts the suffix alone, the caret after it, and reports it accepted", async () => {
+    const { client } = await showing("say hel", "lo");
+    await userEvent.keyboard("{ArrowRight}");
+    expect(input().value).toBe("say hello");
+    expect([input().selectionStart, input().selectionEnd]).toEqual([9, 9]);
+    expect(ghost()).toBeNull();
+    expect(feedback(client)).toEqual([{ text: "say hel", cursor: 7, suggestion: "lo", accepted: true }]);
+  });
+
+  // spec: UI-177
+  test("a ghost typed past is reported refused once", async () => {
+    const { client } = await showing("hel", "lo");
+    await userEvent.keyboard("p");
+    expect(ghost()).toBeNull();
+    await userEvent.keyboard("x");
+    expect(feedback(client)).toEqual([{ text: "hel", cursor: 3, suggestion: "lo", accepted: false }]);
+  });
+
+  // spec: UI-177
+  test("a deletion or a caret move ends the ghost, reported refused", async () => {
+    const { client } = await showing("hel", "lo");
+    await userEvent.keyboard("{Backspace}");
+    expect(ghost()).toBeNull();
+    expect(feedback(client)).toEqual([{ text: "hel", cursor: 3, suggestion: "lo", accepted: false }]);
+
+    await act(async () => asked(client).at(-1)?.resolve({ suffix: "llo" }));
+    expect(ghost()).toBe("llo");
+    await userEvent.keyboard("{ArrowLeft}");
+    expect(ghost()).toBeNull();
+    expect(input().value).toBe("he");
+    expect(feedback(client).at(-1)).toEqual({ text: "he", cursor: 2, suggestion: "llo", accepted: false });
+    expect(feedback(client)).toHaveLength(2);
+  });
+
+  // spec: UI-177
+  test("blur, send and a prompt-history recall end the ghost without feedback", async () => {
+    const { client } = await showing("hel", "lo");
+    act(() => input().blur());
+    expect(ghost()).toBeNull();
+
+    act(() => input().focus());
+    await userEvent.keyboard("p");
+    await act(async () => asked(client).at(-1)?.resolve({ suffix: "er" }));
+    expect(ghost()).toBe("er");
+    press("ArrowUp");
+    expect(client.callsTo("prompts.history")).toHaveLength(1);
+    expect(ghost()).toBeNull();
+
+    await userEvent.keyboard("s");
+    await act(async () => asked(client).at(-1)?.resolve({ suffix: "o" }));
+    expect(ghost()).toBe("o");
+    await userEvent.keyboard("{Enter}");
+    expect(client.callsTo("thread.prompt").map((call) => call.params)).toEqual([{ threadId: THREAD, text: "helps" }]);
+    expect(ghost()).toBeNull();
+    expect(feedback(client)).toEqual([]);
+  });
+
+  // spec: UI-176, UI-060
+  test("an open `/` list keeps Tab and asks nothing", async () => {
+    const { client } = renderThread(<ComposerWidget />, fixtureEvents("text_reply"));
+    await userEvent.click(input());
+    await userEvent.keyboard("/secu");
+    await screen.findByTestId("slash-suggestions");
+    expect(asked(client)).toHaveLength(0);
+    await userEvent.keyboard("{Tab}");
+    expect(input().value).toBe("/security ");
+    expect(feedback(client)).toEqual([]);
+  });
+
+  // spec: UI-178
+  test("on a touch screen nothing is asked and no ghost shows", async () => {
+    pointer = new PointerMedia(true);
+    const { client } = renderThread(<ComposerWidget />, fixtureEvents("text_reply"));
+    await userEvent.click(input());
+    await userEvent.keyboard("hel");
+    expect(asked(client)).toHaveLength(0);
+    expect(ghost()).toBeNull();
   });
 });

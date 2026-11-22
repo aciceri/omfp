@@ -1347,6 +1347,8 @@ requirements = [
   "DMN-112",
   "PRT-228",
   "UI-999",
+  # Live voice without keys: the panel's Mute and End buttons (UI-182, UI-183), `:mute` (#241)
+  "UI-530",
 ]
 
 [M18]

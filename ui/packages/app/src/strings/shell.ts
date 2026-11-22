@@ -866,6 +866,10 @@ export const shell = {
     nextAttention: "Next thread needing attention",
     nextThread: "Next thread",
     prevThread: "Previous thread",
+    /** `:mute` (UI-530): this window's live voice session. */
+    liveMute: "Mute or unmute live voice",
+    liveMuteDescription:
+      "Mutes the microphone of this window's live voice session, or unmutes it, like Space on the live panel and its Mute button. Offered only while this window runs a session.",
     /** The job commands (UI-745). */
     jobRun: "Run a job of the current workspace (:job-run <name>)",
     jobKill: "Stop the running run of a job of the current workspace (:job-kill <name>)",

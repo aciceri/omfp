@@ -591,6 +591,14 @@
       ]
     },
     {
+      "id": "live.mute",
+      "title": "Mute or unmute live voice",
+      "aliases": [
+        "mute"
+      ],
+      "description": "Mutes the microphone of this window's live voice session, or unmutes it, like Space on the live panel and its Mute button. Offered only while this window runs a session."
+    },
+    {
       "id": "live.voice",
       "title": "Voice of live sessions (:voice arbor|breeze|cove|ember|juniper|maple|sol|spruce|vale)",
       "aliases": [

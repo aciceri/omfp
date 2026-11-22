@@ -1,7 +1,8 @@
 /**
  * Live voice in the chat (UI-180..UI-186): the composer's mic button and the live panel above the composer — the
  * spectrum, the latest transcript line per role and the status line (`● listening · spc mute · esc end`), whose keys
- * work only while the panel has the focus. This window's session lives in the SDK's `LiveClient` (`useLive`).
+ * work only while the panel has the focus, and its Mute and End buttons for touch screens without keys. This window's
+ * session lives in the SDK's `LiveClient` (`useLive`).
  */
 
 import type { ThreadState } from "@omfp/core";
@@ -115,6 +116,28 @@ export function LiveVoicePanel({ threadId, state }: { threadId: string; state: T
       lines={view.lines}
       hints={hints}
       data-muted={view.muted}
+      actions={
+        <>
+          <IconButton
+            label={view.muted ? text.unmute : text.mute}
+            icon={<Icon name={view.muted ? "mic-off" : "mic"} />}
+            aria-pressed={view.muted}
+            // Until omp answered there is nothing to mute (`toggleMute` waits for a running session).
+            isDisabled={snapshot.local.kind !== "running"}
+            data-testid="live-mute"
+            onPress={() => live.toggleMute()}
+          />
+          <Button
+            variant="danger"
+            size="sm"
+            icon={<Icon name="square" />}
+            data-testid="live-end"
+            onPress={() => live.end()}
+          >
+            {text.endButton}
+          </Button>
+        </>
+      }
     />
   );
 }

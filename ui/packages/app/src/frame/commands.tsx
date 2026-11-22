@@ -6,7 +6,7 @@
  * density and `:set` (daemon settings, UI-094, UI-097), the
  * view switch (UI-101), the next and previous view (UI-302) and `:view-reset` (UI-107, UI-430), adding a widget to the view
  * (UI-300), copying a widget into the workspace (UI-106), saving a workspace widget to the user library (UI-233) and
- * the current workspace's declared jobs (UI-745).
+ * the current workspace's declared jobs (UI-745); muting this window's live voice session (UI-530).
  */
 
 import type { ReactNode } from "react";
@@ -294,6 +294,16 @@ export function GlobalCommands({ viewIds, currentView, widgets, addWidget }: Glo
         const { mode, focus } = parseCompact(args.join(" "));
         return actions.compact(threadId, focus, mode);
       })(),
+  });
+  // `:mute` (UI-530): Space and the Mute button of the live panel (UI-183), for the `:` line, the phone's commands
+  // sheet (UI-462) and keymap.json.
+  useCommand({
+    id: "live.mute",
+    title: titles.liveMute,
+    description: titles.liveMuteDescription,
+    aliases: ["mute"],
+    enabled: () => host.live.getSnapshot().local.kind === "running",
+    run: () => host.live.toggleMute(),
   });
   useCommand({
     id: "thread.nextAttention",

@@ -284,6 +284,9 @@ export const chat = {
     hint: { mute: "mute", unmute: "unmute", end: "end", dismiss: "dismiss" },
     elsewhere: (client: string) => `in another window (${client})`,
     endButton: "End",
+    /** The own panel's mute toggle (UI-182, UI-183): named by what pressing it does. */
+    mute: "Mute",
+    unmute: "Unmute",
     dismiss: "Dismiss",
     /** Why the mic button cannot start a session (UI-180). */
     insecure:

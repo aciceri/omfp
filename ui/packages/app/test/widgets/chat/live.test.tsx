@@ -1,4 +1,7 @@
-/** L4: live voice in the chat (UI-180..UI-186): the mic button and the live panel, over a fake peer and microphone. */
+/**
+ * L4: live voice in the chat (UI-180..UI-189, UI-530): the mic button, the live panel and `:mute`, over a fake peer
+ * and microphone.
+ */
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { CallError } from "@omfp/client";
@@ -6,6 +9,8 @@ import type { ThreadEvent } from "@omfp/core";
 import { threadTopic } from "@omfp/protocol";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import type { Levels, SpectrumSource } from "omfp/kit";
+import { GlobalCommands } from "../../../src/frame/commands.tsx";
+import { sheetGroups } from "../../../src/frame/commands-sheet.ts";
 import { type LiveLink, type LiveMedia, type LiveSupport, SELECTED_THREAD } from "../../../src/sdk/index.ts";
 import { LiveOpenError } from "../../../src/sdk/live.ts";
 import { ComposerWidget } from "../../../src/widgets/chat/index.ts";
@@ -106,7 +111,8 @@ interface Live extends TestHost {
   events(...events: ThreadEvent[]): void;
 }
 
-/** `omfp:composer` on {@link THREAD} (and {@link OTHER} in the index), with a fake peer and microphone. */
+/** `omfp:composer` on {@link THREAD} (and {@link OTHER} in the index) and the frame's commands, with a fake peer and
+ * microphone. */
 function renderLive(history: readonly ThreadEvent[] = fixtureEvents("text_reply"), supported?: LiveSupport): Live {
   const media = new FakeMedia();
   media.supported = supported ?? "webrtc";
@@ -114,7 +120,13 @@ function renderLive(history: readonly ThreadEvent[] = fixtureEvents("text_reply"
   test.client.connected();
   test.client.index({ threads: [summary(THREAD), summary(OTHER)] });
   test.host.window.set(SELECTED_THREAD, THREAD);
-  renderWithHost(<ComposerWidget />, test);
+  renderWithHost(
+    <>
+      <GlobalCommands viewIds={[]} currentView={undefined} widgets={[]} addWidget={() => Promise.resolve(false)} />
+      <ComposerWidget />
+    </>,
+    test,
+  );
   test.client.thread(THREAD, history);
   test.flush();
   return {
@@ -147,6 +159,13 @@ const end = (error?: string): ThreadEvent => ({
 const mic = () => screen.getByTestId("live-mic");
 const panel = () => screen.getByTestId("live-panel");
 const status = () => panel().dataset.status;
+const muteButton = () => screen.getByTestId("live-mute");
+/** The mute button's pressed state, name and icon. */
+const muteState = () => [
+  muteButton().getAttribute("aria-pressed"),
+  muteButton().getAttribute("aria-label"),
+  muteButton().querySelector("svg")?.getAttribute("data-icon"),
+];
 
 async function press(element: HTMLElement): Promise<void> {
   await act(async () => {
@@ -245,7 +264,12 @@ describe("live voice", () => {
       ["user", "Ciao, mi senti? Dimmi solo sì"],
       ["assistant", "Sì."],
     ]);
-    expect(panel().querySelector(".omfp-live__status")?.textContent).toBe("●listening·spc mute·esc end");
+    // The status line, its buttons left out.
+    const statusLine = [...(panel().querySelector(".omfp-live__status")?.childNodes ?? [])]
+      .filter((node) => !(node instanceof Element && node.classList.contains("omfp-live__actions")))
+      .map((node) => node.textContent)
+      .join("");
+    expect(statusLine).toBe("●listening·spc mute·esc end");
     live.events(line("user", 2, "E adesso?", false));
     expect([...panel().querySelectorAll(".omfp-live__line")].map((node) => node.textContent)).toEqual([
       "Sì.",
@@ -290,6 +314,70 @@ describe("live voice", () => {
     ]);
     live.events(phase("listening"));
     expect(status()).toBe("listening");
+  });
+
+  // spec: UI-182, UI-183
+  test("the Mute button mutes and unmutes like Space, pressed and named from the state; End ends the session", async () => {
+    const live = renderLive();
+    await start(live);
+    // Nothing to mute until omp answered.
+    expect((muteButton() as HTMLButtonElement).disabled).toBe(true);
+    await answer(live);
+    live.media.peer("connected");
+    expect((muteButton() as HTMLButtonElement).disabled).toBe(false);
+    expect(muteState()).toEqual(["false", "Mute", "mic"]);
+    await press(muteButton());
+    expect(live.media.link.muted).toEqual([true]);
+    expect(live.client.callsTo("thread.live_mute").map((call) => call.params)).toEqual([
+      { threadId: THREAD, muted: true },
+    ]);
+    expect(muteState()).toEqual(["true", "Unmute", "mic-off"]);
+    expect(panel().dataset.muted).toBe("true");
+    live.events(phase("muted"));
+    expect(status()).toBe("muted");
+    // Space on the focused button is the button's: it unmutes once, the panel does not toggle again.
+    await act(async () => {
+      muteButton().focus();
+      fireEvent.keyDown(muteButton(), { key: " " });
+      fireEvent.keyUp(muteButton(), { key: " " });
+    });
+    expect(live.media.link.muted).toEqual([true, false]);
+    expect(live.client.callsTo("thread.live_mute").map((call) => call.params)).toEqual([
+      { threadId: THREAD, muted: true },
+      { threadId: THREAD, muted: false },
+    ]);
+    expect(muteState()).toEqual(["false", "Mute", "mic"]);
+    expect(live.client.callsTo("thread.live_stop")).toEqual([]);
+    await press(screen.getByTestId("live-end"));
+    expect(live.client.callsTo("thread.live_stop").map((call) => call.params)).toEqual([{ threadId: THREAD }]);
+    expect(live.media.link.closed).toBe(true);
+    expect(screen.queryByTestId("live-panel")).toBeNull();
+  });
+
+  // spec: UI-530
+  test(":mute toggles this window's running session and is offered only while one runs", async () => {
+    const live = renderLive();
+    const sheetIds = () =>
+      sheetGroups(live.host.commands.list(), [], "").flatMap((group) => group.commands.map((command) => command.id));
+    expect(live.host.commands.run("mute")).toBe(false);
+    expect(sheetIds()).not.toContain("live.mute");
+    await connected(live);
+    expect(sheetIds()).toContain("live.mute");
+    act(() => {
+      expect(live.host.commands.run("mute")).toBe(true);
+    });
+    expect(live.media.link.muted).toEqual([true]);
+    expect(muteState()).toEqual(["true", "Unmute", "mic-off"]);
+    act(() => {
+      expect(live.host.commands.run("live.mute")).toBe(true);
+    });
+    expect(live.client.callsTo("thread.live_mute").map((call) => call.params)).toEqual([
+      { threadId: THREAD, muted: true },
+      { threadId: THREAD, muted: false },
+    ]);
+    await key(panel(), "Escape");
+    expect(live.host.commands.run("mute")).toBe(false);
+    expect(live.client.callsTo("thread.live_mute")).toHaveLength(2);
   });
 
   // spec: UI-184
@@ -526,6 +614,20 @@ describe("live voice on the daemon's machine", () => {
     await key(panel(), "Escape");
     expect(live.client.callsTo("thread.live_stop").map((call) => call.params)).toEqual([{ threadId: THREAD }]);
     expect(screen.queryByTestId("live-panel")).toBeNull();
+  });
+
+  // spec: UI-189, UI-183
+  test("the Mute button on omp's own session sends only live_mute", async () => {
+    const live = renderLive(fixtureEvents("text_reply"), "host");
+    await startHost(live);
+    await press(muteButton());
+    expect(live.media.links).toEqual([]);
+    expect(live.client.callsTo("thread.live_mute").map((call) => call.params)).toEqual([
+      { threadId: THREAD, muted: true },
+    ]);
+    expect(muteState()).toEqual(["true", "Unmute", "mic-off"]);
+    await press(screen.getByTestId("live-end"));
+    expect(live.client.callsTo("thread.live_stop").map((call) => call.params)).toEqual([{ threadId: THREAD }]);
   });
 
   // spec: UI-188, UI-186

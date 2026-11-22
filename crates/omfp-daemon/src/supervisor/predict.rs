@@ -1,7 +1,8 @@
-//! The omp answering the composer's word completions (DMN-360..DMN-363). omp 18.22.0 offers its TUI's word
-//! autocomplete over RPC (`predict_word`, `predict_word_feedback`): every omp relays them to one machine-wide
-//! text-prediction daemon of its agent directory, which reads omp's `spelling.autocomplete` setting, learns from the
-//! profile's prompt history and Claude Code's and Codex's, and answers within milliseconds once warm. Any omp of omfp's
+//! The omp answering the composer's word completions (DMN-360..DMN-363). omp 19.1.0 offers its TUI's word
+//! autocomplete over RPC (`predict_word`, `predict_word_feedback`): every omp relays them to one shared predictor of
+//! its agent directory (the `predict` unit of omp's per-user daemon), which reads omp's `spelling.autocomplete`
+//! setting, learns from the profile's prompt history and Claude Code's and Codex's, and answers within milliseconds
+//! once warm. Any omp of omfp's
 //! profile reaches the same predictor, so the daemon keeps one omp of its own for it — started like the login omp
 //! (DMN-219) on the first request — rather than asking a thread's, which may be stopped (DMN-070) or not exist yet
 //! (the draft thread's composer).

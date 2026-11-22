@@ -275,6 +275,11 @@ export interface DeviceCall {
   readonly args: Readonly<Record<string, unknown>> | undefined;
   /** The result with the tool's own details (the dispatch's `inner`). */
   readonly output: ToolOutput | undefined;
+  /**
+   * The tool command's own exit code (`details.toolCommands[0].exitCode`): non-zero fails the card even when the bash
+   * call around it succeeded (`ast_grep … || true`); `undefined` for an `xd://` device.
+   */
+  readonly exitCode?: number | undefined;
 }
 
 /** `xd://<tool>`: a device's URL (`xd://<tool>/<topic>` is a doc topic, read only). */
@@ -333,9 +338,17 @@ function commandCall(output: ToolOutput | undefined): DeviceCall | undefined {
   return {
     name: tool,
     args: isRecord(dispatch.args) ? dispatch.args : {},
-    output: { ...output, details: isRecord(dispatch.inner) ? dispatch.inner : {} },
+    output: {
+      ...output,
+      text: output.text?.replace(EXIT_LINE, ""),
+      details: isRecord(dispatch.inner) ? dispatch.inner : {},
+    },
+    exitCode: num(dispatch.exitCode),
   };
 }
+
+/** The status line omp's `bash` appends to the output of a failed command: the bash call's, not the tool's. */
+const EXIT_LINE = /\n*Command exited with code -?\d+$/;
 
 /** A device write's content as its JSON arguments object, if it is one. */
 function writtenArguments(content: string | undefined): Readonly<Record<string, unknown>> | undefined {
@@ -596,7 +609,8 @@ export function toolView(
         line: num(input.line),
         symbol,
         result: answer === undefined ? undefined : lspResult(action, answer, { symbol, newName: str(input.new_name) }),
-        noServer: answer?.includes("No language server found") === true,
+        // omp 19.1: "No language server handles .txt files", "… found for this file", "… servers configured".
+        noServer: answer?.includes("No language server") === true,
       };
     }
     case "todo":

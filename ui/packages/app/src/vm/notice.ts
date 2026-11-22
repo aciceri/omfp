@@ -90,7 +90,7 @@ export function noticeRow(frame: NoticeFrame): NoticeRow {
   }
 }
 
-/** A compaction's outcome; a skipped one (omp 18.22.0: `Nothing to compact (session too small)`, `Already compacted`)
+/** A compaction's outcome; a skipped one (omp 19.1.0: `Nothing to compact (session too small)`, `Already compacted`)
  * carries its reason in `errorMessage` but failed nothing (UI-911). */
 function compactionEnd(aborted: boolean, skipped: boolean | undefined, error: string | undefined): NoticeRow {
   if (skipped === true) {
@@ -111,7 +111,7 @@ function compactionEnd(aborted: boolean, skipped: boolean | undefined, error: st
 
 /**
  * Whether `notices[index]` is the output omp's `/compact` command prints for a compaction it skipped (`Compaction
- * failed: <reason>`, omp 18.22.0): the skipped row just before it already says why, so the transcript leaves it out
+ * failed: <reason>`, omp 19.1.0): the skipped row just before it already says why, so the transcript leaves it out
  * (UI-911). Only when the latest compaction end or command output before it is that skipped end, with the same reason.
  */
 export function repeatsSkippedCompaction(notices: readonly { readonly frame: NoticeFrame }[], index: number): boolean {

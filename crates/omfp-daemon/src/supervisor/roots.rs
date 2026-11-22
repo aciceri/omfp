@@ -1,6 +1,6 @@
 //! Root sync (DMN-029): a running omp's roots follow the repositories of its workspace through the local commands
 //! `/add-dir` and `/remove-dir`, whose one `command_output` answers the daemon and stays out of the thread's log. The
-//! frames carry no id, so an output is the command's only when its text is one omp 18.22.0 writes for that command
+//! frames carry no id, so an output is the command's only when its text is one omp 19.1.0 writes for that command
 //! and path (`slash-commands/builtin-lifecycle.ts`); any other output, such as a background `/mcp reauth`'s, goes on
 //! to the log meanwhile (DMN-200, DMN-202).
 

@@ -261,9 +261,9 @@ pub struct UiSettings {
     pub live_voice: Option<LiveVoice>,
 }
 
-/// A realtime voice of omp's live sessions (PRT-228, UI-999): the voices omp 18.22.0 accepts
-/// (`packages/coding-agent/src/live/voices.ts`), named as omp names them; `sol` is omp's default. Any other name does
-/// not decode.
+/// A realtime voice of omp's live sessions (PRT-228, UI-999): the voices omp 19.1.0's Codex-backed realtime sessions
+/// accept (`packages/coding-agent/src/live/voices.ts`; omp's `live.voice` takes any name for other endpoints), named as
+/// omp names them; `sol` is omp's default. Any other name does not decode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum LiveVoice {

@@ -36,6 +36,29 @@ export function streaming(name: FixtureName, id: string): ToolCard {
 }
 
 /**
+ * The card of a call omp 18.x ran as an `xd://` device (`tools/xdev.ts`), built by hand since no 19.1 fixture has one:
+ * a `write` of the JSON arguments to `xd://<tool>` whose result's text is the answer and whose `details.xdev` echo the
+ * arguments and carry the tool's own details.
+ */
+export function deviceCard(tool: string, args: JsonObject, answer: string, inner: JsonObject): ToolCard {
+  const run: ToolRun = {
+    tool_call_id: "call_device",
+    tool_name: "write",
+    args: { path: `xd://${tool}`, content: JSON.stringify(args) },
+    intent: null,
+    status: "succeeded",
+    partial_result: null,
+    preview: null,
+    result: {
+      content: [{ type: "text", text: answer }],
+      details: { xdev: { tool, mode: "execute", args, inner } },
+    },
+    background: null,
+  };
+  return toolCard("call_device", undefined, run, undefined, undefined);
+}
+
+/**
  * The card of an `lsp` call built by hand in omp 19.1.0's shape (`lsp/tool.ts`, `tools/tool-commands.ts`): a `bash`
  * call running the `lsp` tool command whose result's text is the answer and whose single `details.toolCommands`
  * dispatch echoes the arguments and carries the tool's own details (`{ action, serverName, success }`). Recorded fixtures need a language server; these do not.

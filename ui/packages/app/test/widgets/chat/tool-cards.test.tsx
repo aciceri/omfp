@@ -431,7 +431,7 @@ describe("code-intelligence cards", () => {
   test("lsp without a server: omp's note and where omp looks for language servers", async () => {
     const element = await open(card("code_intel_tool_calls", "call_lsp_1"));
     expect(element.dataset.tool).toBe("lsp");
-    expect(texts(element, "lsp-note")).toEqual(["notes.txt: No language server found"]);
+    expect(texts(element, "lsp-note")).toEqual(["notes.txt: No language server handles .txt files"]);
     expect(byTestId(element, "lsp-environment").textContent).toBe(text.serverEnvironment);
   });
 
@@ -606,7 +606,12 @@ describe("ask card", () => {
     expect(texts(await open(streaming("ask_answered", "call_ask_1")), "ask-answer")).toEqual([]);
     cleanup();
     const element = await open(card("ask_answered", "call_ask_1"));
-    expect(texts(element, "ask-question")).toEqual(["Which database?SQLite", "Which features?Auth, Search"]);
+    expect(texts(element, "ask-question")).toEqual([
+      "Which database?Postgres",
+      "Which features?Auth, Other: Elasticsearch",
+      "Service nameorders",
+      "Replicas3",
+    ]);
   });
 
   // spec: UI-050, UI-051, UI-052

@@ -3,7 +3,7 @@
 //! restarts the thread, which connects them again (DMN-192). The daemon's own MCP client refreshes omp's OAuth login
 //! in omp's credential store, and omp then uses the token the daemon stored (DMN-353).
 //!
-//! Spike (07-roadmap, M13): omp 18.22.0 exposes no MCP state over RPC; `/mcp test <name>` over `prompt` is a local
+//! Spike (07-roadmap, M13): omp 19.1.0 exposes no MCP state over RPC; `/mcp test <name>` over `prompt` is a local
 //! command answering one `command_output` frame, `/mcp reconnect` is refused outside the TUI and `/mcp reload` does
 //! not reconnect (the stub sees no new `initialize`).
 
@@ -284,8 +284,9 @@ async fn omp_checks_the_thread_servers_and_a_reconnect_connects_them_again() {
 
     assert_eq!(server(&reconnected, "stub")["state"], "connected");
     assert_eq!(server(&reconnected, "broken")["state"], "configured");
-    // The restarted omp connects its servers again (3) and checks `stub` (1).
-    stub.wait_for(before + 4);
+    // The restarted omp starts from its cached tool catalog and connects a server anew when it is next used (omp
+    // 19.1): here the check of `stub`, which reaches the server again.
+    stub.wait_for(before + 1);
     harness.assert_no_stray_network();
 }
 

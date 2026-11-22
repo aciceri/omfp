@@ -129,26 +129,28 @@ describe("fixtures", () => {
     expect(lastMessageText(state)).toBe("Done after approval.");
   });
 
-  // spec: ARC-006, TST-012, DMN-050, DMN-051, DMN-054
-  test("ask_answered walks selects one at a time", () => {
+  // spec: ARC-006, TST-012, DMN-050, DMN-051, DMN-055
+  test("ask_answered shows the whole form once", () => {
     const events = fixture("ask_answered");
-
-    const first = stateThrough(events, indexOf(events, "extension_ui_request", 1));
-    expect(first.interactions.map((request) => (request.method === "select" ? request.title : ""))).toEqual([
-      "Which database?",
-    ]);
 
     let state = replay([]);
     let mostPending = 0;
+    let forms: string[] = [];
     for (const item of events) {
       state = reduce(state, item);
       mostPending = Math.max(mostPending, state.interactions.length);
+      if (forms.length === 0 && state.interactions.length > 0) {
+        forms = state.interactions.map((request) => (request.method === "form" ? request.html : ""));
+      }
     }
+    expect(forms.length).toBe(1);
+    expect(forms[0]).toContain("Which database?");
+    expect(forms[0]).toContain("Which features?");
     expect(mostPending).toBe(1);
 
     expect(state.interactions).toEqual([]);
     expect(state.tools.find((run) => run.tool_call_id === "call_ask_1")?.status).toBe("succeeded");
-    expect(lastMessageText(state)).toBe("Using SQLite with Auth and Search.");
+    expect(lastMessageText(state)).toBe("Using Postgres with Auth and Elasticsearch.");
   });
 
   // spec: ARC-006, TST-012, TST-011

@@ -1,4 +1,4 @@
-//! The omp of `auth.*` (DMN-219..DMN-224). omp 18.22.0 runs its OAuth logins over RPC (`get_login_providers`,
+//! The omp of `auth.*` (DMN-219..DMN-224). omp 19.1.0 runs its OAuth logins over RPC (`get_login_providers`,
 //! `login`, `get_logout_accounts`, `logout`), but `omp --mode rpc-ui` exits at startup when no model is usable — no
 //! credential and no `--model` — which is exactly the state before the first login. The daemon therefore starts a
 //! short-lived omp of its own with an explicit model of omp's bundled catalog ([`LOGIN_MODEL`]): omp starts with it

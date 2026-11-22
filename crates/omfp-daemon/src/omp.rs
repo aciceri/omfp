@@ -156,7 +156,7 @@ pub struct Startup {
     pub history: Vec<AgentMessage>,
 }
 
-/// `set_event_filter` with delta message updates. The generated `SetEventFilterCommand` of omp-rpc 18.22.0 lacks
+/// `set_event_filter` with delta message updates. The generated `SetEventFilterCommand` of omp-rpc 19.1.0 lacks
 /// `messageUpdates`, so the daemon sends its own frame; the response type is the generated one.
 #[derive(Debug, Serialize)]
 struct SetEventFilterDelta {
@@ -317,7 +317,7 @@ fn load_history(client: &Client, requests: &mut u64) -> Result<Vec<AgentMessage>
     Ok(messages)
 }
 
-/// Fields omp 18.22.0 can send as fractional numbers although `omp-rpc` types them as integers, by frame `type`:
+/// Fields omp 19.1.0 can send as fractional numbers although `omp-rpc` types them as integers, by frame `type`:
 /// `auto_retry_start.delayMs` is a jittered backoff (`turn-recovery.ts`), e.g. `406.547…`.
 const FRACTIONAL_INTEGER_FIELDS: &[(&str, &[&str])] = &[("auto_retry_start", &["delayMs"])];
 
@@ -537,7 +537,7 @@ mod tests {
     // spec: DMN-040, DMN-042, UI-043
     #[test]
     fn a_fractional_retry_delay_is_rounded_into_a_typed_frame() {
-        // As omp 18.22.0 sends it: `delayMs` is a jittered backoff, typed `i64` by omp-rpc.
+        // As omp 19.1.0 sends it: `delayMs` is a jittered backoff, typed `i64` by omp-rpc.
         let raw = serde_json::json!({
             "type": "auto_retry_start",
             "attempt": 1,

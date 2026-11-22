@@ -2,7 +2,7 @@
 //!
 //! The pinned omp's `omp auth export` opens its credential store read-write — it creates a missing one, migrates an
 //! older schema and adds what its own schema lacks — so omfp never runs it on standalone omp's store. omfp finds that
-//! store the way omp 18.22.0 does ([`credential_store`], from the user's environment: the daemon's with
+//! store the way omp 19.1.0 does ([`credential_store`], from the user's environment: the daemon's with
 //! [`SupervisorConfig::user_omp_env`](super::SupervisorConfig::user_omp_env)), copies its files under a SHARED lock
 //! taken as SQLite takes it into a private snapshot directory under `<data-dir>/login/` ([`Snapshot`]) without SQLite ever opening
 //! them there, and runs the export on that copy with omfp's profile environment; the snapshot is removed right
@@ -28,7 +28,7 @@ use tracing::{info, warn};
 use super::{Result, Supervisor, SupervisorError, blocking};
 use crate::omp::{LaunchSpec, StartError};
 
-/// The export document version omfp reads (omp 18.22.0's `omp auth export`).
+/// The export document version omfp reads (omp 19.1.0's `omp auth export`).
 const EXPORT_VERSION: u64 = 1;
 
 /// How long copying the store waits for standalone omp's writers: its lock, or a write-ahead log that moved.
@@ -44,7 +44,7 @@ const WAL_HEADER: u64 = 32;
 /// The provider prefix of an MCP server's credential, which is no model-provider login.
 const MCP_PREFIX: &str = "mcp:";
 
-/// The name of omp's credential store in its agent directory (omp 18.22.0's `getAgentDbPath`).
+/// The name of omp's credential store in its agent directory (omp 19.1.0's `getAgentDbPath`).
 const STORE: &str = "agent.db";
 
 /// omp's `auth export` document; fields omfp does not know pass through untouched to `auth import`.
@@ -225,7 +225,7 @@ fn profile_name(value: &OsStr) -> Option<String> {
 }
 
 /// The directory of the data files (`agent.db`, `blobs/`, `sessions/`, …) of the omp whose environment `var` gives,
-/// `cwd` being its working directory, mirroring omp 18.22.0's `DirResolver` and its `agentSubdir(…, "data")`
+/// `cwd` being its working directory, mirroring omp 19.1.0's `DirResolver` and its `agentSubdir(…, "data")`
 /// (`getAgentDbPath`, `getBlobsDir`; `packages/utils/src/dirs.ts`; re-check on an omp upgrade, ENV-020):
 /// - the base root is `path.join(HOME, PI_CONFIG_DIR || ".omp")`;
 /// - the profile is `OMP_PROFILE` when set (empty: the default), else `PI_PROFILE`; a refused name is the default;

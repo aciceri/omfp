@@ -1,7 +1,7 @@
 //! Thread titles from the conversation (DMN-073): an immediate placeholder, then bounded print-mode
 //! generations as meaningful new conversation accumulates.
 //!
-//! omp 18.22.0 forces `PI_NO_TITLE=1` in its RPC modes (`packages/coding-agent/src/main.ts`), so a thread's own omp
+//! omp 19.1.0 forces `PI_NO_TITLE=1` in its RPC modes (`packages/coding-agent/src/main.ts`), so a thread's own omp
 //! never names its session; the daemon does it through [`crate::agent::AgentLauncher::generate_title`] and then sends
 //! `set_session_name`.
 
@@ -132,11 +132,13 @@ impl TitleRequest {
         args
     }
 
-    /// The process to run; its stdout is the title.
+    /// The process to run; its stdout is the title. omp 19.1 offers its `report_issue` tool even with `--no-tools`
+    /// while Auto-QA (`dev.autoqa`) is on, so the run turns it off.
     #[must_use]
     pub fn command(&self) -> Command {
         let mut command = Command::new(&self.program);
         command.args(self.args()).current_dir(&self.cwd);
+        command.env("PI_AUTO_QA", "0");
         for (key, value) in &self.env {
             match value {
                 Some(value) => command.env(key, value),

@@ -238,7 +238,7 @@ omp is pinned in four places that must agree (checked by `cargo xtask check-vers
 tag, the `omp-rpc` git tag in `Cargo.toml`, `omfp_core::OMP_VERSION` and the release assets' tag in
 `contrib/release/omp.sha256`. To upgrade, follow the playbook in `docs/specs/01-dev-environment.md` (ENV-020).
 
-## omp facts learned the hard way (omp 18.22.0)
+## omp facts learned the hard way (omp 19.1.0)
 
 - Launch with `omp --mode rpc-ui --session-dir <dir> --continue --add-dir …`: `--add-dir` roots (and their
   `AGENTS.md`) are lost if the session is switched later with `open_session` (S-07). `open_session` on the same dir is
@@ -253,12 +253,13 @@ tag, the `omp-rpc` git tag in `Cargo.toml`, `omfp_core::OMP_VERSION` and the rel
   `ui/packages/app/src/vm/slash.ts`, pinned by `contract_slash_commands` (UI-975).
 - `--session-dir <dir> --continue` resumes the newest session of that directory whatever the cwd, so a thread keeps
   its session when it moves to another workspace folder (migration 3).
-- The `ask` tool takes one HTML `<form>` and walks it with `select`/`input`/`editor` dialogs, not the RPC `ask` dialog.
-  Since 18.20 its `select`s carry `selectionMarker` (`radio`/`checkbox`), `initialIndex`, `markableCount` (every option
-  but "Done selecting", "Other" included) and, for checkboxes, `checkedIndices`: a checkbox group is a loop of
-  `select`s titled `(<n> selected) <question>` after the first toggle, re-sent after every toggle with
-  `checkedIndices` authoritative (picking a checked option unchecks it), ended by "✔ Done selecting". A form's
-  context text (paragraphs, lists, tables) comes in the title before the question, which is on the last line.
+- The `ask` tool sends its whole HTML `<form>` as one `form` extension UI request (`html`, `timeout?`, no opt-in; omp
+  19.1, can1357/oh-my-pi#18646); the host answers `{ data }` (values by control `name`: a string, a number for
+  `number`/`range`, an array for checkbox groups and multi-selects, one extra string per radio/checkbox group of 2+
+  options as its "Other") or cancels. omp validates the reply against the form (`required`, `pattern`, …) and fails
+  the whole `ask` call on a bad one, with no second round, so the window checks first (UI-074). The tool result's
+  `details.answers` name each field (`Auth, Other: Elasticsearch`). Extension `ui.askDialog` calls still use the
+  `ask` request once `set_ask_dialog` enables it, else `select`/`editor`.
 - Run lifecycle over RPC (18.21): the session's internal `agent_pause` reaches RPC hosts as `agent_end` with
   `isTerminal: false` (plus `awaitingAsyncWork: true` when only a background job, a running child agent or a peer
   message can resume the run); every run ends with exactly one terminal `agent_end`, also when that outside work goes
@@ -266,8 +267,9 @@ tag, the `omp-rpc` git tag in `Cargo.toml`, `omfp_core::OMP_VERSION` and the rel
   `session_settled` only after the run's terminal `agent_end`, so a thread stays busy while anything that can still
   resume its run is alive. The reducer reads busy/settled from `agent_start`/`session_settled` only, never `agent_end`.
 - Todo tasks have no `blocked` status since 18.19 (omp-rpc's `TodoStatus` lost `Blocked` and `TodoItem.blocker`).
-- At startup omp always fetches its model catalog (`catalog.stencil.so` + keyless providers) and no setting disables
-  it: contract tests run omp behind `DenyProxy` and fail on hosts outside `KNOWN_DISCOVERY_HOSTS`.
+- At startup omp always fetches its model catalog (`catalog.stencil.so` + keyless providers, and since 19.1
+  `registry.npmjs.org/@openai/codex/latest`, the Codex client version) and no setting disables it: contract tests run
+  omp behind `DenyProxy` and fail on hosts outside `KNOWN_DISCOVERY_HOSTS`.
 - `omp auth export` is no read: it opens its credential store read-write (creates a missing one, migrates an older
   schema, adds tables and indexes its schema lacks, backfills identity keys, chmods the file), writes logs and extracts
   natives. Even SQLite's read-only connection creates or updates `agent.db-shm`, and `immutable=1` disables its locking.
@@ -291,19 +293,26 @@ tag, the `omp-rpc` git tag in `Cargo.toml`, `omfp_core::OMP_VERSION` and the rel
   `fetch` tool: `read` fetches URLs). `edit` takes hashline input whose `[path#TAG]` needs a prior `read`.
   `web_search` failures and URL reads that fail (HTTP 404) end with `isError: false`; `task` runs subagents in the
   background unless `async.enabled: false`; open `todo` items make omp prompt the model again.
-- Discoverable tools (`lsp`, `ast_grep`, `ast_edit`, MCP tools, …) are `xd://` devices while `tools.xdev` is on (the
-  default): the model calls them as `write { path: "xd://<tool>", content: "<JSON args>" }` and the result's
-  `details.xdev` is `{ tool, mode, args, tier, inner }` (`inner`: the tool's own details). An `ast_edit` is a staged
-  preview: until the agent writes a reason to `xd://resolve` (or `xd://reject`) every other tool call is refused.
+- Discoverable tools (`lsp`, `ast_grep`, `ast_edit`, `debug`, MCP tools, …; not `ask`, `todo`, `grep`, `web_search`)
+  are commands of the `bash` tool while `tools.commands` is on (the default, omp 19.1; `xd://` devices before): the
+  model runs `<tool> -j '<JSON args>'` (or `<tool> --flag value`, `<tool> --help`) in a `bash` call, and the bash
+  result's `details.toolCommands` lists each dispatch `{ tool, mode, exitCode, args, tier, inner }` (`inner`: the
+  tool's own details). An `ast_edit` is a staged preview until the agent runs `resolve '<reason>'` (or `reject`);
+  doc topics are `help://<tool>/<topic>`. Mount notices are `notice` frames with `source: "toolCommands"`.
   `lsp` answers in its text only (`details`: `{ action, serverName, success, request }`; `success: false` with
   `isError: false` on failure); omp's LSP startup status (`lsp:startup`) reaches the TUI only, never RPC. Servers come
   from omp's `PATH`, i.e. the daemon's environment.
+- omp 19 leaves the intent field of tool calls (`i`) out of print, RPC, ACP and SDK sessions unless
+  `tools.intentTracing` (or `PI_INTENT_TRACING`) is set: the daemon sets `PI_INTENT_TRACING=1` for thread omps
+  (DMN-030). Print mode offers the Auto-QA `report_issue` tool even with `--no-tools` unless `PI_AUTO_QA=0`.
 - omp-rpc's client is blocking and closes the omp process group on drop; command default timeout is 30 s.
 - omp and omp-rpc disagree on number types: omp sends `auto_retry_start.delayMs` as a fractional, jittered backoff
   (`406.547…`) but omp-rpc types it `i64`, so the client reports the frame `Undecodable`. `omp::thread_event` rounds
   the fields listed in `FRACTIONAL_INTEGER_FIELDS` and decodes the frame again (DMN-042); add a field there when
   another typed frame turns up as `unknown`.
-- omp exposes no MCP server state over RPC (MCP tools are `xd://` devices, absent from `get_state.dumpTools`). Over
+- omp exposes no MCP server state over RPC (MCP tools are tool commands, absent from `get_state.dumpTools`). Since 19.1
+  MCP servers run through omp's per-user daemon (`mcp.shared`, on by default) and a restarted omp starts from its
+  cached tool catalog, connecting a server anew only when it is next used. Over
   `prompt`, `/mcp test <name>` (omp-native configs only) answers one `command_output` frame before its response;
   `/mcp reconnect` is refused outside the TUI and `/mcp reload` reconnects nothing: restart the thread instead (M13).
   `/mcp reauth <name>` runs in the background (the prompt returns at once), opens the browser on omp's host itself and

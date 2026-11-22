@@ -118,13 +118,24 @@ export function toolCard(
     toolCallId,
     name,
     summary,
-    status: status === "succeeded" && job === null && quietFailure(name, output) !== undefined ? "failed" : status,
+    status:
+      status === "succeeded" &&
+      job === null &&
+      (quietFailure(name, output) !== undefined || (device?.exitCode ?? 0) !== 0)
+        ? "failed"
+        : status,
     durationMs:
       job === null && calledAt !== undefined && finishedAt !== undefined && calledAt > 0 && finishedAt >= calledAt
         ? finishedAt - calledAt
         : undefined,
     args: args !== undefined ? prettyJson(args) : (partial ?? "{}"),
-    result: job === null ? resultOf(run, result) : (job.output ?? undefined),
+    // A tool command's card shows the tool's output, without the exit line of the `bash` call that ran it.
+    result:
+      job === null
+        ? called === "bash" && device !== undefined
+          ? device.output?.text
+          : resultOf(run, result)
+        : (job.output ?? undefined),
     images: cardImages(output?.images ?? [], name, subjectOf(args) ?? summary),
     view: toolView(name, args, output, status === "succeeded", job, status === "succeeded" || status === "failed"),
   };

@@ -69,6 +69,7 @@ requirements = [
   "DMN-052",
   "DMN-053",
   "DMN-054",
+  "DMN-055",
   "DMN-060",
   "DMN-061",
   "DMN-070",
@@ -137,6 +138,7 @@ requirements = [
   "UI-071",
   "UI-072",
   "UI-073",
+  "UI-074",
   # Styling and accessibility
   "UI-091",
   "UI-092",
@@ -205,6 +207,7 @@ requirements = [
   "UI-071",
   "UI-072",
   "UI-073",
+  "UI-074",
   # Styling, fonts, keyboard, notifications
   "UI-091",
   "UI-092",

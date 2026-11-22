@@ -17,7 +17,7 @@ pub fn environment(data: &DataDir, mut env: Environment) -> std::io::Result<Envi
         .filter(|home| home.is_absolute())
         .ok_or_else(|| std::io::Error::other("omp profile requires an absolute HOME"))?;
     let root = std::path::absolute(data.omp_profile())?;
-    // omp 18.22.0 joins PI_CONFIG_DIR to HOME even when it is absolute. Use a home-relative spelling so its
+    // omp 19.1.0 joins PI_CONFIG_DIR to HOME even when it is absolute. Use a home-relative spelling so its
     // generic config helpers resolve the same root as getAgentDir(); changing only PI_CODING_AGENT_DIR is unsafe.
     let mut config = PathBuf::new();
     let depth = home

@@ -1,6 +1,6 @@
 /**
  * What the cards of omp's code-intelligence tools (UI-916..UI-919) read from their results: the `lsp` tool's text
- * (omp 18.22.0 puts its answer in the text only; `details` say the action and whether it succeeded), and the grouped
+ * (omp 19.1.0 puts its answer in the text only; `details` say the action and whether it succeeded), and the grouped
  * file output of `ast_grep` and `ast_edit` (`details.displayContent`). The formats are omp's own
  * (`packages/coding-agent/src/lsp/{tool,utils,diagnostics,edits}.ts`, `packages/tui/src/tools/grouped-file-output.ts`);
  * `fixtures/threads/<omp>/code_intel_tool_calls.jsonl` records the AST tools and an `lsp` call.

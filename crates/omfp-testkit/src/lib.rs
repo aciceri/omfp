@@ -21,9 +21,10 @@ pub use omp::{
 pub use repo::TempRepo;
 
 /// Hosts the pinned omp contacts on its own at startup for background model-catalog discovery (S-02): the shared
-/// models.dev mirror and the model lists of keyless providers. No setting disables it, so contract tests run omp
-/// behind a [`DenyProxy`] that refuses them, and fail on any host outside this list (TST-021). Review this list on
-/// every omp upgrade.
+/// models.dev mirror, the model lists of keyless providers and, since omp 19.1, the `latest` version of
+/// `@openai/codex` on npm (the Codex client version keying its model cache, `catalog/src/wire/codex-version.ts`). No
+/// setting disables it, so contract tests run omp behind a [`DenyProxy`] that refuses them, and fail on any host
+/// outside this list (TST-021). Review this list on every omp upgrade.
 pub const KNOWN_DISCOVERY_HOSTS: &[&str] = &[
     "catalog.stencil.so",
     "coding-intl.dashscope.aliyuncs.com",
@@ -32,6 +33,7 @@ pub const KNOWN_DISCOVERY_HOSTS: &[&str] = &[
     "api.kilo.ai",
     "api.venice.ai",
     "zenmux.ai",
+    "registry.npmjs.org",
 ];
 
 /// The environment variables the daemon reads to find standalone omp's credential store (DMN-229).

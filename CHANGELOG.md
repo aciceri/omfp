@@ -20,6 +20,13 @@ The version's section is also the source of the GitHub release notes.
 - Agents' `omfp_call` of a reading `thread.*` method (`thread.session`, `thread.state`, `thread.mcp_servers`, …)
   without `threadId` now reads their own thread; the other `thread.*` methods still need it, and their error names the
   agent's own thread id (#284).
+- omfp now runs omp 19.1.0. When the agent asks you something with its `ask` tool, the whole form shows at once in
+  the chat: its explanations, every question, radio and checkbox choices with an "Other" answer, text and number
+  fields. Required fields, limits and patterns are checked before the answer goes out, so the agent always gets a
+  complete answer; Cancel still dismisses it (#100).
+- Tools omp offers as commands of its shell (`lsp`, `ast_grep`, `ast_edit`, `debug`, MCP tools) keep their own cards
+  in the chat, and the tool cards keep showing what each call is for, which omp 19 otherwise leaves out of omfp's
+  sessions.
 
 ### Fixed
 
@@ -29,6 +36,8 @@ The version's section is also the source of the GitHub release notes.
 - Threads from before omfp's own omp profile (0.1.0) show their images again, and their agent sees them: the
   screenshots and images in their conversations had stayed in standalone omp's `~/.omp/agent/blobs`. The daemon
   links them into its profile once, in the background, at its first start after the upgrade (#283).
+- Refreshing an MCP server's OAuth login asks for the same scope as the original sign-in, as omp 19.1 does, so
+  Microsoft Entra servers whose client is also the resource keep working.
 
 ## 0.4.2 — 2026-11-22
 

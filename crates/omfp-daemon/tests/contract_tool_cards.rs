@@ -419,7 +419,7 @@ async fn code_intel_tool_calls() {
         "{diagnostics:#}"
     );
     assert!(
-        text(&diagnostics).contains("notes.txt: No language server found"),
+        text(&diagnostics).contains("notes.txt: No language server handles .txt files"),
         "{diagnostics:#}"
     );
     let preview = ended(&events, "call_ast_edit_1", false);

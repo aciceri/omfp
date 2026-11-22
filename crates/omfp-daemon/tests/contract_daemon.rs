@@ -455,7 +455,7 @@ async fn approval_reconnects_crash_and_restart_with_history() {
     harness.assert_no_stray_network();
 }
 
-/// omp 18.22.0's `--approval-mode` values (`packages/coding-agent/src/tools/approval.ts`).
+/// omp 19.1.0's `--approval-mode` values (`packages/coding-agent/src/tools/approval.ts`).
 const APPROVAL_MODES: [&str; 4] = ["always-ask", "always-ask-cached", "write", "yolo"];
 
 // spec: DMN-210, TST-106

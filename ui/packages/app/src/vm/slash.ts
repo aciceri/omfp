@@ -1,5 +1,5 @@
 /**
- * `/` commands over omp's RPC (UI-975..UI-980). omp 18.22.0 announces (`available_commands_update`) only the builtins
+ * `/` commands over omp's RPC (UI-975..UI-980). omp 19.1.0 announces (`available_commands_update`) only the builtins
  * with a text-mode handler; a builtin with only a TUI handler is not announced and, typed by hand, reaches the model as
  * plain text (omp's RPC dispatch finds no handler and prompts with it). The window therefore routes the commands omfp
  * has an equivalent for to it, refuses the other TUI-only builtins with the reason instead of sending them, and lists
@@ -12,7 +12,7 @@ import { strings } from "../strings/index.ts";
 const text = strings.chat.composer.slash;
 
 /**
- * omp 18.22.0's builtin commands with a TUI handler only (`handleTui` without `handle` in its builtin registry,
+ * omp 19.1.0's builtin commands with a TUI handler only (`handleTui` without `handle` in its builtin registry,
  * `packages/coding-agent/src/slash-commands/builtin-*.ts`), in the registry's order. The contract test
  * `contract_slash_commands` pins the commands omp announces over RPC: when it fails after an omp upgrade, check this
  * list against the new registry.

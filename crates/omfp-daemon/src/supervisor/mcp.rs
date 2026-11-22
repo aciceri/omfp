@@ -51,7 +51,7 @@ impl Supervisor {
         self.thread_servers(thread_id, None).await
     }
 
-    /// Reconnects the thread's MCP servers: omp 18.22.0 reconnects none over RPC (`/mcp reconnect` is TUI-only,
+    /// Reconnects the thread's MCP servers: omp 19.1.0 reconnects none over RPC (`/mcp reconnect` is TUI-only,
     /// `/mcp reload` does not reconnect), so the idle process restarts and connects them all again; then `name`, or
     /// every checkable server, is checked (PRT-112, DMN-192). A working thread is refused: a restart would abort it.
     pub async fn mcp_reconnect(&self, thread_id: &str, name: Option<&str>) -> Result<McpServers> {

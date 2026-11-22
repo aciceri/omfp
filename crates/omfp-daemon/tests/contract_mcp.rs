@@ -20,7 +20,7 @@ use omp_rpc::PromptStatus;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
-/// omp 18.22.0's MCP `clientInfo.name`.
+/// omp 19.1.0's MCP `clientInfo.name`.
 const OMP_CLIENT: &str = "omp-coding-agent";
 
 /// A daemon on the fake launcher: the omp under test is the only real one.
@@ -66,12 +66,14 @@ fn tool_result(request: &Value, call_id: &str) -> String {
         )
 }
 
-/// omp 18.22.0 mounts MCP tools as `xd://` devices: the model calls one with `write { path, content: <JSON args> }`.
-fn device_call(id: &str, tool: &str, arguments: &Value) -> ToolCall {
+/// omp 19.1 mounts MCP tools as bash tool commands: the model runs one with its JSON arguments (`-j`) in a `bash` call.
+fn command_call(id: &str, tool: &str, arguments: &Value) -> ToolCall {
+    let json = arguments.to_string();
+    assert!(!json.contains('\''), "single-quoted for the shell: {json}");
     ToolCall::new(
         id,
-        "write",
-        json!({ "path": format!("xd://{tool}"), "content": arguments.to_string() }),
+        "bash",
+        json!({ "command": format!("{tool} -j '{json}'") }),
     )
 }
 
@@ -80,12 +82,12 @@ fn device_call(id: &str, tool: &str, arguments: &Value) -> ToolCall {
 async fn an_omp_outside_omfp_calls_omfp_call_through_mcp() {
     let harness = Harness::new(vec![
         Step::reply(Reply::tool_calls(vec![
-            device_call(
+            command_call(
                 "create",
                 "mcp__omfp_call",
                 &json!({ "method": "threads.create", "params": { "workspace": { "new": {} }, "title": "made over mcp" } }),
             ),
-            device_call(
+            command_call(
                 "list",
                 "mcp__omfp_call",
                 &json!({ "method": "threads.list" }),
@@ -143,8 +145,8 @@ async fn an_omp_outside_omfp_calls_omfp_call_through_mcp() {
 
     let requests = harness.fake.requests();
     let system = common::system_prompt(&requests[0]);
-    for device in ["xd://mcp__omfp_call", "xd://mcp__omfp_thread_wait"] {
-        assert!(system.contains(device), "{device} not offered:\n{system}");
+    for command in ["mcp__omfp_call", "mcp__omfp_thread_wait"] {
+        assert!(system.contains(command), "{command} not offered:\n{system}");
     }
     assert!(
         system.contains("omfp_thread_wait` waits for a thread"),

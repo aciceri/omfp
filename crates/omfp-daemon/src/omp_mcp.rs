@@ -1,4 +1,4 @@
-//! The MCP servers of a workspace (M13): the workspace's config files omp 18.22.0 reads, parsed by the daemon in
+//! The MCP servers of a workspace (M13): the workspace's config files omp 19.1.0 reads, parsed by the daemon in
 //! omp's precedence order (DMN-190), the entry of one remote server the daemon calls itself (DMN-351), the `/mcp`
 //! commands that would make omp write its user config, refused (DMN-350), and the reply of omp's `/mcp test <name>`,
 //! the one check of a server omp offers over RPC (DMN-191).

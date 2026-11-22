@@ -298,7 +298,7 @@ async fn ask_answered() {
         answers.as_ref().map(|result| &result["details"]["answers"]),
         Some(&json!([
             { "answer": "Postgres", "name": "db", "question": "Which database?" },
-            { "answer": "Auth, Elasticsearch", "name": "features", "question": "Which features?" },
+            { "answer": "Auth, Other: Elasticsearch", "name": "features", "question": "Which features?" },
             { "answer": "orders", "name": "service", "question": "Service name" },
             { "answer": "3", "name": "replicas", "question": "Replicas" },
         ])),

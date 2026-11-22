@@ -76,8 +76,8 @@ open the file at the line. omp starts the servers itself, **from the daemon's en
 `PATH` of the process that started `omfp daemon` (the desktop app's background daemon, a service unit, the shell you
 ran it from), not merely on your dev shell's. When omp finds none for a file, the card says so. The structural search
 and rewrite tools `ast_grep` and `ast_edit` are off by default in omp; turn them on in the profile's
-`agent/config.yml` (`astGrep: { enabled: true }`, `astEdit: { enabled: true }`). omp offers these tools as `xd://`
-devices; omfp shows their calls as cards of the tools themselves.
+`agent/config.yml` (`astGrep: { enabled: true }`, `astEdit: { enabled: true }`). omp offers these tools as commands
+its `bash` tool runs; omfp shows their calls as cards of the tools themselves.
 
 ## Agents outside omfp (MCP)
 
@@ -94,7 +94,7 @@ This example deliberately configures a **standalone** omp client, not omfp's int
 already receive the host tools and do not need this MCP entry.
 
 The command prints the entry for the running local daemon (`--daemon <url>` for another one). omp then offers the tools as
-`xd://mcp__omfp_call` and so on; `"timeout": 0` in the entry lets `omfp_thread_wait` wait longer than omp's 30 s
+the commands `mcp__omfp_call` and so on; `"timeout": 0` in the entry lets `omfp_thread_wait` wait longer than omp's 30 s
 default. The entry's header is `"Bearer ${OMFP_TOKEN}"`: omp reads the token from the environment, so no file holds
 it. The token grants full access to the daemon (including shell commands): `--literal-token` writes it into the entry
 instead, but never put such an entry in a project's `.omp/mcp.json`, which may be committed. Threads and workspaces
@@ -159,7 +159,7 @@ motion = "full"                # full | reduced | none
 notifications = "background"   # background | always | never
 theme = "synth"                # synth | catppuccin | gruvbox | tokyo-night | nord | solarized | rose-pine | graphite
                                # | paper | clay | primer | accent | matugen (the user theme below)
-show_xdev_notices = false      # informational MCP mount/unmount rows in the transcript
+show_xdev_notices = false      # informational MCP tool command mount/unmount rows in the transcript
 skin = "crush"                 # crush | boring: the calm, neutral look (`:set skin=boring`), with any theme
 recent_threads = 20            # hidden threads a window keeps for instant switching (window memory, not omp), 0–100
                                # or "all" (every thread opened in the window; a long thread holds several MB)
@@ -179,7 +179,7 @@ prose = "Literata, serif"
 theme set <file>` pushes a theme to a running daemon instead. The windows show it with the `matugen` theme (`:theme
 matugen`), over Synth; any other theme leaves it stored but unused.
 
-Informational MCP mount/unmount notices are hidden in new and existing transcripts by default. Run
+Informational MCP tool command mount/unmount notices are hidden in new and existing transcripts by default. Run
 `:set show_xdev_notices=true` to reveal retained notices immediately; `:set show_xdev_notices=false` hides them
 again. The API uses `settings.set { ui: { showXdevNotices: true } }`. This changes presentation only: events,
 thread state, warnings/errors, other sources, startup inventory records, MCP tools and omp configuration stay intact.

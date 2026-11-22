@@ -6,9 +6,9 @@
 import { describe, expect, test } from "bun:test";
 import { type JsonObject, replay, type ToolRun } from "@omfp/core";
 import { astMatches } from "../../src/vm/code-intel.ts";
-import { expandedByDefault, type ToolCard } from "../../src/vm/tool.ts";
+import { expandedByDefault, type ToolCard, toolCard } from "../../src/vm/tool.ts";
 import { deviceCall, ompDiffLines, quietFailure, repoPath, type ToolView, toolView } from "../../src/vm/tool-view.ts";
-import { card, cards, lspCard, omfpCard, streaming } from "../support/cards.ts";
+import { card, cards, deviceCard, lspCard, omfpCard, streaming } from "../support/cards.ts";
 import { repo, workspace } from "../support/fixtures.ts";
 import { fixtureEvents, isFrame } from "../widgets/chat/fixtures.ts";
 
@@ -234,7 +234,47 @@ describe("tool commands", () => {
       name: "lsp",
       args,
       output: { text: "out", images: [], details: inner },
+      exitCode: 0,
     });
+    // The exit line `bash` appends to a failed command is the bash call's, not the tool's.
+    const failed = { ...output, text: "Path not found: missing\n\n\nCommand exited with code 1" };
+    expect(deviceCall("bash", { command: "lsp diagnostics missing" }, undefined, failed)?.output?.text).toBe(
+      "Path not found: missing",
+    );
+  });
+
+  // spec: UI-915
+  test("a tool command that failed fails its card, also when the bash script went on (`|| true`)", () => {
+    const run = (exitCode: number): ToolRun => ({
+      tool_call_id: "call_grep",
+      tool_name: "bash",
+      args: { command: "ast_grep -j '{}' || true" },
+      intent: null,
+      status: "succeeded",
+      partial_result: null,
+      preview: null,
+      result: {
+        content: [{ type: "text", text: "no such path: src" }],
+        details: { toolCommands: [{ tool: "ast_grep", mode: "execute", exitCode, args: {}, inner: {} }] },
+      },
+      background: null,
+    });
+    expect(toolCard("call_grep", undefined, run(1), undefined, undefined).status).toBe("failed");
+    expect(toolCard("call_grep", undefined, run(0), undefined, undefined).status).toBe("succeeded");
+  });
+
+  // spec: UI-915, UI-051
+  test("recorded: while the model writes the command it is a bash call; the dispatch in its result makes it the tool's", () => {
+    const events = fixtureEvents("code_intel_tool_calls");
+    const end = events.findIndex(isFrame("message_update", "toolcall_end"));
+    const [composing] = cards(replay(events.slice(0, end)));
+    expect([composing?.toolCallId, composing?.name]).toEqual(["call_ast_grep_1", "bash"]);
+    const running = streaming("code_intel_tool_calls", "call_ast_grep_1");
+    expect([running.name, running.status, running.summary]).toEqual(["ast_grep", "running", "Finding the functions"]);
+    expect(JSON.parse(running.args)).toEqual({ pat: "pub fn $NAME($$$ARGS) -> $RET { $$$BODY }", path: "src" });
+    expect(view(running, "search")).toMatchObject({ query: "pub fn $NAME($$$ARGS) -> $RET { $$$BODY }", scope: "src" });
+    const lsp = card("code_intel_tool_calls", "call_lsp_1");
+    expect([lsp.name, view(lsp, "lsp").file]).toEqual(["lsp", "notes.txt"]);
   });
 
   // spec: UI-915
@@ -253,12 +293,15 @@ describe("tool commands", () => {
 describe("xd:// device calls (sessions recorded by omp 18.x)", () => {
   // spec: UI-915, UI-051
   test("a write to xd://<tool> is a call of that tool, with its own arguments and result details", () => {
-    const running = streaming("code_intel_tool_calls", "call_ast_grep_1");
-    expect([running.name, running.status, running.summary]).toEqual(["ast_grep", "running", "Finding the functions"]);
-    expect(JSON.parse(running.args)).toEqual({ pat: "pub fn $NAME($$$ARGS) -> $RET { $$$BODY }", path: "src" });
-    expect(view(running, "search")).toMatchObject({ query: "pub fn $NAME($$$ARGS) -> $RET { $$$BODY }", scope: "src" });
-    const lsp = card("code_intel_tool_calls", "call_lsp_1");
-    expect([lsp.name, view(lsp, "lsp").file]).toEqual(["lsp", "notes.txt"]);
+    const args = { action: "diagnostics", file: "src/lib.rs" };
+    const device = deviceCard("lsp", args, "OK", { action: "diagnostics", serverName: "rust-analyzer", success: true });
+    expect([device.name, device.status, device.result, JSON.parse(device.args)]).toEqual([
+      "lsp",
+      "succeeded",
+      "OK",
+      args,
+    ]);
+    expect(view(device, "lsp").file).toBe("src/lib.rs");
   });
 
   // spec: UI-915
@@ -283,16 +326,8 @@ describe("xd:// device calls (sessions recorded by omp 18.x)", () => {
     expect(toolView("mcp__docs_search", mcp?.args, undefined, false).kind).toBe("generic");
   });
 
-  // spec: UI-915, UI-051
-  test("recorded: while streaming, the call's arguments are `{}` beside the partial text, and the path names the device", () => {
-    const events = fixtureEvents("code_intel_tool_calls");
-    const end = events.findIndex(isFrame("message_update", "toolcall_end"));
-    const [composing] = cards(replay(events.slice(0, end)));
-    expect([composing?.toolCallId, composing?.name, composing?.view.kind]).toEqual([
-      "call_ast_grep_1",
-      "ast_grep",
-      "search",
-    ]);
+  // spec: UI-915
+  test("while streaming, the call's arguments are `{}` beside the partial text, and the path names the device", () => {
     expect(deviceCall("write", {}, '{"content":"{}","path":"xd://lsp"', undefined)?.name).toBe("lsp");
   });
 });
@@ -393,7 +428,12 @@ describe("lsp card", () => {
       file: "notes.txt",
       line: undefined,
       symbol: undefined,
-      result: { type: "diagnostics", diagnostics: [], notes: ["notes.txt: No language server found"], clean: false },
+      result: {
+        type: "diagnostics",
+        diagnostics: [],
+        notes: ["notes.txt: No language server handles .txt files"],
+        clean: false,
+      },
       noServer: true,
     });
   });
@@ -740,18 +780,22 @@ describe("web_search card", () => {
 
 describe("ask card", () => {
   // spec: UI-050, UI-051
-  test("streaming: the questions of the form, unanswered", () => {
+  test("streaming: the questions of the form (fieldset legends, labels outside fieldsets), unanswered", () => {
     expect(view(streaming("ask_answered", "call_ask_1"), "ask").questions).toEqual([
       { question: "Which database?", answer: undefined },
       { question: "Which features?", answer: undefined },
+      { question: "Service name", answer: undefined },
+      { question: "Replicas", answer: undefined },
     ]);
   });
 
   // spec: UI-050, UI-051
   test("success: each question with the given answer", () => {
     expect(view(card("ask_answered", "call_ask_1"), "ask").questions).toEqual([
-      { question: "Which database?", answer: "SQLite" },
-      { question: "Which features?", answer: "Auth, Search" },
+      { question: "Which database?", answer: "Postgres" },
+      { question: "Which features?", answer: "Auth, Other: Elasticsearch" },
+      { question: "Service name", answer: "orders" },
+      { question: "Replicas", answer: "3" },
     ]);
   });
 

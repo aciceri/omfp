@@ -1,4 +1,4 @@
-//! Line selectors on `omfp://` reads (DMN-378..380). omp 18.22.0 registers a host scheme with `selectors: "none"`, so
+//! Line selectors on `omfp://` reads (DMN-378..380). omp 19.1.0 registers a host scheme with `selectors: "none"`, so
 //! its read tool hands `omfp://docs/widgets:524` to the host as is and numbers whatever the host answers from line 1,
 //! cutting it at 3000 lines / 50 KB with a `Use :N to continue` hint relative to that answer. The daemon therefore peels
 //! omp's selector grammar itself, answers the selected lines and pages long answers below omp's limits, with its own
@@ -13,7 +13,7 @@ pub const PAGE_LINES: usize = 300;
 pub const PAGE_BYTES: usize = 32 * 1024;
 
 /// The selectors an `omfp://` read takes, for errors.
-pub const ACCEPTED: &str = "`:N` (from line N), `:N-M`, `:N+K` (K lines from N), `:N-` (from N), `:-N` (the last N \
+pub const ACCEPTED: &str = "`:N` (line N), `:N-M`, `:N+K` (K lines from N), `:N-` (from N), `:-N` (the last N \
                             lines), a comma list (`:5-16,40-80`), `:raw` and a range with it (`:raw:N-M`)";
 
 /// One inclusive range of 1-based lines; `end` `None` runs to the end.
@@ -79,15 +79,15 @@ fn number(text: &str, selector: &str) -> Result<usize, String> {
     Ok(value)
 }
 
-/// One `N`, `N-`, `N-M`, `N..M` or `N+K` chunk; a bare `N` is line N alone when `single`, else from N on.
-fn chunk(text: &str, single: bool, selector: &str) -> Result<Range, String> {
+/// One `N` (that line alone, as omp 19.1.0 reads it), `N-`, `N-M`, `N..M` or `N+K` chunk.
+fn chunk(text: &str, selector: &str) -> Result<Range, String> {
     let (start, rest) = match text.find(['-', '+', '.']) {
         Some(at) => (&text[..at], Some(&text[at..])),
         None => (text, None),
     };
     let start = number(start, selector)?;
     let end = match rest {
-        None => single.then_some(start),
+        None => Some(start),
         Some("-" | "..") => None,
         Some(rest) => {
             if let Some(count) = rest.strip_prefix('+') {
@@ -111,7 +111,7 @@ fn chunk(text: &str, single: bool, selector: &str) -> Result<Range, String> {
     Ok(Range { start, end })
 }
 
-/// Parses omp's read selector grammar (`tools/read-selector.ts` of omp 18.22.0) minus what needs a file (`:img`,
+/// Parses omp's read selector grammar (`tools/read-selector.ts` of omp 19.1.0) minus what needs a file (`:img`,
 /// `:conflicts`).
 ///
 /// # Errors
@@ -131,7 +131,6 @@ pub fn parse(selector: &str) -> Result<Selector, String> {
         _ => return Err(invalid(selector, "")),
     };
     let parts: Vec<&str> = lines.split(',').collect();
-    let single = raw || parts.len() > 1;
     let mut parsed = Selector {
         raw,
         ..Selector::default()
@@ -140,7 +139,7 @@ pub fn parse(selector: &str) -> Result<Selector, String> {
         if let Some(count) = part.strip_prefix('-') {
             parsed.tail = parsed.tail.max(number(count, selector)?);
         } else {
-            parsed.ranges.push(chunk(part, single, selector)?);
+            parsed.ranges.push(chunk(part, selector)?);
         }
     }
     Ok(parsed)
@@ -179,17 +178,14 @@ fn resolve(parsed: &Selector, total: usize) -> Vec<Range> {
 /// The selector that reads `remaining` (the rest of the range paging stopped in, then the ranges after it), in the
 /// form the caller used.
 fn continuation(base: &str, remaining: &[Range], raw: bool) -> String {
-    let lines = match remaining {
-        [Range { start, end: None }] if !raw => start.to_string(),
-        _ => remaining
-            .iter()
-            .map(|range| match range.end {
-                Some(end) => format!("{}-{end}", range.start),
-                None => format!("{}-", range.start),
-            })
-            .collect::<Vec<_>>()
-            .join(","),
-    };
+    let lines = remaining
+        .iter()
+        .map(|range| match range.end {
+            Some(end) => format!("{}-{end}", range.start),
+            None => format!("{}-", range.start),
+        })
+        .collect::<Vec<_>>()
+        .join(",");
     if raw {
         format!("{base}:raw:{lines}")
     } else {
@@ -359,7 +355,7 @@ mod tests {
     #[test]
     fn parses_omps_selector_grammar() {
         let range = |start, end| Range { start, end };
-        assert_eq!(parse("524").unwrap().ranges, [range(524, None)]);
+        assert_eq!(parse("524").unwrap().ranges, [range(524, Some(524))]);
         assert_eq!(parse("5-9").unwrap().ranges, [range(5, Some(9))]);
         assert_eq!(parse("5..9").unwrap().ranges, [range(5, Some(9))]);
         assert_eq!(parse("5+3").unwrap().ranges, [range(5, Some(7))]);

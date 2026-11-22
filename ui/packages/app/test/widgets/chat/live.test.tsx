@@ -868,6 +868,33 @@ describe("the draft thread's mic", () => {
     expect(live.host.window.get(ERRORS).map(({ text }) => text)).toEqual([strings.chat.live.insecure]);
   });
 
+  // spec: UI-108, UI-023
+  test("`:live` on the draft thread does what its mic does: makes the thread and talks to it, or gives up", async () => {
+    const live = renderDraft();
+    const microphone = Promise.withResolvers<void>();
+    live.media.gate = microphone.promise;
+    await act(async () => {
+      expect(live.host.commands.run("live")).toBe(true);
+    });
+    expect(live.media.opens).toBe(1);
+    expect(mic().dataset.live).toBe("end");
+    // Pressed again while the microphone opens, it gives up as the mic does.
+    await act(async () => {
+      expect(live.host.commands.run("live.toggle")).toBe(true);
+    });
+    await act(async () => microphone.resolve());
+    expect(live.media.link.closed).toBe(true);
+    expect(live.client.callsTo("threads.create")).toHaveLength(0);
+    live.media.gate = undefined;
+    await act(async () => {
+      live.host.commands.run("live");
+    });
+    await created(live);
+    expect(live.client.callsTo("thread.live_connect").map((call) => call.params)).toEqual([
+      { threadId: NEW, sdpOffer: OFFER },
+    ]);
+  });
+
   // spec: UI-180, UI-185, UI-023
   test("pressed again while the thread is created, it releases the microphone at once; the thread comes without a session", async () => {
     const live = renderDraft("webrtc", "hello");

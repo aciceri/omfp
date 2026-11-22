@@ -1,7 +1,8 @@
 /**
  * Live voice in the window (UI-180..UI-189, spike S-09): {@link LiveClient} holds this window's one session. Where the
  * window has WebRTC it is the browser half of omp's `live_connect`: the microphone, a WebRTC peer whose offer the
- * daemon relays (`thread.live_connect`), the remote voice on an `<audio>` element and the analysers the spectrum draws.
+ * daemon relays (`thread.live_connect`), the remote voice through Web Audio at twice its level and the analysers the
+ * spectrum draws.
  * The desktop webview has no WebRTC: on the daemon's machine (`#local=1`) the window starts omp's own session instead
  * (`thread.live_start`: omp's microphone and speakers), and the spectrum draws omp's `live_levels` (transient frames,
  * PRT-054). The window sends `thread.live_stop` when its peer fails or closes, on the end key, on a thread switch and on
@@ -23,6 +24,8 @@ import type { WindowStore } from "./window-store.ts";
 const SPEAKING_LEVEL = 0.015;
 /** … and for this long after (UI-184). */
 const SPEAKING_HOLD_MS = 350;
+/** The gain on the remote voice (UI-181): a phone at full volume is still too quiet. */
+const VOICE_GAIN = 2;
 
 /** What the window holds while its session is open. */
 interface LiveHold {
@@ -563,6 +566,12 @@ async function openPeer(onState: (state: RTCPeerConnectionState) => void): Promi
   try {
     // Not awaited: without a user activation `resume` waits for one; the analysers stay silent until then.
     void context.resume().catch(() => undefined);
+    const output = voiceOutput(context);
+    // The element plays the voice itself only while the context waits for a user activation.
+    const follow = () => {
+      audio.muted = context.state === "running";
+    };
+    context.addEventListener("statechange", follow);
     source.mic = new Tap(context, context.createMediaStreamSource(microphone));
     const [track] = microphone.getAudioTracks();
     if (track === undefined) {
@@ -577,7 +586,10 @@ async function openPeer(onState: (state: RTCPeerConnectionState) => void): Promi
       audio.autoplay = true;
       audio.srcObject = stream;
       void audio.play().catch(() => undefined);
-      source.remote = new Tap(context, context.createMediaStreamSource(stream));
+      const remote = context.createMediaStreamSource(stream);
+      remote.connect(output);
+      source.remote = new Tap(context, remote);
+      follow();
     });
     peer.addEventListener("connectionstatechange", () => onState(peer.connectionState));
     await peer.setLocalDescription(await peer.createOffer());
@@ -600,4 +612,18 @@ async function openPeer(onState: (state: RTCPeerConnectionState) => void): Promi
     close();
     throw new LiveOpenError("peer", failureMessage(error));
   }
+}
+
+/** The remote voice's way to the speakers: {@link VOICE_GAIN}, then a limiter so the louder peaks do not clip. */
+function voiceOutput(context: AudioContext): AudioNode {
+  const gain = context.createGain();
+  gain.gain.value = VOICE_GAIN;
+  const limiter = context.createDynamicsCompressor();
+  limiter.threshold.value = -3;
+  limiter.knee.value = 0;
+  limiter.ratio.value = 20;
+  limiter.attack.value = 0.003;
+  limiter.release.value = 0.1;
+  gain.connect(limiter).connect(context.destination);
+  return gain;
 }

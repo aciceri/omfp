@@ -2,7 +2,7 @@
 //! sends that prompt followed by the thread's conversation.
 
 use omfp_core::ThreadState;
-use omp_rpc::{AgentMessage, AssistantContent, MessageContent, UserContent};
+use omp_rpc::{AgentMessage, AssistantContent, AssistantMessage, MessageContent, UserContent};
 
 /// omp's bundled live prompt, copied verbatim from omp 18.22.0
 /// `packages/coding-agent/src/live/prompts/live-instructions.md`; re-synced on every omp upgrade (ENV-020). omp
@@ -10,10 +10,28 @@ use omp_rpc::{AgentMessage, AssistantContent, MessageContent, UserContent};
 const BUNDLED_PROMPT: &str = include_str!("live_instructions.txt");
 
 /// About how many characters of conversation the section keeps.
-pub const CONVERSATION_CAP: usize = 8_000;
+pub const CONVERSATION_CAP: usize = 16_000;
+
+/// How many characters one turn keeps, its label included: a longer turn keeps its start and its end around `…`.
+const TURN_CAP: usize = 2_000;
+
+/// How many characters of a compaction summary the section keeps, from its start.
+const SUMMARY_CAP: usize = 4_000;
+
+/// How many distinct tool uses an assistant turn names.
+const TOOL_NOTES: usize = 8;
+
+/// omp's `customType` of the requests the voice delegated (`LIVE_DELEGATION_MESSAGE_TYPE`, 18.22.0).
+const LIVE_DELEGATION: &str = "live-delegation";
 
 /// Between two turns.
 const TURN_SEPARATOR: &str = "\n\n";
+
+/// How the model reads the section.
+const INSTRUCTION: &str = "The conversation of this thread so far, oldest first (earlier turns may be left out, long \
+                           turns are shortened around …). `User (spoken):` turns are requests you delegated by voice; \
+                           `[used: …]` names the tools the agent ran. Use it to answer questions about the thread; \
+                           delegate when you need more than it holds.\n\n";
 
 /// What `{{` becomes: omp's Handlebars (`packages/utils/src/prompt.ts`) has no escape syntax, but its `default`
 /// helper returns the string literal, so this renders as `{{`.
@@ -29,13 +47,30 @@ pub fn live_instructions(title: &str, state: &ThreadState) -> String {
     }
 }
 
-/// The thread context section: the title if any, how to use the conversation, and the most recent turns within
-/// `cap` characters, oldest first. `None` without a conversation. Every `{{` is escaped for omp's renderer.
+/// The thread context section: the title if any, how to use the conversation, the summary of a compaction, and the
+/// most recent turns within `cap` characters, oldest first. `None` without a conversation. Every `{{` is escaped for
+/// omp's renderer.
 #[must_use]
 pub fn thread_context(title: &str, state: &ThreadState, cap: usize) -> Option<String> {
-    let turns = turns(state.transcript.iter().map(|entry| &entry.message));
-    let kept = recent(&turns, cap);
-    if kept.is_empty() {
+    let messages: Vec<&AgentMessage> = state
+        .transcript
+        .iter()
+        .map(|entry| &entry.message)
+        .collect();
+    // omp's history after a restart starts with the summary of what its last compaction removed.
+    let (summary, messages) = match messages
+        .iter()
+        .rposition(|message| matches!(message, AgentMessage::CompactionSummary(_)))
+    {
+        Some(at) => (compaction_summary(messages[at]), &messages[at + 1..]),
+        None => (None, &messages[..]),
+    };
+    let mut parts = Vec::new();
+    if let Some(summary) = summary {
+        parts.push(format!("Summary of the earlier conversation:\n{summary}"));
+    }
+    parts.extend(recent(&turns(messages.iter().copied()), cap));
+    if parts.is_empty() {
         return None;
     }
     let mut section = String::from("\n<thread-context>\n");
@@ -45,13 +80,27 @@ pub fn thread_context(title: &str, state: &ThreadState, cap: usize) -> Option<St
         section.push_str(title);
         section.push_str("\n\n");
     }
-    section.push_str(
-        "The conversation of this thread so far, oldest first (earlier turns may be left out). Use it to answer \
-         questions about the thread; delegate when you need more than it holds.\n\n",
-    );
-    section.push_str(&kept.join(TURN_SEPARATOR));
+    section.push_str(INSTRUCTION);
+    section.push_str(&parts.join(TURN_SEPARATOR));
     section.push_str("\n</thread-context>\n");
     Some(escape(&section))
+}
+
+/// The start of a compaction summary, within [`SUMMARY_CAP`].
+fn compaction_summary(message: &AgentMessage) -> Option<String> {
+    let AgentMessage::CompactionSummary(compaction) = message else {
+        return None;
+    };
+    let summary = compaction.summary.as_deref()?.trim();
+    if summary.is_empty() {
+        return None;
+    }
+    if summary.chars().count() <= SUMMARY_CAP {
+        return Some(summary.to_owned());
+    }
+    let mut kept: String = summary.chars().take(SUMMARY_CAP - 1).collect();
+    kept.push('…');
+    Some(kept)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -69,41 +118,169 @@ impl Role {
     }
 }
 
-/// The conversation as `Role: text` turns, consecutive messages of one role merged.
-fn turns<'a>(messages: impl IntoIterator<Item = &'a AgentMessage>) -> Vec<String> {
-    let mut turns: Vec<(Role, String)> = Vec::new();
-    for message in messages {
-        let Some((role, text)) = message_text(message) else {
-            continue;
-        };
-        match turns.last_mut() {
-            Some((last, merged)) if *last == role => {
-                merged.push_str(TURN_SEPARATOR);
-                merged.push_str(&text);
-            }
-            _ => turns.push((role, text)),
+/// Who said a turn of the section.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Speaker {
+    User,
+    /// A request the voice delegated.
+    Spoken,
+    Assistant,
+}
+
+impl Speaker {
+    fn label(self) -> &'static str {
+        match self {
+            Self::User => "User: ",
+            Self::Spoken => "User (spoken): ",
+            Self::Assistant => "Assistant: ",
         }
     }
-    turns
-        .into_iter()
-        .map(|(role, text)| format!("{}{text}", role.label()))
+}
+
+/// Consecutive messages of one speaker.
+struct Turn {
+    speaker: Speaker,
+    text: String,
+    /// Distinct tool uses, in order.
+    tools: Vec<String>,
+}
+
+impl Turn {
+    fn render(&self) -> String {
+        let mut body = String::new();
+        if !self.tools.is_empty() {
+            body.push_str("[used: ");
+            let named: Vec<&str> = self
+                .tools
+                .iter()
+                .take(TOOL_NOTES)
+                .map(String::as_str)
+                .collect();
+            body.push_str(&named.join(", "));
+            let more = self.tools.len().saturating_sub(TOOL_NOTES);
+            if more > 0 {
+                body.push_str(" and ");
+                body.push_str(&more.to_string());
+                body.push_str(" more");
+            }
+            body.push(']');
+            if !self.text.is_empty() {
+                body.push('\n');
+            }
+        }
+        body.push_str(&self.text);
+        clip(self.speaker.label(), &body, TURN_CAP)
+    }
+}
+
+/// The conversation as `Speaker: text` turns, consecutive messages of one speaker merged.
+fn turns<'a>(messages: impl IntoIterator<Item = &'a AgentMessage>) -> Vec<String> {
+    let mut turns: Vec<Turn> = Vec::new();
+    for message in messages {
+        let Some((speaker, text, tools)) = contribution(message) else {
+            continue;
+        };
+        if !matches!(turns.last(), Some(last) if last.speaker == speaker) {
+            turns.push(Turn {
+                speaker,
+                text: String::new(),
+                tools: Vec::new(),
+            });
+        }
+        let Some(turn) = turns.last_mut() else {
+            continue;
+        };
+        if !text.is_empty() {
+            if !turn.text.is_empty() {
+                turn.text.push_str(TURN_SEPARATOR);
+            }
+            turn.text.push_str(&text);
+        }
+        for tool in tools {
+            if !turn.tools.contains(&tool) {
+                turn.tools.push(tool);
+            }
+        }
+    }
+    turns.iter().map(Turn::render).collect()
+}
+
+/// What a message adds to the section: user prompts, the requests the voice delegated, assistant text and the tools
+/// the assistant ran (name and path), never their output.
+fn contribution(message: &AgentMessage) -> Option<(Speaker, String, Vec<String>)> {
+    match message {
+        AgentMessage::Custom(custom) if custom.custom_type.as_deref() == Some(LIVE_DELEGATION) => {
+            let text = joined(
+                custom
+                    .content
+                    .as_ref()
+                    .map(content_parts)
+                    .unwrap_or_default(),
+            );
+            (!text.is_empty()).then_some((Speaker::Spoken, text, Vec::new()))
+        }
+        AgentMessage::Assistant(assistant) => {
+            let text = message_text(message)
+                .map(|(_, text)| text)
+                .unwrap_or_default();
+            let tools = tool_uses(assistant);
+            (!text.is_empty() || !tools.is_empty()).then_some((Speaker::Assistant, text, tools))
+        }
+        _ => message_text(message).map(|(_, text)| (Speaker::User, text, Vec::new())),
+    }
+}
+
+/// `name path` for each tool call, `name` alone without a `path` argument.
+fn tool_uses(message: &AssistantMessage) -> Vec<String> {
+    message
+        .content
+        .iter()
+        .flatten()
+        .filter_map(|part| match part {
+            AssistantContent::ToolCall(call) => {
+                let name = call.name.as_deref()?;
+                let path = call
+                    .arguments
+                    .as_ref()
+                    .and_then(|arguments| arguments.get("path"))
+                    .and_then(serde_json::Value::as_str);
+                Some(path.map_or_else(|| name.to_owned(), |path| format!("{name} {path}")))
+            }
+            _ => None,
+        })
         .collect()
+}
+
+/// The text parts of a user or custom message's content, images as `[image]`.
+fn content_parts(content: &MessageContent) -> Vec<&str> {
+    match content {
+        MessageContent::String(text) => vec![text.as_str()],
+        MessageContent::UserContentList(list) => list
+            .iter()
+            .map(|part| match part {
+                UserContent::Text(text) => text.text.as_deref().unwrap_or_default(),
+                UserContent::Image(_) => "[image]",
+            })
+            .collect(),
+    }
+}
+
+/// The non-blank parts, trimmed, one per line.
+fn joined(parts: Vec<&str>) -> String {
+    parts
+        .into_iter()
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// The text a message contributes: user prompts (not omp's synthetic ones) and assistant text, images as `[image]`.
 pub(crate) fn message_text(message: &AgentMessage) -> Option<(Role, String)> {
     let parts: Vec<&str> = match message {
-        AgentMessage::User(user) if user.synthetic != Some(true) => match &user.content {
-            Some(MessageContent::String(text)) => vec![text.as_str()],
-            Some(MessageContent::UserContentList(list)) => list
-                .iter()
-                .map(|part| match part {
-                    UserContent::Text(text) => text.text.as_deref().unwrap_or_default(),
-                    UserContent::Image(_) => "[image]",
-                })
-                .collect(),
-            None => Vec::new(),
-        },
+        AgentMessage::User(user) if user.synthetic != Some(true) => {
+            user.content.as_ref().map(content_parts).unwrap_or_default()
+        }
         AgentMessage::Assistant(assistant) => assistant
             .content
             .iter()
@@ -120,17 +297,11 @@ pub(crate) fn message_text(message: &AgentMessage) -> Option<(Role, String)> {
         AgentMessage::User(_) => Role::User,
         _ => Role::Assistant,
     };
-    let text = parts
-        .into_iter()
-        .map(str::trim)
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join("\n");
+    let text = joined(parts);
     (!text.is_empty()).then_some((role, text))
 }
 
-/// The most recent turns within `cap` characters (separators included), oldest first, cut at turn boundaries. A
-/// newest turn longer than `cap` keeps its label and its tail after `…`.
+/// The most recent turns within `cap` characters (separators included), oldest first, cut at turn boundaries.
 fn recent(turns: &[String], cap: usize) -> Vec<String> {
     let mut kept = Vec::new();
     let mut used = 0;
@@ -141,32 +312,28 @@ fn recent(turns: &[String], cap: usize) -> Vec<String> {
             } else {
                 TURN_SEPARATOR.len()
             };
-        if used + size <= cap {
-            used += size;
-            kept.push(turn.clone());
-        } else {
-            if kept.is_empty() {
-                kept.push(tail(turn, cap));
-            }
+        if used + size > cap {
             break;
         }
+        used += size;
+        kept.push(turn.clone());
     }
     kept.reverse();
     kept
 }
 
-/// The label of `turn` and the end of its text, `cap` characters in all.
-fn tail(turn: &str, cap: usize) -> String {
-    let label = [Role::User, Role::Assistant]
-        .into_iter()
-        .map(Role::label)
-        .find(|label| turn.starts_with(label))
-        .unwrap_or_default();
-    let text = &turn[label.len()..];
-    let room = cap.saturating_sub(label.chars().count() + 1);
-    let skip = text.chars().count().saturating_sub(room);
-    let rest: String = text.chars().skip(skip).collect();
-    format!("{label}…{rest}")
+/// `label` and `body` within `cap` characters: a longer body keeps its start and its end around `…`.
+fn clip(label: &str, body: &str, cap: usize) -> String {
+    let length = body.chars().count();
+    let room = cap.saturating_sub(label.chars().count());
+    if length <= room {
+        return format!("{label}{body}");
+    }
+    let room = room.saturating_sub(1);
+    let head = room / 2;
+    let start: String = body.chars().take(head).collect();
+    let end: String = body.chars().skip(length - (room - head)).collect();
+    format!("{label}{start}…{end}")
 }
 
 /// Makes every `{{` render literally in omp's Handlebars.
@@ -205,7 +372,7 @@ mod tests {
     /// The turns of a section, without its title and instruction lines.
     fn conversation(section: &str) -> Vec<String> {
         let body = section
-            .split_once("than it holds.\n\n")
+            .split_once(INSTRUCTION)
             .unwrap()
             .1
             .strip_suffix("\n</thread-context>\n")
@@ -226,8 +393,10 @@ mod tests {
         assert_eq!(
             section,
             "\n<thread-context>\nThread title: Login bug\n\nThe conversation of this thread so far, oldest first \
-             (earlier turns may be left out). Use it to answer questions about the thread; delegate when you need \
-             more than it holds.\n\nUser: fix the login\n\nAssistant: Done, the token was stale.\n</thread-context>\n"
+             (earlier turns may be left out, long turns are shortened around …). `User (spoken):` turns are requests \
+             you delegated by voice; `[used: …]` names the tools the agent ran. Use it to answer questions about the \
+             thread; delegate when you need more than it holds.\n\nUser: fix the login\n\nAssistant: Done, the token \
+             was stale.\n</thread-context>\n"
         );
     }
 
@@ -242,7 +411,7 @@ mod tests {
 
     // spec: DMN-105
     #[test]
-    fn only_user_prompts_and_assistant_text_count() {
+    fn thinking_tool_output_and_synthetic_prompts_are_left_out_tools_are_named() {
         let state = state(&[
             json!({ "role": "user", "content": [
                 { "type": "text", "text": "what is in this screenshot?" },
@@ -265,16 +434,17 @@ mod tests {
 
         let section = thread_context("", &state, CONVERSATION_CAP).unwrap();
 
-        assert!(section.ends_with(
-            "than it holds.\n\nUser: what is in this screenshot?\n[image]\n\nAssistant: Let me look.\n\nA login \
-             form.\n</thread-context>\n"
-        ));
+        assert_eq!(
+            conversation(&section).join(TURN_SEPARATOR),
+            "User: what is in this screenshot?\n[image]\n\nAssistant: [used: read a.png, bash]\nLet me look.\n\nA \
+             login form."
+        );
         for left_out in [
             "pondering",
             "tool output",
             "a reminder",
             "developer note",
-            "a.png",
+            "AAAA",
         ] {
             assert!(!section.contains(left_out), "{left_out} leaked");
         }
@@ -293,6 +463,56 @@ mod tests {
 
     // spec: DMN-105
     #[test]
+    fn requests_delegated_by_voice_are_spoken_user_turns() {
+        let state = state(&[
+            user("fix the login"),
+            assistant("Done."),
+            json!({ "role": "custom", "customType": "live-delegation", "content": "run the tests",
+                    "display": true, "attribution": "agent" }),
+            json!({ "role": "custom", "customType": "other", "content": "an extension's note", "display": true }),
+            assistant("All green."),
+        ]);
+
+        let section = thread_context("", &state, CONVERSATION_CAP).unwrap();
+
+        assert_eq!(
+            conversation(&section),
+            vec![
+                "User: fix the login",
+                "Assistant: Done.",
+                "User (spoken): run the tests",
+                "Assistant: All green.",
+            ]
+        );
+    }
+
+    // spec: DMN-105
+    #[test]
+    fn a_compaction_summary_comes_first_within_its_budget() {
+        let summary = format!("We fixed the login. {}", "y".repeat(SUMMARY_CAP));
+        let state = state(&[
+            user("before the compaction"),
+            json!({ "role": "compactionSummary", "summary": summary, "tokensBefore": 1000 }),
+            user("after it"),
+        ]);
+
+        let section = thread_context("", &state, CONVERSATION_CAP).unwrap();
+        let parts = conversation(&section);
+
+        assert_eq!(parts.len(), 2);
+        assert!(
+            parts[0].starts_with("Summary of the earlier conversation:\nWe fixed the login. yyy")
+        );
+        assert!(parts[0].ends_with("y…"));
+        assert_eq!(
+            parts[0].chars().count(),
+            "Summary of the earlier conversation:\n".len() + SUMMARY_CAP
+        );
+        assert_eq!(parts[1], "User: after it");
+    }
+
+    // spec: DMN-105
+    #[test]
     fn the_cap_keeps_the_most_recent_whole_turns() {
         let turns: Vec<String> = ["User: 0123456789", "Assistant: abcdef", "User: xyz"]
             .map(str::to_owned)
@@ -305,26 +525,55 @@ mod tests {
 
     // spec: DMN-105
     #[test]
-    fn a_newest_turn_longer_than_the_cap_keeps_its_tail() {
-        let turns: Vec<String> = ["User: older", "Assistant: 0123456789ééé"]
-            .map(str::to_owned)
-            .into();
+    fn a_long_turn_keeps_its_start_and_its_end() {
+        assert_eq!(clip("User: ", "0123456789ééé", 13), "User: 012…ééé");
+        assert_eq!(clip("User: ", "short", 13), "User: short");
 
-        let kept = recent(&turns, 20);
+        let long = format!("start {} end", "x".repeat(TURN_CAP));
+        let turns =
+            turns(&[assistant(&long)].map(|message| AgentMessage::from_value(message).unwrap()));
+        assert_eq!(turns[0].chars().count(), TURN_CAP);
+        assert!(turns[0].starts_with("Assistant: start xxx"));
+        assert!(turns[0].contains('…'));
+        assert!(turns[0].ends_with("xxx end"));
+    }
 
-        assert_eq!(kept, vec!["Assistant: …56789ééé"]);
-        assert_eq!(kept[0].chars().count(), 20);
+    // spec: DMN-105
+    #[test]
+    fn one_long_answer_no_longer_pushes_the_conversation_out() {
+        let mut messages = vec![user("first")];
+        messages.push(assistant(&"x".repeat(CONVERSATION_CAP)));
+        messages.push(user("last"));
+
+        let parts = conversation(&thread_context("", &state(&messages), CONVERSATION_CAP).unwrap());
+
+        assert_eq!(parts.len(), 3);
+        assert_eq!(parts[0], "User: first");
+        assert_eq!(parts[2], "User: last");
     }
 
     // spec: DMN-105
     #[test]
     fn the_cap_applies_to_the_section() {
-        let long = "x".repeat(CONVERSATION_CAP);
-        let state = state(&[user("first"), assistant(&long), user("last")]);
+        let messages: Vec<Value> = (0..40)
+            .map(|turn| {
+                if turn % 2 == 0 {
+                    user(&format!("question {turn}"))
+                } else {
+                    assistant(&format!("answer {turn} {}", "x".repeat(TURN_CAP)))
+                }
+            })
+            .collect();
 
-        let section = thread_context("", &state, CONVERSATION_CAP).unwrap();
+        let parts = conversation(&thread_context("", &state(&messages), CONVERSATION_CAP).unwrap());
 
-        assert_eq!(conversation(&section), vec!["User: last"]);
+        let [.., question, answer] = parts.as_slice() else {
+            panic!("too few turns: {parts:?}");
+        };
+        assert_eq!(question, "User: question 38");
+        assert!(answer.starts_with("Assistant: answer 39 "));
+        assert!(parts.join(TURN_SEPARATOR).chars().count() <= CONVERSATION_CAP);
+        assert!(!parts.iter().any(|part| part.contains("question 0")));
     }
 
     // spec: DMN-105
@@ -349,11 +598,14 @@ mod tests {
             thread_context("Title", &ThreadState::default(), CONVERSATION_CAP),
             None
         );
-        let tools_only = state(&[json!({ "role": "assistant", "content": [
-            { "type": "toolCall", "id": "t", "name": "bash", "arguments": {} },
+        let thinking_only = state(&[json!({ "role": "assistant", "content": [
+            { "type": "thinking", "thinking": "hmm" },
         ] })]);
-        assert_eq!(thread_context("Title", &tools_only, CONVERSATION_CAP), None);
-        assert_eq!(live_instructions("Title", &tools_only), BUNDLED_PROMPT);
+        assert_eq!(
+            thread_context("Title", &thinking_only, CONVERSATION_CAP),
+            None
+        );
+        assert_eq!(live_instructions("Title", &thinking_only), BUNDLED_PROMPT);
     }
 
     // spec: DMN-105

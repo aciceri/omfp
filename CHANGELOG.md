@@ -9,6 +9,10 @@ The version's section is also the source of the GitHub release notes.
 
 ### Added
 
+- The voice of live sessions is now a setting: `:voice maple` (or `:set live_voice=…`, `[ui] live_voice`) picks one
+  of omp's nine voices — `arbor`, `breeze`, `cove`, `ember`, `juniper`, `maple`, `sol` (the default), `spruce`,
+  `vale` — for every window, from the next session on; on a phone it is two taps in the Commands sheet. Agents set
+  `ui.liveVoice` with `settings.set`, or pass `voice` to `thread.live_connect`/`thread.live_start` (#240).
 - `Alt-j` / `Alt-k` (`:next-thread` / `:prev-thread`) select the next or previous thread of the left column from
   anywhere, also while typing in the composer, whose focus moves to the new thread's composer. They go on into the
   next or previous workspace and wrap around at the ends, skipping archived threads, collapsed workspaces and the

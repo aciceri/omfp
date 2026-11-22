@@ -20,6 +20,7 @@
 //! show_xdev_notices = false     # show informational MCP mount/unmount notices in the transcript
 //! skin = "crush"                # crush | boring
 //! recent_threads = 20           # hidden threads a window keeps followed, 0..=100 or "all"
+//! live_voice = "sol"            # arbor | breeze | cove | ember | juniper | maple | sol | spruce | vale (omp's voices)
 //!
 //! [ui.fonts]
 //! prose = "Literata, serif"
@@ -36,7 +37,7 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 use omfp_protocol::{
-    AllThreads, BuiltinTheme, Density, FontSettings, KeymapEntry, KeymapMode, Motion,
+    AllThreads, BuiltinTheme, Density, FontSettings, KeymapEntry, KeymapMode, LiveVoice, Motion,
     NotificationMode, RecentThreads, SetSettingsParams, Settings, Skin, UiSettings,
 };
 use serde::Deserialize;
@@ -113,6 +114,7 @@ struct RawUi {
     show_xdev_notices: Option<bool>,
     skin: Option<Skin>,
     recent_threads: Option<RecentThreads>,
+    live_voice: Option<LiveVoice>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -169,6 +171,7 @@ impl ConfigFile {
                 show_xdev_notices: raw.ui.show_xdev_notices,
                 skin: raw.ui.skin,
                 recent_threads: raw.ui.recent_threads,
+                live_voice: raw.ui.live_voice,
             },
             keymap: keymap(&raw.keymap)?,
         })
@@ -277,6 +280,9 @@ pub fn write_back(text: &str, update: &SetSettingsParams) -> Result<String, Stri
         }
         if let Some(skin) = ui.skin {
             set(table, "skin", skin_name(skin));
+        }
+        if let Some(voice) = ui.live_voice {
+            set(table, "live_voice", voice.as_str());
         }
         match ui.recent_threads {
             Some(RecentThreads::Count(count)) => set(table, "recent_threads", i64::from(count)),
@@ -446,6 +452,34 @@ mod tests {
         assert!(text.contains("skin = \"crush\""), "{text}");
     }
 
+    // spec: UI-999, PRT-228, DMN-009
+    #[test]
+    fn every_live_voice_round_trips_by_omps_name_and_others_are_refused() {
+        let mut text = FILE.to_owned();
+        for voice in LiveVoice::ALL {
+            text = write_back(
+                &text,
+                &SetSettingsParams {
+                    ui: Some(UiSettings {
+                        live_voice: Some(voice),
+                        ..UiSettings::default()
+                    }),
+                    keymap: None,
+                },
+            )
+            .unwrap();
+            assert!(
+                text.contains(&format!("live_voice = \"{}\" # calmer", voice.as_str())),
+                "{text}"
+            );
+            let mut expected = ConfigFile::parse(FILE).unwrap();
+            expected.ui.live_voice = Some(voice);
+            assert_eq!(ConfigFile::parse(&text).unwrap(), expected);
+        }
+        let error = ConfigFile::parse("[ui]\nlive_voice = \"alloy\"").unwrap_err();
+        assert!(error.contains("alloy"), "{error}");
+    }
+
     // spec: UI-996, DMN-009
     #[test]
     fn recent_threads_round_trips_and_is_bounded() {
@@ -507,6 +541,7 @@ density = "compact" # for now
 font_size = 15
 motion = "reduced"
 theme = "gruvbox"
+live_voice = "maple" # calmer
 [ui.fonts]
 prose = "Literata, serif"
 
@@ -526,7 +561,7 @@ prose = "Literata, serif"
         }
     }
 
-    // spec: DMN-009, UI-097, UI-145, DMN-238
+    // spec: DMN-009, UI-097, UI-145, DMN-238, UI-999
     #[test]
     fn the_file_holds_daemon_options_ui_settings_and_keymap_entries() {
         let file = ConfigFile::parse(FILE).unwrap();
@@ -548,6 +583,7 @@ prose = "Literata, serif"
                 show_xdev_notices: None,
                 skin: None,
                 recent_threads: None,
+                live_voice: Some(LiveVoice::Maple),
             }
         );
         assert_eq!(
@@ -663,7 +699,7 @@ prose = "Literata, serif"
         assert_eq!(expand_home("~/data".into(), None), PathBuf::from("~/data"));
     }
 
-    // spec: DMN-009, UI-097, UI-145, DMN-238
+    // spec: DMN-009, UI-097, UI-145, DMN-238, UI-999
     #[test]
     fn write_back_changes_only_the_given_values_and_keeps_comments() {
         let update = SetSettingsParams {
@@ -680,6 +716,7 @@ prose = "Literata, serif"
                 theme: Some(BuiltinTheme::TokyoNight),
                 show_xdev_notices: None,
                 skin: Some(Skin::Boring),
+                live_voice: Some(LiveVoice::Vale),
                 recent_threads: None,
             }),
             keymap: Some(vec![
@@ -702,6 +739,7 @@ density = "normal" # for now
 font_size = 18
 motion = "none"
 theme = "tokyo-night"
+live_voice = "vale" # calmer
 notifications = "never"
 skin = "boring"
 [ui.fonts]

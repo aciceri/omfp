@@ -915,6 +915,8 @@ export type LiveConnectParams = {
   /** SDP offer of the client's WebRTC peer: one sendrecv Opus audio track plus an `oai-events` data channel. */
   sdpOffer: string;
   threadId: string;
+  /** The voice omp speaks with (PRT-228); absent leaves it to omp. */
+  voice?: LiveVoice | null;
 };
 
 /** `thread.live_connect` result: omp's answer once the call is signaled (PRT-050). */
@@ -936,11 +938,25 @@ export type LiveMuted = {
   muted: boolean;
 };
 
+/** `thread.live_start` params (PRT-053, PRT-228, DMN-109). */
+export type LiveStartParams = {
+  threadId: string;
+  /** The voice omp speaks with (PRT-228); absent leaves it to omp. */
+  voice?: LiveVoice | null;
+};
+
 /** `thread.live_start` result: the voice omp uses once the host's session records (PRT-053, DMN-109). */
 export type LiveStarted = {
   /** The realtime voice omp uses. */
   voice: string;
 };
+
+/**
+ * A realtime voice of omp's live sessions (PRT-228, UI-999): the voices omp 18.22.0 accepts
+ * (`packages/coding-agent/src/live/voices.ts`), named as omp names them; `sol` is omp's default. Any other name does
+ * not decode.
+ */
+export type LiveVoice = "arbor" | "breeze" | "cove" | "ember" | "juniper" | "maple" | "sol" | "spruce" | "vale";
 
 /** `auth.login` result (PRT-130): omp stored the provider's credential. */
 export type LoggedIn = {
@@ -1993,6 +2009,11 @@ export type UiSettings = {
   /** Root font size in px (10..=28, default 17); every rem-based size token scales with it. */
   fontSize?: number | null;
   fonts?: FontSettings | null;
+  /**
+   * The voice of live sessions (UI-999, PRT-228): one of omp's realtime voices; absent leaves it to omp (`sol`, or
+   * omp's own `live.voice` setting).
+   */
+  liveVoice?: LiveVoice | null;
   motion?: Motion | null;
   notifications?: NotificationMode | null;
   /**
@@ -2570,7 +2591,7 @@ export interface Methods {
   "thread.restart": { params: ThreadRef; result: Empty };
   "thread.stop": { params: StopThreadParams; result: ThreadsStopped };
   "thread.live_connect": { params: LiveConnectParams; result: LiveConnected };
-  "thread.live_start": { params: ThreadRef; result: LiveStarted };
+  "thread.live_start": { params: LiveStartParams; result: LiveStarted };
   "thread.live_stop": { params: ThreadRef; result: Empty };
   "thread.live_mute": { params: LiveMuteParams; result: LiveMuted };
   "interaction.respond": { params: RespondParams; result: Empty };

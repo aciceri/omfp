@@ -22,7 +22,8 @@ const ALREADY_ACTIVE: &str = "A live session is already active";
 #[derive(Debug, Clone, PartialEq)]
 pub enum FakeLive {
     /// omp signaled the call: it sends `connecting` and `listening`, then `frames`, and answers `{ voice, sdpAnswer }`
-    /// with [`answer_for`] the offer (`live_connect`) or `{ voice }` (`live_start`).
+    /// with [`answer_for`] the offer (`live_connect`) or `{ voice }` (`live_start`). `voice` is omp's own choice (its
+    /// `live.voice` setting); a command's `voice` wins over it, as in omp.
     Connect {
         voice: String,
         frames: Vec<RpcNotification>,
@@ -148,7 +149,7 @@ impl FakeProcess {
                 "live_connect requires a non-empty sdpOffer",
             ));
         }
-        let voice = self.live_open("live_connect", script)?;
+        let voice = self.live_open("live_connect", command.voice.as_deref(), script)?;
         Ok(json!({ "voice": voice, "sdpAnswer": answer_for(&command.sdp_offer) }))
     }
 
@@ -156,15 +157,20 @@ impl FakeProcess {
     /// and a `speaking` phase (TST-051).
     pub(super) fn live_start(
         &self,
-        _command: &LiveStartCommand,
+        command: &LiveStartCommand,
         script: FakeLive,
     ) -> Result<Value, omp_rpc::Error> {
-        let voice = self.live_open("live_start", script)?;
+        let voice = self.live_open("live_start", command.voice.as_deref(), script)?;
         Ok(json!({ "voice": voice }))
     }
 
-    /// Opens the session of `command` as `script` says; returns the voice.
-    fn live_open(&self, command: &str, script: FakeLive) -> Result<String, omp_rpc::Error> {
+    /// Opens the session of `command` as `script` says; returns the voice: the `requested` one, else the script's.
+    fn live_open(
+        &self,
+        command: &str,
+        requested: Option<&str>,
+        script: FakeLive,
+    ) -> Result<String, omp_rpc::Error> {
         {
             let mut live = lock(&self.shared.live);
             if live.is_some() {
@@ -179,7 +185,7 @@ impl FakeProcess {
                     phase(LivePhase::Listening),
                 ]);
                 self.emit(frames);
-                Ok(voice)
+                Ok(requested.map_or(voice, str::to_owned))
             }
             FakeLive::Fail { error } => {
                 lock(&self.shared.live).take();

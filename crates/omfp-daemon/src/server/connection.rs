@@ -10,9 +10,9 @@ use futures::{SinkExt, StreamExt};
 use omfp_core::LiveOwner;
 use omfp_protocol::{
     BashParams, BtwParams, Call, CardAnswerParams, Empty, ErrorBody, ErrorCode, EventFrame,
-    HelloResult, LiveConnectParams, LiveConnected, LiveStarted, MessageParams, PromptParams,
-    Request, RespondParams, Response, ServerFrame, SubscribeParams, SubscribeResult, ThreadRef,
-    Topic, TopicEvent, TransientEvent, WatchParams, decode_request,
+    HelloResult, LiveConnectParams, LiveConnected, LiveStartParams, LiveStarted, MessageParams,
+    PromptParams, Request, RespondParams, Response, ServerFrame, SubscribeParams, SubscribeResult,
+    ThreadRef, Topic, TopicEvent, TransientEvent, WatchParams, decode_request,
 };
 use serde::Serialize;
 use serde_json::Value;
@@ -340,7 +340,7 @@ impl Connection {
                 let (supervisor, owner) = (services.supervisor.clone(), self.live_owner());
                 self.respond_later(id, async move {
                     let answer = supervisor
-                        .live_connect(&params.thread_id, owner, params.sdp_offer)
+                        .live_connect(&params.thread_id, owner, params.sdp_offer, params.voice)
                         .await
                         .map_err(supervisor_error)?;
                     to_value(&LiveConnected {
@@ -349,12 +349,12 @@ impl Connection {
                     })
                 });
             }
-            Call::ThreadLiveStart(ThreadRef { thread_id }) => {
+            Call::ThreadLiveStart(LiveStartParams { thread_id, voice }) => {
                 // Owned like a `live_connect` session (DMN-109, DMN-103).
                 let (supervisor, owner) = (services.supervisor.clone(), self.live_owner());
                 self.respond_later(id, async move {
                     let voice = supervisor
-                        .live_start(&thread_id, owner)
+                        .live_start(&thread_id, owner, voice)
                         .await
                         .map_err(supervisor_error)?;
                     to_value(&LiveStarted { voice })
@@ -576,7 +576,7 @@ fn driven_thread(call: &Call) -> Option<&str> {
         | Call::InteractionRespond(RespondParams { thread_id, .. })
         | Call::CardAnswer(CardAnswerParams { thread_id, .. })
         | Call::ThreadLiveConnect(LiveConnectParams { thread_id, .. })
-        | Call::ThreadLiveStart(ThreadRef { thread_id }) => Some(thread_id),
+        | Call::ThreadLiveStart(LiveStartParams { thread_id, .. }) => Some(thread_id),
         _ => None,
     }
 }

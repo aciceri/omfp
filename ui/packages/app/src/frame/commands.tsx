@@ -35,7 +35,7 @@ import {
 import { strings } from "../strings/index.ts";
 import { COMPACT_MODES, parseCompact } from "../vm/compaction.ts";
 import { displayTitle, isArchived, nextNeedingAttention, spawnerOf } from "../vm/threads.ts";
-import { DENSITIES, parseSet, parseTheme, SET_KEYS, themeArgs } from "./set.ts";
+import { DENSITIES, parseSet, parseTheme, SET_KEYS, themeArgs, VOICES } from "./set.ts";
 
 /** The path the focused element or its nearest ancestor carries for `:open` (`data-omfp-path`, UI-116). */
 function focusedPath(element: Element | null): { path: string; options: OpenFileOptions } | undefined {
@@ -338,6 +338,21 @@ export function GlobalCommands({ viewIds, currentView, widgets, addWidget }: Glo
       const chosen = DENSITIES.find((candidate) => candidate === density);
       if (chosen !== undefined) {
         void setSettings({ ui: { density: chosen } });
+      }
+    },
+  });
+  useCommand({
+    // UI-999: the voice of the next live sessions, every window's (`[ui] live_voice`).
+    id: "live.voice",
+    title: titles.voice,
+    aliases: ["voice"],
+    args: () => VOICES,
+    run: ([voice = ""]) => {
+      const parsed = parseSet(`live_voice=${voice}`);
+      if (parsed.ok) {
+        void setSettings(parsed.patch);
+      } else {
+        reportError(host, new Error(parsed.error));
       }
     },
   });

@@ -26,6 +26,7 @@ expression: golden
           "code": "\"JetBrains Mono\", monospace",
           "prose": "Literata, serif"
         },
+        "liveVoice": "maple",
         "motion": "reduced",
         "notifications": "always",
         "recentThreads": 30,
@@ -60,6 +61,7 @@ expression: golden
           "code": "\"JetBrains Mono\", monospace",
           "prose": "Literata, serif"
         },
+        "liveVoice": "maple",
         "motion": "reduced",
         "notifications": "always",
         "recentThreads": 30,

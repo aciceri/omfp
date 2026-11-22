@@ -242,7 +242,7 @@ methods! {
     ThreadLiveConnect = "thread.live_connect" (params::LiveConnectParams) -> params::LiveConnected;
     /// Starts a live voice session on the daemon machine's microphone and speakers (omp `live_start`, DMN-109): the
     /// desktop webview has no WebRTC (S-09).
-    ThreadLiveStart = "thread.live_start" (params::ThreadRef) -> params::LiveStarted;
+    ThreadLiveStart = "thread.live_start" (params::LiveStartParams) -> params::LiveStarted;
     /// Stops the thread's live voice session, if any (omp `live_stop`, DMN-102).
     ThreadLiveStop = "thread.live_stop" (params::ThreadRef) -> params::Empty;
     /// Mutes or unmutes the live voice session (omp `live_mute`, DMN-102).

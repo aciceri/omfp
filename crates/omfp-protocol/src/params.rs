@@ -8,7 +8,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::dto::{KeymapEntry, PathEntry, RepoStatus, SeenRepository, UiSettings, WidgetSource};
+use crate::dto::{
+    KeymapEntry, LiveVoice, PathEntry, RepoStatus, SeenRepository, UiSettings, WidgetSource,
+};
 use crate::topic::Topic;
 
 /// No params, or the `{}` result.
@@ -621,6 +623,19 @@ pub struct LiveConnectParams {
     pub thread_id: String,
     /// SDP offer of the client's WebRTC peer: one sendrecv Opus audio track plus an `oai-events` data channel.
     pub sdp_offer: String,
+    /// The voice omp speaks with (PRT-228); absent leaves it to omp.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice: Option<LiveVoice>,
+}
+
+/// `thread.live_start` params (PRT-053, PRT-228, DMN-109).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct LiveStartParams {
+    pub thread_id: String,
+    /// The voice omp speaks with (PRT-228); absent leaves it to omp.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice: Option<LiveVoice>,
 }
 
 /// `thread.live_connect` result: omp's answer once the call is signaled (PRT-050).

@@ -1,9 +1,10 @@
-//! Live voice relay (DMN-100..110): one session per thread, opened on the client's peer (`live_connect`) or on the
+//! Live voice relay (DMN-100..112): one session per thread, opened on the client's peer (`live_connect`) or on the
 //! daemon machine (`live_start`), owned by the connection that opened it.
 
 use std::sync::atomic::Ordering;
 
 use omfp_core::{LiveOwner, ThreadEvent, live_error_message};
+use omfp_protocol::LiveVoice;
 use omp_rpc::{
     LiveConnectCommand, LiveConnectResult, LiveLevelsEvent, LiveMuteCommand, LiveStartCommand,
     LiveStartResult,
@@ -27,13 +28,14 @@ const LIVE_NOT_STARTED: &[&str] = &[
 const LIVE_NO_SESSION: &str = "No live session is active";
 
 impl Supervisor {
-    /// Starts a live voice session for `owner` on the client's peer (DMN-100). Returns omp's SDP answer once the call
-    /// is signaled.
+    /// Starts a live voice session for `owner` on the client's peer (DMN-100), speaking with `voice` when given
+    /// (DMN-112). Returns omp's SDP answer once the call is signaled.
     pub async fn live_connect(
         &self,
         id: &str,
         owner: LiveOwner,
         sdp_offer: String,
+        voice: Option<LiveVoice>,
     ) -> Result<LiveConnectResult> {
         if sdp_offer.trim().is_empty() {
             return Err(SupervisorError::EmptyOffer);
@@ -42,7 +44,7 @@ impl Supervisor {
             .open_live(id, owner, |instructions| {
                 OmpCall::LiveConnect(LiveConnectCommand {
                     sdp_offer,
-                    voice: None,
+                    voice: voice.map(|voice| voice.as_str().to_owned()),
                     instructions: Some(instructions),
                 })
             })
@@ -52,13 +54,18 @@ impl Supervisor {
         })
     }
 
-    /// Starts a live voice session for `owner` on the daemon machine's microphone and speakers (DMN-109). Returns the
-    /// voice once omp records.
-    pub async fn live_start(&self, id: &str, owner: LiveOwner) -> Result<String> {
+    /// Starts a live voice session for `owner` on the daemon machine's microphone and speakers (DMN-109), speaking
+    /// with `voice` when given (DMN-112). Returns the voice once omp records.
+    pub async fn live_start(
+        &self,
+        id: &str,
+        owner: LiveOwner,
+        voice: Option<LiveVoice>,
+    ) -> Result<String> {
         let answer = self
             .open_live(id, owner, |instructions| {
                 OmpCall::LiveStart(LiveStartCommand {
-                    voice: None,
+                    voice: voice.map(|voice| voice.as_str().to_owned()),
                     instructions: Some(instructions),
                 })
             })

@@ -134,7 +134,8 @@ expression: snapshot
       "theme": "rose-pine",
       "showXdevNotices": true,
       "skin": "boring",
-      "recentThreads": 30
+      "recentThreads": 30,
+      "liveVoice": "maple"
     },
     "keymap": [
       {

@@ -1343,6 +1343,10 @@ requirements = [
   "UI-178",
   "UI-179",
   "E2E-78",
+  # The voice of live sessions (#240)
+  "DMN-112",
+  "PRT-228",
+  "UI-999",
 ]
 
 [M18]

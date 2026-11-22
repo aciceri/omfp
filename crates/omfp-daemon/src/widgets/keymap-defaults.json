@@ -591,6 +591,13 @@
       ]
     },
     {
+      "id": "live.voice",
+      "title": "Voice of live sessions (:voice arbor|breeze|cove|ember|juniper|maple|sol|spruce|vale)",
+      "aliases": [
+        "voice"
+      ]
+    },
+    {
       "id": "nav.bottom",
       "title": "Last thread",
       "aliases": []

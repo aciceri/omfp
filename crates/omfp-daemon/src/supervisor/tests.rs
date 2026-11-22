@@ -1861,7 +1861,7 @@ async fn live_connect_starts_omp_records_the_owner_and_relays_the_answer() {
 
     let answer = h
         .supervisor
-        .live_connect(&id, owner(4), OFFER.into())
+        .live_connect(&id, owner(4), OFFER.into(), None)
         .await
         .unwrap();
 
@@ -1901,7 +1901,7 @@ async fn live_connect_sends_the_live_prompt_with_the_threads_conversation() {
         .push_run(FakeRun::fresh().with_history(history.into()));
 
     h.supervisor
-        .live_connect(&id, owner(1), OFFER.into())
+        .live_connect(&id, owner(1), OFFER.into(), None)
         .await
         .unwrap();
 
@@ -1939,7 +1939,7 @@ async fn a_blank_offer_is_refused_without_omp() {
 
     let error = h
         .supervisor
-        .live_connect(&id, owner(1), " \n".into())
+        .live_connect(&id, owner(1), " \n".into(), None)
         .await
         .unwrap_err();
 
@@ -1953,13 +1953,13 @@ async fn one_live_session_per_thread_until_omp_ends_it() {
     let h = harness(|_| {});
     let (id, other) = (h.thread(), h.thread());
     h.supervisor
-        .live_connect(&id, owner(1), OFFER.into())
+        .live_connect(&id, owner(1), OFFER.into(), None)
         .await
         .unwrap();
 
     let error = h
         .supervisor
-        .live_connect(&id, owner(2), OFFER.into())
+        .live_connect(&id, owner(2), OFFER.into(), None)
         .await
         .unwrap_err();
     assert!(
@@ -1972,7 +1972,7 @@ async fn one_live_session_per_thread_until_omp_ends_it() {
         "omp never saw the second offer"
     );
     h.supervisor
-        .live_connect(&other, owner(2), OFFER.into())
+        .live_connect(&other, owner(2), OFFER.into(), None)
         .await
         .expect("another thread has its own session");
 
@@ -1980,7 +1980,7 @@ async fn one_live_session_per_thread_until_omp_ends_it() {
     h.wait(&id, "the end of the session", |state| state.live.is_none())
         .await;
     h.supervisor
-        .live_connect(&id, owner(3), OFFER.into())
+        .live_connect(&id, owner(3), OFFER.into(), None)
         .await
         .expect("a new session once omp ended the first");
     let state = h.log(&id).await.with_state(Clone::clone);
@@ -2006,7 +2006,7 @@ async fn live_mute_forwards_the_mute_and_omp_reports_the_phase() {
     let h = harness(|_| {});
     let id = h.thread();
     h.supervisor
-        .live_connect(&id, owner(1), OFFER.into())
+        .live_connect(&id, owner(1), OFFER.into(), None)
         .await
         .unwrap();
 
@@ -2043,7 +2043,7 @@ async fn a_missing_codex_login_reads_as_a_login_hint() {
 
     let error = h
         .supervisor
-        .live_connect(&id, owner(1), OFFER.into())
+        .live_connect(&id, owner(1), OFFER.into(), None)
         .await
         .unwrap_err();
 
@@ -2062,7 +2062,7 @@ async fn a_missing_codex_login_reads_as_a_login_hint() {
     // omp's `live_end` freed the thread for another try.
     h.launcher.script_live(crate::agent::FakeLive::default());
     h.supervisor
-        .live_connect(&id, owner(1), OFFER.into())
+        .live_connect(&id, owner(1), OFFER.into(), None)
         .await
         .unwrap();
 }
@@ -2082,7 +2082,7 @@ async fn a_refusal_before_the_session_closes_it_at_once() {
 
     let error = h
         .supervisor
-        .live_connect(&id, owner(1), OFFER.into())
+        .live_connect(&id, owner(1), OFFER.into(), None)
         .await
         .unwrap_err();
 
@@ -2094,7 +2094,7 @@ async fn a_refusal_before_the_session_closes_it_at_once() {
     assert_eq!(state.live, None, "a `live_session` without owner closed it");
     let again = h
         .supervisor
-        .live_connect(&id, owner(1), OFFER.into())
+        .live_connect(&id, owner(1), OFFER.into(), None)
         .await
         .unwrap_err();
     assert!(matches!(again, SupervisorError::Live { .. }), "{again:?}");
@@ -2106,11 +2106,11 @@ async fn a_closed_connection_stops_only_its_own_sessions() {
     let h = harness(|_| {});
     let (mine, theirs) = (h.thread(), h.thread());
     h.supervisor
-        .live_connect(&mine, owner(1), OFFER.into())
+        .live_connect(&mine, owner(1), OFFER.into(), None)
         .await
         .unwrap();
     h.supervisor
-        .live_connect(&theirs, owner(2), OFFER.into())
+        .live_connect(&theirs, owner(2), OFFER.into(), None)
         .await
         .unwrap();
 
@@ -2130,7 +2130,7 @@ async fn a_live_session_ends_with_its_process() {
     let h = harness(|_| {});
     let id = h.thread();
     h.supervisor
-        .live_connect(&id, owner(1), OFFER.into())
+        .live_connect(&id, owner(1), OFFER.into(), None)
         .await
         .unwrap();
 
@@ -2145,7 +2145,7 @@ async fn a_live_session_ends_with_its_process() {
         None
     );
     h.supervisor
-        .live_connect(&id, owner(1), OFFER.into())
+        .live_connect(&id, owner(1), OFFER.into(), None)
         .await
         .expect("the slot died with the process");
     assert_eq!(h.launcher.launches().len(), 2);
@@ -2158,7 +2158,7 @@ async fn the_reaper_keeps_a_process_with_a_live_session() {
     let h = harness(|config| config.idle_timeout = timeout);
     let id = h.thread();
     h.supervisor
-        .live_connect(&id, owner(1), OFFER.into())
+        .live_connect(&id, owner(1), OFFER.into(), None)
         .await
         .unwrap();
     let reaper = h.supervisor.spawn_reaper();
@@ -2195,7 +2195,7 @@ async fn live_start_starts_omp_records_the_owner_and_relays_the_voice() {
         crate::agent::live_phase(omp_rpc::LivePhase::Speaking),
     ]));
 
-    let voice = h.supervisor.live_start(&id, owner(4)).await.unwrap();
+    let voice = h.supervisor.live_start(&id, owner(4), None).await.unwrap();
 
     assert_eq!(voice, "sol");
     h.wait(&id, "omp's speaking phase", |state| {
@@ -2212,23 +2212,74 @@ async fn live_start_starts_omp_records_the_owner_and_relays_the_voice() {
     assert_eq!(live_offers(&h.launcher.process(0)), Vec::<String>::new());
 }
 
+/// The `voice` of every `live_connect` and `live_start` a fake process received, in order.
+fn live_voices(process: &crate::agent::FakeProcess) -> Vec<Option<String>> {
+    process
+        .calls()
+        .into_iter()
+        .filter_map(|call| match call {
+            FakeCall::Call(OmpCall::LiveConnect(connect)) => Some(connect.voice),
+            FakeCall::Call(OmpCall::LiveStart(start)) => Some(start.voice),
+            _ => None,
+        })
+        .collect()
+}
+
+// spec: DMN-112
+#[tokio::test]
+async fn a_chosen_voice_reaches_omp_and_none_leaves_omps_own() {
+    use omfp_protocol::LiveVoice;
+    let h = harness(|_| {});
+    let id = h.thread();
+
+    let answer = h
+        .supervisor
+        .live_connect(&id, owner(1), OFFER.into(), Some(LiveVoice::Maple))
+        .await
+        .unwrap();
+    assert_eq!(answer.voice, "maple");
+    h.supervisor.live_stop(&id).await.unwrap();
+    h.wait(&id, "the end of the session", |state| state.live.is_none())
+        .await;
+    let voice = h
+        .supervisor
+        .live_start(&id, owner(1), Some(LiveVoice::Vale))
+        .await
+        .unwrap();
+    assert_eq!(voice, "vale");
+    h.supervisor.live_stop(&id).await.unwrap();
+    h.wait(&id, "the end of the session", |state| state.live.is_none())
+        .await;
+    let voice = h.supervisor.live_start(&id, owner(1), None).await.unwrap();
+    assert_eq!(voice, "sol");
+
+    assert_eq!(
+        live_voices(&h.launcher.process(0)),
+        vec![Some("maple".to_owned()), Some("vale".to_owned()), None]
+    );
+}
+
 // spec: DMN-109, DMN-101
 #[tokio::test]
 async fn live_start_and_live_connect_share_the_threads_one_session() {
     let h = harness(|_| {});
     let id = h.thread();
-    h.supervisor.live_start(&id, owner(1)).await.unwrap();
+    h.supervisor.live_start(&id, owner(1), None).await.unwrap();
 
     let error = h
         .supervisor
-        .live_connect(&id, owner(2), OFFER.into())
+        .live_connect(&id, owner(2), OFFER.into(), None)
         .await
         .unwrap_err();
     assert!(
         matches!(error, SupervisorError::LiveActive { .. }),
         "{error:?}"
     );
-    let error = h.supervisor.live_start(&id, owner(2)).await.unwrap_err();
+    let error = h
+        .supervisor
+        .live_start(&id, owner(2), None)
+        .await
+        .unwrap_err();
     assert!(
         matches!(error, SupervisorError::LiveActive { .. }),
         "{error:?}"
@@ -2240,7 +2291,7 @@ async fn live_start_and_live_connect_share_the_threads_one_session() {
     h.wait(&id, "the end of the session", |state| state.live.is_none())
         .await;
     h.supervisor
-        .live_connect(&id, owner(3), OFFER.into())
+        .live_connect(&id, owner(3), OFFER.into(), None)
         .await
         .expect("a new session once omp ended the first");
 }
@@ -2250,7 +2301,7 @@ async fn live_start_and_live_connect_share_the_threads_one_session() {
 async fn a_closed_connection_stops_its_live_start_session() {
     let h = harness(|_| {});
     let id = h.thread();
-    h.supervisor.live_start(&id, owner(1)).await.unwrap();
+    h.supervisor.live_start(&id, owner(1), None).await.unwrap();
 
     h.supervisor.release_live(1).await;
 
@@ -2266,7 +2317,11 @@ async fn a_failed_live_start_reads_like_live_connect() {
     h.launcher
         .script_live(crate::agent::FakeLive::no_credential());
 
-    let error = h.supervisor.live_start(&id, owner(1)).await.unwrap_err();
+    let error = h
+        .supervisor
+        .live_start(&id, owner(1), None)
+        .await
+        .unwrap_err();
 
     let SupervisorError::Live { message, omp } = &error else {
         panic!("{error:?}");
@@ -2279,7 +2334,7 @@ async fn a_failed_live_start_reads_like_live_connect() {
     .await;
     h.launcher.script_live(crate::agent::FakeLive::default());
     h.supervisor
-        .live_start(&id, owner(1))
+        .live_start(&id, owner(1), None)
         .await
         .expect("omp's `live_end` freed the thread");
 }
@@ -2296,7 +2351,7 @@ async fn live_levels_reach_the_levels_stream_and_never_the_log() {
     ]));
     let mut levels = h.supervisor.live_levels(&id).await.unwrap();
 
-    h.supervisor.live_start(&id, owner(1)).await.unwrap();
+    h.supervisor.live_start(&id, owner(1), None).await.unwrap();
 
     h.wait(&id, "omp's speaking phase", |state| {
         live_phase(state) == Some("speaking")

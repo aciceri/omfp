@@ -750,7 +750,7 @@ export const shell = {
   },
   settings: {
     setUsage:
-      "Usage: :set <key>=<value> (density, font_size, motion, notifications, show_xdev_notices, theme, skin, fonts.prose|ui|code, keymap[.<mode>].<keys>)",
+      "Usage: :set <key>=<value> (density, font_size, motion, notifications, show_xdev_notices, theme, skin, recent_threads, live_voice, fonts.prose|ui|code, keymap[.<mode>].<keys>)",
     unknownKey: (key: string) => `Unknown setting: ${key}`,
     themeUsage:
       "Usage: :theme [system|light|dark] [<theme>] (synth, catppuccin, gruvbox, tokyo-night, nord, solarized, rose-pine, graphite, paper, clay, primer, accent, matugen: the user theme file, Synth without one)",
@@ -875,6 +875,7 @@ export const shell = {
     theme:
       "Colour scheme (system, light, dark) and theme (synth, catppuccin, gruvbox, …; matugen: the user theme file, Synth without one)",
     density: "Density (compact, normal)",
+    voice: "Voice of live sessions (:voice arbor|breeze|cove|ember|juniper|maple|sol|spruce|vale)",
     set: "Change a setting (:set key=value)",
     cmdline: "Open the command line",
     search: "Search the current conversation",

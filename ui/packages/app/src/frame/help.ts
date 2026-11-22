@@ -89,6 +89,7 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   "threads.collapse": commandTitles.collapseThreads,
   "window.theme": commandTitles.theme,
   "density.set": commandTitles.density,
+  "live.voice": commandTitles.voice,
   "settings.set": commandTitles.set,
   "view.switch": commandTitles.view,
   "view.next": commandTitles.nextView,

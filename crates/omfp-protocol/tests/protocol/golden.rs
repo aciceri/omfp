@@ -14,18 +14,19 @@ use omfp_protocol::{
     FileCandidates, FileContent, FileDiff, FileKind, FileMatch, FileWritten, FindFileParams,
     ForkParams, GoalParams, HelloParams, HelloResult, IndexSnapshot, InteractionResponse, JobInfo,
     JobRef, JobStatus, LabelParams, LiveConnectParams, LiveConnected, LiveMuteParams, LiveMuted,
-    LiveStarted, METHODS, MessageParams, Method, NavigateParams, PROTOCOL_VERSION, PathCompletions,
-    PathEntry, Position, PromptBehavior, PromptParams, PromptResult, QueueMessageParams,
-    ReadFileParams, RemoveRepoParams, RemoveWorkspaceParams, RepoRef, RepoSource, RepoSuggestions,
-    ReportWidgetsParams, Request, RespondParams, Response, SearchThreadsParams, SeenRepository,
-    ServerFrame, SetModelParams, SetSettingsParams, SetThinkingParams, SetViewsParams,
-    SetWidgetStateParams, StartJobParams, StartTerminalParams, SubagentMessagesParams, SubagentRef,
-    SubagentSteerParams, SubscribeParams, SubscribeResult, SuggestReposParams, TerminalCursor,
-    TerminalInfo, TerminalInputParams, TerminalRef, TerminalResizeParams, TerminalScreen,
-    TerminalScreenParams, TerminalStatus, Theme, ThreadGit, ThreadRef, ThreadSearchResult,
-    ThreadSearchResults, ThreadWorkspace, Topic, TopicParams, UpdateThreadParams,
-    UpdateWorkspaceParams, WidgetCopied, WidgetJobReport, WidgetReport, WidgetReportState,
-    WidgetSource, WorkspaceDiffParams, WorkspaceRef, WriteFileParams, decode_request, method,
+    LiveStartParams, LiveStarted, LiveVoice, METHODS, MessageParams, Method, NavigateParams,
+    PROTOCOL_VERSION, PathCompletions, PathEntry, Position, PromptBehavior, PromptParams,
+    PromptResult, QueueMessageParams, ReadFileParams, RemoveRepoParams, RemoveWorkspaceParams,
+    RepoRef, RepoSource, RepoSuggestions, ReportWidgetsParams, Request, RespondParams, Response,
+    SearchThreadsParams, SeenRepository, ServerFrame, SetModelParams, SetSettingsParams,
+    SetThinkingParams, SetViewsParams, SetWidgetStateParams, StartJobParams, StartTerminalParams,
+    SubagentMessagesParams, SubagentRef, SubagentSteerParams, SubscribeParams, SubscribeResult,
+    SuggestReposParams, TerminalCursor, TerminalInfo, TerminalInputParams, TerminalRef,
+    TerminalResizeParams, TerminalScreen, TerminalScreenParams, TerminalStatus, Theme, ThreadGit,
+    ThreadRef, ThreadSearchResult, ThreadSearchResults, ThreadWorkspace, Topic, TopicParams,
+    UpdateThreadParams, UpdateWorkspaceParams, WidgetCopied, WidgetJobReport, WidgetReport,
+    WidgetReportState, WidgetSource, WorkspaceDiffParams, WorkspaceRef, WriteFileParams,
+    decode_request, method,
 };
 use omfp_protocol::{
     AnswerWindowParams, CheckWidgetParams, CommandSource, KeymapMode, ListWindowsParams,
@@ -629,14 +630,18 @@ fn live_examples() -> Vec<(&'static str, Value)> {
             LiveConnectParams {
                 thread_id: THREAD_ID.to_owned(),
                 sdp_offer: "v=0\r\no=- 46117 2 IN IP4 127.0.0.1\r\n…".to_owned(),
+                voice: Some(LiveVoice::Maple),
             },
             &LiveConnected {
                 sdp_answer: "v=0\r\no=- 7215 1 IN IP4 0.0.0.0\r\n…".to_owned(),
-                voice: "sol".to_owned(),
+                voice: "maple".to_owned(),
             },
         ),
         example::<method::ThreadLiveStart>(
-            thread_ref(),
+            LiveStartParams {
+                thread_id: THREAD_ID.to_owned(),
+                voice: None,
+            },
             &LiveStarted {
                 voice: "sol".to_owned(),
             },
@@ -1918,6 +1923,7 @@ fn live_methods_have_the_shapes_of_the_spec() {
         method::ThreadLiveConnect::call(LiveConnectParams {
             thread_id: THREAD_ID.to_owned(),
             sdp_offer: "v=0".to_owned(),
+            voice: None,
         }),
     );
     assert_eq!(
@@ -1955,8 +1961,9 @@ fn live_methods_have_the_shapes_of_the_spec() {
 fn live_start_has_the_shape_of_the_spec() {
     let start = Request::new(
         "c1",
-        method::ThreadLiveStart::call(ThreadRef {
+        method::ThreadLiveStart::call(LiveStartParams {
             thread_id: THREAD_ID.to_owned(),
+            voice: None,
         }),
     );
     assert_eq!(
@@ -1970,6 +1977,50 @@ fn live_start_has_the_shape_of_the_spec() {
         .unwrap(),
         json!({ "voice": "sol" })
     );
+}
+
+// spec: PRT-228
+#[test]
+fn live_sessions_take_one_of_omps_voices_by_its_name() {
+    let names: Vec<Value> = LiveVoice::ALL
+        .iter()
+        .map(|voice| serde_json::to_value(voice).unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "arbor", "breeze", "cove", "ember", "juniper", "maple", "sol", "spruce", "vale"
+        ]
+        .map(|name| json!(name))
+    );
+    for voice in LiveVoice::ALL {
+        assert_eq!(serde_json::to_value(voice).unwrap(), json!(voice.as_str()));
+    }
+    let start = Request::new(
+        "c1",
+        method::ThreadLiveStart::call(LiveStartParams {
+            thread_id: THREAD_ID.to_owned(),
+            voice: Some(LiveVoice::Juniper),
+        }),
+    );
+    assert_eq!(
+        serde_json::to_value(&start).unwrap()["params"],
+        json!({ "threadId": THREAD_ID, "voice": "juniper" })
+    );
+    let connect: LiveConnectParams = serde_json::from_value(
+        json!({ "threadId": THREAD_ID, "sdpOffer": "v=0", "voice": "ember" }),
+    )
+    .unwrap();
+    assert_eq!(connect.voice, Some(LiveVoice::Ember));
+    for unknown in ["alloy", "Sol", ""] {
+        assert!(
+            serde_json::from_value::<LiveStartParams>(
+                json!({ "threadId": THREAD_ID, "voice": unknown })
+            )
+            .is_err(),
+            "{unknown}"
+        );
+    }
 }
 
 #[test]
@@ -2205,7 +2256,7 @@ fn a_discovered_repository_carries_its_kind_inline() {
     assert_eq!(link["sharedWith"], json!([workspace().id]));
 }
 
-// spec: UI-097, PRT-143, PRT-213
+// spec: UI-097, PRT-143, PRT-213, PRT-228
 #[test]
 fn settings_omit_defaults_and_null_the_error() {
     assert_eq!(
@@ -2219,6 +2270,7 @@ fn settings_omit_defaults_and_null_the_error() {
     assert_eq!(wire["ui"]["notifications"], "always");
     assert_eq!(wire["ui"]["theme"], "rose-pine");
     assert_eq!(wire["ui"]["skin"], "boring");
+    assert_eq!(wire["ui"]["liveVoice"], "maple");
     assert_eq!(
         wire["ui"]["fonts"],
         json!({ "prose": "Literata, serif", "code": "\"JetBrains Mono\", monospace" })

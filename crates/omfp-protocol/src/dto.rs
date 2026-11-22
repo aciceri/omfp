@@ -250,6 +250,58 @@ pub struct UiSettings {
     /// or `"all"`. Their states stay in the window's memory, but their omp processes are not kept alive (PRT-222).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recent_threads: Option<RecentThreads>,
+    /// The voice of live sessions (UI-999, PRT-228): one of omp's realtime voices; absent leaves it to omp (`sol`, or
+    /// omp's own `live.voice` setting).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub live_voice: Option<LiveVoice>,
+}
+
+/// A realtime voice of omp's live sessions (PRT-228, UI-999): the voices omp 18.22.0 accepts
+/// (`packages/coding-agent/src/live/voices.ts`), named as omp names them; `sol` is omp's default. Any other name does
+/// not decode.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LiveVoice {
+    Arbor,
+    Breeze,
+    Cove,
+    Ember,
+    Juniper,
+    Maple,
+    Sol,
+    Spruce,
+    Vale,
+}
+
+impl LiveVoice {
+    /// Every voice, in omp's order.
+    pub const ALL: [Self; 9] = [
+        Self::Arbor,
+        Self::Breeze,
+        Self::Cove,
+        Self::Ember,
+        Self::Juniper,
+        Self::Maple,
+        Self::Sol,
+        Self::Spruce,
+        Self::Vale,
+    ];
+
+    /// The name omp takes (`live_connect`/`live_start` `voice`, its `live.voice` setting).
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Arbor => "arbor",
+            Self::Breeze => "breeze",
+            Self::Cove => "cove",
+            Self::Ember => "ember",
+            Self::Juniper => "juniper",
+            Self::Maple => "maple",
+            Self::Sol => "sol",
+            Self::Spruce => "spruce",
+            Self::Vale => "vale",
+        }
+    }
 }
 
 /// How many hidden threads a window keeps followed (UI-996): at most a number (0..=100; 0 keeps none), or `"all"`,

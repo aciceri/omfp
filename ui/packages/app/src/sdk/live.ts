@@ -5,12 +5,13 @@
  * The desktop webview has no WebRTC: on the daemon's machine (`#local=1`) the window starts omp's own session instead
  * (`thread.live_start`: omp's microphone and speakers), and the spectrum draws omp's `live_levels` (transient frames,
  * PRT-054). The window sends `thread.live_stop` when its peer fails or closes, on the end key, on a thread switch and on
- * unload (UI-185). The browser parts sit behind {@link LiveMedia}, which tests replace.
+ * unload (UI-185). Both starts carry the voice of `[ui] live_voice` when it is set (UI-999). The browser parts sit
+ * behind {@link LiveMedia}, which tests replace.
  */
 
 import { CallError } from "@omfp/client";
 import { AnalyserSource, type Levels, LevelsSource, SILENT_SOURCE, type SpectrumSource, Tap } from "@omfp/kit";
-import { threadTopic } from "@omfp/protocol";
+import { type LiveVoice, threadTopic } from "@omfp/protocol";
 import { strings } from "../strings/index.ts";
 import { IDLE, type LiveSupport, type LocalLive, liveSupport } from "../vm/live.ts";
 import type { FrameStore } from "./frame-store.ts";
@@ -132,6 +133,12 @@ export class LiveClient {
     return this.#link?.source ?? SILENT_SOURCE;
   }
 
+  /** The voice of `[ui] live_voice` for a start's params (UI-999); without one, none: omp picks its own. */
+  #voice(): { voice?: LiveVoice } {
+    const voice = this.#frames.getSnapshot().index.settings.ui.liveVoice;
+    return voice === undefined || voice === null ? {} : { voice };
+  }
+
   /**
    * Starts a session on `threadId`: microphone, peer and offer, `thread.live_connect`, then omp's answer (UI-181);
    * without WebRTC on the daemon's machine, `thread.live_start` (UI-188). Ends this window's other session first. A
@@ -170,7 +177,11 @@ export class LiveClient {
     this.#open(threadId, link);
     let answer: string;
     try {
-      ({ sdpAnswer: answer } = await this.#client.call("thread.live_connect", { threadId, sdpOffer: link.offer }));
+      ({ sdpAnswer: answer } = await this.#client.call("thread.live_connect", {
+        threadId,
+        sdpOffer: link.offer,
+        ...this.#voice(),
+      }));
     } catch (error) {
       if (this.#link === link) {
         this.#close();
@@ -219,7 +230,7 @@ export class LiveClient {
     };
     this.#open(threadId, link);
     try {
-      await this.#client.call("thread.live_start", { threadId });
+      await this.#client.call("thread.live_start", { threadId, ...this.#voice() });
     } catch (error) {
       if (this.#link === link) {
         this.#close();

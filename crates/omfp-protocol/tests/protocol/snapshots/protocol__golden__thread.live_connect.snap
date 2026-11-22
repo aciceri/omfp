@@ -8,7 +8,8 @@ expression: golden
     "method": "thread.live_connect",
     "params": {
       "sdpOffer": "v=0\r\no=- 46117 2 IN IP4 127.0.0.1\r\n…",
-      "threadId": "01JD8X3Q4T9V2W6Y5Z7A1B3C4D"
+      "threadId": "01JD8X3Q4T9V2W6Y5Z7A1B3C4D",
+      "voice": "maple"
     },
     "type": "request"
   },
@@ -17,7 +18,7 @@ expression: golden
     "ok": true,
     "result": {
       "sdpAnswer": "v=0\r\no=- 7215 1 IN IP4 0.0.0.0\r\n…",
-      "voice": "sol"
+      "voice": "maple"
     },
     "type": "response"
   }

@@ -163,6 +163,8 @@ show_xdev_notices = false      # informational MCP mount/unmount rows in the tra
 skin = "crush"                 # crush | boring: the calm, neutral look (`:set skin=boring`), with any theme
 recent_threads = 20            # hidden threads a window keeps for instant switching (window memory, not omp), 0–100
                                # or "all" (every thread opened in the window; a long thread holds several MB)
+live_voice = "sol"             # arbor | breeze | cove | ember | juniper | maple | sol | spruce | vale: the voice of
+                               # live sessions (`:voice maple`), from the next session on
 
 [ui.fonts]                     # prose, ui, code: CSS font families
 prose = "Literata, serif"

@@ -153,6 +153,15 @@ describe(":set", () => {
     expect(SET_KEYS.filter((key) => key.startsWith("skin="))).toEqual(["skin=crush", "skin=boring"]);
   });
 
+  // spec: UI-999, UI-097
+  test("`live_voice=` takes one of omp's voices, completes them all and refuses others", () => {
+    expect(parseSet("live_voice=juniper")).toEqual({ ok: true, patch: { ui: { liveVoice: "juniper" } } });
+    expect(parseSet("live_voice = 'sol'")).toEqual({ ok: true, patch: { ui: { liveVoice: "sol" } } });
+    expect(parseSet("live_voice=alloy")).toEqual({ ok: false, error: "Invalid value for live_voice: alloy" });
+    expect(parseSet("live_voice=")).toEqual({ ok: false, error: "Invalid value for live_voice: (empty)" });
+    expect(SET_KEYS.filter((key) => key.startsWith("live_voice=")).length).toBe(9);
+  });
+
   // spec: UI-996, UI-097
   test("`recent_threads=` takes 0 to 100 kept threads or all, and refuses anything else", () => {
     expect(parseSet("recent_threads=40")).toEqual({ ok: true, patch: { ui: { recentThreads: 40 } } });

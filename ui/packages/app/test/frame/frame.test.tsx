@@ -433,6 +433,25 @@ describe("frame", () => {
     expect(document.head.querySelector("style[data-omfp-theme]")?.textContent).toBe("");
   });
 
+  // spec: UI-999, UI-097
+  test("`:voice` completes omp's voices and sets the daemon's live_voice; an unknown voice is an error", async () => {
+    const { client, host, user } = setup();
+    press(":");
+    const input = screen.getByTestId("command-line-input");
+    await user.type(input, "voice ");
+    expect(screen.getAllByTestId("command-option").map((option) => option.dataset.value)).toEqual(
+      ["arbor", "breeze", "cove", "ember", "juniper", "maple", "sol", "spruce", "vale"].map(
+        (voice) => `voice ${voice}`,
+      ),
+    );
+    await user.type(input, "maple{Enter}");
+    expect(client.callsTo("settings.set").map((call) => call.params)).toEqual([{ ui: { liveVoice: "maple" } }]);
+    press(":");
+    await user.type(screen.getByTestId("command-line-input"), "voice alloy{Enter}");
+    expect(host.window.get(ERRORS)).toEqual(["Invalid value for live_voice: alloy"]);
+    expect(client.callsTo("settings.set").length).toBe(1);
+  });
+
   // spec: UI-794, UI-097
   test("`:set skin=boring` goes to the daemon; `<html data-skin>` follows the setting, whatever the theme", async () => {
     const { client, flush, user } = setup();

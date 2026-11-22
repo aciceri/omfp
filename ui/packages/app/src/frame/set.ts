@@ -1,12 +1,21 @@
 /**
  * `:set <key>=<value>` (UI-097): one setting of the daemon's `[ui]` or `[keymap]`, sent with `settings.set`. Keys:
  * `density`, `font_size` (px, 10..=28), `motion`, `notifications`, `show_xdev_notices`, `theme` (UI-510), `skin`
- * (UI-794), `recent_threads` (0..=100 or `all`, UI-996), `fonts.prose|ui|code`, `keymap.<keys>` (normal mode) and
+ * (UI-794), `recent_threads` (0..=100 or `all`, UI-996), `live_voice` (UI-999), `fonts.prose|ui|code`,
+ * `keymap.<keys>` (normal mode) and
  * `keymap.<mode>.<keys>`; a keymap value is a command id, `""`
  * removes the binding.
  */
 
-import type { BuiltinTheme, Density, Motion, NotificationMode, SetSettingsParams, Skin } from "@omfp/protocol";
+import type {
+  BuiltinTheme,
+  Density,
+  LiveVoice,
+  Motion,
+  NotificationMode,
+  SetSettingsParams,
+  Skin,
+} from "@omfp/protocol";
 import { type Mode, normalizeKeys } from "../keymap/keymap.ts";
 import { type ColorScheme, FONT_SIZE_MAX, FONT_SIZE_MIN, RECENT_THREADS_MAX } from "../sdk/index.ts";
 import { strings } from "../strings/index.ts";
@@ -39,6 +48,18 @@ export const THEMES: readonly BuiltinTheme[] = [
 ];
 /** The skins (UI-794): Crush (the default) and the opt-in boring one. */
 export const SKINS: readonly Skin[] = ["crush", "boring"];
+/** omp's realtime voices (UI-999, PRT-228), in omp's order; `sol` is omp's default. */
+export const VOICES: readonly LiveVoice[] = [
+  "arbor",
+  "breeze",
+  "cove",
+  "ember",
+  "juniper",
+  "maple",
+  "sol",
+  "spruce",
+  "vale",
+];
 const FONT_ROLES: readonly FontRole[] = ["prose", "ui", "code"];
 const MODES: readonly Mode[] = ["normal", "insert", "cmdline"];
 
@@ -54,6 +75,7 @@ export const SET_KEYS: readonly string[] = [
   ...SKINS.map((skin) => `skin=${skin}`),
   "recent_threads=",
   "recent_threads=all",
+  ...VOICES.map((voice) => `live_voice=${voice}`),
   ...FONT_ROLES.map((role) => `fonts.${role}=`),
   "keymap.",
 ];
@@ -129,6 +151,10 @@ export function parseSet(line: string): ParsedSet {
   if (key === "skin") {
     const skin = SKINS.find((candidate) => candidate === value);
     return skin === undefined ? invalid(key, value) : { ok: true, patch: { ui: { skin } } };
+  }
+  if (key === "live_voice") {
+    const liveVoice = VOICES.find((candidate) => candidate === value);
+    return liveVoice === undefined ? invalid(key, value) : { ok: true, patch: { ui: { liveVoice } } };
   }
   if (key === "recent_threads") {
     if (value === "all") {

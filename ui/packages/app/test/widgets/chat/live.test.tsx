@@ -552,3 +552,32 @@ describe("live voice on the daemon's machine", () => {
     expect(screen.getByRole("alert").textContent).toContain("needs the daemon on this machine");
   });
 });
+
+describe("the voice of live sessions", () => {
+  /** Sets `[ui] live_voice` as the daemon pushes a settings change (UI-097). */
+  const setVoice = (live: Live, liveVoice: "maple" | "vale") => {
+    live.client.indexEvents({ kind: "settings_changed", settings: { ui: { liveVoice }, keymap: [], error: null } });
+    live.flush();
+  };
+
+  // spec: UI-999, PRT-228
+  test("a start over WebRTC carries the voice set last", async () => {
+    const live = renderLive();
+    setVoice(live, "vale");
+    setVoice(live, "maple");
+    await press(mic());
+    expect(live.client.callsTo("thread.live_connect").map((call) => call.params)).toEqual([
+      { threadId: THREAD, sdpOffer: OFFER, voice: "maple" },
+    ]);
+  });
+
+  // spec: UI-999, UI-188
+  test("omp's own session on the daemon's machine carries the voice too", async () => {
+    const live = renderLive(fixtureEvents("text_reply"), "host");
+    setVoice(live, "vale");
+    await press(mic());
+    expect(live.client.callsTo("thread.live_start").map((call) => call.params)).toEqual([
+      { threadId: THREAD, voice: "vale" },
+    ]);
+  });
+});

@@ -123,6 +123,7 @@ async fn live_voice_from_the_mic_button_mute_end_and_the_login_message() -> anyh
         .call::<ThreadLiveConnect>(LiveConnectParams {
             thread_id: thread.clone(),
             sdp_offer: "v=0\r\na=setup:actpass\r\n".to_owned(),
+            voice: None,
         })
         .await?;
     until_panel(&journey, "elsewhere", "listening").await?;

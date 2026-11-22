@@ -3,8 +3,8 @@
 use omfp_core::ProcessState;
 use omfp_protocol::{
     BuiltinTheme, CreatedBy, Density, FileChange, FileStatus, FontSettings, GitStatus, JobCounts,
-    KeymapEntry, KeymapMode, Motion, NotificationMode, Provenance, RecentThreads, RepoKind,
-    RepoStatus, Settings, Skin, Theme, ThreadSummary, TitleSource, UiSettings, Workspace,
+    KeymapEntry, KeymapMode, LiveVoice, Motion, NotificationMode, Provenance, RecentThreads,
+    RepoKind, RepoStatus, Settings, Skin, Theme, ThreadSummary, TitleSource, UiSettings, Workspace,
     WorkspaceRepo,
 };
 
@@ -154,6 +154,7 @@ pub fn settings() -> Settings {
             show_xdev_notices: Some(true),
             skin: Some(Skin::Boring),
             recent_threads: Some(RecentThreads::Count(30)),
+            live_voice: Some(LiveVoice::Maple),
         },
         keymap: vec![
             KeymapEntry {

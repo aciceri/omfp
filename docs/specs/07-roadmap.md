@@ -990,6 +990,15 @@ own for it instead of asking threads' omps, which may be stopped or missing (the
 from its profile's `history.db` and from Claude Code's and Codex's prompt histories; omp writes no RPC prompt to
 `history.db` (omfp keeps its own, DMN-216), so in omfp it learns from those histories and the feedback only.
 
+## The voice of live sessions
+
+M17 lets the user choose the voice of live sessions (#240, DMN-112, PRT-228, UI-999). omp 18.22.0 offers nine Codex
+realtime voices (`live/voices.ts`) and takes one as the optional `voice` of `live_connect`/`live_start`, else its own
+`live.voice` setting (default `sol`); omfp used to send none, so the only way to change it was to edit `live.voice` in
+omfp's private omp profile. The choice is the `[ui] live_voice` setting (`:voice <voice>`, `:set live_voice=`), which
+the windows send with each start: the daemon keeps no voice of its own and an agent passes `voice` itself. omp does not
+list its voices over RPC, so omfp mirrors them in `LiveVoice`; an omp upgrade that changes them changes that enum.
+
 ## Later (noted, not scheduled)
 
 - Helix-style modal editing in the composer (UI-095 keeps a keymap with modes, so it fits later).

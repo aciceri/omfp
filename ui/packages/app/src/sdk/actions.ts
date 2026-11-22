@@ -367,10 +367,12 @@ export function threadActions(host: OmfpHost): ThreadActions {
     startDraftLive: (ready) => {
       const workspaceId = window.get(DRAFT_THREAD)?.workspaceId;
       return host.live.start({
-        create: async () => {
+        create: async (running) => {
           await ready;
-          // Only the draft the mic was pressed in, still shown: not another workspace's opened meanwhile, nor a thread.
+          // Only a start still running, from the draft the mic was pressed in, still shown: not another workspace's
+          // opened meanwhile, nor a thread.
           const kept =
+            running() &&
             workspaceId !== undefined &&
             window.get(DRAFT_THREAD)?.workspaceId === workspaceId &&
             window.get(SELECTED_THREAD) === undefined;

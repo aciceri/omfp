@@ -91,8 +91,11 @@ function failureMessage(error: unknown): string {
 
 /** A thread {@link LiveClient.start} makes once the window holds what the session needs: the draft thread's (UI-023). */
 export interface NewLiveThread {
-  /** Creates the thread and selects it: its id, or `undefined` when that failed (`create` reports it). */
-  create(): Promise<string | undefined>;
+  /**
+   * Creates the thread and selects it: its id, or `undefined` when that failed (`create` reports it) or gave up;
+   * `running()` says whether the start still runs, false once it ended (the mic pressed again): nothing is created then.
+   */
+  create(running: () => boolean): Promise<string | undefined>;
   /** Reports a start that failed before the thread existed: no live path here, the microphone or the peer. */
   fail(message: string): void;
 }
@@ -199,7 +202,7 @@ export class LiveClient {
    */
   async #create(thread: NewLiveThread, starting: LocalLive, link: LiveLink | undefined): Promise<string | undefined> {
     this.#link = link;
-    const threadId = await thread.create();
+    const threadId = await thread.create(() => this.#snapshot.local === starting);
     if (this.#snapshot.local === starting && threadId !== undefined) {
       this.#set({ kind: "starting", threadId });
       return threadId;

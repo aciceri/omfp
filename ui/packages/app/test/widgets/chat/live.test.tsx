@@ -923,6 +923,23 @@ describe("the draft thread's mic", () => {
       { workspace: { id: "01W" }, prompt: "what is this?", images: [PNG] },
     ]);
   });
+
+  // spec: UI-180, UI-185
+  test("pressed again while an image is still being read, it creates nothing once the read ends", async () => {
+    const live = renderDraft("webrtc", "what is this?");
+    const slow = slowPngFile();
+    fireEvent.paste(screen.getByTestId("composer-input"), { clipboardData: { files: [slow.file], getData: () => "" } });
+    await press(mic());
+    await press(mic());
+    expect(live.media.link.closed).toBe(true);
+    expect(mic().dataset.live).toBe("start");
+    await act(async () => {
+      slow.release();
+      await slow.read;
+    });
+    expect(live.client.callsTo("threads.create")).toHaveLength(0);
+    expect(live.host.window.get(DRAFT_THREAD)).toEqual({ workspaceId: "01W" });
+  });
 });
 
 /** A tiny PNG file, as pasted, and the attachment it becomes (UI-060). */

@@ -88,7 +88,7 @@ export function LiveVoicePanel({ threadId, state }: { threadId: string; state: T
         status={view.status}
         statusLabel={text.status[view.status]}
         lines={view.lines}
-        note={text.elsewhere(view.client)}
+        note={view.behind ? `${text.elsewhere(view.client)} · ${text.behind}` : text.elsewhere(view.client)}
         actions={
           <Button
             variant="danger"
@@ -114,6 +114,7 @@ export function LiveVoicePanel({ threadId, state }: { threadId: string; state: T
       statusLabel={text.status[view.status]}
       spectrum={<Spectrum source={live.source()} status={view.status} label={text.level} onLevels={live.noteLevels} />}
       lines={view.lines}
+      note={view.behind ? text.behind : undefined}
       hints={hints}
       data-muted={view.muted}
       actions={

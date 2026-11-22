@@ -659,6 +659,27 @@ fn default_output(message: &str) -> Vec<String> {
     }
 }
 
+/// What omfp's omp extension does for `/omfp-voice-log <json>` on an idle session (DMN-113): it appends one `custom`
+/// message shown in the transcript, so omp announces it with `message_start` and `message_end`.
+fn voice_log_frames(message: &str) -> Vec<RpcNotification> {
+    let Some(log) = message
+        .strip_prefix(&format!("/{} ", crate::voice_log::COMMAND))
+        .and_then(|json| serde_json::from_str::<Value>(json).ok())
+    else {
+        return Vec::new();
+    };
+    let custom = json!({
+        "role": "custom", "customType": crate::voice_log::CUSTOM_TYPE, "content": log["content"],
+        "display": true, "details": { "turns": log["turns"] }, "attribution": "agent",
+    });
+    ["message_start", "message_end"]
+        .into_iter()
+        .filter_map(|kind| {
+            RpcNotification::from_value(json!({ "type": kind, "message": custom.clone() })).ok()
+        })
+        .collect()
+}
+
 impl AgentProcess for FakeAgent {
     fn prompt(&self, command: PromptCommand) -> Result<PromptAdmission, omp_rpc::Error> {
         let process = &self.0;
@@ -677,12 +698,12 @@ impl AgentProcess for FakeAgent {
                 .get(message.as_str())
                 .cloned()
                 .unwrap_or_else(|| default_output(&message));
-            process.emit(
-                texts
-                    .into_iter()
-                    .map(|text| RpcNotification::CommandOutput(CommandOutputEvent { text }))
-                    .collect(),
-            );
+            let mut frames: Vec<RpcNotification> = texts
+                .into_iter()
+                .map(|text| RpcNotification::CommandOutput(CommandOutputEvent { text }))
+                .collect();
+            frames.extend(voice_log_frames(&message));
+            process.emit(frames);
             return Ok(PromptAdmission {
                 prompt_id: format!("req_{}", new_id()),
                 agent_invoked: false,

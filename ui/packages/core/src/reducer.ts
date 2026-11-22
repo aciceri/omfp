@@ -491,7 +491,13 @@ export function reduce(state: ThreadState, event: ThreadEvent): ThreadState {
         return { ...state, live: null };
       }
       const owner = decodeOrUndefined(liveOwner, value.owner);
-      return owner === undefined ? state : { ...state, live: { owner, phase: null, transcript: [] }, live_error: null };
+      return owner === undefined
+        ? state
+        : {
+            ...state,
+            live: { owner, phase: null, transcript: [], context_end: state.transcript.length },
+            live_error: null,
+          };
     }
     case "open_file": {
       const request = decodeOrUndefined(openFileRequest, value);

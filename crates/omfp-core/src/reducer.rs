@@ -66,6 +66,7 @@ impl ThreadState {
                         owner: owner.clone(),
                         phase: None,
                         transcript: Vec::new(),
+                        context_end: self.transcript.len(),
                     });
                     self.live_error = None;
                 }

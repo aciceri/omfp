@@ -1,7 +1,8 @@
-/** L1: which live voice path a window takes (UI-188). */
+/** L1: which live voice path a window takes (UI-188); whether the voice is behind the chat (UI-199). */
 
 import { describe, expect, test } from "bun:test";
-import { liveSupport } from "../../src/vm/live.ts";
+import type { AgentMessage, ThreadState } from "@omfp/core";
+import { IDLE, liveBehind, livePanelView, liveSupport } from "../../src/vm/live.ts";
 
 describe("live support", () => {
   // spec: UI-188, UI-180
@@ -19,5 +20,31 @@ describe("live support", () => {
     expect(at(false, false, false)).toBe("unsupported");
     // A browser on a LAN address.
     expect(at(false, true, false)).toBe("insecure");
+  });
+});
+
+describe("the voice behind the chat", () => {
+  const entry = (message: AgentMessage) => ({ message_id: null, message });
+  const state = (later: AgentMessage[]): Pick<ThreadState, "live" | "live_error" | "transcript"> => ({
+    live: { owner: { client: "omfp/web", connection: 2 }, phase: "listening", transcript: [], context_end: 1 },
+    live_error: null,
+    transcript: [entry({ role: "user", content: "fix the login" }), ...later.map(entry)],
+  });
+
+  // spec: UI-199
+  test("only a prompt typed after the session started puts the voice behind", () => {
+    expect(liveBehind(state([]))).toBe(false);
+    expect(liveBehind(state([{ role: "custom", customType: "live-delegation", content: "run the tests" }]))).toBe(
+      false,
+    );
+    expect(liveBehind(state([{ role: "user", content: "a reminder", synthetic: true }]))).toBe(false);
+    expect(liveBehind(state([{ role: "user", content: "and the logout?" }]))).toBe(true);
+    expect(liveBehind({ live: null, live_error: null, transcript: [] })).toBe(false);
+  });
+
+  // spec: UI-199
+  test("another window's session shows it too", () => {
+    const view = livePanelView("t1", state([{ role: "user", content: "and the logout?" }]), IDLE, 7, undefined);
+    expect(view.kind === "elsewhere" && view.behind).toBe(true);
   });
 });

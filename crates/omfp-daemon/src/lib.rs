@@ -34,6 +34,7 @@ pub mod theme;
 pub mod threads;
 pub mod titles;
 pub mod token;
+pub mod voice_log;
 pub mod watch;
 pub mod widgets;
 pub mod workspaces;

@@ -388,6 +388,9 @@ struct Actor {
     title_task: Mutex<Option<JoinHandle<()>>>,
     /// The live voice session (DMN-101).
     voice: Mutex<Option<VoiceSlot>>,
+    /// The conversations of ended live sessions not in the thread yet: they wait for the session to settle, and the
+    /// next session's context reads them meanwhile (DMN-113).
+    voice_logs: Mutex<Vec<crate::voice_log::Spoken>>,
     /// omp's `live_levels`, which bypass the log (DMN-110).
     levels: broadcast::Sender<LiveLevelsEvent>,
     /// The last prompt omp admitted with agent work and the prompts on their way to omp (DMN-152).
@@ -441,6 +444,7 @@ impl Actor {
             title_sync: tokio::sync::Mutex::new(()),
             title_task: Mutex::new(None),
             voice: Mutex::new(None),
+            voice_logs: Mutex::new(Vec::new()),
             levels: broadcast::channel(LEVELS_BUFFER).0,
             last_prompt: watch::Sender::new(LastPrompt::default()),
             local_commands: tokio::sync::Mutex::new(()),
@@ -1002,6 +1006,10 @@ impl Supervisor {
     ) -> Result<T> {
         let process = self.ensure_running(actor).await?;
         self.roots_before_prompt(actor).await;
+        // Conversations a gone process could not take go in before the agent's next work (DMN-113).
+        if !lock(&actor.voice_logs).is_empty() {
+            self.record_voice(&actor.id).await;
+        }
         actor.touch();
         let sending = actor.prompting.read().await;
         let sent = blocking(move || send(process.as_ref())).await;
@@ -1196,6 +1204,13 @@ impl Supervisor {
             return;
         }
         let mut tool_end = false;
+        let mut voice_ended = false;
+        // A (new) process announced the extension's command: conversations it could not take go in now (DMN-113).
+        let voice_announced = matches!(
+            &event,
+            ThreadEvent::Omp { frame: RpcNotification::AvailableCommandsUpdate(update) }
+                if update.commands.iter().any(|command| command.name == crate::voice_log::COMMAND)
+        );
         if let ThreadEvent::Omp { frame } = &event {
             match frame {
                 // Read-only tools cannot change files: skip the `git status` of a full scan after them (DMN-023).
@@ -1219,9 +1234,20 @@ impl Supervisor {
                 RpcNotification::ExtensionUiRequest(ExtensionUiRequest::OpenUrl(open)) => {
                     lock(&actor.oauth).opened(&open.url, Instant::now());
                 }
-                // omp ended the session: the thread may start another (DMN-101).
+                // omp ended the session: the thread may start another (DMN-101), and keeps what was said (DMN-113).
                 RpcNotification::LiveEnd(_) => {
                     lock(&actor.voice).take();
+                    let lines = actor.log.with_state(|state| {
+                        state
+                            .live
+                            .as_ref()
+                            .map(|live| live.transcript.clone())
+                            .unwrap_or_default()
+                    });
+                    if let Some(spoken) = crate::voice_log::Spoken::from_lines(&lines) {
+                        lock(&actor.voice_logs).push(spoken);
+                        voice_ended = true;
+                    }
                 }
                 _ => {}
             }
@@ -1245,6 +1271,16 @@ impl Supervisor {
                     warn!(thread = %id, %error, "root sync failed");
                 }
             });
+        }
+        // A conversation just ended, the session settled, or omp announced the extension's command, with conversations
+        // waiting (DMN-113).
+        if after.settled
+            && (voice_ended || voice_announced || !before.settled)
+            && !lock(&actor.voice_logs).is_empty()
+        {
+            let supervisor = self.clone();
+            let id = actor.id.clone();
+            tokio::spawn(async move { supervisor.record_voice(&id).await });
         }
     }
 }

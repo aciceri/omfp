@@ -88,6 +88,11 @@ export interface LiveSession {
   phase: LivePhase | null;
   /** One line per role and turn, in order of first appearance. */
   transcript: LiveLine[];
+  /**
+   * The transcript's length when the session started: the voice's context holds the messages before it (DMN-105),
+   * so a prompt typed from there on is unknown to it.
+   */
+  context_end: number;
 }
 
 /** The text of one realtime turn of one speaker (`live_transcript`). */

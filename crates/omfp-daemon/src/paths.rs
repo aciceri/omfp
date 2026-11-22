@@ -69,10 +69,17 @@ impl DataDir {
         self.root.join("widgets")
     }
 
-    /// The daemon's omp extension root, passed to every omp as `--extension` (DMN-107); it holds only `agents/`.
+    /// The daemon's omp extension root, passed to every omp as `--extension` (DMN-107): `agents/` and the extension
+    /// module `index.ts` (DMN-113).
     #[must_use]
     pub fn omp_extension(&self) -> PathBuf {
         self.root.join("omp")
+    }
+
+    /// omfp's omp extension module (DMN-113), which omp loads from the extension root.
+    #[must_use]
+    pub fn omp_extension_module(&self) -> PathBuf {
+        self.omp_extension().join("index.ts")
     }
 
     /// The isolated omp user configuration and state (ARC-021), never imported from standalone omp except its provider

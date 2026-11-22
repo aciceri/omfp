@@ -3,6 +3,8 @@
  * (`display: false`, e.g. the `<system-notice>` device inventory it sends the model at startup) or that wrap a
  * `<system-notice>`, and its info notices about its own setup (the `xdev` mount notice, hidden unless opted in).
  * When visible, each renders as one muted `system` row: its first line, expandable to the whole text when there is more.
+ * The spoken conversation of an ended live session (`omfp-voice`, DMN-113) is such a row too (UI-199): `Voice
+ * conversation · N turns`, expandable to its turns.
  */
 
 import type { AgentMessage, NoticeFrame } from "@omfp/core";
@@ -18,6 +20,9 @@ export interface SystemRow {
 /** Sources of the omp notices that only report omp's own setup. */
 const SYSTEM_NOTICE_SOURCES: readonly string[] = ["xdev"];
 
+/** The `customType` of the spoken conversation of an ended live session (DMN-113). */
+const VOICE_LOG = "omfp-voice";
+
 const SYSTEM_NOTICE_OPEN = "<system-notice>";
 const SYSTEM_NOTICE_TAGS = /<\/?system-notice>/g;
 
@@ -27,6 +32,9 @@ export function systemMessage(message: AgentMessage): SystemRow | undefined {
     return undefined;
   }
   const raw = contentText(message.content);
+  if (message.customType === VOICE_LOG) {
+    return voiceRow(raw, message.details);
+  }
   if (message.display !== false && !raw.trimStart().startsWith(SYSTEM_NOTICE_OPEN)) {
     return undefined;
   }
@@ -49,6 +57,18 @@ function systemRow(text: string): SystemRow {
   const whole = text.trim();
   const summary = whole.split("\n", 1)[0]?.trim() ?? "";
   return { summary, text: summary === whole ? undefined : whole };
+}
+
+/** The row of a voice conversation: its first line, then its turns (without the note to the agent). */
+function voiceRow(content: string, details: unknown): SystemRow {
+  const summary = content.trim().split("\n", 1)[0]?.trim() ?? "";
+  const turns = isObject(details) && Array.isArray(details.turns) ? details.turns : [];
+  const lines = turns.flatMap((turn) =>
+    isObject(turn) && typeof turn.text === "string"
+      ? [`${turn.role === "user" ? "User" : "Assistant"}: ${turn.text}`]
+      : [],
+  );
+  return { summary, text: lines.length === 0 ? undefined : [summary, ...lines].join("\n") };
 }
 
 /** A string, or the text parts of a content list one per line. */

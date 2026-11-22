@@ -283,6 +283,8 @@ export const chat = {
     /** Status line hints after their key chips. */
     hint: { mute: "mute", unmute: "unmute", end: "end", dismiss: "dismiss" },
     elsewhere: (client: string) => `in another window (${client})`,
+    /** A prompt was typed in the chat since the session started: the voice does not know it (UI-199). */
+    behind: "chat changed since start",
     endButton: "End",
     /** The own panel's mute toggle (UI-182, UI-183): one name, its pressed state says whether it is muted. */
     mute: "Mute",

@@ -199,6 +199,104 @@ async fn the_cheap_live_errors_of_omp() {
     harness.assert_no_stray_network();
 }
 
+/// The `custom` messages omp announced, as `(customType, display, content)`.
+fn custom_messages(events: &[ThreadEvent]) -> Vec<(String, bool, String)> {
+    events
+        .iter()
+        .filter_map(|event| match event {
+            ThreadEvent::Omp {
+                frame:
+                    omp_rpc::RpcNotification::RpcAgentEvent(omp_rpc::RpcAgentEvent::MessageEnd(end)),
+            } => match &end.message {
+                omp_rpc::AgentMessage::Custom(custom) => Some((
+                    custom.custom_type.clone().unwrap_or_default(),
+                    custom.display == Some(true),
+                    serde_json::to_value(&custom.content).ok()?.as_str()?.to_owned(),
+                )),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect()
+}
+
+// spec: DMN-113
+#[tokio::test(flavor = "multi_thread")]
+async fn omfps_extension_keeps_a_voice_conversation_without_a_turn() {
+    let harness = Harness::new(Vec::new()).await;
+    let data = tempfile::tempdir().unwrap();
+    let data = omfp_daemon::paths::DataDir::new(data.path());
+    omfp_daemon::voice_log::write_extension(&data).unwrap();
+    let mut spec = harness.spec(&[]);
+    spec.extension = Some(data.omp_extension());
+    let command = omfp_daemon::voice_log::Spoken::from_lines(&[
+        omfp_core::LiveLine {
+            role: omp_rpc::LiveRole::User,
+            turn: 1,
+            text: "Is it done?".into(),
+            r#final: true,
+        },
+        omfp_core::LiveLine {
+            role: omp_rpc::LiveRole::Assistant,
+            turn: 1,
+            text: "Yes, the tests pass.".into(),
+            r#final: true,
+        },
+    ])
+    .unwrap()
+    .command();
+
+    let (recorder, turn) = tokio::task::spawn_blocking(move || {
+        let (mut process, startup) = start(&spec);
+        let recorder = Recorder::attach(&mut process, &startup);
+        // The daemon sends the command only once omp announced it (DMN-113).
+        recorder.wait_until("omfp's extension command", |events| {
+            events.iter().any(|event| {
+                matches!(event, ThreadEvent::Omp {
+                    frame: omp_rpc::RpcNotification::AvailableCommandsUpdate(update),
+                } if update.commands.iter().any(|command| command.name == omfp_daemon::voice_log::COMMAND))
+            })
+        });
+        let turn = process
+            .client()
+            .prompt_and_wait(
+                &omp_rpc::PromptCommand {
+                    message: command,
+                    images: None,
+                    streaming_behavior: None,
+                },
+                TIMEOUT,
+            )
+            .unwrap();
+        recorder.wait_until("the voice conversation", |events| {
+            !custom_messages(events).is_empty()
+        });
+        (recorder, turn)
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(
+        turn.result.as_ref().map(|result| result.agent_invoked),
+        Some(false),
+        "no model turn: {:?}",
+        turn.result
+    );
+    let [(kind, display, content)] = custom_messages(&recorder.events()).try_into().unwrap();
+    assert_eq!((kind.as_str(), display), ("omfp-voice", true));
+    assert!(
+        content.starts_with("Voice conversation · 2 turns\n")
+            && content.ends_with("\nUser: Is it done?\nAssistant: Yes, the tests pass."),
+        "{content}"
+    );
+    assert_eq!(
+        Recorder::count(&recorder.events(), "agent_start"),
+        0,
+        "the model never ran"
+    );
+    harness.assert_no_stray_network();
+}
+
 struct Daemon {
     handle: DaemonHandle,
     _data: TempDir,

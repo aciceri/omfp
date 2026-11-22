@@ -19,6 +19,22 @@ function transcript(role: string, turn: number, text: string, last: boolean): Th
 }
 
 describe("live voice state", () => {
+  // spec: PRT-052
+  test("a session marks where the voice's context ends", () => {
+    const typed = (id: string, text: string) =>
+      omp({ type: "message_end", messageId: id, message: { role: "user", content: text } });
+    let state = replay([
+      running(),
+      typed("m1", "fix the login"),
+      typed("m2", "and the logout"),
+      liveSession("omfp/web", 1),
+    ]);
+    expect(state.live?.context_end).toBe(2);
+
+    state = reduce(state, typed("m3", "typed meanwhile"));
+    expect(state.live?.context_end).toBe(2);
+  });
+
   // spec: PRT-052, TST-010
   test("a session opens with its owner and follows omp's phases", () => {
     let state = replay([
@@ -28,7 +44,12 @@ describe("live voice state", () => {
     expect(state.live_error).toBe(LOGIN);
 
     state = reduce(state, liveSession("omfp/web", 7));
-    expect(state.live).toEqual({ owner: { client: "omfp/web", connection: 7 }, phase: null, transcript: [] });
+    expect(state.live).toEqual({
+      owner: { client: "omfp/web", connection: 7 },
+      phase: null,
+      transcript: [],
+      context_end: 0,
+    });
     expect(state.live_error).toBeNull();
 
     for (const phase of ["connecting", "listening", "muted"] as const) {

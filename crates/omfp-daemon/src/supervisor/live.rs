@@ -1,13 +1,14 @@
-//! Live voice relay (DMN-100..112): one session per thread, opened on the client's peer (`live_connect`) or on the
-//! daemon machine (`live_start`), owned by the connection that opened it.
+//! Live voice relay (DMN-100..113): one session per thread, opened on the client's peer (`live_connect`) or on the
+//! daemon machine (`live_start`), owned by the connection that opened it; what was said stays in the thread.
 
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use omfp_core::{LiveOwner, ThreadEvent, live_error_message};
 use omfp_protocol::LiveVoice;
 use omp_rpc::{
     LiveConnectCommand, LiveConnectResult, LiveLevelsEvent, LiveMuteCommand, LiveStartCommand,
-    LiveStartResult,
+    LiveStartResult, PromptCommand,
 };
 use serde_json::Value;
 use tokio::sync::broadcast;
@@ -112,10 +113,12 @@ impl Supervisor {
         .inspect_err(|_| {
             actor.release_voice(slot);
         })?;
-        // The realtime model knows only its instructions, so they carry the thread's conversation (DMN-105).
+        // The realtime model knows only its instructions, so they carry the thread's conversation (DMN-105) and the
+        // conversations of ended sessions not in it yet (DMN-113).
+        let spoken = lock(&actor.voice_logs).clone();
         let instructions = actor
             .log
-            .with_state(|state| crate::live_context::live_instructions(&title, state));
+            .with_state(|state| crate::live_context::live_instructions(&title, state, &spoken));
         self.push(&actor, ThreadEvent::LiveSession { owner: Some(owner) });
         let call = call(instructions);
         let answer = blocking(move || process.call(call)).await?;
@@ -187,6 +190,68 @@ impl Supervisor {
         for id in owned {
             if let Err(error) = self.live_stop(&id).await {
                 warn!(thread = %id, %error, "cannot stop the live session of a closed connection");
+            }
+        }
+    }
+
+    /// Hands the spoken conversations of ended live sessions to omfp's omp extension once the session settled
+    /// (DMN-113): its `/omfp-voice-log` appends each as one `custom` message without a turn. Housekeeping, like the
+    /// root sync: no activity of the thread. A conversation leaves the queue once omp took it, or refused it; one the
+    /// process could not take (it went away) waits for the next one. Without the extension's command nothing is sent:
+    /// omp would hand the text to the model.
+    pub(super) async fn record_voice(&self, id: &str) {
+        let Some(actor) = self.lookup(id) else {
+            return;
+        };
+        let Some(process) = actor.process() else {
+            return;
+        };
+        let _one_at_a_time = actor.local_commands.lock().await;
+        if !actor.status().settled {
+            return;
+        }
+        let announced = actor.log.with_state(|state| {
+            state
+                .commands
+                .iter()
+                .any(|command| command.name == crate::voice_log::COMMAND)
+        });
+        if !announced {
+            warn!(thread = %id, "omp did not load omfp's extension: the live voice conversation stays out of the thread");
+            return;
+        }
+        loop {
+            let Some(spoken) = lock(&actor.voice_logs).first().cloned() else {
+                return;
+            };
+            let message = spoken.command();
+            let sending = Arc::clone(&process);
+            let sent = blocking(move || {
+                sending.prompt(PromptCommand {
+                    message,
+                    images: None,
+                    streaming_behavior: None,
+                })
+            })
+            .await;
+            match sent {
+                Ok(Ok(_)) => {}
+                // omp refused it: sending it again would not change that.
+                Ok(Err(error @ omp_rpc::Error::Command { .. })) => {
+                    warn!(thread = %id, %error, "omp refused the live voice conversation");
+                }
+                Ok(Err(error)) => {
+                    warn!(thread = %id, %error, "cannot record the live voice conversation now");
+                    return;
+                }
+                Err(error) => {
+                    warn!(thread = %id, %error, "cannot record the live voice conversation now");
+                    return;
+                }
+            }
+            let mut logs = lock(&actor.voice_logs);
+            if logs.first() == Some(&spoken) {
+                logs.remove(0);
             }
         }
     }

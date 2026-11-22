@@ -146,4 +146,14 @@ describe("slash commands over omp's RPC", () => {
     ]);
     expect(entries.find((entry) => entry.name === "quit")?.aliases).toEqual([]);
   });
+
+  // spec: UI-978
+  test("the composer never offers the commands of omfp's own omp extension", () => {
+    const entries = slashEntries([
+      { name: "omfp-voice-log", source: "extension", description: "omfp: keeps the spoken conversation" },
+      { name: "mine", source: "custom" },
+    ]);
+    expect(entries.some((entry) => entry.name === "omfp-voice-log")).toBe(false);
+    expect(entries.some((entry) => entry.name === "mine")).toBe(true);
+  });
 });

@@ -1297,6 +1297,25 @@ fn a_live_session_opens_with_its_owner_and_follows_omp_phases() {
     assert_eq!(state, before, "levels are client-side");
 }
 
+// spec: PRT-052
+#[test]
+fn a_live_session_marks_where_the_voices_context_ends() {
+    let mut state = replay(&[
+        process(json!({ "state": "running" })),
+        message_end("m1", user_message("fix the login")),
+        message_end("m2", assistant_message("Done.")),
+        live_session("omfp/web", 1),
+    ]);
+    assert_eq!(state.live.as_ref().map(|live| live.context_end), Some(2));
+
+    state.apply(&message_end("m3", user_message("typed meanwhile")));
+    assert_eq!(
+        state.live.as_ref().map(|live| live.context_end),
+        Some(2),
+        "later messages come after it"
+    );
+}
+
 // spec: PRT-052, TST-010
 #[test]
 fn live_transcripts_keep_one_line_per_role_and_turn_until_final() {

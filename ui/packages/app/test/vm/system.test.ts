@@ -55,6 +55,26 @@ describe("system records", () => {
     expect(systemMessage({ role: "custom", content: [], display: false })).toEqual({ summary: "", text: undefined });
   });
 
+  // spec: UI-199
+  test("a voice conversation is one row: its count, expandable to its turns without the note to the agent", () => {
+    const row = systemMessage({
+      role: "custom",
+      customType: "omfp-voice",
+      content: "Voice conversation · 2 turns\n(Spoken with the user …)\nUser: Is it done?\nAssistant: Yes.",
+      display: true,
+      details: {
+        turns: [
+          { role: "user", text: "Is it done?" },
+          { role: "assistant", text: "Yes." },
+        ],
+      },
+    });
+    expect(row).toEqual({
+      summary: "Voice conversation · 2 turns",
+      text: "Voice conversation · 2 turns\nUser: Is it done?\nAssistant: Yes.",
+    });
+  });
+
   // spec: UI-043
   test("omp's xdev mount notice is a system record; other notices are not", () => {
     const mounted = systemNotice({

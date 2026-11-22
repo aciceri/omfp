@@ -67,6 +67,8 @@ export type LivePanelView =
       readonly status: LiveStatus;
       readonly lines: readonly LiveLineView[];
       readonly muted: boolean;
+      /** A prompt typed in the chat since the session started, which the voice does not know (UI-199). */
+      readonly behind: boolean;
     }
   /** Another window's session (UI-182): its state and an end button, no audio. */
   | {
@@ -74,6 +76,7 @@ export type LivePanelView =
       readonly status: LiveStatus;
       readonly lines: readonly LiveLineView[];
       readonly client: string;
+      readonly behind: boolean;
     }
   /** A failed start or a session that ended on an error (UI-186). */
   | { readonly kind: "error"; readonly message: string };
@@ -117,7 +120,25 @@ export function ownStatus(phase: LivePhase | null, connected: boolean, speaking:
   return status === "listening" && speaking ? "speaking" : status;
 }
 
-type LiveState = Pick<ThreadState, "live" | "live_error">;
+type LiveState = Pick<ThreadState, "live" | "live_error" | "transcript">;
+
+/**
+ * Whether a prompt was typed in the chat since the session started (UI-199): the voice got the thread's conversation
+ * when it started (DMN-105) and omp gives it nothing later but its own delegations' results.
+ */
+export function liveBehind(state: LiveState): boolean {
+  const live = state.live;
+  if (live === null) {
+    return false;
+  }
+  for (let index = live.context_end; index < state.transcript.length; index++) {
+    const message = state.transcript[index]?.message;
+    if (message?.role === "user" && message.synthetic !== true) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /** The live panel of thread `threadId`; `connection` is this window's (`hello.connection`), `dismissed` the error the
  * user dismissed on this thread. */
@@ -135,11 +156,12 @@ export function livePanelView(
       return { kind: "error", message: local.message };
     }
     const lines = mine ? liveLines(live.transcript) : [];
+    const behind = mine && liveBehind(state);
     if (local.kind === "starting") {
-      return { kind: "own", status: "connecting", lines, muted: false };
+      return { kind: "own", status: "connecting", lines, muted: false, behind };
     }
     const status = ownStatus(mine ? live.phase : null, local.connected, local.speaking);
-    return { kind: "own", status, lines, muted: local.muted };
+    return { kind: "own", status, lines, muted: local.muted, behind };
   }
   if (live !== null) {
     // This window's session it no longer holds is ending (its `live_end` is on the way).
@@ -150,6 +172,7 @@ export function livePanelView(
           status: phaseStatus(live.phase),
           lines: liveLines(live.transcript),
           client: live.owner.client,
+          behind: liveBehind(state),
         };
   }
   if (state.live_error !== null && state.live_error !== dismissed) {

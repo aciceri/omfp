@@ -1920,7 +1920,8 @@ async fn live_connect_sends_the_live_prompt_with_the_threads_conversation() {
         instructions,
         vec![Some(crate::live_context::live_instructions(
             "Login bug",
-            &state
+            &state,
+            &[]
         ))]
     );
     let sent = instructions[0].as_deref().unwrap();
@@ -1985,6 +1986,173 @@ async fn one_live_session_per_thread_until_omp_ends_it() {
         .expect("a new session once omp ended the first");
     let state = h.log(&id).await.with_state(Clone::clone);
     assert_eq!(state.live.map(|live| live.owner), Some(owner(3)));
+}
+
+/// The `custom` voice conversations in the thread's transcript (DMN-113).
+fn voice_logs(state: &ThreadState) -> Vec<String> {
+    state
+        .transcript
+        .iter()
+        .filter_map(|entry| match &entry.message {
+            omp_rpc::AgentMessage::Custom(custom)
+                if custom.custom_type.as_deref() == Some(crate::voice_log::CUSTOM_TYPE) =>
+            {
+                serde_json::to_value(&custom.content)
+                    .ok()?
+                    .as_str()
+                    .map(str::to_owned)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// omp announces omfp's extension command, as it does once it loaded the extension (DMN-113).
+async fn announce_voice_log(h: &Harness, id: &str) {
+    let actor = h.supervisor.actor(id).await.unwrap();
+    h.supervisor.ensure_running(&actor).await.unwrap();
+    let commands = frame(json!({
+        "type": "available_commands_update",
+        "commands": [{ "name": crate::voice_log::COMMAND, "source": "extension" }],
+    }));
+    h.supervisor
+        .push(&actor, ThreadEvent::Omp { frame: commands });
+}
+
+// spec: DMN-113
+#[tokio::test]
+async fn an_ended_live_session_leaves_its_conversation_in_the_thread() {
+    let h = harness(|_| {});
+    let id = h.thread();
+    h.launcher.script_live(crate::agent::FakeLive::connect(
+        crate::agent::FakeLive::call_frames(),
+    ));
+    announce_voice_log(&h, &id).await;
+    h.supervisor
+        .live_connect(&id, owner(1), OFFER.into(), None)
+        .await
+        .unwrap();
+    assert_eq!(
+        h.local_commands_of(0),
+        Vec::<String>::new(),
+        "nothing is recorded while the session runs"
+    );
+
+    h.supervisor.live_stop(&id).await.unwrap();
+    h.wait(&id, "the voice conversation", |state| {
+        !voice_logs(state).is_empty()
+    })
+    .await;
+
+    let state = h.log(&id).await.with_state(Clone::clone);
+    assert_eq!(state.live, None);
+    let [log] = voice_logs(&state).try_into().unwrap();
+    assert!(log.starts_with("Voice conversation · 2 turns\n"), "{log}");
+    assert!(
+        log.ends_with("\nUser: Ciao, mi senti? Dimmi solo sì\nAssistant: Sì."),
+        "{log}"
+    );
+    assert_eq!(h.local_commands_of(0).len(), 1, "one session, one record");
+}
+
+// spec: DMN-113
+#[tokio::test]
+async fn a_conversation_waiting_for_a_busy_thread_reaches_the_next_session() {
+    let h = harness(|_| {});
+    let id = h.thread();
+    h.launcher.script_live(crate::agent::FakeLive::connect(
+        crate::agent::FakeLive::call_frames(),
+    ));
+    announce_voice_log(&h, &id).await;
+    let actor = h.supervisor.lookup(&id).unwrap();
+    h.supervisor.push(
+        &actor,
+        ThreadEvent::Omp {
+            frame: agent_start(),
+        },
+    );
+    h.supervisor
+        .live_connect(&id, owner(1), OFFER.into(), None)
+        .await
+        .unwrap();
+    h.supervisor.live_stop(&id).await.unwrap();
+    h.wait(&id, "the end of the session", |state| state.live.is_none())
+        .await;
+    h.supervisor.record_voice(&id).await;
+    assert_eq!(
+        h.local_commands_of(0),
+        Vec::<String>::new(),
+        "a busy thread records nothing"
+    );
+
+    h.supervisor
+        .live_connect(&id, owner(1), OFFER.into(), None)
+        .await
+        .unwrap();
+    let instructions: Vec<String> = h
+        .launcher
+        .process(0)
+        .calls()
+        .into_iter()
+        .filter_map(|call| match call {
+            FakeCall::Call(OmpCall::LiveConnect(connect)) => connect.instructions,
+            _ => None,
+        })
+        .collect();
+    assert!(
+        instructions[1]
+            .contains("Voice conversation:\nUser: Ciao, mi senti? Dimmi solo sì\nAssistant: Sì."),
+        "{}",
+        instructions[1]
+    );
+
+    h.supervisor.live_stop(&id).await.unwrap();
+    h.wait(&id, "the end of the second session", |state| {
+        state.live.is_none()
+    })
+    .await;
+    h.supervisor.push(
+        &actor,
+        ThreadEvent::Omp {
+            frame: frame(json!({ "type": "session_settled" })),
+        },
+    );
+    h.wait(&id, "both conversations", |state| {
+        voice_logs(state).len() == 2
+    })
+    .await;
+}
+
+// spec: DMN-113
+#[tokio::test]
+async fn without_the_extensions_command_nothing_is_sent() {
+    let h = harness(|_| {});
+    let id = h.thread();
+    h.launcher.script_live(crate::agent::FakeLive::connect(
+        crate::agent::FakeLive::call_frames(),
+    ));
+    h.supervisor
+        .live_connect(&id, owner(1), OFFER.into(), None)
+        .await
+        .unwrap();
+    h.supervisor.live_stop(&id).await.unwrap();
+    h.wait(&id, "the end of the session", |state| state.live.is_none())
+        .await;
+
+    h.supervisor.record_voice(&id).await;
+
+    assert_eq!(
+        h.local_commands_of(0),
+        Vec::<String>::new(),
+        "omp would hand the text to the model"
+    );
+
+    // A process that announces the command (as a new one does at its start) takes the waiting conversation.
+    announce_voice_log(&h, &id).await;
+    h.wait(&id, "the voice conversation", |state| {
+        voice_logs(state).len() == 1
+    })
+    .await;
 }
 
 // spec: DMN-102
@@ -2207,7 +2375,11 @@ async fn live_start_starts_omp_records_the_owner_and_relays_the_voice() {
     let state = h.log(&id).await.with_state(Clone::clone);
     assert_eq!(
         live_starts(&h.launcher.process(0)),
-        vec![Some(crate::live_context::live_instructions("t", &state))]
+        vec![Some(crate::live_context::live_instructions(
+            "t",
+            &state,
+            &[]
+        ))]
     );
     assert_eq!(live_offers(&h.launcher.process(0)), Vec::<String>::new());
 }

@@ -160,20 +160,25 @@ export interface SlashEntry {
   readonly disabled: boolean;
 }
 
+/** The commands of omfp's own omp extension, which only the daemon sends (DMN-113): never offered. */
+const OMFP_COMMANDS: readonly string[] = ["omfp-voice-log"];
+
 /**
  * The commands the composer offers (UI-978): the announced ones in omp's order (a routed builtin described by what
- * omfp does), then omp's TUI-only builtins no announced command shadows, the routed ones like any command, the others
- * disabled with the reason.
+ * omfp does; omfp's own extension commands left out), then omp's TUI-only builtins no announced command shadows, the
+ * routed ones like any command, the others disabled with the reason.
  */
 export function slashEntries(commands: readonly AvailableSlashCommand[]): SlashEntry[] {
   const taken = new Set(commands.flatMap((announced) => [announced.name, ...(announced.aliases ?? [])]));
-  const announced = commands.map((announced) => ({
-    name: announced.name,
-    aliases: announced.aliases ?? [],
-    description: (announced.source === "builtin" ? text.routed[announced.name] : undefined) ?? announced.description,
-    hint: announced.input?.hint,
-    disabled: false,
-  }));
+  const announced = commands
+    .filter((announced) => !OMFP_COMMANDS.includes(announced.name))
+    .map((announced) => ({
+      name: announced.name,
+      aliases: announced.aliases ?? [],
+      description: (announced.source === "builtin" ? text.routed[announced.name] : undefined) ?? announced.description,
+      hint: announced.input?.hint,
+      disabled: false,
+    }));
   const tuiOnly = OMP_TUI_COMMANDS.filter((tui) => !taken.has(tui.name)).map((tui) => {
     const routed = text.routed[tui.name];
     return {

@@ -78,7 +78,9 @@ crates/omfp-core      reducer over omp events (ThreadEvent → ThreadState); no 
 crates/omfp-protocol  UI ↔ daemon protocol types, JSON Schemas
 crates/omfp-daemon    daemon library: omp adapter (omp.rs), agent port + FakeLauncher (agent.rs, agent/fake.rs; omp's live voice
                       sequence in agent/fake/live.rs), live voice relay (supervisor/live.rs: one session per thread;
-                      live_context.rs: omp's vendored live prompt live_instructions.txt + the thread's conversation),
+                      live_context.rs: omp's vendored live prompt live_instructions.txt + the thread's conversation;
+                      voice_log.rs: an ended session's spoken turns, appended to the thread by omfp's omp extension
+                      omp_extension.ts, written to `<data-dir>/omp/index.ts`),
                       supervisor (supervisor.rs: the thread actors and their operations; supervisor/process.rs: launch
                       in the workspace folder, event pump, crash and stop; supervisor/roots.rs: root sync;
                       supervisor/dialogs.rs: answers to omp's dialogs; supervisor/cards.rs: the waiting `omfp_card`

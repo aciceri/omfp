@@ -98,6 +98,9 @@ pub struct LiveSession {
     pub phase: Option<LivePhase>,
     /// One line per role and turn, in order of first appearance.
     pub transcript: Vec<LiveLine>,
+    /// The transcript's length when the session started: the voice's context holds the messages before it (DMN-105),
+    /// so a prompt typed from there on is unknown to it.
+    pub context_end: usize,
 }
 
 /// The text of one realtime turn of one speaker (`live_transcript`).

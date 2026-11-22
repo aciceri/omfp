@@ -345,6 +345,12 @@ pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHa
             data.widget_builder().display()
         )
     })?;
+    crate::voice_log::write_extension(&data).with_context(|| {
+        format!(
+            "cannot write omfp's omp extension to {}",
+            data.omp_extension_module().display()
+        )
+    })?;
     let workspaces_root = std::path::absolute(&config.workspaces_root)?;
     // SQLite creates its database (and gives its journal files the database's mode) with the umask's mode.
     private_file_options()

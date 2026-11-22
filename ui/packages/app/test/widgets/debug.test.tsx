@@ -13,7 +13,7 @@ afterEach(cleanup);
 
 type Obj = Record<string, unknown>;
 
-/** A `debug` call and its result, as omp 18.22 ends their messages. */
+/** A `debug` call and its result, as omp 19.1 ends their messages. */
 function debugMessages(id: string, args: Obj, details: Obj): Obj[] {
   return [
     { role: "assistant", content: [{ type: "toolCall", id, name: "debug", arguments: args }] },

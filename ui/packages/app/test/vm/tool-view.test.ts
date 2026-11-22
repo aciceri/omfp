@@ -654,7 +654,7 @@ describe("lsp card", () => {
   });
 
   // spec: UI-919
-  test("a symbol rename: its old and new names, each file's edits and the total, as omp 18.22.0 words them", () => {
+  test("a symbol rename: its old and new names, each file's edits and the total, as omp 19.1.0 words them", () => {
     // `textDocument/rename` answered with a `changes` map, previewed (`formatWorkspaceEdit`: `N edit`/`N edits`) and
     // applied (`applyWorkspaceEdit`: `Applied N edit(s) to`); `symbol` names the old name, `#N` its occurrence.
     const args = { action: "rename", file: "src/lib.rs", line: 3, symbol: "add#2", new_name: "sum" };

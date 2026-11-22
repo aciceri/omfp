@@ -317,7 +317,7 @@ describe("live voice", () => {
   });
 
   // spec: UI-182, UI-183
-  test("the Mute button mutes and unmutes like Space, pressed and named from the state; End ends the session", async () => {
+  test("the Mute button mutes and unmutes like Space, one name, pressed from the state; End ends the session", async () => {
     const live = renderLive();
     await start(live);
     // Nothing to mute until omp answered.
@@ -331,7 +331,7 @@ describe("live voice", () => {
     expect(live.client.callsTo("thread.live_mute").map((call) => call.params)).toEqual([
       { threadId: THREAD, muted: true },
     ]);
-    expect(muteState()).toEqual(["true", "Unmute", "mic-off"]);
+    expect(muteState()).toEqual(["true", "Mute", "mic-off"]);
     expect(panel().dataset.muted).toBe("true");
     live.events(phase("muted"));
     expect(status()).toBe("muted");
@@ -367,7 +367,7 @@ describe("live voice", () => {
       expect(live.host.commands.run("mute")).toBe(true);
     });
     expect(live.media.link.muted).toEqual([true]);
-    expect(muteState()).toEqual(["true", "Unmute", "mic-off"]);
+    expect(muteState()).toEqual(["true", "Mute", "mic-off"]);
     act(() => {
       expect(live.host.commands.run("live.mute")).toBe(true);
     });
@@ -625,7 +625,7 @@ describe("live voice on the daemon's machine", () => {
     expect(live.client.callsTo("thread.live_mute").map((call) => call.params)).toEqual([
       { threadId: THREAD, muted: true },
     ]);
-    expect(muteState()).toEqual(["true", "Unmute", "mic-off"]);
+    expect(muteState()).toEqual(["true", "Mute", "mic-off"]);
     await press(screen.getByTestId("live-end"));
     expect(live.client.callsTo("thread.live_stop").map((call) => call.params)).toEqual([{ threadId: THREAD }]);
   });

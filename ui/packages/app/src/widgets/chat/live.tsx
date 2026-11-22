@@ -119,7 +119,7 @@ export function LiveVoicePanel({ threadId, state }: { threadId: string; state: T
       actions={
         <>
           <IconButton
-            label={view.muted ? text.unmute : text.mute}
+            label={text.mute}
             icon={<Icon name={view.muted ? "mic-off" : "mic"} />}
             aria-pressed={view.muted}
             // Until omp answered there is nothing to mute (`toggleMute` waits for a running session).

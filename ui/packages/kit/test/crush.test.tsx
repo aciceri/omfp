@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, describe, expect, jest, mock, test } from "bun:test";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import {
@@ -18,6 +18,7 @@ import {
   compactNumber,
   Diff,
   DiffStat,
+  ERROR_TOAST_MS,
   ExitCode,
   HelpDialog,
   HelpRow,
@@ -50,6 +51,7 @@ import {
   TextField,
   Thinking,
   ThreadRow,
+  TOAST_MS,
   Toast,
   TodoList,
   ToggleRow,
@@ -376,25 +378,106 @@ describe("Diff", () => {
 });
 
 describe("Toast", () => {
-  // spec: UI-160
-  test("info is a status that dismisses itself; errors are alerts that stay", async () => {
-    const dismissed = mock(() => undefined);
-    const stays = mock(() => undefined);
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  /** Moves the fake clock `ms` on, rendering what the timers did. */
+  function elapse(ms: number): void {
+    act(() => {
+      jest.advanceTimersByTime(ms);
+    });
+  }
+
+  // spec: UI-160, UI-535
+  test("info is a status gone after TOAST_MS, an error an alert gone after the longer ERROR_TOAST_MS", () => {
+    jest.useFakeTimers();
+    const saved = mock(() => undefined);
+    const failed = mock(() => undefined);
     render(
       <>
-        <Toast onDismiss={dismissed} duration={20}>
-          Saved
-        </Toast>
-        <Toast tone="error" onDismiss={stays} duration={1} action={<Button>Retry</Button>}>
+        <Toast onDismiss={saved}>Saved</Toast>
+        <Toast tone="error" onDismiss={failed} action={<Button>Retry</Button>}>
           Daemon unreachable
         </Toast>
       </>,
     );
+    const calls = () => [saved.mock.calls.length, failed.mock.calls.length];
     expect(screen.getByRole("status").textContent).toContain("Saved");
     expect(screen.getByRole("alert").textContent).toContain("Daemon unreachable");
-    // The error's own deadline (1 ms) passed before the info's (20 ms): it would have fired by now.
-    await waitFor(() => expect(dismissed).toHaveBeenCalledTimes(1));
-    expect(stays).not.toHaveBeenCalled();
+    expect(ERROR_TOAST_MS).toBeGreaterThan(TOAST_MS);
+    elapse(TOAST_MS - 1);
+    expect(calls()).toEqual([0, 0]);
+    elapse(1);
+    expect(calls()).toEqual([1, 0]);
+    // Nothing removed the info toast: its time started over.
+    elapse(TOAST_MS);
+    expect(calls()).toEqual([2, 0]);
+    elapse(ERROR_TOAST_MS - 2 * TOAST_MS - 1);
+    expect(calls()).toEqual([2, 0]);
+    elapse(1);
+    expect(calls()).toEqual([2, 1]);
+  });
+
+  // spec: UI-535
+  test("the pointer over a toast holds it; once it left, the whole time starts over", () => {
+    jest.useFakeTimers();
+    const gone = mock(() => undefined);
+    render(
+      <Toast tone="error" onDismiss={gone} data-testid="toast">
+        Disk full
+      </Toast>,
+    );
+    const toast = screen.getByTestId("toast");
+    elapse(ERROR_TOAST_MS - 1);
+    fireEvent.pointerEnter(toast);
+    elapse(10 * ERROR_TOAST_MS);
+    expect(gone).not.toHaveBeenCalled();
+    fireEvent.pointerLeave(toast);
+    elapse(ERROR_TOAST_MS - 1);
+    expect(gone).not.toHaveBeenCalled();
+    elapse(1);
+    expect(gone).toHaveBeenCalledTimes(1);
+  });
+
+  // spec: UI-535
+  test("the focus inside a toast holds it, also moving between its buttons; once it left, the whole time starts over", () => {
+    jest.useFakeTimers();
+    const gone = mock(() => undefined);
+    render(
+      <>
+        <Toast tone="error" onDismiss={gone} dismissLabel="Dismiss" action={<Button>Log in</Button>}>
+          No credential for anthropic
+        </Toast>
+        <button type="button">Elsewhere</button>
+      </>,
+    );
+    elapse(ERROR_TOAST_MS - 1);
+    act(() => screen.getByRole("button", { name: "Log in" }).focus());
+    elapse(10 * ERROR_TOAST_MS);
+    act(() => screen.getByRole("button", { name: "Dismiss" }).focus());
+    elapse(10 * ERROR_TOAST_MS);
+    expect(gone).not.toHaveBeenCalled();
+    act(() => screen.getByRole("button", { name: "Elsewhere" }).focus());
+    elapse(ERROR_TOAST_MS - 1);
+    expect(gone).not.toHaveBeenCalled();
+    elapse(1);
+    expect(gone).toHaveBeenCalledTimes(1);
+  });
+
+  // spec: UI-160
+  test("a toast without onDismiss has no × and never times out", () => {
+    jest.useFakeTimers();
+    render(
+      <>
+        <Toast>Logging in to Anthropic… finish in your browser</Toast>
+        <Toast tone="error">Daemon unreachable</Toast>
+      </>,
+    );
+    expect(screen.queryAllByTestId("toast-dismiss").length).toBe(0);
+    expect(jest.getTimerCount()).toBe(0);
+    elapse(60 * 60_000);
+    expect([screen.getAllByRole("status").length, screen.getAllByRole("alert").length]).toEqual([1, 1]);
   });
 });
 

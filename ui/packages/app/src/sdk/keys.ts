@@ -112,7 +112,7 @@ export const RENAMING_THREAD = windowKey<string | undefined>("renamingThread", u
 /** The thread whose composer takes the focus once shown, e.g. after `:notice` (UI-286); the composer clears it. */
 export const FOCUS_COMPOSER = windowKey<string | undefined>("focusComposer", undefined);
 
-/** Errors of failed actions, oldest first, shown by the frame until dismissed. */
+/** Errors of failed actions, oldest first, shown by the frame until dismissed or timed out (UI-536). */
 export const ERRORS = windowKey<readonly string[]>("errors", []);
 
 /** A message of an action that worked (UI-385), e.g. "Logged in to Anthropic"; `key` is unique per window. `info`: a

@@ -2,7 +2,7 @@
  * running login and opened URLs, and the live region (UI-092). */
 
 import { Button, Disclosure, LiveRegion, Toast, ToastRegion } from "@omfp/kit";
-import { type ReactNode, useEffect, useMemo, useSyncExternalStore } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import {
   ERRORS,
   requestLogin,
@@ -35,15 +35,16 @@ export function ConnectionBanner(): ReactNode {
 }
 
 /**
- * The frame's one toast stack (bottom right): errors of failed actions as error toasts (UI-160), each staying until
- * dismissed — when omp says it needs a login, a short sentence with Log in and omp's own output under Details (UI-387,
- * UI-451) —, actions that worked as success toasts going by themselves (UI-385; neutral ones for an action whose
- * outcome shows elsewhere, UI-913), the running login (UI-383; one this window did not start too, UI-640), then the
- * URLs omp opened (UI-346) and the page of a login started elsewhere.
+ * The frame's one toast stack (bottom right): errors of failed actions as error toasts (UI-160), each going by itself
+ * after a while unless hovered or focused (UI-535) — when omp says it needs a login, a short sentence with Log in and
+ * omp's own output under Details (UI-387, UI-451) —, actions that worked as success toasts going by themselves (UI-385;
+ * neutral ones for an action whose outcome shows elsewhere, UI-913), the running login (UI-383; one this window did not
+ * start too, UI-640), then the URLs omp opened (UI-346) and the page of a login started elsewhere.
  */
 export function Toasts(): ReactNode {
   const host = useHost();
   const [errors, setErrors] = useWindowState(ERRORS);
+  const errorKeys = useErrorKeys(errors);
   const [successes, setSuccesses] = useWindowState(SUCCESSES);
   const [login] = useWindowState(LOGIN_RUN);
   const [opened, setOpened] = useWindowState(OPENED_URLS);
@@ -58,8 +59,7 @@ export function Toasts(): ReactNode {
         const problem = loginProblem(error);
         return (
           <Toast
-            // biome-ignore lint/suspicious/noArrayIndexKey: the same message may repeat; its place is its identity
-            key={index}
+            key={errorKeys[index]}
             tone="error"
             className="omfp-error-toast"
             data-testid="error"
@@ -118,6 +118,35 @@ export function Toasts(): ReactNode {
       <IndexLoginUrlToast />
     </ToastRegion>
   );
+}
+
+/**
+ * One key per error toast that stays with its message while others go before it: the list only grows at its end or
+ * loses messages, so each message takes the key of the first earlier one equal to it after the last matched, a new
+ * one else. A toast's place would hand its timer, focus and open Details to the next toast once one timed out.
+ */
+function useErrorKeys(errors: readonly string[]): readonly number[] {
+  const last = useRef<{ errors: readonly string[]; keys: readonly number[]; next: number }>({
+    errors: [],
+    keys: [],
+    next: 0,
+  });
+  const shown = last.current;
+  if (shown.errors !== errors) {
+    let from = 0;
+    let next = shown.next;
+    const keys = errors.map((message) => {
+      const at = shown.errors.indexOf(message, from);
+      if (at === -1) {
+        next += 1;
+        return next;
+      }
+      from = at + 1;
+      return shown.keys[at] ?? 0;
+    });
+    last.current = { errors, keys, next };
+  }
+  return last.current.keys;
 }
 
 /** Announces the status line (connection, selected thread's state, threads awaiting input) whenever it changes, and

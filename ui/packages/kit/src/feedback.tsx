@@ -1,5 +1,13 @@
 /** Toasts (UI-160), the message log (UI-522) and empty states (UI-161). */
-import { type HTMLAttributes, type ReactNode, useEffect, useRef } from "react";
+import {
+  type FocusEvent,
+  type HTMLAttributes,
+  type PointerEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { IconButton } from "./button.tsx";
 import { cx } from "./class.ts";
 import { Icon, type IconName } from "./icons.tsx";
@@ -11,22 +19,28 @@ const TOAST_ICON: Record<ToastTone, IconName> = { info: "info", success: "circle
 /** How long info and success toasts stay (UI-160). */
 export const TOAST_MS = 5000;
 
+/** How long error toasts stay, longer than {@link TOAST_MS} so they can be read (UI-160). */
+export const ERROR_TOAST_MS = 12_000;
+
 export interface ToastProps extends Omit<HTMLAttributes<HTMLDivElement>, "children"> {
   tone?: ToastTone;
   children: ReactNode;
   /** A button after the text (e.g. "Retry"). */
   action?: ReactNode;
-  /** Shows the quiet `×` and is called when the toast goes (closed, or timed out). */
+  /** Shows the quiet `×` and is called when the toast goes (closed, or timed out); without it the toast never times
+   * out. */
   onDismiss?: () => void;
   /** Accessible name of the `×`. */
   dismissLabel?: string;
-  /** Milliseconds before an info or success toast dismisses itself ({@link TOAST_MS}); errors stay until closed. */
+  /** Milliseconds before the toast dismisses itself: {@link TOAST_MS} for info and success, {@link ERROR_TOAST_MS} for
+   * errors. */
   duration?: number;
 }
 
 /**
  * A notification card (UI-160): a leading icon in its tone's color, the text, an optional action and `×`. Info and
- * success are polite status messages that dismiss themselves; errors are alerts that stay.
+ * success are polite status messages, errors alerts; with `onDismiss` each dismisses itself after `duration`, a timer
+ * paused while the pointer is over the toast or the focus inside it and started over, whole, once both left (UI-535).
  */
 export function Toast({
   tone = "info",
@@ -34,25 +48,56 @@ export function Toast({
   action,
   onDismiss,
   dismissLabel = "Dismiss",
-  duration = TOAST_MS,
+  duration = tone === "error" ? ERROR_TOAST_MS : TOAST_MS,
   className,
+  onPointerEnter,
+  onPointerLeave,
+  onFocus,
+  onBlur,
   ...props
 }: ToastProps) {
   const dismiss = useRef(onDismiss);
   dismiss.current = onDismiss;
+  const timed = onDismiss !== undefined;
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const held = hovered || focused;
   useEffect(() => {
-    if (tone === "error" || dismiss.current === undefined) {
+    if (!timed || held) {
       return undefined;
     }
-    const timer = setTimeout(() => dismiss.current?.(), duration);
+    // A toast still shown once its time ran out (its place now holds the next one) starts over.
+    const expire = () => {
+      dismiss.current?.();
+      timer = setTimeout(expire, duration);
+    };
+    let timer = setTimeout(expire, duration);
     return () => clearTimeout(timer);
-  }, [tone, duration]);
+  }, [timed, held, duration]);
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: pointer and focus only hold the timer; nothing to interact with
     <div
       role={tone === "error" ? "alert" : "status"}
       {...props}
       className={cx("omfp-toast", className)}
       data-tone={tone}
+      onPointerEnter={(event: PointerEvent<HTMLDivElement>) => {
+        setHovered(true);
+        onPointerEnter?.(event);
+      }}
+      onPointerLeave={(event: PointerEvent<HTMLDivElement>) => {
+        setHovered(false);
+        onPointerLeave?.(event);
+      }}
+      onFocus={(event: FocusEvent<HTMLDivElement>) => {
+        setFocused(true);
+        onFocus?.(event);
+      }}
+      onBlur={(event: FocusEvent<HTMLDivElement>) => {
+        const next = event.relatedTarget;
+        setFocused(next instanceof Node && event.currentTarget.contains(next));
+        onBlur?.(event);
+      }}
     >
       <Icon name={TOAST_ICON[tone]} className="omfp-toast__icon" />
       <span className="omfp-toast__text">{children}</span>

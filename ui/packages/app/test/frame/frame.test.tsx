@@ -1,13 +1,16 @@
 /** L4: the frame (banner, views, keymap, `:` line, theme, live region, notifications, dialogs) over a fake client. */
 
-import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, spyOn, test } from "bun:test";
 import type { CallMethod } from "@omfp/client";
+import { ERROR_TOAST_MS } from "@omfp/kit";
 import type { BuiltinTheme, Settings, ThreadSummary, ViewsState } from "@omfp/protocol";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Frame, type FrameProps } from "../../src/frame/frame.tsx";
+import { LOGIN_RUN } from "../../src/frame/login.tsx";
 import type { NotificationPort } from "../../src/frame/notifications.ts";
 import { COARSE_POINTER, SHORT_TOUCH_SCREEN } from "../../src/frame/responsive.ts";
+import { Toasts } from "../../src/frame/status.tsx";
 import {
   chooseView,
   currentWorkspaceId,
@@ -15,10 +18,12 @@ import {
   ERRORS,
   FOCUS_COMPOSER,
   type KeyValueStorage,
+  MESSAGES,
   NOTICES,
   type Notice,
   type OmfpHost,
   REVEAL_WIDGET,
+  reportError,
   SELECTED_THREAD,
   SUCCESSES,
   useCommand,
@@ -876,7 +881,7 @@ describe("frame", () => {
   });
 
   // spec: UI-092, UI-160
-  test("errors of failed actions show as error toasts until dismissed", async () => {
+  test("errors of failed actions show as error toasts, closed by their ×", async () => {
     const { host, user } = setup();
     act(() => host.window.set(ERRORS, ["boom"]));
     const shown = screen.getAllByTestId("error");
@@ -885,6 +890,53 @@ describe("frame", () => {
     ]);
     await user.click(screen.getByTestId("toast-dismiss"));
     expect(screen.queryByTestId("toasts")).toBeNull();
+  });
+
+  // spec: UI-536
+  test("error toasts go by themselves each on its own clock, held while focused, and stay in the messages", () => {
+    jest.useFakeTimers();
+    try {
+      const { host } = renderWithHost(<Toasts />);
+      const shown = () => screen.queryAllByTestId("error").length;
+      const elapse = (ms: number) =>
+        act(() => {
+          jest.advanceTimersByTime(ms);
+        });
+      act(() => reportError(host, new Error("disk full")));
+      elapse(ERROR_TOAST_MS / 2);
+      act(() => reportError(host, new Error("No API key found for anthropic")));
+      const details = screen.getByTestId("error-details");
+      act(() => details.focus());
+      // The first one goes; the second keeps its toast, its focus and its time.
+      elapse(ERROR_TOAST_MS / 2);
+      expect(shown()).toBe(1);
+      expect(document.activeElement === screen.getByTestId("error-details")).toBe(true);
+      elapse(10 * ERROR_TOAST_MS);
+      expect(shown()).toBe(1);
+      act(() => screen.getByTestId("error-details").blur());
+      elapse(ERROR_TOAST_MS - 1);
+      expect(shown()).toBe(1);
+      elapse(1);
+      expect(screen.queryByTestId("toasts")).toBeNull();
+      expect(host.window.get(MESSAGES).map(({ tone, text }) => [tone, text])).toEqual([
+        ["error", "disk full"],
+        ["error", "No API key found for anthropic"],
+      ]);
+      // The running login's toast has no timer: it stays until the login ends.
+      act(() =>
+        host.window.set(LOGIN_RUN, {
+          id: 1,
+          providerId: "anthropic",
+          name: "Anthropic",
+          progress: undefined,
+          cancelled: false,
+        }),
+      );
+      elapse(60 * 60_000);
+      expect(screen.getAllByTestId("login-progress").length).toBe(1);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 

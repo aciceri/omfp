@@ -1349,6 +1349,9 @@ requirements = [
   "UI-999",
   # Live voice without keys: the panel's Mute and End buttons (UI-182, UI-183), `:mute` (#241)
   "UI-530",
+  # Error toasts go by themselves; a toast holds while hovered or focused (#242)
+  "UI-535",
+  "UI-536",
 ]
 
 [M18]

@@ -385,12 +385,15 @@ function editPath(input: string | undefined): string | undefined {
   return match?.[1];
 }
 
-/** The questions of an `ask` form: its `<legend>`s, else its labels. */
+/** The questions of an `ask` form in order: each `<fieldset>`'s `<legend>`, and each `<label>` outside a fieldset. */
 function askQuestions(html: string): string[] {
-  const legends = [...html.matchAll(/<legend[^>]*>([\s\S]*?)<\/legend>/gi)].map((match) =>
-    (match[1] ?? "").replace(/<[^>]*>/g, "").trim(),
-  );
-  return legends.filter((legend) => legend !== "");
+  const questions = [
+    ...html.matchAll(/<fieldset\b[^>]*>([\s\S]*?)<\/fieldset>|<label\b[^>]*>([\s\S]*?)<\/label>/gi),
+  ].map((match) => {
+    const legend = match[1] === undefined ? undefined : /<legend[^>]*>([\s\S]*?)<\/legend>/i.exec(match[1])?.[1];
+    return (legend ?? match[2] ?? "").replace(/<[^>]*>/g, "").trim();
+  });
+  return questions.filter((question) => question !== "");
 }
 
 /**

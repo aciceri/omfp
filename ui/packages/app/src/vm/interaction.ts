@@ -1,16 +1,35 @@
 /**
- * Pending interactions (UI-070..073): titles, countdowns, the `ask` form with its selection rules, and requests that
- * another client or omp closed.
+ * Pending interactions (UI-070..074): titles, countdowns, the `ask` form with its selection rules, omp's HTML `form`
+ * with its constraints, and requests that another client or omp closed.
  */
 
 import type { ClosedInteraction, InteractionRequest } from "@omfp/client";
-import { type AskAnswer, type AskUiRequest, validateAskAnswers } from "@omfp/core";
+import {
+  type AskAnswer,
+  type AskUiRequest,
+  type FormAnswerData,
+  type FormUiRequest,
+  validateAskAnswers,
+} from "@omfp/core";
 import { strings } from "../strings/index.ts";
+import { choiceValue, fieldError, type HtmlFormValue, isArrayChoice, textValue } from "./form/data.ts";
+import { type FormField, type HtmlForm, parseHtmlForm, spansText } from "./form/parse.ts";
+import { checkFormReply } from "./form/reply.ts";
 
 /** The dialog requests: they wait for an answer. */
-export type Dialog = Extract<InteractionRequest, { method: "select" | "confirm" | "input" | "editor" | "ask" }>;
+export type Dialog = Extract<
+  InteractionRequest,
+  { method: "select" | "confirm" | "input" | "editor" | "ask" | "form" }
+>;
 
-const DIALOGS: Readonly<Record<string, true>> = { select: true, confirm: true, input: true, editor: true, ask: true };
+const DIALOGS: Readonly<Record<string, true>> = {
+  select: true,
+  confirm: true,
+  input: true,
+  editor: true,
+  ask: true,
+  form: true,
+};
 
 export function isDialog(request: InteractionRequest): request is Dialog {
   return DIALOGS[request.method] === true;
@@ -24,11 +43,15 @@ export function cardKey(request: InteractionRequest, index: number): string {
   return isDialog(request) ? `id-${request.id}` : `at-${index}`;
 }
 
-/** The request's title (the first question for `ask`). */
+/** The request's title (the first question for `ask`, the first section title for `form`). */
 export function title(request: InteractionRequest): string {
   if (request.method === "ask") {
     const first = request.questions[0];
     return first === undefined ? "" : (first.header ?? first.question);
+  }
+  if (request.method === "form") {
+    const titled = formOf(request).sections.find((section) => section.title.length > 0);
+    return titled === undefined ? strings.chat.form.title : spansText(titled.title);
   }
   return isDialog(request) ? request.title : "";
 }
@@ -40,6 +63,7 @@ export function timeoutMs(request: InteractionRequest): number | undefined {
     case "confirm":
     case "input":
     case "ask":
+    case "form":
       return request.timeout !== undefined && request.timeout > 0 ? request.timeout : undefined;
     default:
       return undefined;
@@ -135,6 +159,174 @@ export function checkAsk(form: AskForm, request: AskUiRequest): AskCheck {
   }
   const error = validateAskAnswers(request, answers);
   return error === undefined ? { ok: true, answers } : { ok: false, error };
+}
+
+const PARSED = new WeakMap<FormUiRequest, HtmlForm>();
+
+/** The parsed HTML of a `form` request (UI-074), parsed once per request. */
+export function formOf(request: FormUiRequest): HtmlForm {
+  let form = PARSED.get(request);
+  if (form === undefined) {
+    form = parseHtmlForm(request.html);
+    PARSED.set(request, form);
+  }
+  return form;
+}
+
+/** The answer being built for one field of a `form`, by the field's index in `HtmlForm.fields`. */
+export type FieldDraft =
+  | {
+      readonly kind: "choice";
+      /** Checked option indices; a radio group or single select holds at most one. */
+      readonly checked: readonly number[];
+      /** The group's "Other" answer is picked (a radio group then has no option checked). */
+      readonly otherChosen: boolean;
+      readonly other: string;
+    }
+  | { readonly kind: "text"; readonly text: string };
+
+/** A `form` being filled. */
+export interface FormDraft {
+  readonly fields: readonly FieldDraft[];
+  /** Submit was pressed while an answer was invalid: every field shows its error from then on. */
+  readonly attempted: boolean;
+}
+
+/** The form as omp's HTML opens it: preselected options, prefilled text. */
+export function emptyFormDraft(form: HtmlForm): FormDraft {
+  return {
+    attempted: false,
+    fields: form.fields.map((field) =>
+      field.kind === "text"
+        ? { kind: "text", text: field.value }
+        : {
+            kind: "choice",
+            checked: field.options.flatMap((option, index) => (option.checked ? [index] : [])),
+            otherChosen: false,
+            other: "",
+          },
+    ),
+  };
+}
+
+const NO_CHOICE: Extract<FieldDraft, { kind: "choice" }> = {
+  kind: "choice",
+  checked: [],
+  otherChosen: false,
+  other: "",
+};
+
+function choiceDraft(draft: FormDraft, index: number): Extract<FieldDraft, { kind: "choice" }> {
+  const field = draft.fields[index];
+  return field?.kind === "choice" ? field : NO_CHOICE;
+}
+
+function withField(draft: FormDraft, index: number, field: FieldDraft): FormDraft {
+  return { ...draft, fields: draft.fields.map((current, position) => (position === index ? field : current)) };
+}
+
+/**
+ * Picks option `option` of choice field `index`: a radio group or single select takes it instead of any other answer
+ * (its Other text stays, set aside); a checkbox group or multi-select toggles it.
+ */
+export function chooseFormOption(form: HtmlForm, draft: FormDraft, index: number, option: number): FormDraft {
+  const field = form.fields[index];
+  if (field?.kind !== "choice" || field.options[option] === undefined) {
+    return draft;
+  }
+  const current = choiceDraft(draft, index);
+  if (!field.multi) {
+    return withField(draft, index, { ...current, checked: [option], otherChosen: false });
+  }
+  const checked = current.checked.includes(option)
+    ? current.checked.filter((checkedOption) => checkedOption !== option)
+    : [...current.checked, option].sort((a, b) => a - b);
+  return withField(draft, index, { ...current, checked });
+}
+
+/** Picks (or, in a checkbox group, unpicks) the "Other" answer of group `index`; a radio group drops its option. */
+export function chooseFormOther(form: HtmlForm, draft: FormDraft, index: number, chosen: boolean): FormDraft {
+  const field = form.fields[index];
+  if (field?.kind !== "choice" || !field.other) {
+    return draft;
+  }
+  const current = choiceDraft(draft, index);
+  return withField(draft, index, {
+    ...current,
+    checked: field.multi || !chosen ? current.checked : [],
+    otherChosen: field.multi ? chosen : true,
+  });
+}
+
+/** Sets the "Other" text of group `index`; typing an answer picks Other (a radio group drops its option). */
+export function setFormOther(form: HtmlForm, draft: FormDraft, index: number, other: string): FormDraft {
+  const current = choiceDraft(draft, index);
+  const next = withField(draft, index, { ...current, other });
+  return other.trim() === "" ? next : chooseFormOther(form, next, index, true);
+}
+
+/** Sets the text of text field `index`. */
+export function setFormText(draft: FormDraft, index: number, text: string): FormDraft {
+  return draft.fields[index]?.kind === "text" ? withField(draft, index, { kind: "text", text }) : draft;
+}
+
+/** What field `index` submits: omp's value rules, a checkbox group's Other text never repeating a checked value. */
+function fieldValue(field: FormField, draft: FieldDraft | undefined): HtmlFormValue | undefined {
+  if (field.kind === "text") {
+    return textValue(field, draft?.kind === "text" ? draft.text : field.value);
+  }
+  const choice = draft?.kind === "choice" ? draft : NO_CHOICE;
+  const value = choiceValue(field, new Set(choice.checked), choice.otherChosen ? choice.other : undefined);
+  return isArrayChoice(field) && Array.isArray(value) ? [...new Set(value)] : value;
+}
+
+/** The submitted data: hidden inputs, then each named field's value (a later field of the same name wins). */
+export function formData(form: HtmlForm, draft: FormDraft): FormAnswerData {
+  const entries: [string, HtmlFormValue][] = [...form.hidden];
+  form.fields.forEach((field, index) => {
+    const value = fieldValue(field, draft.fields[index]);
+    if (field.name && value !== undefined) {
+      entries.push([field.name, value]);
+    }
+  });
+  // `fromEntries` keeps a control named `__proto__` an ordinary key.
+  return Object.fromEntries(entries);
+}
+
+/** The data when every answer passes the form's rules and omp's check of the reply, else each field's error. */
+export type FormCheck =
+  | { readonly ok: true; readonly data: FormAnswerData }
+  | { readonly ok: false; readonly errors: readonly (string | undefined)[] };
+
+export function checkForm(form: HtmlForm, draft: FormDraft): FormCheck {
+  const errors = form.fields.map((field, index) => fieldError(field, fieldValue(field, draft.fields[index])));
+  if (errors.some((error) => error !== undefined)) {
+    return { ok: false, errors };
+  }
+  const data = formData(form, draft);
+  const reply = checkFormReply(form, data);
+  if (reply.ok) {
+    return { ok: true, data };
+  }
+  // A refusal the field rules miss (an Other text naming a disabled option, same-name fields of different shapes).
+  const at = Math.max(
+    0,
+    form.fields.findIndex((field) => field.name === reply.name),
+  );
+  return { ok: false, errors: form.fields.map((_, index) => (index === at ? reply.reason : undefined)) };
+}
+
+/** The `src` a form's `<img>` may load: http(s) and `data:` URLs only; a local path or `file:` URL shows as text. */
+export function formImageSource(src: string): string | undefined {
+  return /^(?:https?|data):/i.test(src) ? src : undefined;
+}
+
+/** An inline `<svg>` as an image URL, so its markup is drawn by `<img>` and never inserted into the page. */
+export function svgImageSource(markup: string): string {
+  const standalone = /^<svg(?![^>]*\sxmlns=)/i.test(markup)
+    ? markup.replace(/^<svg/i, '<svg xmlns="http://www.w3.org/2000/svg"')
+    : markup;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(standalone)}`;
 }
 
 /** A closed request shown in place of the dialog (UI-072). */

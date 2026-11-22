@@ -840,6 +840,94 @@
     color: var(--omfp-error);
   }
 
+  /* omp's HTML form (UI-074): sections, context blocks and fields in one column. */
+  .omfp-interaction__form.omfp-form {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    align-items: stretch;
+  }
+
+  .omfp-form__section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--omfp-s2);
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  .omfp-form__legend,
+  .omfp-form__heading {
+    margin: 0;
+    padding: 0;
+    font-size: var(--omfp-fs-sm);
+    font-weight: var(--omfp-fw-medium);
+  }
+
+  .omfp-form__text,
+  .omfp-form__list {
+    margin: 0;
+  }
+
+  .omfp-form__list {
+    padding-inline-start: var(--omfp-s4);
+  }
+
+  .omfp-form code,
+  .omfp-form__pre {
+    font-family: var(--omfp-font-code);
+  }
+
+  .omfp-form__pre {
+    margin: 0;
+    overflow-x: auto;
+    white-space: pre;
+  }
+
+  .omfp-form__table {
+    border-collapse: collapse;
+  }
+
+  .omfp-form__table :is(th, td) {
+    padding: var(--omfp-s1) var(--omfp-s2);
+    text-align: start;
+    border: 1px solid var(--omfp-rule);
+  }
+
+  .omfp-form__image {
+    max-inline-size: 100%;
+    block-size: auto;
+    align-self: flex-start;
+  }
+
+  .omfp-form__field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--omfp-s1);
+  }
+
+  .omfp-form__group {
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+  }
+
+  /* The fields stack in columns here: the row layout's basis would set their height. */
+  .omfp-form .omfp-field {
+    flex: none;
+  }
+
+  .omfp-form__error {
+    display: flex;
+    gap: var(--omfp-s1);
+    align-items: center;
+    margin: 0;
+    font-size: var(--omfp-fs-xs);
+    color: var(--omfp-error);
+  }
+
   .omfp-interaction-closed {
     display: flex;
     gap: var(--omfp-s1);

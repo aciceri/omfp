@@ -208,4 +208,124 @@ describe("interactions", () => {
       response: { cancelled: true },
     });
   });
+
+  const FORM = `<form>
+    <fieldset><legend>Deploy</legend>
+      <p>Pick a <strong>region</strong><br>for the <code>api</code></p>
+      <label><input type="radio" name="region" value="eu" required> Europe</label>
+      <label><input type="radio" name="region" value="us"> US</label>
+      <ul><li>Lint is fast</li></ul>
+      <label><input type="checkbox" name="checks" value="lint"> Lint</label>
+      <label><input type="checkbox" name="checks" value="test" disabled> Test</label>
+      <table><tr><th>Tier</th></tr><tr><td>free</td></tr></table>
+      <img src="/tmp/plot.png" alt="Latency plot">
+      <label>Replicas <input type="number" name="replicas" min="1" required></label>
+      <input type="hidden" name="plan" value="p-7">
+    </fieldset>
+  </form>`;
+
+  // spec: UI-074, UI-070, UI-073
+  test("a form renders omp's whole HTML form, blocks invalid answers and sends the submitted data", async () => {
+    const { client } = renderThread(<InteractionsWidget />, [
+      ...base(),
+      request({ method: "form", id: "form-1", html: FORM, timeout: 30000 }),
+    ]);
+    const card = screen.getByTestId("interaction");
+    expect(card.dataset.kind).toBe("form");
+    expect(card.getAttribute("aria-label")).toBe("Deploy");
+    expect(screen.getByTestId("countdown").textContent).toBe("0:30");
+    const form = within(card).getByTestId("form-form");
+    const intro = within(form).getAllByTestId("form-text")[0];
+    expect(intro?.innerHTML).toBe(
+      "<span>Pick a </span><strong>region</strong><span><br>for the </span><code>api</code>",
+    );
+    expect(within(form).getByTestId("form-list").textContent).toBe("Lint is fast");
+    expect(within(form).getByTestId("form-table").querySelectorAll("thead th").length).toBe(1);
+    // A local picture is never loaded: its alt text stands in.
+    expect(within(form).queryByTestId("form-image")).toBeNull();
+    expect(within(form).getByTestId("form-image-text").textContent).toBe("Image: Latency plot");
+
+    const [region, checks] = within(form).getAllByTestId("form-field") as [HTMLElement, HTMLElement];
+    const regionOptions = within(region).getAllByTestId("form-option");
+    expect(regionOptions.map((option) => option.textContent)).toEqual(["Europe", "US"]);
+    expect(within(region).getByTestId("form-other-choice").textContent).toBe("Other");
+    // The first control takes the focus (UI-070).
+    expect(document.activeElement === regionOptions[0]?.querySelector("input")).toBe(true);
+    const checkOptions = within(checks).getAllByTestId("form-option");
+    expect(checkOptions.map((option) => option.dataset.disabled)).toEqual([undefined, "true"]);
+
+    // Submit is blocked until every answer passes the form's rules.
+    const submit = within(form).getByTestId("interaction-submit");
+    await userEvent.click(submit);
+    expect(client.callsTo("interaction.respond").length).toBe(0);
+    expect(
+      within(form)
+        .getAllByTestId("form-field-error")
+        .map((error) => error.textContent),
+    ).toEqual(["Required", "Required"]);
+    expect(within(form).getByTestId("form-error").textContent).toBe("Fix the answers marked above");
+
+    await userEvent.click(regionOptions[0] as HTMLElement);
+    await userEvent.click(checkOptions[0] as HTMLElement);
+    await userEvent.type(within(checks).getByTestId("form-other"), "docs");
+    const replicas = within(form).getAllByTestId("form-input")[0] as HTMLElement;
+    await userEvent.type(replicas, "0");
+    expect(
+      within(form)
+        .getAllByTestId("form-field-error")
+        .map((error) => error.textContent),
+    ).toEqual(["Must be at least 1"]);
+    await userEvent.clear(replicas);
+    await userEvent.type(replicas, "3");
+    expect(within(form).queryByTestId("form-field-error")).toBeNull();
+    await userEvent.click(submit);
+    expect(client.callsTo("interaction.respond").map((call) => call.params)).toEqual([
+      {
+        threadId: THREAD,
+        interactionId: "form-1",
+        response: { data: { plan: "p-7", region: "eu", checks: ["lint", "docs"], replicas: 3 } },
+      },
+    ]);
+    expect(card.getAttribute("aria-busy")).toBe("true");
+  });
+
+  // spec: UI-074
+  test("a form's Other answer replaces the radio choice; Dismiss cancels the form", async () => {
+    const { client } = renderThread(<InteractionsWidget />, [
+      ...base(),
+      request({ method: "form", id: "form-2", html: FORM }),
+    ]);
+    expect(screen.queryByTestId("countdown")).toBeNull();
+    const [region] = screen.getAllByTestId("form-field") as [HTMLElement];
+    const europe = within(region).getAllByTestId("form-option")[0] as HTMLElement;
+    await userEvent.click(europe);
+    expect(europe.dataset.selected).toBe("true");
+    await userEvent.type(within(region).getByTestId("form-other"), "Asia");
+    expect(europe.dataset.selected).toBeUndefined();
+    expect(within(region).getByTestId("form-other-choice").dataset.selected).toBe("true");
+    await userEvent.click(screen.getByTestId("interaction-dismiss"));
+    expect(client.callsTo("interaction.respond").map((call) => call.params)).toEqual([
+      { threadId: THREAD, interactionId: "form-2", response: { cancelled: true } },
+    ]);
+  });
+
+  // spec: UI-074
+  test("a multi-select shows its own label as its question; a checkbox group's question is the text around it", () => {
+    renderThread(<InteractionsWidget />, [
+      ...base(),
+      request({
+        method: "form",
+        id: "form-3",
+        html: `<form>
+          <label>Languages to enable <select name="langs" multiple><option value="rs">Rust</option><option value="ts">TS</option></select></label>
+          <p>Extras</p>
+          <label><input type="checkbox" name="extras" value="a"> A</label>
+          <label><input type="checkbox" name="extras" value="b"> B</label>
+        </form>`,
+      }),
+    ]);
+    const [langs, extras] = screen.getAllByTestId("form-field") as [HTMLElement, HTMLElement];
+    expect(within(langs).getByTestId("form-field-label").textContent).toBe("Languages to enable");
+    expect(within(extras).queryByTestId("form-field-label")).toBeNull();
+  });
 });

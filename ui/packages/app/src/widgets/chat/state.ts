@@ -4,7 +4,7 @@
  */
 
 import type { ThreadView } from "@omfp/client";
-import type { AskForm, PendingQueueOp, VirtualItem } from "omfp/sdk";
+import type { AskForm, FormDraft, PendingQueueOp, VirtualItem } from "omfp/sdk";
 import {
   type Draft,
   INITIAL_PIN,
@@ -34,6 +34,9 @@ const OBSERVED_AT = windowKey<Readonly<Record<string, number>>>("chat/observedAt
 
 /** `ask` forms being filled, by `<threadId>/<interactionId>` (UI-071). */
 export const ASK_FORMS = windowKey<Readonly<Record<string, AskForm>>>("chat/askForms", {});
+
+/** omp's HTML forms being filled, by `<threadId>/<interactionId>` (UI-074). */
+export const FORM_DRAFTS = windowKey<Readonly<Record<string, FormDraft>>>("chat/formDrafts", {});
 
 /** Expanded state of cards and disclosures the user toggled, by card key; absent = its default. */
 const EXPANDED = windowKey<Readonly<Record<string, boolean>>>("chat/expanded", {});

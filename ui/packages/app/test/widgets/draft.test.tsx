@@ -94,8 +94,12 @@ describe("draft thread", () => {
     await user.click(await screen.findByRole("option", { name: "Chosen model (fake)" }));
     expect(client.callsTo("threads.create")).toHaveLength(0);
     await user.type(screen.getByTestId("composer-input"), "first prompt{Enter}");
+    const picker = () => within(screen.getByTestId("model-select")).getByRole("button");
+    // The thread is created with the model chosen so far: no change while the creation is on its way.
+    expect(picker().hasAttribute("disabled")).toBe(true);
     act(() => client.callsTo("threads.create")[0]?.reject(new Error("try again")));
     await waitFor(() => expect(screen.getByTestId("send").hasAttribute("disabled")).toBe(false));
+    expect(picker().hasAttribute("disabled")).toBe(false);
     expect(host.window.get(DRAFT_THREAD)).toEqual({ workspaceId: "w1", model: "fake/chosen" });
     await user.click(screen.getByTestId("send"));
     expect(client.callsTo("threads.create").map((call) => call.params)).toEqual([

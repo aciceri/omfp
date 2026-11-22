@@ -31,6 +31,7 @@ import {
   AUTH_REVISION,
   compactionsEnded,
   costLabel,
+  DRAFT_CREATING,
   DRAFT_THREAD,
   type DraftThread,
   decodeModels,
@@ -105,6 +106,8 @@ function DraftHeader({ draft }: { draft: DraftThread }): ReactNode {
   const chip = useMemo(() => workspaceChip(draft.workspaceId, [...workspaces.values()]), [draft, workspaces]);
   const [details] = useThreadDetails(undefined, undefined);
   const [, setDraft] = useWindowState(DRAFT_THREAD);
+  // The thread is created with the model chosen so far: no change while `threads.create` is on its way (UI-023).
+  const [creating] = useWindowState(DRAFT_CREATING);
   return (
     <ChatHeader
       className="omfp-thread-header"
@@ -117,6 +120,7 @@ function DraftHeader({ draft }: { draft: DraftThread }): ReactNode {
             model={draft.model}
             models={details.models.map(modelOption)}
             noModels={details.modelsLoaded && details.models.length === 0}
+            disabled={creating}
             onSelectionChange={(key) => {
               if (key !== null) {
                 setDraft((current) => (current === undefined ? current : { ...current, model: String(key) }));

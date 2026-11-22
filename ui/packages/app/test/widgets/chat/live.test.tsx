@@ -928,6 +928,31 @@ describe("the draft thread's mic", () => {
     expect(screen.getByTestId("composer-input")).toHaveProperty("readOnly", false);
   });
 
+  // spec: UI-023, UI-357, UI-060
+  test("while the mic creates the thread, paste chips, attachments, large pastes and Alt+Enter change nothing", async () => {
+    const live = renderDraft();
+    const long = Array.from({ length: 30 }, (_, index) => `row ${index}`).join("\n");
+    const message = { text: "look: [Paste #1, +30 lines]", images: [PNG], pastes: [{ id: 1, text: long }] };
+    act(() => live.host.window.set(DRAFT_MESSAGE, message));
+    await press(mic());
+    expect(live.client.callsTo("threads.create")).toHaveLength(1);
+    await press(screen.getByTestId("paste-toggle"));
+    expect(screen.getByTestId("paste-text")).toHaveProperty("readOnly", true);
+    expect(screen.queryAllByTestId("paste-remove")).toHaveLength(0);
+    expect(screen.getByTestId("attachment-remove").hasAttribute("disabled")).toBe(true);
+    const input = screen.getByTestId("composer-input");
+    fireEvent.paste(input, { clipboardData: { files: [], getData: () => `${long}\nmore` } });
+    fireEvent.keyDown(input, { key: "Enter", altKey: true });
+    expect(live.host.window.get(DRAFT_MESSAGE)).toEqual(message);
+    expect(input).toHaveProperty("value", message.text);
+    // Once the creation failed, the draft is the user's again.
+    const [call] = live.client.callsTo("threads.create");
+    await act(async () => call?.reject(new Error("daemon down")));
+    expect(screen.getByTestId("paste-text")).toHaveProperty("readOnly", false);
+    expect(screen.queryAllByTestId("paste-remove")).toHaveLength(1);
+    expect(screen.getByTestId("attachment-remove").hasAttribute("disabled")).toBe(false);
+  });
+
   // spec: UI-023, UI-060
   test("an image still being read when the mic is pressed goes with the first message", async () => {
     const live = renderDraft("host", "what is this?");

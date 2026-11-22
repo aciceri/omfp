@@ -80,15 +80,18 @@ export function usePastes(
   };
 }
 
-/** The draft's pastes as chips: the label expands the editable text, × removes the paste and its token. */
+/** The draft's pastes as chips: the label expands the editable text, × removes the paste and its token; `locked`
+ * (the message on its way) shows the text read-only and offers no ×. */
 export function PasteChips({
   draft,
   setDraft,
   inputRef,
+  locked = false,
 }: {
   draft: Draft;
   setDraft: SetDraft;
   inputRef: RefObject<HTMLTextAreaElement | null>;
+  locked?: boolean;
 }) {
   const announce = useAnnounce();
   const [open, setOpen] = useState<number | undefined>(undefined);
@@ -100,11 +103,15 @@ export function PasteChips({
         return (
           <li key={paste.id} className="omfp-composer__paste" data-testid="paste-chip" data-paste={paste.id}>
             <Chip
-              onRemove={() => {
-                setDraft((previous) => removePaste(previous, paste.id));
-                announce(text.pasteRemoved(paste.id));
-                inputRef.current?.focus();
-              }}
+              {...(locked
+                ? {}
+                : {
+                    onRemove: () => {
+                      setDraft((previous) => removePaste(previous, paste.id));
+                      announce(text.pasteRemoved(paste.id));
+                      inputRef.current?.focus();
+                    },
+                  })}
               removeLabel={text.removePaste(paste.id)}
               removeTestId="paste-remove"
             >
@@ -128,6 +135,7 @@ export function PasteChips({
                 hideLabel
                 rows={6}
                 value={paste.text}
+                isReadOnly={locked}
                 onChange={(value) => setDraft((previous) => editPaste(previous, paste.id, value))}
                 inputProps={testId("paste-text")}
               />

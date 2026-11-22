@@ -4,13 +4,15 @@ import { type Draft, strings } from "omfp/sdk";
 
 const text = strings.chat.composer;
 
-/** Thumbnails of the attached images, each removable. */
+/** Thumbnails of the attached images, each removable unless `locked` (the message on its way). */
 export function Attachments({
   draft,
   setDraft,
+  locked = false,
 }: {
   draft: Draft;
   setDraft: (update: (previous: Draft) => Draft) => void;
+  locked?: boolean;
 }) {
   return (
     <ul className="omfp-composer__attachments" aria-label={text.attachments}>
@@ -23,6 +25,7 @@ export function Attachments({
             label={text.removeAttachment(index + 1)}
             icon="×"
             data-testid="attachment-remove"
+            isDisabled={locked}
             onPress={() =>
               setDraft((previous) => ({
                 ...previous,

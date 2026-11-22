@@ -35,9 +35,13 @@ pub type Opener = dyn Fn(&str, Option<u64>) -> Result<(), String> + Send + Sync;
 /// The [`Opener`] of a thread's `omfp_open_file` tool.
 pub type OpenFile = Arc<Opener>;
 
-/// Notifies the user (`title`, `body`) in the window they last used on the thread; the error, e.g. no window shows the
-/// thread, goes back to the agent (DMN-125, DMN-126).
+/// Notifies the user (`title`, `body`) about the thread in the window they last used on it, else in their most
+/// recently focused window; the error, e.g. no window is open, goes back to the agent (DMN-125, DMN-126).
 pub type Notify = Arc<dyn Fn(&str, &str) -> Result<(), String> + Send + Sync>;
+
+/// Notifies the user (`title`, `body`) about thread `threadId` in their most recently focused window, which need not
+/// show the thread (DMN-375); `Ok(false)` when no window is connected. The server implements it.
+pub type FocusedNotify = Arc<dyn Fn(&str, &str, &str) -> Result<bool, String> + Send + Sync>;
 
 /// Stores a title the agent set for its thread; the error goes back to the agent.
 pub type SetTitle = Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
@@ -248,7 +252,8 @@ pub fn run_open_file(
     )))
 }
 
-/// `omfp_notify { title, body }`: a notification about the thread in the window the user last used on it (DMN-125).
+/// `omfp_notify { title, body }`: a notification about the thread in the window the user last used on it, else in the
+/// one keeping it, else in their most recently focused window (DMN-125, DMN-375, DMN-376).
 #[must_use]
 pub fn notify(notifier: Notify) -> HostTool {
     let parameters = schema(&json!({
@@ -272,18 +277,18 @@ pub fn notify(notifier: Notify) -> HostTool {
     }));
     HostTool::new(
         NOTIFY,
-        "Notifies the user about this thread in omfp: a notice in the window they last used on it, or a system \
-         notification while that window is in the background; opening it shows this thread. Use it when a long task \
-         finished or you need the user (a decision, an approval), at most once per occasion, never for progress. \
-         Fails when no omfp window shows this thread.",
+        "Notifies the user about this thread in omfp: a notice in the window they last used on it, else in the omfp \
+         window they focused last (even if it shows another thread), or a system notification while that window is in \
+         the background; opening it shows this thread. Use it when a long task finished or you need the user (a \
+         decision, an approval), at most once per occasion, never for progress. Fails only when no omfp window is open.",
         parameters,
         move |arguments, context| run_notify(&arguments, || context.is_cancelled(), &*notifier),
     )
     .label("Notify")
 }
 
-/// The body of [`notify`], without the `omp-rpc` context. Bad arguments, cancellation and a thread no window shows
-/// become tool errors (`isError: true`), never panics (DMN-061, DMN-126, DMN-127).
+/// The body of [`notify`], without the `omp-rpc` context. Bad arguments, cancellation and no omfp window open become
+/// tool errors (`isError: true`), never panics (DMN-061, DMN-126, DMN-127).
 pub fn run_notify(
     arguments: &Map<String, Value>,
     is_cancelled: impl Fn() -> bool,

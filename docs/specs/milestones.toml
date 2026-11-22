@@ -582,6 +582,11 @@ requirements = [
   # Stopped threads nobody holds give their memory back to the system (#260)
   "DMN-365",
   "DMN-366",
+  # omfp_notify reaches a window that keeps the thread, else the focused one (#265)
+  "DMN-375",
+  "DMN-376",
+  "UI-936",
+  "UI-937",
 ]
 
 [M10]

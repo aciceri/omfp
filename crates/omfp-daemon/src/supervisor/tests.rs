@@ -409,6 +409,75 @@ async fn notify_reaches_the_window_last_used_on_the_thread_and_fails_without_one
     );
 }
 
+// spec: DMN-375, DMN-376, DMN-126
+#[tokio::test]
+async fn notify_falls_back_to_the_keeping_window_then_to_the_focused_one() {
+    let h = harness(|_| {});
+    let id = h.thread();
+    let log = h.log(&id).await;
+    let notified =
+        || log.with_state(|state| state.notify.clone().map(|request| request.connection));
+    let focused = Arc::new(Mutex::new(None::<u64>));
+    let sent = Arc::new(Mutex::new(Vec::<(u64, String, String, String)>::new()));
+    h.supervisor.set_focused_notify({
+        let (focused, sent) = (Arc::clone(&focused), Arc::clone(&sent));
+        Arc::new(move |thread: &str, title: &str, body: &str| {
+            let Some(window) = *focused.lock().unwrap() else {
+                return Ok(false);
+            };
+            sent.lock().unwrap().push((
+                window,
+                thread.to_owned(),
+                title.to_owned(),
+                body.to_owned(),
+            ));
+            Ok(true)
+        })
+    });
+
+    assert_eq!(
+        h.supervisor.notify(&id, "Key", "Load it"),
+        Err(NOTIFY_NO_WINDOW.to_owned()),
+        "no window connected at all"
+    );
+
+    *focused.lock().unwrap() = Some(9);
+    h.supervisor.notify(&id, "Key", "Load it").unwrap();
+    assert_eq!(
+        sent.lock().unwrap().as_slice(),
+        [(9, id.clone(), "Key".to_owned(), "Load it".to_owned())],
+        "no window subscribes the thread: the most recently focused one, whatever it shows"
+    );
+    assert_eq!(
+        notified(),
+        None,
+        "the thread itself carries no request then"
+    );
+
+    let shown = h.supervisor.watch(&id, 1, true).await.unwrap();
+    let first_kept = h.supervisor.watch(&id, 2, false).await.unwrap();
+    let kept = h.supervisor.watch(&id, 3, false).await.unwrap();
+    h.supervisor.notify(&id, "Tests", "All green").unwrap();
+    assert_eq!(notified(), Some(1), "the watching window first");
+
+    drop(shown);
+    h.supervisor.notify(&id, "Tests", "All green").unwrap();
+    assert_eq!(
+        notified(),
+        Some(3),
+        "else the window that subscribed it last and only keeps it"
+    );
+    assert_eq!(sent.lock().unwrap().len(), 1, "not the focused window");
+
+    drop(kept);
+    drop(first_kept);
+    *focused.lock().unwrap() = None;
+    assert_eq!(
+        h.supervisor.notify(&id, "Late", "Nobody"),
+        Err(NOTIFY_NO_WINDOW.to_owned())
+    );
+}
+
 // spec: DMN-033
 #[tokio::test]
 async fn a_session_open_elsewhere_fails_the_start_with_a_clear_error() {

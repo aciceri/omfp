@@ -2382,6 +2382,17 @@ export type WindowRequest =
     name: string;
     placeholder?: string | null;
     providerId: string;
+  }
+  /**
+   * An agent's `omfp_notify` about thread `threadId` (DMN-125), sent to the user's most recently focused window when
+   * no window subscribes the thread (DMN-375): the window shows `title` and `body` as a notice about the thread
+   * (UI-936). A notice: the window does not answer it.
+   */
+  | {
+    body: string;
+    kind: "notify";
+    threadId: string;
+    title: string;
   };
 
 /** `windows.state` result (PRT-123): all a window reports. */

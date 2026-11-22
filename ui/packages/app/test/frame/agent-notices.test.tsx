@@ -60,7 +60,7 @@ function grantedPort(shown: Array<{ notice: Notice; click: () => void }>): Notif
 }
 
 describe("notifications the agent sends", () => {
-  // spec: UI-215, PRT-065
+  // spec: UI-215, PRT-065, UI-937
   test("with focus, the addressed window shows an agent notification once; clicking opens its thread", () => {
     const shown: Array<{ notice: Notice; click: () => void }> = [];
     const test = setup({ notifications: grantedPort(shown), hasFocus: () => true });
@@ -75,7 +75,7 @@ describe("notifications the agent sends", () => {
     expect(modeNotice()?.slice(0, 2)).toEqual(["info", "t2"]);
     expect(screen.getByTestId("mode-notice").textContent).toContain("All green");
     expect(shown.length).toBe(0);
-    expect(screen.getByTestId("live-region").textContent).toBe("Tests All green");
+    expect(screen.getByTestId("live-region").textContent).toBe("flaky: Tests All green");
 
     // The thread's snapshot still carries the request (followed again, a resync): it is not shown twice.
     test.client.thread("t2", [request]);
@@ -125,12 +125,40 @@ describe("notifications the agent sends", () => {
     test.client.threadEvents("t2", { kind: "notify", id: "n1", connection: 1, title: "Tests", body: "All green" });
     test.flush();
     expect(shown.map(({ notice }) => [notice.title, notice.body, notice.threadId, notice.tone])).toEqual([
-      ["Tests", "All green", "t2", "info"],
+      ["flaky: Tests", "All green", "t2", "info"],
     ]);
     expect(modeNotice()).toBeUndefined();
 
     act(() => shown[0]?.click());
     expect(focusedWindow).toBe(1);
     expect(test.host.window.get(SELECTED_THREAD)).toBe("t2");
+  });
+
+  // spec: UI-936, UI-937, DMN-375
+  test("a notify window request about a thread the window does not follow names it; a click selects it", () => {
+    const shown: Array<{ notice: Notice; click: () => void }> = [];
+    const test = setup({ notifications: grantedPort(shown), hasFocus: () => true });
+    test.client.index({
+      workspaces: [workspace("w1"), workspace("w2")],
+      threads: [thread("t1", "checkout", "w1"), thread("t2", "flaky", "w1"), thread("t3", "deploy", "w2")],
+    });
+    test.flush();
+
+    act(() =>
+      test.client.windowRequest({
+        type: "window_request",
+        id: "w1",
+        request: { kind: "notify", threadId: "t3", title: "SSH key", body: "Load it, please" },
+      }),
+    );
+    test.flush();
+    expect(modeNotice()?.slice(0, 2)).toEqual(["info", "t3"]);
+    expect(screen.getByTestId("live-region").textContent).toBe("deploy: SSH key Load it, please");
+    expect(shown.length).toBe(0);
+
+    act(() => {
+      screen.getByTestId("mode-notice").click();
+    });
+    expect(test.host.window.get(SELECTED_THREAD)).toBe("t3");
   });
 });

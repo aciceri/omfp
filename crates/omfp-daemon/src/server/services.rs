@@ -253,6 +253,13 @@ impl Services {
         services.supervisor.set_agent_host(Arc::new(
             crate::agent_tools::rpc::ServicesAgentHost::new(services.clone()),
         ));
+        // `omfp_notify`'s last resort: the user's most recently focused window (DMN-375).
+        let windows = Arc::clone(&services.windows);
+        services.supervisor.set_focused_notify(Arc::new(
+            move |thread: &str, title: &str, body: &str| {
+                windows.notify_focused(thread, title, body)
+            },
+        ));
         // Each workspace's jobs once its first scan is done (DMN-322).
         for ws in scanned {
             services.declared.reload(&ws.id).await;

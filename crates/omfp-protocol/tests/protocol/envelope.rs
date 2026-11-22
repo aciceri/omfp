@@ -676,6 +676,23 @@ fn a_login_flow_reaches_the_window_as_url_progress_and_input_requests() {
     }
 }
 
+// spec: DMN-375
+#[test]
+fn an_agent_notification_reaches_a_window_as_a_notify_request() {
+    let notify = ServerFrame::WindowRequest {
+        id: "w6".to_owned(),
+        request: WindowRequest::Notify {
+            thread_id: "01HTHREAD".to_owned(),
+            title: "Tests".to_owned(),
+            body: "All green".to_owned(),
+        },
+    };
+    assert_eq!(
+        round_trip(&notify)["request"],
+        json!({ "kind": "notify", "threadId": "01HTHREAD", "title": "Tests", "body": "All green" })
+    );
+}
+
 // spec: PRT-122
 #[test]
 fn a_report_without_window_state_still_decodes() {

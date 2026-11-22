@@ -351,6 +351,18 @@ describe("session", () => {
     expect(methods(server.frames())).toEqual([]);
   });
 
+  // spec: DMN-375
+  test("an agent's notify window request reaches the listener; one missing a field is dropped", () => {
+    const [rig, server] = following();
+    const seen: unknown[] = [];
+    const stop = rig.client.onWindowRequest((frame) => seen.push(frame));
+    const request = { kind: "notify", threadId: "t9", title: "Key", body: "Load it" };
+    server.send({ type: "window_request", id: "n1", request });
+    server.send({ type: "window_request", id: "n2", request: { kind: "notify", threadId: "t9", title: "Key" } });
+    stop();
+    expect(seen).toEqual([{ type: "window_request", id: "n1", request }]);
+  });
+
   // spec: PRT-022
   test("a gap in the stream resubscribes without position", () => {
     const [rig, server] = following();

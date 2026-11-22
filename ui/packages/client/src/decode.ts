@@ -318,8 +318,8 @@ function decodeTransientEvent(topic: ParsedTopic, event: unknown): Decoded<Trans
   return valid({ kind: "live_levels", input, output });
 }
 
-/** Decodes the `request` of a window request frame (PRT-124, PRT-131): `run_command`, `check_widget` or a login's
- * `login_url`, `login_progress` and `login_input`. */
+/** Decodes the `request` of a window request frame (PRT-124, PRT-131, DMN-375): `run_command`, `check_widget`, a
+ * login's `login_url`, `login_progress` and `login_input`, or an agent's `notify`. */
 function decodeWindowRequest(request: unknown): Decoded<WindowRequest> {
   if (!isObject(request)) {
     return invalid("a window request needs a `request` object");
@@ -368,6 +368,12 @@ function decodeWindowRequest(request: unknown): Decoded<WindowRequest> {
         isOptionalString(placeholder)
         ? valid({ kind: "login_input", providerId, name, message, placeholder: placeholder ?? null })
         : invalid("`login_input` needs a string `providerId`, `name` and `message`");
+    }
+    case "notify": {
+      const { threadId, title, body } = request;
+      return typeof threadId === "string" && typeof title === "string" && typeof body === "string"
+        ? valid({ kind: "notify", threadId, title, body })
+        : invalid("`notify` needs a string `threadId`, `title` and `body`");
     }
     default:
       return invalid("unknown window request `kind`");

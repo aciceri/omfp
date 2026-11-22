@@ -400,6 +400,29 @@ impl Windows {
         self.by_focus().first().map(|window| window.id)
     }
 
+    /// An agent's `omfp_notify` about thread `thread` for the most recently focused window, whatever it shows
+    /// (DMN-375): `Ok(false)` when no window reported, the error a busy or closing window's.
+    pub(crate) fn notify_focused(
+        &self,
+        thread: &str,
+        title: &str,
+        body: &str,
+    ) -> Result<bool, String> {
+        let Some(connection) = self.focused() else {
+            return Ok(false);
+        };
+        self.notify(
+            connection,
+            WindowRequest::Notify {
+                thread_id: thread.to_owned(),
+                title: title.to_owned(),
+                body: body.to_owned(),
+            },
+        )
+        .map(|()| true)
+        .map_err(|error| error.message)
+    }
+
     /// `windows.answer` from `connection`: hands the answer to the request's caller.
     fn answer(&self, connection: u64, params: AnswerWindowParams) -> Result<(), ErrorBody> {
         let mut pending = lock(&self.pending);
@@ -837,6 +860,38 @@ mod tests {
             },
             other => panic!("no request: {other:?}"),
         }
+    }
+
+    // spec: DMN-375
+    #[test]
+    fn an_agent_notification_goes_to_the_most_recently_focused_window() {
+        let windows = Windows::new();
+        assert_eq!(
+            windows.notify_focused("01TH", "Key", "Load it"),
+            Ok(false),
+            "no window"
+        );
+        windows.set(1, "web", report(Some("01WS"), Some(focused(true))));
+        windows.set(2, "web", report(Some("01OTHER"), Some(focused(false))));
+        windows.set(2, "web", report(Some("01OTHER"), Some(focused(true))));
+        let mut first = link(&windows, 1);
+        let mut second = link(&windows, 2);
+        assert_eq!(windows.notify_focused("01TH", "Key", "Load it"), Ok(true));
+        assert_eq!(
+            next_request(&mut second).1,
+            WindowRequest::Notify {
+                thread_id: "01TH".to_owned(),
+                title: "Key".to_owned(),
+                body: "Load it".to_owned(),
+            },
+            "whatever workspace it shows"
+        );
+        assert!(first.try_recv().is_err(), "only that window");
+        drop(second);
+        assert!(
+            windows.notify_focused("01TH", "Key", "Load it").is_err(),
+            "a closing window's error reaches the agent"
+        );
     }
 
     // spec: DMN-206, PRT-124

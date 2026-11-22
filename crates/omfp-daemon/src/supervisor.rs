@@ -116,9 +116,9 @@ const LEVELS_BUFFER: usize = 8;
 pub const NO_WINDOW: &str = "No omfp window shows this thread, so the file cannot be opened: give the user its path \
                              instead, or ask them to open the thread in omfp and try again.";
 
-/// What `omfp_notify` answers when no window shows its thread (DMN-126).
-pub const NOTIFY_NO_WINDOW: &str = "No omfp window shows this thread, so the user cannot be notified: say it in your \
-                                    reply instead; they will read it when they open the thread.";
+/// What `omfp_notify` answers when no omfp window is connected at all (DMN-126).
+pub const NOTIFY_NO_WINDOW: &str = "No omfp window is open, so the user cannot be notified: say it in your reply \
+                                    instead; they will read it when they open the thread.";
 
 /// Supervisor settings.
 #[derive(Debug, Clone)]
@@ -549,6 +549,9 @@ struct Inner {
     /// Backs the agent tools of every thread launched from now on (AGT-040, DMN-151); set and dropped like
     /// `widget_host`.
     agent_host: Mutex<Option<Arc<dyn host_tools::AgentHost>>>,
+    /// Notifies the user in their most recently focused window, the last step of `omfp_notify` (DMN-375); set by the
+    /// server once its windows exist.
+    focused_notify: Mutex<Option<host_tools::FocusedNotify>>,
     shutting_down: AtomicBool,
     /// The running `auth.login` and the numbers telling logins apart (DMN-222).
     login: Mutex<Option<login::Running>>,
@@ -675,6 +678,7 @@ impl Supervisor {
                 workspace_watchers: Mutex::new(HashMap::new()),
                 widget_host: Mutex::new(None),
                 agent_host: Mutex::new(None),
+                focused_notify: Mutex::new(None),
                 shutting_down: AtomicBool::new(false),
                 login: Mutex::new(None),
                 models: models::UsableModels::default(),
@@ -693,6 +697,11 @@ impl Supervisor {
     /// Gives the threads launched from now on the agent tools of the registry (AGT-040, DMN-151).
     pub fn set_agent_host(&self, host: Arc<dyn host_tools::AgentHost>) {
         *lock(&self.inner.agent_host) = Some(host);
+    }
+
+    /// Gives `omfp_notify` the user's most recently focused window as its last resort (DMN-375).
+    pub fn set_focused_notify(&self, notify: host_tools::FocusedNotify) {
+        *lock(&self.inner.focused_notify) = Some(notify);
     }
 
     /// Ids of threads whose agent finished a tool execution (`tool_execution_end`).
@@ -767,18 +776,41 @@ impl Supervisor {
         })
     }
 
-    /// Asks the window the user last used on thread `id` to notify the user (DMN-125): a `notify` event naming its
-    /// connection, which the window shows as a notice about the thread (UI-215). Without a window watching the thread
-    /// the error tells the agent what to do instead (DMN-126).
+    /// Notifies the user about thread `id` (DMN-125, DMN-375): a `notify` event naming the connection of the window
+    /// the user last used on the thread, which the window shows as a notice about the thread (UI-215); else one
+    /// naming the window that last subscribed the thread and now only keeps it (DMN-357); else a `notify` window
+    /// request to the user's most recently focused window, whatever it shows (UI-936). With no window connected at
+    /// all the error tells the agent what to do instead (DMN-126).
     pub fn notify(&self, id: &str, title: &str, body: &str) -> Result<(), String> {
-        self.ask_last_window(id, NOTIFY_NO_WINDOW, |connection| {
+        let event = |connection| {
             ThreadEvent::Notify(NotifyRequest {
                 id: new_id(),
                 connection,
                 title: title.to_owned(),
                 body: body.to_owned(),
             })
-        })
+        };
+        if let Some(actor) = self.lookup(id) {
+            let connection = {
+                let watchers = lock(&actor.watchers);
+                watchers
+                    .iter()
+                    .rev()
+                    .find(|watcher| watcher.watching)
+                    .or_else(|| watchers.last())
+                    .map(|watcher| watcher.connection)
+            };
+            if let Some(connection) = connection {
+                self.push(&actor, event(connection));
+                return Ok(());
+            }
+        }
+        let focused = lock(&self.inner.focused_notify).clone();
+        match focused.map(|notify| notify(id, title, body)) {
+            Some(Ok(true)) => Ok(()),
+            Some(Err(error)) => Err(error),
+            Some(Ok(false)) | None => Err(NOTIFY_NO_WINDOW.to_owned()),
+        }
     }
 
     /// Pushes the event `request` makes for the connection of the window the user last used on thread `id`

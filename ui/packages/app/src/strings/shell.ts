@@ -819,6 +819,8 @@ export const shell = {
     finished: "finished its turn",
     open: "Open the newest notice",
     announce: (title: string, body: string) => `${title} ${body}`,
+    /** An agent's notification about a thread the window does not show: the thread, then the agent's title (UI-937). */
+    agentTitle: (thread: string, title: string) => `${thread}: ${title}`,
   },
   /** The window's messages (UI-521..UI-523): the notices and toasts that went by. */
   messages: {

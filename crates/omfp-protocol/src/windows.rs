@@ -250,6 +250,15 @@ pub enum WindowRequest {
         message: String,
         placeholder: Option<String>,
     },
+    /// An agent's `omfp_notify` about thread `threadId` (DMN-125), sent to the user's most recently focused window when
+    /// no window subscribes the thread (DMN-375): the window shows `title` and `body` as a notice about the thread
+    /// (UI-936). A notice: the window does not answer it.
+    #[serde(rename_all = "camelCase")]
+    Notify {
+        thread_id: String,
+        title: String,
+        body: String,
+    },
 }
 
 /// Why a window did not run a command (PRT-124).

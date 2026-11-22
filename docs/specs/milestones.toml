@@ -1374,6 +1374,8 @@ requirements = [
   "DMN-912",
   # The phone's screen stays on during live voice (#274)
   "UI-531",
+  # The voice asks the agent before it says it does not know (#275)
+  "DMN-115",
 ]
 
 [M18]

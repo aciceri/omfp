@@ -1,5 +1,6 @@
 //! The instructions of a live voice session (DMN-105): omp gives its realtime model only the live prompt, so the daemon
-//! sends that prompt followed by the thread's conversation.
+//! sends that prompt, a note telling the voice to ask the agent what it does not know (DMN-115), and the thread's
+//! conversation.
 
 use omfp_core::ThreadState;
 use omp_rpc::{AgentMessage, AssistantContent, AssistantMessage, MessageContent, UserContent};
@@ -40,13 +41,25 @@ const INSTRUCTION: &str = "The conversation of this thread so far, oldest first 
 /// helper returns the string literal, so this renders as `{{`.
 const ESCAPED_BRACES: &str = r#"{{default "" "{{"}}"#;
 
-/// The `instructions` of `live_connect`: omp's bundled prompt, then the thread context when the thread has a
-/// conversation; `spoken` are the conversations of ended sessions not in the thread yet (DMN-113).
+/// omfp's note after omp's prompt (DMN-115): that prompt leaves the voice to answer "ordinary conversation" itself, so
+/// it says it does not know what the agent could look up. Deliberately generic: the agent's reach varies with each
+/// workspace.
+const ASK_THE_AGENT: &str = "<ask-the-agent>\n\
+                             The client backend can look things up and act well beyond code. Something you do not \
+                             know or cannot be sure of (about the user, their notes and data, what happened before, \
+                             anything outside this conversation): MUST delegate it at once, the whole question in the \
+                             request. NEVER answer that you do not know, say no, or ask the user before the backend \
+                             tried.\n\
+                             </ask-the-agent>\n";
+
+/// The `instructions` of `live_connect`: omp's bundled prompt, omfp's note (DMN-115), then the thread context when the
+/// thread has a conversation; `spoken` are the conversations of ended sessions not in the thread yet (DMN-113).
 #[must_use]
 pub fn live_instructions(title: &str, state: &ThreadState, spoken: &[Spoken]) -> String {
+    let prompt = format!("{}\n\n{ASK_THE_AGENT}", BUNDLED_PROMPT.trim_end());
     match thread_context(title, state, spoken, CONVERSATION_CAP) {
-        Some(context) => format!("{}\n{context}", BUNDLED_PROMPT.trim_end()),
-        None => BUNDLED_PROMPT.to_owned(),
+        Some(context) => format!("{prompt}{context}"),
+        None => prompt,
     }
 }
 
@@ -686,7 +699,7 @@ mod tests {
         assert_eq!(section.replace(ESCAPED_BRACES, "").matches("{{").count(), 0);
     }
 
-    // spec: DMN-105
+    // spec: DMN-105, DMN-115
     #[test]
     fn without_a_conversation_there_is_no_section() {
         assert_eq!(
@@ -702,13 +715,13 @@ mod tests {
         );
         assert_eq!(
             live_instructions("Title", &thinking_only, &[]),
-            BUNDLED_PROMPT
+            format!("{}\n\n{ASK_THE_AGENT}", BUNDLED_PROMPT.trim_end())
         );
     }
 
-    // spec: DMN-105
+    // spec: DMN-105, DMN-115
     #[test]
-    fn the_instructions_are_the_bundled_prompt_then_the_section() {
+    fn the_instructions_are_the_bundled_prompt_the_note_then_the_section() {
         let state = state(&[user("hi")]);
 
         let instructions = live_instructions("", &state, &[]);
@@ -718,7 +731,7 @@ mod tests {
         assert_eq!(
             instructions,
             format!(
-                "{}\n{}",
+                "{}\n\n{ASK_THE_AGENT}{}",
                 BUNDLED_PROMPT.trim_end(),
                 thread_context("", &state, &[], CONVERSATION_CAP).unwrap()
             )

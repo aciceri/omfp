@@ -445,6 +445,17 @@
     inset-block-end: auto;
   }
 
+  /* On a phone the chat's column fills the width between equal gutters: the transcript shows no scrollbar (it scrolls
+   * by swipe, wheel and keys), so neither it nor the composer keeps a scrollbar's gutter (UI-485). */
+  .omfp-app[data-layout="mobile"] :is(.omfp-transcript, .omfp-composer-area) {
+    scrollbar-gutter: auto;
+    scrollbar-width: none;
+  }
+
+  .omfp-app[data-layout="mobile"] .omfp-transcript::-webkit-scrollbar {
+    display: none;
+  }
+
   .omfp-cmdline__menu .omfp-cmdmenu__item:hover:not([data-selected]) {
     background: var(--omfp-hover);
   }

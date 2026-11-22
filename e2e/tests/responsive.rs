@@ -168,6 +168,20 @@ async fn phone(journey: &Journey) -> anyhow::Result<()> {
         .await?;
     let narrowest = narrowest.as_f64().unwrap_or_default();
     anyhow::ensure!(narrowest >= 44.0, "an icon button is {narrowest} px wide");
+    // The chat's column has the same narrow margin on both sides: no scrollbar's gutter (this browser's are
+    // classic) on either.
+    let margins = journey
+        .eval(
+            "const box = document.querySelector('[data-testid=composer]').getBoundingClientRect();
+             return [box.left, innerWidth - box.right];",
+            Vec::new(),
+        )
+        .await?;
+    let margins: Vec<f64> = serde_json::from_value(margins)?;
+    anyhow::ensure!(
+        matches!(margins[..], [left, right] if (left - right).abs() <= 1.0 && left <= 16.0),
+        "the composer's margins are {margins:?}"
+    );
     shots(journey, 390).await?;
     journey
         .click("[data-testid=area-button][data-area=threads]")

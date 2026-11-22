@@ -215,6 +215,9 @@ pub fn read(
     let mut ranges = resolve(&parsed, total);
     let whole = ranges.is_empty();
     if whole {
+        if total == 0 {
+            return Ok(answer);
+        }
         ranges.push(Range {
             start: 1,
             end: None,
@@ -228,7 +231,7 @@ pub fn read(
     }
     let multiple = ranges.len() > 1;
     let mut text = String::new();
-    let (mut count, mut bytes) = (0, 0);
+    let mut count = 0;
     let mut stop = None;
     let mut shown = Vec::new();
     'ranges: for (index, range) in ranges.iter().enumerate() {
@@ -239,7 +242,8 @@ pub fn read(
         }
         for line in range.start..=end {
             let content = lines[line - 1];
-            if count > 0 && (count == PAGE_LINES || bytes + content.len() + 1 > PAGE_BYTES) {
+            // The page's bytes are everything written so far, range headers included.
+            if count > 0 && (count == PAGE_LINES || text.len() + content.len() + 1 > PAGE_BYTES) {
                 let mut remaining = vec![Range {
                     start: line,
                     end: range.end,
@@ -256,7 +260,6 @@ pub fn read(
             text.push_str(content);
             text.push('\n');
             count += 1;
-            bytes += content.len() + 1;
         }
         shown.push((range.start, end));
     }
@@ -515,6 +518,33 @@ mod tests {
             read.content,
             read_uri("omfp://schemas/views.json", None).unwrap().content
         );
+    }
+
+    // spec: DMN-379
+    #[test]
+    fn an_empty_document_reads_whole() {
+        let read = read("omfp://widgets/builtin/x/empty.ts", None, |_| {
+            Ok(String::new().into())
+        })
+        .unwrap();
+        assert_eq!(read.content, "");
+    }
+
+    // spec: DMN-379
+    #[test]
+    fn range_headers_count_in_the_page_budget() {
+        let base = format!("omfp://docs/widgets{}", "/".repeat(2000));
+        let text = (1..=600)
+            .map(|n| format!("line {n}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let odd: Vec<String> = (1..=600).step_by(2).map(|n| n.to_string()).collect();
+        let page = read(&base, Some(&odd.join(",")), |_| Ok(text.clone().into()))
+            .unwrap()
+            .content;
+        let body = page.split("\n[omfp: ").next().unwrap_or_default();
+        assert!(body.len() <= PAGE_BYTES, "{} bytes", body.len());
+        assert!(page.contains("to continue]"), "{page}");
     }
 
     // spec: DMN-380

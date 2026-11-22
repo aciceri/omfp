@@ -121,6 +121,27 @@ describe("omfp:changes", () => {
     expect(screen.getByTestId("changes-clean-toggle").textContent).toBe("1 clean repository");
   });
 
+  // spec: UI-080, DMN-383
+  test("a repository whose status the daemon could not read shows its error; the others their changes", () => {
+    const test = setup();
+    pushStatuses(test, [
+      { name: "fe", status: CLEAN, error: "git diff failed: fatal: bad object HEAD" },
+      { name: "be", status: STATUS },
+    ]);
+    expect(repoNames()).toEqual(["fe", "be"]);
+    const fe = repoSection("fe");
+    expect(within(fe).getByTestId("changes-error").textContent).toBe(
+      "Cannot read the git status: git diff failed: fatal: bad object HEAD",
+    );
+    // Counts, never DOM elements: a failing deep-equality diff of an element walks React's fibers (AGENTS.md).
+    expect([
+      within(fe).queryAllByTestId("changes-summary").length,
+      within(fe).queryAllByTestId("changes-file").length,
+    ]).toEqual([0, 0]);
+    expect(within(repoSection("be")).getByTestId("changes-file").dataset.path).toBe("src/lib.rs");
+    expect(within(repoSection("be")).queryAllByTestId("changes-error").length).toBe(0);
+  });
+
   // spec: UI-342
   test("the clean repositories are one collapsed disclosure at the bottom whose state the instance keeps", async () => {
     const test = setup();

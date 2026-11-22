@@ -155,7 +155,11 @@ function RepoChanges({ workspaceId, repo, runs }: RepoChangesProps): ReactNode {
       aria-label={repo.isWorkspace ? text.workspaceLabel(repo.name) : repo.name}
     >
       <RepoHead repo={repo} level={2} summary={true} />
-      {repo.files === undefined ? (
+      {repo.error !== undefined ? (
+        <p className="omfp-changes__empty omfp-changes__error" data-testid="changes-error">
+          {text.failed(repo.error)}
+        </p>
+      ) : repo.files === undefined ? (
         <p className="omfp-changes__empty">{text.loading}</p>
       ) : repo.files.length === 0 ? null : (
         <ul className="omfp-changes__files">

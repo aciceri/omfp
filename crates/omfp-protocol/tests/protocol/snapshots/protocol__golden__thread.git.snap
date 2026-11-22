@@ -56,6 +56,16 @@ expression: golden
               }
             ]
           }
+        },
+        {
+          "error": "git diff failed: fatal: bad object HEAD",
+          "name": "scratch",
+          "status": {
+            "ahead": 0,
+            "behind": 0,
+            "dirty": false,
+            "files": []
+          }
         }
       ],
       "workspaceId": "01JD8X3Q4T9V2W6Y5Z7A1B3C5E"

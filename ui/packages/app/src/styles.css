@@ -1737,6 +1737,11 @@
     padding: 0 var(--omfp-s1);
   }
 
+  .omfp-changes__error {
+    color: var(--omfp-error);
+    overflow-wrap: anywhere;
+  }
+
   .omfp-changes__repo-head > .omfp-changes__summary {
     margin-inline-start: auto;
   }

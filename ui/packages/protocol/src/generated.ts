@@ -1444,8 +1444,14 @@ export type RepoSource =
 
 /** Git status of one repository of a workspace (the `workspace/<id>` topic, DMN-026). */
 export type RepoStatus = {
+  /**
+   * Why the repository's status could not be read (DMN-383); absent when it was. The workspace's other
+   * repositories still have theirs.
+   */
+  error?: string | null;
   /** The repository's name in the workspace. */
   name: string;
+  /** Empty when `error` is set. */
   status: GitStatus;
 };
 

@@ -516,4 +516,62 @@ mod tests {
             version
         );
     }
+
+    /// What a test's tracing subscriber writes.
+    struct Captured(Arc<Mutex<Vec<u8>>>);
+
+    impl std::io::Write for Captured {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    // spec: DMN-384
+    #[tokio::test]
+    async fn a_failing_repository_is_logged_once_per_change_of_its_error() {
+        let h = harness().await;
+        let logs = Arc::new(Mutex::new(Vec::new()));
+        let writer = Arc::clone(&logs);
+        // The scans' async part runs on this thread (a current-thread runtime), where the subscriber applies.
+        let _logging = tracing::subscriber::set_default(
+            tracing_subscriber::fmt()
+                .with_ansi(false)
+                .with_writer(move || Captured(Arc::clone(&writer)))
+                .finish(),
+        );
+        let warnings = || {
+            String::from_utf8(logs.lock().unwrap().clone())
+                .unwrap()
+                .matches("cannot read the git status of a repository")
+                .count()
+        };
+        let scan = async || h.services.full_scan(&h.workspace).await.unwrap();
+
+        h.git.fail_status(&h.app, Some("fatal: one"));
+        for _ in 0..3 {
+            scan().await;
+        }
+        assert_eq!(
+            warnings(),
+            1,
+            "every poll and rescan reads the status again"
+        );
+
+        h.git.fail_status(&h.app, Some("fatal: two"));
+        scan().await;
+        scan().await;
+        assert_eq!(warnings(), 2, "another error is news");
+
+        h.git.fail_status(&h.app, None);
+        scan().await;
+        assert_eq!(warnings(), 2);
+        h.git.fail_status(&h.app, Some("fatal: two"));
+        scan().await;
+        assert_eq!(warnings(), 3, "failing again after a success is news");
+    }
 }

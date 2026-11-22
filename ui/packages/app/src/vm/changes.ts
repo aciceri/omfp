@@ -39,14 +39,18 @@ export interface ChangesRepo {
   readonly summary: string | undefined;
   /** The status is known and lists no changed file. */
   readonly clean: boolean;
-  /** `undefined` until the status is known. */
+  /** `undefined` until the status is known, and when it could not be read. */
   readonly files: readonly ChangedFile[] | undefined;
+  /** Why the daemon could not read the repository's status (DMN-383): shown instead of its changes. */
+  readonly error: string | undefined;
 }
 
 /** The repositories of `workspace` with their changes; `status` is the `workspace/<id>` topic's state. */
 export function changesView(workspace: Workspace, status: readonly RepoStatus[] | undefined): ChangesRepo[] {
   return workspace.repos.map((repo) => {
-    const git = status?.find((entry) => entry.name === repo.name)?.status;
+    const entry = status?.find((candidate) => candidate.name === repo.name);
+    const error = entry?.error ?? undefined;
+    const git = error === undefined ? entry?.status : undefined;
     if (git === undefined) {
       return {
         name: repo.name,
@@ -56,6 +60,7 @@ export function changesView(workspace: Workspace, status: readonly RepoStatus[] 
         summary: undefined,
         clean: false,
         files: undefined,
+        error,
       };
     }
     return {
@@ -72,6 +77,7 @@ export function changesView(workspace: Workspace, status: readonly RepoStatus[] 
         additions: file.additions,
         deletions: file.deletions,
       })),
+      error: undefined,
     };
   });
 }

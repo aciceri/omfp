@@ -469,11 +469,16 @@ pub struct IndexSnapshot {
 pub struct RepoStatus {
     /// The repository's name in the workspace.
     pub name: String,
+    /// Empty when `error` is set.
     pub status: GitStatus,
+    /// Why the repository's status could not be read (DMN-383); absent when it was. The workspace's other
+    /// repositories still have theirs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// Git state of a repository relative to its upstream or base ref (DMN-026).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GitStatus {
     /// `None` on a detached HEAD.

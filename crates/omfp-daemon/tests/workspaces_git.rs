@@ -411,6 +411,53 @@ fn status_and_diff_cover_commits_against_the_upstream_and_uncommitted_changes() 
     assert!(!diff.contains("other.txt"), "{diff}");
 }
 
+// spec: DMN-382
+#[test]
+fn a_repository_without_commits_reports_its_branch_and_every_file_as_added() {
+    let env = env();
+    let id = env.create("x").workspace.id;
+    let fresh = env.workspaces_root.join("x").join("fresh");
+    std::fs::create_dir_all(&fresh).unwrap();
+    env.git_in(&fresh, &["init", "--quiet", "--initial-branch=trunk"]);
+    std::fs::write(fresh.join("staged.txt"), "a\nb\n").unwrap();
+    env.git_in(&fresh, &["add", "--", "staged.txt"]);
+    std::fs::write(fresh.join("draft.txt"), "x\n").unwrap();
+    env.workspaces.rescan(&id).unwrap();
+    let repo = env.workspaces.repo(&id, "fresh").unwrap();
+
+    let (status, upstream) = env.workspaces.status(&repo).unwrap();
+
+    assert_eq!(upstream, None);
+    assert_eq!(status.branch.as_deref(), Some("trunk"));
+    assert_eq!((status.ahead, status.behind), (None, None));
+    assert!(status.dirty);
+    let file = |path: &str, additions| ChangedFile {
+        path: path.into(),
+        additions: Some(additions),
+        deletions: Some(0),
+    };
+    assert_eq!(
+        status.files,
+        vec![file("draft.txt", 1), file("staged.txt", 2)]
+    );
+    let diff = env.workspaces.diff(&repo).unwrap();
+    for expected in [
+        "+++ b/staged.txt\n@@ -0,0 +1,2 @@\n+a\n+b\n",
+        "+++ b/draft.txt\n@@ -0,0 +1 @@\n+x\n",
+    ] {
+        assert!(
+            diff.contains(expected),
+            "{expected:?} missing from:\n{diff}"
+        );
+    }
+    assert_eq!(diff.matches("new file mode").count(), 2, "{diff}");
+
+    // A base ref changes nothing before the first commit: there is nothing to count against.
+    let against_base = env.git.status(&fresh, Some("origin/trunk")).unwrap();
+    assert_eq!(against_base, status);
+    assert_eq!(env.git.diff(&fresh, Some("origin/trunk")).unwrap(), diff);
+}
+
 // spec: DMN-028
 #[test]
 fn removing_a_workspace_removes_real_worktrees_and_keeps_link_targets() {

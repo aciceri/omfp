@@ -187,6 +187,8 @@ export const shell = {
     workspaceLabel: (name: string) => `${name}, the workspace folder`,
     refresh: "Refresh the changes",
     loading: "Reading the git status…",
+    /** A repository whose status the daemon could not read (DMN-383), with git's error. */
+    failed: (error: string) => `Cannot read the git status: ${error}`,
     loadingDiff: "Reading the diff…",
     /** The disclosure grouping the clean repositories (UI-342). */
     cleanRepos: (count: number) => (count === 1 ? "1 clean repository" : `${count} clean repositories`),

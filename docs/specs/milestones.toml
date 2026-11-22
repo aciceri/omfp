@@ -587,6 +587,10 @@ requirements = [
   "DMN-376",
   "UI-936",
   "UI-937",
+  # A repository without commits, or whose status fails, keeps its workspace's git status (#268)
+  "DMN-382",
+  "DMN-383",
+  "DMN-384",
 ]
 
 [M10]

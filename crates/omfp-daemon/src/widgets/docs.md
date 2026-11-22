@@ -508,7 +508,7 @@ export default function Tests({ command = "make test" }: { command?: string }) {
 | `useThreadCost(threadId)` | `{ session, subagents }` in US dollars, as the header's cost shows them (`$0.3800 (+$1.27)`; `costLabel(cost)` gives that text and its description): the session's own model calls (its assistant messages, plus what omp spent outside the transcript — titles, judgments — read with `thread.session` while omp runs) and its subagents' (their `task` results' usage, or their progress while they run when that is more); `undefined` until the thread's state arrives. |
 | `useSubagentRows(threadId)` | `{ rows, refresh }`: the thread's subagents (`{ id, index, agent, status, description, task, activity, meta, durationMs, live }`), from its state plus `thread.subagents` while omp runs, read again when one starts or ends and on `refresh()`. |
 | `useWorkspaces()` | Workspaces by id. |
-| `useWorkspace(workspaceId)` | The workspace and its repositories' git status. |
+| `useWorkspace(workspaceId)` | The workspace and its repositories' git status (`status`: per repository `{ name, status, error? }`; `error` is why its status could not be read, its `status` then empty). |
 | `useViews(workspaceId)` | The workspace's views manifest, keymap (`keymap`, `keymapError`), widget folders and stored state (the `views/<id>` topic). |
 | `useConnection()` | The connection status. |
 | `useWindowState(key)` | Window-local state; `SELECTED_THREAD` is the thread this window shows. |

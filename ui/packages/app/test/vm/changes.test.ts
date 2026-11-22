@@ -37,6 +37,7 @@ describe("changes", () => {
           { path: "docs/new.md", from: "docs/old.md", status: "renamed", additions: 0, deletions: 0 },
           { path: "notes.txt", from: undefined, status: "untracked", additions: 7, deletions: 0 },
         ],
+        error: undefined,
       },
       // No status yet: the files are unknown, not empty.
       {
@@ -47,8 +48,24 @@ describe("changes", () => {
         summary: undefined,
         clean: false,
         files: undefined,
+        error: undefined,
       },
     ]);
+  });
+
+  // spec: UI-080, DMN-383
+  test("a repository whose status the daemon could not read carries the error and no changes, not a clean status", () => {
+    const clean: GitStatus = { branch: null, ahead: 0, behind: 0, dirty: false, files: [] };
+    const view = changesView(workspace("w1", [repo("w1", "fe", "main"), repo("w1", "be", "main")]), [
+      { name: "fe", status: clean, error: "git diff failed: fatal: bad object HEAD" },
+      { name: "be", status: { ...clean, branch: "main" } },
+    ]);
+    expect(view.map((row) => [row.name, row.branch, row.summary, row.clean, row.files, row.error])).toEqual([
+      ["fe", "main", undefined, false, undefined, "git diff failed: fatal: bad object HEAD"],
+      ["be", "main", "clean", true, [], undefined],
+    ]);
+    // Not clean: it stays listed rather than going to the clean group (UI-342).
+    expect(changesSections(view, undefined).listed.map((row) => row.name)).toEqual(["fe"]);
   });
 
   // spec: UI-341

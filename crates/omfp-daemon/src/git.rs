@@ -35,19 +35,20 @@ pub enum WorktreeBranch {
     Existing(String),
 }
 
-/// Git state of a working tree (DMN-026).
+/// Git state of a working tree (DMN-026). Before the first commit (DMN-382): the branch to be born, no ahead/behind and
+/// every file as added.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GitStatus {
     /// `None` when HEAD is detached.
     pub branch: Option<String>,
-    /// Commits on HEAD not on the base ref; `None` without a base ref.
+    /// Commits on HEAD not on the base ref; `None` without a base ref or a first commit.
     pub ahead: Option<u64>,
-    /// Commits on the base ref not on HEAD; `None` without a base ref.
+    /// Commits on the base ref not on HEAD; `None` without a base ref or a first commit.
     pub behind: Option<u64>,
     /// Uncommitted changes, untracked files included.
     pub dirty: bool,
-    /// Files changed since the merge base with the base ref (or HEAD without one), uncommitted and untracked
-    /// changes included.
+    /// Files changed since the merge base with the base ref (or HEAD without one, the empty tree before the first
+    /// commit), uncommitted and untracked changes included.
     pub files: Vec<ChangedFile>,
 }
 
@@ -99,7 +100,7 @@ pub trait Git: Send + Sync + std::fmt::Debug {
     fn status(&self, dir: &Path, base_ref: Option<&str>) -> Result<GitStatus>;
 
     /// `git diff <base_ref>...HEAD` plus uncommitted and untracked changes, as one patch (DMN-026). Without a base
-    /// ref, only the uncommitted and untracked changes.
+    /// ref, only the uncommitted and untracked changes; before the first commit, every file as added (DMN-382).
     fn diff(&self, dir: &Path, base_ref: Option<&str>) -> Result<String>;
 
     /// The bytes of the file `path` (relative to `dir`, inside a working tree) at `HEAD` (DMN-089); `None` when
@@ -175,8 +176,13 @@ impl GitCli {
             .collect())
     }
 
-    /// The commit changes are measured from: the merge base with `base_ref`, or HEAD.
-    fn diff_origin(&self, dir: &Path, base_ref: Option<&str>) -> Result<String> {
+    /// The tree changes are measured from: the merge base with `base_ref`, or HEAD; before the first commit (`born`
+    /// false), the empty tree, whatever the base ref (DMN-382).
+    fn diff_origin(&self, dir: &Path, base_ref: Option<&str>, born: bool) -> Result<String> {
+        if !born {
+            // Not a constant: the empty tree's id depends on the repository's hash function.
+            return self.run_line(dir, &["hash-object", "-t", "tree", "/dev/null"]);
+        }
         match base_ref {
             Some(base) => self.run_line(dir, &["merge-base", base, "HEAD"]),
             None => Ok("HEAD".to_owned()),
@@ -322,8 +328,9 @@ impl Git for GitCli {
     }
 
     fn status(&self, dir: &Path, base_ref: Option<&str>) -> Result<GitStatus> {
+        let born = self.head(dir)?.is_some();
         let (ahead, behind) = match base_ref {
-            Some(base) => {
+            Some(base) if born => {
                 let range = format!("{base}...HEAD");
                 let counts = self.run_line(
                     dir,
@@ -335,9 +342,9 @@ impl Git for GitCli {
                     .ok_or_else(|| GitError::Parse(format!("rev-list --count: {counts:?}")))?;
                 (Some(ahead), Some(behind))
             }
-            None => (None, None),
+            _ => (None, None),
         };
-        let origin = self.diff_origin(dir, base_ref)?;
+        let origin = self.diff_origin(dir, base_ref, born)?;
         let mut args = vec!["diff"];
         args.extend(DIFF_FLAGS);
         args.extend(["--numstat", "-z", origin.as_str()]);
@@ -365,7 +372,8 @@ impl Git for GitCli {
     }
 
     fn diff(&self, dir: &Path, base_ref: Option<&str>) -> Result<String> {
-        let origin = self.diff_origin(dir, base_ref)?;
+        let born = self.head(dir)?.is_some();
+        let origin = self.diff_origin(dir, base_ref, born)?;
         let mut args = vec!["diff"];
         args.extend(DIFF_FLAGS);
         args.push(origin.as_str());

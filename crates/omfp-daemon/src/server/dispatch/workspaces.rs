@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use omfp_protocol::{Call, CreateWorkspaceParams, ErrorBody};
+use omfp_protocol::{Call, CreateWorkspaceParams, ErrorBody, ErrorCode};
 
 use super::{Reply, empty, ok, on_workspaces};
 use crate::server::auth::Principal;
@@ -114,7 +114,10 @@ pub(super) async fn workspaces(services: &Services, principal: &Principal, call:
             services.rescan(&params.workspace_id).await?;
             let repos = services.workspace_status(&params.workspace_id).await?;
             return match repos.into_iter().find(|repo| repo.name == params.repo) {
-                Some(repo) => ok(&repo.status),
+                Some(repo) => match repo.error {
+                    Some(error) => Err(ErrorBody::new(ErrorCode::GitError, error)),
+                    None => ok(&repo.status),
+                },
                 None => Err(workspace_error(WorkspaceError::NoSuchRepo {
                     workspace: params.workspace_id,
                     name: params.repo,

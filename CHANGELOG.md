@@ -7,6 +7,12 @@ The version's section is also the source of the GitHub release notes.
 
 ## Unreleased
 
+### Fixed
+
+- A repository without commits (right after `git init`) no longer stops the changes view of its whole workspace: it
+  shows its branch and every file as added. A repository whose git status fails for another reason shows that error
+  in `omfp:changes` while the others keep updating, and the daemon logs it once instead of every 30 s (#268).
+
 ## 0.4.2 — 2026-11-22
 
 ### Added

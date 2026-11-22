@@ -224,7 +224,10 @@ const THREAD_EVENTS: Record<ThreadEvent["kind"], (event: Record<string, unknown>
 function isRepoStatusList(value: unknown): value is RepoStatus[] {
   return (
     Array.isArray(value) &&
-    value.every((repo) => isObject(repo) && typeof repo.name === "string" && isObject(repo.status))
+    value.every(
+      (repo) =>
+        isObject(repo) && typeof repo.name === "string" && isObject(repo.status) && isOptionalString(repo.error),
+    )
   );
 }
 

@@ -1002,6 +1002,97 @@ async fn workspaces_status_publishes_the_fresh_status_of_every_repository_on_the
     assert_eq!(event["event"]["repos"][0]["status"]["dirty"], true);
 }
 
+// spec: DMN-383
+#[tokio::test(flavor = "multi_thread")]
+async fn a_repository_whose_status_fails_is_published_with_its_error_and_the_others_with_their_status()
+ {
+    let daemon = daemon(&[]).await;
+    let mut client = daemon.client("test").await;
+    let app = daemon.external_repo("app");
+    let lib = daemon.external_repo("lib");
+    daemon.git.fail_status(&lib, Some("fatal: bad object HEAD"));
+    let workspace = client.ok("workspaces.create", json!({ "link": app })).await;
+    let id = workspace["id"].as_str().unwrap().to_owned();
+    client
+        .ok(
+            "workspaces.add_repo",
+            json!({ "workspaceId": id, "source": { "kind": "link", "path": lib } }),
+        )
+        .await;
+    let topic = format!("workspace/{id}");
+    let repo = |repos: &serde_json::Value, name: &str| {
+        repos
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|repo| repo["name"] == name)
+            .cloned()
+            .unwrap_or_else(|| panic!("no {name} in {repos}"))
+    };
+
+    let subscribed = client.ok("subscribe", json!({ "topic": topic })).await;
+    let state = &subscribed["state"];
+    assert_eq!(repo(state, "app")["status"]["branch"], "main", "{state}");
+    assert_eq!(repo(state, "app").get("error"), None, "{state}");
+    let broken = repo(state, "lib");
+    assert!(
+        broken["error"]
+            .as_str()
+            .unwrap()
+            .contains("fatal: bad object HEAD"),
+        "{broken}"
+    );
+    assert_eq!(broken["status"]["files"], json!([]), "{broken}");
+
+    // The good repository still refreshes and publishes; the broken one answers its own error.
+    daemon.git.set_dirty(&app, true);
+    let status = client
+        .ok(
+            "workspaces.status",
+            json!({ "workspaceId": id, "repo": "app" }),
+        )
+        .await;
+    assert_eq!(status["dirty"], true);
+    let event = client.event(&topic).await;
+    assert_eq!(
+        repo(&event["event"]["repos"], "app")["status"]["dirty"],
+        true,
+        "{event}"
+    );
+    assert!(
+        repo(&event["event"]["repos"], "lib")["error"].is_string(),
+        "{event}"
+    );
+    let failed = client
+        .call(
+            "workspaces.status",
+            json!({ "workspaceId": id, "repo": "lib" }),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(failed["code"], "git_error", "{failed}");
+    assert!(
+        failed["message"]
+            .as_str()
+            .unwrap()
+            .contains("fatal: bad object HEAD"),
+        "{failed}"
+    );
+
+    // Fixed, it gets its status back.
+    daemon.git.fail_status(&lib, None);
+    client
+        .ok(
+            "workspaces.status",
+            json!({ "workspaceId": id, "repo": "lib" }),
+        )
+        .await;
+    let event = client.event(&topic).await;
+    let fixed = repo(&event["event"]["repos"], "lib");
+    assert_eq!(fixed.get("error"), None, "{event}");
+    assert_eq!(fixed["status"]["branch"], "main", "{event}");
+}
+
 // spec: DMN-089, DMN-090
 #[tokio::test(flavor = "multi_thread")]
 async fn a_written_file_republishes_the_workspace_status_and_a_stale_write_is_a_conflict() {

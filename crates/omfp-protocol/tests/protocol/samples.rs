@@ -184,10 +184,17 @@ pub fn repo_statuses() -> Vec<RepoStatus> {
                 dirty: false,
                 files: Vec::new(),
             },
+            error: None,
         },
         RepoStatus {
             name: "shop-frontend".to_owned(),
             status: git_status(),
+            error: None,
+        },
+        RepoStatus {
+            name: "scratch".to_owned(),
+            status: GitStatus::default(),
+            error: Some("git diff failed: fatal: bad object HEAD".to_owned()),
         },
     ]
 }

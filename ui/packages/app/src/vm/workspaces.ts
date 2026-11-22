@@ -66,7 +66,9 @@ export function workspaceRow(
     threadCount,
     shared: threadCount > 1,
     repos: workspace.repos.map((repo) => {
-      const git = status?.find((entry) => entry.name === repo.name)?.status;
+      const entry = status?.find((candidate) => candidate.name === repo.name);
+      // A status the daemon could not read (DMN-383) is no status: the row keeps the index's branch.
+      const git = (entry?.error ?? undefined) === undefined ? entry?.status : undefined;
       return {
         name: repo.name,
         kind: repo.kind,

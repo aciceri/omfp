@@ -53,7 +53,8 @@ sequenceDiagram
 ## Topics, snapshots and catch-up
 
 Topics: `index` (workspaces with their discovered repositories, threads with their summaries, and the user's theme),
-`thread/<id>` (one thread), `workspace/<id>` (git status of each repository of one workspace), `views/<id>` (the views
+`thread/<id>` (one thread), `workspace/<id>` (git status of each repository of one workspace, with `error` instead for a
+repository whose status could not be read, DMN-383), `views/<id>` (the views
 manifest, widget folders and widget state of one workspace, PRT-040), `job/<id>` (one job's output, PRT-041),
 `jobs/<id>` (the declared jobs of one workspace and their runs, PRT-200) and `terminal/<id>` (one daemon-owned PTY
 session, TRM-100).

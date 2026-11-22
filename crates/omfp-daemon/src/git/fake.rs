@@ -29,6 +29,8 @@ struct FakeRepo {
 struct State {
     repos: BTreeMap<PathBuf, FakeRepo>,
     dirty: BTreeSet<PathBuf>,
+    /// Checkouts whose `status` fails, with git's message.
+    failing: BTreeMap<PathBuf, String>,
 }
 
 impl State {
@@ -122,6 +124,16 @@ impl FakeGit {
         } else {
             state.dirty.remove(&dir);
         }
+    }
+
+    /// Makes `status` in the checkout `dir` fail with `stderr` as git's message; `None` makes it succeed again.
+    pub fn fail_status(&self, dir: &Path, stderr: Option<&str>) {
+        let dir = canonical(dir);
+        let mut state = self.state();
+        match stderr {
+            Some(stderr) => state.failing.insert(dir, stderr.to_owned()),
+            None => state.failing.remove(&dir),
+        };
     }
 
     /// Records `contents` as the file `path` (relative to `root`) at `HEAD` of the repository at `root`; the working
@@ -347,6 +359,9 @@ impl Git for FakeGit {
             .clone();
         if let Some(hook) = hook {
             hook(dir);
+        }
+        if let Some(stderr) = self.state().failing.get(&canonical(dir)) {
+            return Err(failed("diff", stderr.clone()));
         }
         Ok(GitStatus {
             branch: self.current_branch(dir)?,

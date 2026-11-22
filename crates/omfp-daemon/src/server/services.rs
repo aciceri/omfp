@@ -17,8 +17,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use omfp_protocol::{
-    ErrorBody, IndexEvent, IndexSnapshot, JobCounts, RepoStatus, SetSettingsParams, Settings,
-    Theme, ThreadSummary, Workspace, WorkspaceEvent,
+    ErrorBody, GitStatus, IndexEvent, IndexSnapshot, JobCounts, RepoStatus, SetSettingsParams,
+    Settings, Theme, ThreadSummary, Workspace, WorkspaceEvent,
 };
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -129,6 +129,8 @@ pub(crate) struct Services {
     /// Serializes index refreshes so their events never interleave.
     refresh: Arc<tokio::sync::Mutex<()>>,
     workspace_logs: Arc<Mutex<HashMap<String, Arc<WorkspaceLog>>>>,
+    /// By workspace, the repositories whose git status failed last time, with their error, logged once (DMN-384).
+    repo_errors: Arc<Mutex<HashMap<String, HashMap<String, String>>>>,
     settings: Arc<Mutex<SettingsState>>,
     /// Serializes `settings.set` writes to the config file.
     settings_writes: Arc<tokio::sync::Mutex<()>>,
@@ -215,6 +217,7 @@ impl Services {
             mcp,
             refresh: Arc::new(tokio::sync::Mutex::new(())),
             workspace_logs: Arc::new(Mutex::new(HashMap::new())),
+            repo_errors: Arc::new(Mutex::new(HashMap::new())),
             settings: Arc::new(Mutex::new(SettingsState::default())),
             settings_writes: Arc::new(tokio::sync::Mutex::new(())),
             widgets,
@@ -666,7 +669,8 @@ impl Services {
         }))
     }
 
-    /// The git status of every repository of the workspace now (DMN-026), published on its topic when it changed.
+    /// The git status of every repository of the workspace now (DMN-026), published on its topic when it changed. A
+    /// repository whose status fails is published with its error, the others with their status (DMN-383).
     pub async fn workspace_status(&self, id: &str) -> Result<Vec<RepoStatus>, ErrorBody> {
         let workspaces = Arc::clone(&self.workspaces);
         let workspace_id = id.to_owned();
@@ -674,19 +678,28 @@ impl Services {
             let repos = workspaces
                 .discovered(&workspace_id)
                 .map_err(workspace_error)?;
-            repos
+            Ok(repos
                 .iter()
                 .map(|repo| {
-                    let (status, upstream) = workspaces.status(repo).map_err(workspace_error)?;
-                    let diff = workspaces.diff(repo).map_err(workspace_error)?;
-                    Ok(RepoStatus {
+                    let read = || -> crate::workspaces::Result<GitStatus> {
+                        let (status, upstream) = workspaces.status(repo)?;
+                        let diff = workspaces.diff(repo)?;
+                        Ok(convert::git_status(&status, upstream.as_deref(), &diff))
+                    };
+                    let (status, error) = match read() {
+                        Ok(status) => (status, None),
+                        Err(error) => (GitStatus::default(), Some(workspace_error(error).message)),
+                    };
+                    RepoStatus {
                         name: repo.name.clone(),
-                        status: convert::git_status(&status, upstream.as_deref(), &diff),
-                    })
+                        status,
+                        error,
+                    }
                 })
-                .collect::<Result<Vec<_>, ErrorBody>>()
+                .collect::<Vec<_>>())
         })
         .await?;
+        self.log_repo_errors(id, &repos);
         let log = self.workspace_log_entry(id);
         if log.with_state(|current| *current != repos) {
             log.push(WorkspaceEvent::Status {
@@ -694,6 +707,24 @@ impl Services {
             });
         }
         Ok(repos)
+    }
+
+    /// Logs the error of each repository of workspace `id` whose status failed, once per change of its error
+    /// (DMN-384): the polls and the rescans after tool runs read the status again and again.
+    fn log_repo_errors(&self, id: &str, repos: &[RepoStatus]) {
+        let mut known = lock(&self.repo_errors);
+        let previous = known.remove(id).unwrap_or_default();
+        let mut failing = HashMap::new();
+        for repo in repos {
+            let Some(error) = &repo.error else { continue };
+            if previous.get(&repo.name) != Some(error) {
+                warn!(workspace = %id, repo = %repo.name, %error, "cannot read the git status of a repository");
+            }
+            failing.insert(repo.name.clone(), error.clone());
+        }
+        if !failing.is_empty() {
+            known.insert(id.to_owned(), failing);
+        }
     }
 }
 

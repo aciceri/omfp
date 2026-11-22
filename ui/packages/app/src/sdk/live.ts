@@ -16,7 +16,7 @@ import { strings } from "../strings/index.ts";
 import { IDLE, type LiveSupport, type LocalLive, liveSupport } from "../vm/live.ts";
 import type { FrameStore } from "./frame-store.ts";
 import type { SdkClient, TopicRefs } from "./host.tsx";
-import { SELECTED_THREAD } from "./keys.ts";
+import { DRAFT_THREAD, SELECTED_THREAD } from "./keys.ts";
 import type { WindowStore } from "./window-store.ts";
 
 /** The remote voice counts as speaking above this RMS … */
@@ -95,6 +95,9 @@ export interface NewLiveThread {
   create(start: LiveCreation): Promise<string | undefined>;
   /** Reports a start that failed before the thread existed: no live path here, the microphone or the peer. */
   fail(message: string): void;
+  /** Whether the window still shows what the start began from (the draft pressed), asked whenever the draft changes
+   * until the thread exists: false ends the start at once. */
+  shown(): boolean;
 }
 
 /** What {@link NewLiveThread.create} knows of its start. */
@@ -179,8 +182,9 @@ export class LiveClient {
     this.#connected = false;
     this.#speakingUntil = 0;
     // Until the session opens on its thread, showing another thread (a new thread's start: anything but the draft, then
-    // the new thread) or leaving the page ends the start at once (UI-185), the microphone with it.
-    const watch = this.#watchShown(starting);
+    // the new thread), dropping the draft pressed or leaving the page ends the start at once (UI-185), the microphone
+    // with it.
+    const watch = this.#watchShown(starting, target);
     let link: LiveLink | undefined;
     let threadId: string | undefined;
     try {
@@ -239,10 +243,11 @@ export class LiveClient {
   }
 
   /**
-   * Ends the start `starting` when the window shows another thread than now (the draft: none) or than the one `show`
-   * names, or leaves the page; until `stop`.
+   * Ends the start `starting` when the window leaves the page or shows another thread than now (the draft: none) or
+   * than the one `show` names; for a new thread, also once `target.shown()` is false when the draft changes (the draft
+   * pressed replaced or dismissed), until `show` (the thread exists, its draft is done). Until `stop`.
    */
-  #watchShown(starting: LocalLive): { show(threadId: string): void; stop(): void } {
+  #watchShown(starting: LocalLive, target: LiveTarget): { show(threadId: string): void; stop(): void } {
     let shown = this.#window.get(SELECTED_THREAD);
     const end = () => {
       if (this.#snapshot.local === starting) {
@@ -254,13 +259,24 @@ export class LiveClient {
         end();
       }
     });
+    let unsubscribeDraft =
+      typeof target === "string"
+        ? () => {}
+        : this.#window.subscribe(DRAFT_THREAD, () => {
+            if (!target.shown()) {
+              end();
+            }
+          });
     window.addEventListener("pagehide", end);
     return {
       show: (threadId) => {
         shown = threadId;
+        unsubscribeDraft();
+        unsubscribeDraft = () => {};
       },
       stop: () => {
         unsubscribe();
+        unsubscribeDraft();
         window.removeEventListener("pagehide", end);
       },
     };

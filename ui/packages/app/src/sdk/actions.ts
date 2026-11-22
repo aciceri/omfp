@@ -379,12 +379,12 @@ export function threadActions(host: OmfpHost): ThreadActions {
       return host.live.start({
         create: async ({ running, created }) => {
           await ready;
-          // Only a start still running (no other thread shown meanwhile), from the draft the mic was pressed in: not
-          // another workspace's opened meanwhile.
-          const kept = running() && workspaceId !== undefined && window.get(DRAFT_THREAD)?.workspaceId === workspaceId;
-          return kept ? createFromDraft(host, true, created) : undefined;
+          // A start ended meanwhile (the mic pressed again, another thread or draft shown, the page left) creates nothing.
+          return running() ? createFromDraft(host, true, created) : undefined;
         },
         fail: (message) => reportError(host, message),
+        // The draft the mic was pressed in: not another workspace's opened since, nor dismissed.
+        shown: () => workspaceId !== undefined && window.get(DRAFT_THREAD)?.workspaceId === workspaceId,
       });
     },
     archive: (threadId) => closeThread(host, "threads.archive", threadId),

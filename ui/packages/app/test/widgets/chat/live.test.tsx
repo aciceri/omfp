@@ -962,6 +962,20 @@ describe("the draft thread's mic", () => {
   });
 
   // spec: UI-185, UI-023
+  test("opening another workspace's draft while the thread is created ends the start at once; no session follows", async () => {
+    const live = renderDraft("webrtc", "for the first workspace");
+    await press(mic());
+    act(() => threadActions(live.host).openDraft("02W"));
+    // Now, not when the daemon answers: the microphone stops capturing.
+    expect(live.media.link.closed).toBe(true);
+    expect(mic().dataset.live).toBe("start");
+    await created(live);
+    expect(live.client.callsTo("thread.live_connect")).toHaveLength(0);
+    // The other workspace's draft stays.
+    expect(live.host.window.get(DRAFT_THREAD)?.workspaceId).toBe("02W");
+  });
+
+  // spec: UI-185, UI-023
   test("showing another thread while the thread is created ends the start at once; no session follows", async () => {
     const live = renderDraft();
     await press(mic());

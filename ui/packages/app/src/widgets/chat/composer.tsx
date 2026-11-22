@@ -40,6 +40,7 @@ import {
   errorMessage,
   expandPastes,
   FOCUS_COMPOSER,
+  FRAME_LAYOUT,
   formatDuration,
   INTERRUPT_WINDOW_MS,
   imageAttachment,
@@ -165,6 +166,9 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
   const host = useHost();
   const reads = draftReads(host);
   const touch = useCoarsePointer();
+  // A phone's composer shows no keys, even with a keyboard (UI-423); Enter still follows the pointer (UI-421).
+  const [layout] = useWindowState(FRAME_LAYOUT);
+  const keyless = touch || layout === "mobile";
   const labels = strings.shell.draft;
   // biome-ignore lint/correctness/useExhaustiveDependencies: `draft` is a new object each time the draft is opened
   useEffect(() => {
@@ -269,6 +273,7 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
       data-testid="composer"
       data-draft="true"
       data-touch={touch || undefined}
+      data-phone={layout === "mobile" || undefined}
       data-workspace-id={draft.workspaceId}
       {...{ [SCOPE_ATTRIBUTE]: "composer" }}
       onSelect={(event) => {
@@ -305,14 +310,14 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
           />
           {!locked && completions.menu}
         </Autocomplete>
-        <ComposerBar hints={touch ? undefined : <KeyHints abortable={false} interruptHint={false} />}>
+        <ComposerBar hints={keyless ? undefined : <KeyHints abortable={false} interruptHint={false} />}>
           <DraftMicButton disabled={sending || creating} ready={() => Promise.all(reads)} />
           <Button
             type="submit"
             variant="primary"
             size="sm"
             icon={<Icon name="arrow-up" />}
-            kbd={touch ? undefined : keyLabel("Enter")}
+            kbd={keyless ? undefined : keyLabel("Enter")}
             data-testid="send"
             data-mode="draft"
             isDisabled={locked}
@@ -652,6 +657,9 @@ export const Composer = memo(function Composer({
   const box = useRef<HTMLFormElement>(null);
   const tight = useWidthClass(box, (width, rem) => width > 0 && width < TIGHT_BELOW_REM * rem);
   const touch = useCoarsePointer();
+  // A phone's composer shows no keys, even with a keyboard (UI-423); Enter still follows the pointer (UI-421).
+  const [layout] = useWindowState(FRAME_LAYOUT);
+  const keyless = touch || layout === "mobile";
   const [focusRequest, setFocusRequest] = useWindowState(FOCUS_COMPOSER);
   // Asked to take the focus once shown, e.g. after `:notice` (UI-286).
   useEffect(() => {
@@ -859,6 +867,7 @@ export const Composer = memo(function Composer({
       data-testid="composer"
       data-busy={busy}
       data-touch={touch || undefined}
+      data-phone={layout === "mobile" || undefined}
       data-tight={tight || undefined}
       {...{ [SCOPE_ATTRIBUTE]: "composer" }}
       onSelect={(event) => {
@@ -891,7 +900,7 @@ export const Composer = memo(function Composer({
           <ComposerTextArea
             touch={touch}
             keys="Enter Control+Enter Meta+Enter Shift+Enter Control+Q Alt+Enter Escape Tab ArrowRight"
-            placeholder={busy ? (touch ? text.placeholderBusyTouch : text.placeholderBusy) : text.placeholderIdle}
+            placeholder={busy ? (keyless ? text.placeholderBusyTouch : text.placeholderBusy) : text.placeholderIdle}
             inputRef={inputRef}
             onFocus={() => setInsert(true)}
             onBlur={() => {
@@ -908,7 +917,7 @@ export const Composer = memo(function Composer({
           threadId={threadId}
           abortable={abortable}
           showAbort={activityKey === undefined}
-          touch={touch}
+          keyless={keyless}
           tight={tight}
           interruptHint={interruptHint}
           canRestore={cleared !== undefined}
@@ -974,14 +983,14 @@ const TIGHT_BELOW_REM = 34;
 /**
  * The hints and buttons under the input; memoized with stable callbacks, so typing does not render them (UI-197). The
  * actions in one order at the bar's end, the primary last (UI-480): the mic, Abort, the other send mode, then the
- * send button. On a touch screen (UI-423) and in a tight composer (UI-481) the mic and Abort are icons and the send
- * buttons have short labels; only a touch screen drops the key hints and chips.
+ * send button. Without keys (a touch screen, a phone: UI-423) and in a tight composer (UI-481) the mic and Abort are
+ * icons and the send buttons have short labels; only without keys does it drop the key hints and chips.
  */
 const ComposerActions = memo(function ComposerActions({
   threadId,
   abortable,
   showAbort,
-  touch,
+  keyless,
   tight,
   interruptHint,
   canRestore,
@@ -993,7 +1002,7 @@ const ComposerActions = memo(function ComposerActions({
   threadId: string;
   abortable: boolean;
   showAbort: boolean;
-  touch: boolean;
+  keyless: boolean;
   tight: boolean;
   interruptHint: boolean;
   canRestore: boolean;
@@ -1004,12 +1013,12 @@ const ComposerActions = memo(function ComposerActions({
 }) {
   const [changing] = useWindowState(MODEL_CHANGING);
   const modelPending = changing.includes(threadId);
-  const short = touch || tight;
+  const short = keyless || tight;
   const labels = short ? text.sendShort : text.send;
   return (
     <ComposerBar
       hints={
-        touch ? undefined : <KeyHints abortable={abortable} interruptHint={interruptHint} canRestore={canRestore} />
+        keyless ? undefined : <KeyHints abortable={abortable} interruptHint={interruptHint} canRestore={canRestore} />
       }
     >
       <ThreadMicButton threadId={threadId} />
@@ -1017,7 +1026,7 @@ const ComposerActions = memo(function ComposerActions({
       {other !== undefined && (
         <Button
           size="sm"
-          kbd={touch ? undefined : sendKey(other)}
+          kbd={keyless ? undefined : sendKey(other)}
           data-testid="send-alternative"
           data-mode={other}
           isDisabled={modelPending}
@@ -1031,7 +1040,7 @@ const ComposerActions = memo(function ComposerActions({
         variant="primary"
         size="sm"
         icon={<Icon name="arrow-up" />}
-        kbd={touch ? undefined : sendKey(mode)}
+        kbd={keyless ? undefined : sendKey(mode)}
         data-testid="send"
         data-mode={mode}
         isDisabled={modelPending}

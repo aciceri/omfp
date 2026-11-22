@@ -6,7 +6,14 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-libra
 import userEvent from "@testing-library/user-event";
 import { createKeyHandler } from "../../../src/keymap/handler.ts";
 import { DEFAULT_BINDINGS } from "../../../src/keymap/keymap.ts";
-import { draftKey, ERRORS, FOCUS_COMPOSER, type OmfpHost, SELECTED_THREAD } from "../../../src/sdk/index.ts";
+import {
+  draftKey,
+  ERRORS,
+  FOCUS_COMPOSER,
+  FRAME_LAYOUT,
+  type OmfpHost,
+  SELECTED_THREAD,
+} from "../../../src/sdk/index.ts";
 import { FILE_QUERY_DELAY_MS } from "../../../src/widgets/chat/completion.tsx";
 import { ChatWidget, ComposerWidget } from "../../../src/widgets/chat/index.ts";
 import type { FakeClient } from "../../support/host.tsx";
@@ -753,6 +760,17 @@ describe("the composer's bar by pointer and width", () => {
       "Abort",
       "Steer nowenter",
     ]);
+  });
+
+  // spec: UI-423, UI-421
+  test("on a phone with a keyboard the bar shows no keys either, and Enter still sends", async () => {
+    pointer = new PointerMedia(false);
+    const { client, host } = renderThread(<ComposerWidget />, fixtureEvents("text_reply"));
+    act(() => host.window.set(FRAME_LAYOUT, "mobile"));
+    expect(screen.getByTestId("composer").querySelectorAll(".omfp-compose__hint, .omfp-kbd").length).toBe(0);
+    await userEvent.click(input());
+    await userEvent.keyboard("hello{Enter}");
+    expect(client.callsTo("thread.prompt").map((call) => call.params)).toEqual([{ threadId: THREAD, text: "hello" }]);
   });
 
   /** The composer bar's two groups: the hints' text, and the actions' test ids in order. */

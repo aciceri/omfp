@@ -975,6 +975,39 @@
     max-block-size: calc(var(--vvh, 100dvh) / 4);
   }
 
+  /* On a phone (UI-423) the actions sit beside the text, at its bottom, as chat apps place them, instead of on a row
+   * under it; attachment and paste chips keep rows of their own above. The text area grows upwards as before. */
+  .omfp-composer[data-phone] .omfp-compose {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+  }
+
+  .omfp-composer[data-phone] .omfp-compose > * {
+    flex: 1 0 100%;
+  }
+
+  .omfp-composer[data-phone] .omfp-compose > .omfp-compose__ghost-host {
+    flex: 1 1 0;
+    min-inline-size: 0;
+  }
+
+  /* The text's last line and the buttons share a centre: the text area's block padding makes a line as tall as a
+   * button, plus the bar's `s1`. */
+  .omfp-composer[data-phone] .omfp-compose > .omfp-compose__bar {
+    flex: none;
+    padding-block: var(--omfp-s1);
+    padding-inline-start: 0;
+  }
+
+  .omfp-composer[data-phone] .omfp-compose__field .omfp-textarea {
+    padding-block: calc(var(--omfp-s1) + (var(--omfp-ctl-h-sm) - 1lh) / 2);
+  }
+
+  .omfp-composer[data-phone] .omfp-compose__actions {
+    flex-wrap: nowrap;
+  }
+
   .omfp-composer__attachments,
   .omfp-composer__pastes {
     display: flex;

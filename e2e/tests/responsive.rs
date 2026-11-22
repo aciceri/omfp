@@ -182,6 +182,21 @@ async fn phone(journey: &Journey) -> anyhow::Result<()> {
         matches!(margins[..], [left, right] if (left - right).abs() <= 1.0 && left <= 16.0),
         "the composer's margins are {margins:?}"
     );
+    // The actions sit beside the text, at its bottom, not on a row of their own under it; with one line of text the
+    // two share a centre (UI-423).
+    let beside = journey
+        .eval(
+            "const input = document.querySelector('[data-testid=composer-input]').getBoundingClientRect();
+             const send = document.querySelector('[data-testid=send]').getBoundingClientRect();
+             const centre = (r) => r.top + r.height / 2;
+             return send.left >= input.right - 0.5 && Math.abs(centre(send) - centre(input)) <= 2;",
+            Vec::new(),
+        )
+        .await?;
+    anyhow::ensure!(
+        beside.as_bool() == Some(true),
+        "the composer's actions are not beside its text"
+    );
     shots(journey, 390).await?;
     journey
         .click("[data-testid=area-button][data-area=threads]")

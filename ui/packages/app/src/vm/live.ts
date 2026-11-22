@@ -39,8 +39,9 @@ export function liveSupport({ secure, webrtc, local }: LiveEnvironment): LiveSup
 /** This window's own session (at most one): the browser half of `live_connect`, or omp's `live_start` session. */
 export type LocalLive =
   | { readonly kind: "idle" }
-  /** Microphone, peer and offer, then `thread.live_connect` until its answer is applied; or `thread.live_start`. */
-  | { readonly kind: "starting"; readonly threadId: string }
+  /** Microphone, peer and offer, then `thread.live_connect` until its answer is applied; or `thread.live_start`. The
+   * thread is `undefined` while the draft thread's mic makes it (UI-023). */
+  | { readonly kind: "starting"; readonly threadId: string | undefined }
   | {
       readonly kind: "running";
       readonly threadId: string;
@@ -184,8 +185,15 @@ export function livePanelView(
 /** The mic button of thread `threadId`. */
 export function micButton(threadId: string, state: LiveState, local: LocalLive, support: LiveSupport): MicButton {
   const ownHere = (local.kind === "starting" || local.kind === "running") && local.threadId === threadId;
-  if (ownHere || state.live !== null) {
-    return { kind: "end" };
-  }
+  return ownHere || state.live !== null ? { kind: "end" } : availableMic(support);
+}
+
+/** The draft thread's mic button (UI-023): pressed while this window makes the thread to talk to (UI-180). */
+export function draftMicButton(local: LocalLive, support: LiveSupport): MicButton {
+  return local.kind === "starting" && local.threadId === undefined ? { kind: "end" } : availableMic(support);
+}
+
+/** A mic button with no session to end: it starts one, or says why it cannot (UI-180, UI-188). */
+function availableMic(support: LiveSupport): MicButton {
   return support === "webrtc" || support === "host" ? { kind: "start" } : { kind: "unavailable", reason: support };
 }

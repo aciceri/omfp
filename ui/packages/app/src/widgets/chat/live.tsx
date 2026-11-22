@@ -7,7 +7,18 @@
 
 import type { ThreadState } from "@omfp/core";
 import { Button, Icon, IconButton, type LiveHint, LivePanel, Spectrum } from "omfp/kit";
-import { keyLabel, livePanelView, micButton, strings, useCommand, useLive, useSnapshot } from "omfp/sdk";
+import {
+  draftMicButton,
+  keyLabel,
+  livePanelView,
+  type MicButton as MicButtonView,
+  micButton,
+  strings,
+  useCommand,
+  useLive,
+  useSnapshot,
+  useThreadActions,
+} from "omfp/sdk";
 import { type KeyboardEvent, useEffect, useId, useRef } from "react";
 
 const text = strings.chat.live;
@@ -149,9 +160,56 @@ export function LiveVoicePanel({ threadId, state }: { threadId: string; state: T
  */
 export function MicButton({ threadId, state }: { threadId: string; state: ThreadState }) {
   const [live, snapshot] = useLive();
+  return (
+    <MicIconButton
+      button={micButton(threadId, state, snapshot.local, live.support())}
+      onStart={() => void live.start(threadId)}
+      onEnd={() => live.endThread(threadId)}
+    />
+  );
+}
+
+/**
+ * The draft thread's mic button (UI-023, UI-180): makes the thread and starts its live session at once; pressed while
+ * that runs, it gives up. `disabled` while the draft's message is being sent.
+ */
+export function DraftMicButton({ disabled }: { disabled: boolean }) {
+  const [live, snapshot] = useLive();
+  const actions = useThreadActions();
+  return (
+    <MicIconButton
+      button={draftMicButton(snapshot.local, live.support())}
+      disabled={disabled}
+      onStart={() => void actions.startDraftLive()}
+      onEnd={() => live.end()}
+    />
+  );
+}
+
+/**
+ * The mic icon button of a {@link MicButtonView}; an unavailable one says why in its accessible description. It
+ * registers `:live` (`live.toggle`, UI-108), doing what pressing it does, so on the draft thread `:live` starts the
+ * draft's mic (UI-023).
+ */
+function MicIconButton({
+  button,
+  disabled = false,
+  onStart,
+  onEnd,
+}: {
+  button: MicButtonView;
+  disabled?: boolean;
+  onStart: () => void;
+  onEnd: () => void;
+}) {
   const reasonId = useId();
-  const button = micButton(threadId, state, snapshot.local, live.support());
-  const toggle = () => (button.kind === "end" ? live.endThread(threadId) : void live.start(threadId));
+  const toggle = () => {
+    if (button.kind === "end") {
+      onEnd();
+    } else if (!disabled) {
+      onStart();
+    }
+  };
   useCommand({ id: "live.toggle", title: text.toggle, aliases: ["live"], run: toggle });
   if (button.kind === "end") {
     return (
@@ -161,7 +219,7 @@ export function MicButton({ threadId, state }: { threadId: string; state: Thread
         aria-pressed
         data-testid="live-mic"
         data-live="end"
-        onPress={toggle}
+        onPress={onEnd}
       />
     );
   }
@@ -173,9 +231,10 @@ export function MicButton({ threadId, state }: { threadId: string; state: Thread
         icon={<Icon name="mic" />}
         aria-pressed={false}
         {...(reason === undefined ? {} : { "aria-describedby": reasonId, "data-unavailable": true })}
+        isDisabled={disabled}
         data-testid="live-mic"
         data-live={button.kind}
-        onPress={toggle}
+        onPress={onStart}
       />
       {reason !== undefined && (
         <span id={reasonId} className="omfp-visually-hidden">

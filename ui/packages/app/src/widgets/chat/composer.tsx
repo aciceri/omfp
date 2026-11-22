@@ -68,6 +68,7 @@ import {
   useCall,
   useCommand,
   useHost,
+  useLive,
   useReportError,
   useThread,
   useThreadActions,
@@ -90,7 +91,7 @@ import { Attachments } from "./attachments.tsx";
 import { useCompletions } from "./completion.tsx";
 import { usePromptHistory } from "./history.ts";
 import { useLineKeys } from "./line-keys.ts";
-import { LiveVoicePanel, MicButton } from "./live.tsx";
+import { DraftMicButton, LiveVoicePanel, MicButton } from "./live.tsx";
 import { PasteChips, usePastes } from "./pastes.tsx";
 import { testId, type WidgetProps } from "./props.ts";
 import { QueueChips } from "./queue.tsx";
@@ -145,12 +146,16 @@ export function ComposerWidget(_props: WidgetProps) {
  * The draft thread's composer (UI-023): Enter (or the button) creates the thread with the text and the pasted or
  * dropped images (UI-060) as first message; they stay when that fails. It takes the focus whenever the draft is
  * opened; Esc leaves it, discarding an empty draft. `@` completes the draft workspace's files (UI-732); with no
- * thread yet there are no `/` commands.
+ * thread yet there are no `/` commands. Its mic (UI-180) creates the thread and starts a live session on it at once,
+ * with the draft's message, if any, as first message; nothing is sent while that starts.
  */
 function DraftComposer({ draft }: { draft: DraftThread }) {
   const actions = useThreadActions();
   const [message, setMessage] = useWindowState(DRAFT_MESSAGE);
   const [sending, setSending] = useState(false);
+  const [, live] = useLive();
+  /** The mic is making the thread to talk to: the message goes with it. */
+  const starting = live.local.kind === "starting" && live.local.threadId === undefined;
   /** The input has the focus: the keymap is in insert mode (UI-098), drawn as the gradient border (UI-172). */
   const [insert, setInsert] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -163,7 +168,7 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
     inputRef.current?.focus();
   }, [draft]);
   const send = () => {
-    if (sending || (isBlank(message) && reads.size === 0)) {
+    if (sending || starting || (isBlank(message) && reads.size === 0)) {
       return;
     }
     word.dismiss();
@@ -281,6 +286,7 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
           {completions.menu}
         </Autocomplete>
         <ComposerBar hints={touch ? undefined : <KeyHints abortable={false} interruptHint={false} />}>
+          <DraftMicButton disabled={sending} />
           <Button
             type="submit"
             variant="primary"
@@ -289,7 +295,7 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
             kbd={touch ? undefined : keyLabel("Enter")}
             data-testid="send"
             data-mode="draft"
-            isDisabled={sending}
+            isDisabled={sending || starting}
           >
             {labels.send}
           </Button>

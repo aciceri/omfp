@@ -89,6 +89,17 @@ function failureMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** A thread {@link LiveClient.start} makes once the window holds what the session needs: the draft thread's (UI-023). */
+export interface NewLiveThread {
+  /** Creates the thread and selects it: its id, or `undefined` when that failed (`create` reports it). */
+  create(): Promise<string | undefined>;
+  /** Reports a start that failed before the thread existed: no live path here, the microphone or the peer. */
+  fail(message: string): void;
+}
+
+/** Where {@link LiveClient.start} opens its session: an existing thread, or a new one. */
+export type LiveTarget = string | NewLiveThread;
+
 /** This window's live session (at most one), read by the widgets through {@link LiveClient.subscribe}. */
 export class LiveClient {
   readonly #client: SdkClient;
@@ -140,40 +151,66 @@ export class LiveClient {
   }
 
   /**
-   * Starts a session on `threadId`: microphone, peer and offer, `thread.live_connect`, then omp's answer (UI-181);
-   * without WebRTC on the daemon's machine, `thread.live_start` (UI-188). Ends this window's other session first. A
-   * failure shows in the panel (UI-186).
+   * Starts a session on `target`, a thread or one {@link NewLiveThread} makes: microphone, peer and offer,
+   * `thread.live_connect`, then omp's answer (UI-181); without WebRTC on the daemon's machine, `thread.live_start`
+   * (UI-188). Ends this window's other session first. The microphone opens at once, before anything is awaited:
+   * browsers grant it reliably only within the press (Safari); a new thread is made after it (UI-023). A failure shows
+   * in the thread's panel (UI-186), or through the new thread's `fail` before the thread exists.
    */
-  async start(threadId: string): Promise<void> {
+  async start(target: LiveTarget): Promise<void> {
     const support = this.#media.support();
-    if (support === "host") {
-      await this.#startHost(threadId);
-      return;
-    }
-    if (support !== "webrtc") {
-      this.#set({ kind: "failed", threadId, message: strings.chat.live[support] });
+    if (support !== "webrtc" && support !== "host") {
+      this.#failed(target, strings.chat.live[support]);
       return;
     }
     this.end();
-    const starting: LocalLive = { kind: "starting", threadId };
+    const starting: LocalLive = { kind: "starting", threadId: typeof target === "string" ? target : undefined };
     this.#set(starting);
     this.#seen = false;
     this.#connected = false;
     this.#speakingUntil = 0;
+    // omp's own session (`live_start`) needs nothing of the window.
     let link: LiveLink | undefined;
-    try {
-      link = await this.#media.open((state) => this.#peerState(link, state));
-    } catch (error) {
-      if (this.#snapshot.local === starting) {
-        const stage = error instanceof LiveOpenError ? error.stage : "peer";
-        this.#set({ kind: "failed", threadId, message: strings.chat.live[stage](failureMessage(error)) });
+    if (support === "webrtc") {
+      try {
+        link = await this.#media.open((state) => this.#peerState(link, state));
+      } catch (error) {
+        if (this.#snapshot.local === starting) {
+          const stage = error instanceof LiveOpenError ? error.stage : "peer";
+          this.#failed(target, strings.chat.live[stage](failureMessage(error)));
+        }
+        return;
       }
-      return;
+      if (this.#snapshot.local !== starting) {
+        link.close();
+        return;
+      }
     }
-    if (this.#snapshot.local !== starting) {
-      link.close();
-      return;
+    const threadId = typeof target === "string" ? target : await this.#create(target, starting, link);
+    if (threadId !== undefined) {
+      await (link === undefined ? this.#startHost(threadId) : this.#connect(threadId, link));
     }
+  }
+
+  /**
+   * Makes the thread of a start once the window holds what its session needs: its id, now the session's; `undefined`
+   * when that failed or the start ended meanwhile, which closes `link`.
+   */
+  async #create(thread: NewLiveThread, starting: LocalLive, link: LiveLink | undefined): Promise<string | undefined> {
+    const threadId = await thread.create();
+    if (this.#snapshot.local === starting && threadId !== undefined) {
+      this.#set({ kind: "starting", threadId });
+      return threadId;
+    }
+    link?.close();
+    if (this.#snapshot.local === starting) {
+      this.#set(IDLE);
+    }
+    return undefined;
+  }
+
+  /** The peer's session on `threadId`: `thread.live_connect` with `link`'s offer, then omp's answer (UI-181). */
+  async #connect(threadId: string, link: LiveLink): Promise<void> {
     this.#open(threadId, link);
     let answer: string;
     try {
@@ -213,10 +250,6 @@ export class LiveClient {
    * spectrum draws the thread's `live_levels` (UI-189).
    */
   async #startHost(threadId: string): Promise<void> {
-    this.end();
-    const starting: LocalLive = { kind: "starting", threadId };
-    this.#set(starting);
-    this.#seen = false;
     const source = new LevelsSource();
     const topic = threadTopic(threadId);
     const link: LiveHold = {
@@ -245,6 +278,22 @@ export class LiveClient {
     }
   }
 
+  /**
+   * A start that failed before its session ran: in the thread's panel (UI-186); a thread not made yet has no panel,
+   * so its `fail` reports it and the window holds nothing.
+   */
+  #failed(target: LiveTarget, message: string): void {
+    if (typeof target === "string") {
+      this.#set({ kind: "failed", threadId: target, message });
+      return;
+    }
+    const local = this.#snapshot.local;
+    if (local.kind === "starting" && local.threadId === undefined) {
+      this.#set(IDLE);
+    }
+    target.fail(message);
+  }
+
   /** Ends this window's session (the end key, a thread switch, unload, UI-185): `thread.live_stop`, then closes it. */
   end(): void {
     const local = this.#snapshot.local;
@@ -254,7 +303,9 @@ export class LiveClient {
     // A session still starting may reach omp yet: stop it either way.
     this.#close();
     this.#set(IDLE);
-    this.#stop(local.threadId);
+    if (local.threadId !== undefined) {
+      this.#stop(local.threadId);
+    }
   }
 
   /** Ends the session of thread `threadId`, this window's or another's (UI-182). */

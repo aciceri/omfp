@@ -11,7 +11,18 @@ import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import type { Levels, SpectrumSource } from "omfp/kit";
 import { GlobalCommands } from "../../../src/frame/commands.tsx";
 import { sheetGroups } from "../../../src/frame/commands-sheet.ts";
-import { type LiveLink, type LiveMedia, type LiveSupport, SELECTED_THREAD } from "../../../src/sdk/index.ts";
+import {
+  DRAFT_MESSAGE,
+  DRAFT_THREAD,
+  EMPTY_DRAFT,
+  ERRORS,
+  type LiveLink,
+  type LiveMedia,
+  type LiveSupport,
+  SELECTED_THREAD,
+  strings,
+  threadActions,
+} from "../../../src/sdk/index.ts";
 import { LiveOpenError } from "../../../src/sdk/live.ts";
 import { ComposerWidget } from "../../../src/widgets/chat/index.ts";
 import { FakeClient, renderWithHost, type TestHost, testHost } from "../../support/host.tsx";
@@ -69,6 +80,10 @@ class FakeLink implements LiveLink {
 class FakeMedia implements LiveMedia {
   supported: LiveSupport = "webrtc";
   openError: Error | undefined;
+  /** Holds the microphone (its permission prompt) until it resolves. */
+  gate: Promise<void> | undefined;
+  /** How many times the window asked for the microphone, counted when asked (not when granted). */
+  opens = 0;
   readonly links: FakeLink[] = [];
   time = 1000;
   #onState: ((state: RTCPeerConnectionState) => void) | undefined;
@@ -78,6 +93,10 @@ class FakeMedia implements LiveMedia {
   }
 
   async open(onState: (state: RTCPeerConnectionState) => void): Promise<LiveLink> {
+    this.opens += 1;
+    if (this.gate !== undefined) {
+      await this.gate;
+    }
     if (this.openError !== undefined) {
       throw this.openError;
     }
@@ -699,5 +718,153 @@ describe("the voice of live sessions", () => {
     expect(live.client.callsTo("thread.live_start").map((call) => call.params)).toEqual([
       { threadId: THREAD, voice: "vale" },
     ]);
+  });
+});
+
+const NEW = "01N";
+
+/** `omfp:composer` on the draft thread of workspace `01W` holding `text`, with a fake peer and microphone. */
+function renderDraft(supported: LiveSupport = "webrtc", text = ""): Live {
+  const media = new FakeMedia();
+  media.supported = supported;
+  const test = testHost(new FakeClient(), { liveMedia: media });
+  test.client.connected();
+  test.client.index({ threads: [summary(THREAD)] });
+  threadActions(test.host).openDraft("01W");
+  test.host.window.set(DRAFT_MESSAGE, { ...EMPTY_DRAFT, text });
+  renderWithHost(<ComposerWidget />, test);
+  test.flush();
+  return {
+    ...test,
+    media,
+    events: (...events) => {
+      test.client.threadEvents(NEW, ...events);
+      test.flush();
+    },
+  };
+}
+
+/** Answers the pending `threads.create` with thread {@link NEW}, whose state then arrives. */
+async function created(live: Live): Promise<void> {
+  const [call] = live.client.callsTo("threads.create");
+  await act(async () => call?.resolve(summary(NEW)));
+  live.client.index({ threads: [summary(THREAD), summary(NEW)] });
+  live.client.thread(NEW, []);
+  live.flush();
+}
+
+describe("the draft thread's mic", () => {
+  // spec: UI-023, UI-180, UI-181
+  test("it opens the microphone within the press, then creates the thread, selects it and talks to it", async () => {
+    const live = renderDraft();
+    const microphone = Promise.withResolvers<void>();
+    live.media.gate = microphone.promise;
+    expect(mic().dataset.live).toBe("start");
+    await press(mic());
+    // Asked before anything is awaited: browsers grant the microphone reliably only within the press.
+    expect(live.media.opens).toBe(1);
+    expect(live.client.callsTo("threads.create")).toHaveLength(0);
+    expect(mic().dataset.live).toBe("end");
+    expect(screen.getByTestId("send").hasAttribute("disabled")).toBe(true);
+    await act(async () => microphone.resolve());
+    expect(live.client.callsTo("threads.create").map((call) => call.params)).toEqual([{ workspace: { id: "01W" } }]);
+    expect(live.client.callsTo("thread.live_connect")).toHaveLength(0);
+    await created(live);
+    expect(live.host.window.get(SELECTED_THREAD)).toBe(NEW);
+    expect(live.host.window.get(DRAFT_THREAD)).toBeUndefined();
+    expect(live.client.callsTo("thread.live_connect").map((call) => call.params)).toEqual([
+      { threadId: NEW, sdpOffer: OFFER },
+    ]);
+    expect(live.media.opens).toBe(1);
+    expect(status()).toBe("connecting");
+    const [call] = live.client.callsTo("thread.live_connect");
+    await act(async () => call?.resolve({ sdpAnswer: ANSWER, voice: "sol" }));
+    expect(live.media.link.answers).toEqual([ANSWER]);
+    expect(live.media.link.closed).toBe(false);
+  });
+
+  // spec: UI-023
+  test("the draft's message goes with it as the thread's first message", async () => {
+    const live = renderDraft("webrtc", "  fix the build ");
+    await press(mic());
+    expect(live.client.callsTo("threads.create").map((call) => call.params)).toEqual([
+      { workspace: { id: "01W" }, prompt: "fix the build" },
+    ]);
+  });
+
+  // spec: UI-023, UI-186
+  test("a failed creation keeps the draft, reports the error and releases the microphone", async () => {
+    const live = renderDraft("webrtc", "hello");
+    await press(mic());
+    const [call] = live.client.callsTo("threads.create");
+    await act(async () => call?.reject(new Error("daemon down")));
+    expect(live.host.window.get(ERRORS).map(({ text }) => text)).toEqual(["daemon down"]);
+    expect(live.host.window.get(DRAFT_THREAD)).toEqual({ workspaceId: "01W" });
+    expect(live.host.window.get(DRAFT_MESSAGE).text).toBe("hello");
+    expect(live.media.link.closed).toBe(true);
+    expect(live.client.callsTo("thread.live_connect")).toHaveLength(0);
+    expect(mic().dataset.live).toBe("start");
+    expect(screen.getByTestId("send").hasAttribute("disabled")).toBe(false);
+  });
+
+  // spec: UI-023, UI-186
+  test("a refused microphone creates no thread and is reported; the draft stays", async () => {
+    const live = renderDraft("webrtc", "hello");
+    live.media.openError = new LiveOpenError("microphone", "Permission denied");
+    await press(mic());
+    expect(live.client.callsTo("threads.create")).toHaveLength(0);
+    expect(live.host.window.get(ERRORS).map(({ text }) => text)).toEqual([
+      "live voice could not open the microphone: Permission denied",
+    ]);
+    expect(live.host.window.get(DRAFT_THREAD)).toEqual({ workspaceId: "01W" });
+    expect(mic().dataset.live).toBe("start");
+  });
+
+  // spec: UI-180, UI-185
+  test("pressed again while the microphone opens, it gives up: no thread, the microphone closes", async () => {
+    const live = renderDraft();
+    const microphone = Promise.withResolvers<void>();
+    live.media.gate = microphone.promise;
+    await press(mic());
+    await press(mic());
+    expect(mic().dataset.live).toBe("start");
+    await act(async () => microphone.resolve());
+    expect(live.media.link.closed).toBe(true);
+    expect(live.client.callsTo("threads.create")).toHaveLength(0);
+    expect(live.client.callsTo("thread.live_stop")).toHaveLength(0);
+    expect(live.host.window.get(DRAFT_THREAD)).toEqual({ workspaceId: "01W" });
+  });
+
+  // spec: UI-186
+  test("a refused live_connect on the new thread shows in its live panel", async () => {
+    const live = renderDraft();
+    await press(mic());
+    await created(live);
+    const [call] = live.client.callsTo("thread.live_connect");
+    await act(async () =>
+      call?.reject(new CallError({ kind: "daemon", error: { code: "omp_error", message: LOGIN } })),
+    );
+    expect(panel().dataset.view).toBe("error");
+    expect(screen.getByRole("alert").textContent).toBe(LOGIN);
+    expect(live.media.link.closed).toBe(true);
+  });
+
+  // spec: UI-188, UI-023
+  test("without WebRTC on the daemon's machine it creates the thread, then starts omp's own session", async () => {
+    const live = renderDraft("host");
+    await press(mic());
+    expect(live.media.opens).toBe(0);
+    await created(live);
+    expect(live.client.callsTo("thread.live_start").map((call) => call.params)).toEqual([{ threadId: NEW }]);
+  });
+
+  // spec: UI-180, UI-023
+  test("where live voice is unavailable it only says why: no microphone, no thread", async () => {
+    const live = renderDraft("insecure");
+    expect(mic().dataset.live).toBe("unavailable");
+    await press(mic());
+    expect(live.media.opens).toBe(0);
+    expect(live.client.callsTo("threads.create")).toHaveLength(0);
+    expect(live.host.window.get(ERRORS).map(({ text }) => text)).toEqual([strings.chat.live.insecure]);
   });
 });

@@ -2,11 +2,12 @@
  * The chat's pieces (UI-171, UI-172): the chat header, messages with their name line, thinking blocks, the stream
  * caret (UI-147), the composer box and queued-message chips. Presentational: the app supplies text and behaviour.
  */
-import { type HTMLAttributes, type ReactNode, type Ref, useId } from "react";
+import { type HTMLAttributes, type ReactNode, type Ref, useCallback, useId, useRef } from "react";
 import { Button as AriaButton } from "react-aria-components";
 import { Button, IconButton } from "./button.tsx";
 import { cx } from "./class.ts";
 import { Icon } from "./icons.tsx";
+import { useMarquee } from "./marquee.ts";
 
 export interface ChatHeaderProps extends HTMLAttributes<HTMLElement> {
   /** The bar under the title row: chips, selects. */
@@ -34,11 +35,26 @@ export interface ChatTitleProps extends HTMLAttributes<HTMLHeadingElement> {
   ref?: Ref<HTMLHeadingElement>;
 }
 
-/** The thread title, the page's heading: `◆` before it, flowing gradient text (UI-171, UI-443). */
-export function ChatTitle({ placeholder = false, className, ...props }: ChatTitleProps) {
+/** The thread title, the page's heading: `◆` before it, flowing gradient text (UI-171, UI-443). Longer than its room it
+ * is cut with an ellipsis; at motion `full` it scrolls to its end and back instead (UI-202). */
+export function ChatTitle({ placeholder = false, className, ref, ...props }: ChatTitleProps) {
+  const own = useRef<HTMLHeadingElement>(null);
+  useMarquee(own);
+  const refs = useCallback(
+    (node: HTMLHeadingElement | null) => {
+      own.current = node;
+      if (typeof ref === "function") {
+        ref(node);
+      } else if (ref !== null && ref !== undefined) {
+        ref.current = node;
+      }
+    },
+    [ref],
+  );
   return (
     <h1
       {...props}
+      ref={refs}
       className={cx("omfp-chat-header__title", !placeholder && "omfp-grad-text", className)}
       data-placeholder={placeholder ? "true" : undefined}
     />

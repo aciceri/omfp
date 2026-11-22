@@ -517,6 +517,13 @@
     animation: none;
   }
 
+  /* An overflowing title keeps its ellipsis: no marquee (UI-202). */
+  :root[data-skin="boring"] .omfp-chat-header__title[data-overflow],
+  :root[data-skin="boring"] .omfp-modeline__segment[data-kind="title"][data-overflow] {
+    text-overflow: ellipsis;
+    animation: none;
+  }
+
   :root[data-skin="boring"] .omfp-tool.omfp-bbox[data-status="running"] > .omfp-tool__body {
     animation: none;
     clip-path: none;

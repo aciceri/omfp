@@ -225,6 +225,7 @@ values are dark enough that `--omfp-ok` and `--omfp-warn` (UI-136) reach 4.5:1 a
 | Toast slide-in (0.75rem rise + fade) | Toast shown | `--omfp-dur-2` `--omfp-ease` | ✓ | ✓ | — |
 | Caret blink | Assistant message streaming | 0.9 s `steps(1)`, infinite | ✓ | steady | steady |
 | Gradient flow (`--omfp-grad-loop` sliding) | Always on the logo's `π` (UI-221), chat title, current workspace name, gallery titles | 6 s `ease-in-out`, infinite alternate | ✓ | — | — |
+| Title marquee (`text-indent` to the title's end and back, resting a fifth of a pass at each end) | A chat or mode-line thread title longer than its room (UI-202); not in the boring skin | 30 px/s, at least 4 s a pass, linear, infinite alternate | ✓ | — (ellipsis) | — (ellipsis) |
 | Progress flow (gradient fill sliding) | Determinate or indeterminate progress | 2 s `ease-in-out`, infinite alternate | ✓ | — | — |
 | Tool shimmer (diagonal primary/tertiary band) | Tool card running, on its head (on its title when the head sits on the border, UI-187) | 1.5 s linear, infinite | ✓ | — | — |
 | Activity-intent shimmer (diagonal primary/tertiary band) | Current composer activity label and a live thinking label (UI-693, UI-694) | 1.7 s linear, infinite | ✓ | — | — |

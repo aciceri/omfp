@@ -3572,7 +3572,6 @@
 
   .omfp-chat-header__title {
     flex: 0 1 auto;
-    align-self: flex-start;
     min-inline-size: 0;
     max-inline-size: 100%;
     margin: 0;
@@ -4229,6 +4228,20 @@
     animation: omfp-flow 6s ease-in-out infinite alternate;
   }
 
+  /* A title longer than its room (`data-overflow`, set by `useMarquee`) scrolls to its end and back instead of its
+   * ellipsis (UI-202): the chat title, the mode line's thread title. */
+  :root[data-motion="full"] .omfp-chat-header__title[data-overflow] {
+    text-overflow: clip;
+    animation:
+      omfp-flow 6s ease-in-out infinite alternate,
+      omfp-marquee var(--marquee-time) linear infinite alternate;
+  }
+
+  :root[data-motion="full"] .omfp-modeline__segment[data-kind="title"][data-overflow] {
+    text-overflow: clip;
+    animation: omfp-marquee var(--marquee-time) linear infinite alternate;
+  }
+
   :root[data-motion="full"] .omfp-progress__fill {
     animation: omfp-flow 2s ease-in-out infinite alternate;
   }
@@ -4476,6 +4489,18 @@
   @keyframes omfp-flow {
     to {
       background-position: 100% 0;
+    }
+  }
+
+  @keyframes omfp-marquee {
+    0%,
+    20% {
+      text-indent: 0;
+    }
+
+    80%,
+    100% {
+      text-indent: var(--marquee-shift);
     }
   }
 

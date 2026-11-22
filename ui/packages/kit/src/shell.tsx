@@ -29,6 +29,7 @@ import { Icon, type IconName } from "./icons.tsx";
 import { Kbd } from "./kbd.tsx";
 import { LogoMark, Wordmark } from "./logo.tsx";
 import { StateMark, type ThreadState } from "./marks.tsx";
+import { useMarquee } from "./marquee.ts";
 
 /** The keymap modes (UI-098). */
 export type Mode = "normal" | "insert" | "command";
@@ -93,13 +94,23 @@ export function ModeLine({
 }
 
 export interface ModeSegmentProps extends HTMLAttributes<HTMLSpanElement> {
-  /** `title`: the thread title (on-surface, ellipsis); `message` / `error`: a transient message. */
+  /** `title`: the thread title (on-surface; longer than its room it scrolls at motion `full`, else an ellipsis);
+   * `message` / `error`: a transient message. */
   kind?: "plain" | "title" | "message" | "error";
 }
 
 /** One segment of the mode line. */
 export function ModeSegment({ kind = "plain", className, ...props }: ModeSegmentProps) {
-  return <span {...props} className={cx("omfp-modeline__segment", className)} data-kind={kind} />;
+  const title = useRef<HTMLSpanElement>(null);
+  useMarquee(title);
+  return (
+    <span
+      {...props}
+      ref={kind === "title" ? title : undefined}
+      className={cx("omfp-modeline__segment", className)}
+      data-kind={kind}
+    />
+  );
 }
 
 /** A view of the window, as the mode line's tabs show it. */

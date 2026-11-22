@@ -1110,6 +1110,49 @@ describe("ChatHeader", () => {
     ]);
     expect(screen.getByTestId("header").querySelector(".omfp-chat-header__bar")).toBeNull();
   });
+
+  // spec: UI-202
+  test("a title longer than its room is marked to scroll by exactly what overflows, its pass slower the longer it is", () => {
+    const { rerender } = render(<ChatTitle>Fix it</ChatTitle>);
+    const title = screen.getByRole("heading", { level: 1 });
+    const box = (scroll: number) => {
+      Object.defineProperty(title, "scrollWidth", { configurable: true, value: scroll });
+      Object.defineProperty(title, "clientWidth", { configurable: true, value: 100 });
+    };
+    const marquee = () => [
+      title.hasAttribute("data-overflow"),
+      title.style.getPropertyValue("--marquee-shift"),
+      title.style.getPropertyValue("--marquee-time"),
+    ];
+    expect(marquee()).toEqual([false, "", ""]);
+    box(400);
+    rerender(<ChatTitle>Fix the flaky checkout test before the release</ChatTitle>);
+    // 300 px at 30 px/s, moving 60 % of a pass.
+    expect(marquee()).toEqual([true, "-300px", "16.7s"]);
+    box(100);
+    rerender(<ChatTitle>Fix it</ChatTitle>);
+    expect(marquee()[0]).toBe(false);
+  });
+
+  // spec: UI-202
+  test("a title that fits again while it scrolls is unmarked: the measure reads its width without the indent", () => {
+    const { rerender } = render(<ChatTitle>Fix the flaky checkout test before the release</ChatTitle>);
+    const title = screen.getByRole("heading", { level: 1 });
+    // As a browser lays it out: the text `natural` px wide, moved by its indent, never scrolls under its box.
+    let natural = 400;
+    Object.defineProperty(title, "clientWidth", { configurable: true, value: 100 });
+    Object.defineProperty(title, "scrollWidth", {
+      configurable: true,
+      get: () => Math.max(100, natural + (Number.parseFloat(title.style.getPropertyValue("text-indent")) || 0)),
+    });
+    rerender(<ChatTitle>Fix the flaky checkout test before the release</ChatTitle>);
+    expect(title.hasAttribute("data-overflow")).toBe(true);
+    // Mid-pass (the animation's indent, held here inline) the box widens so the whole title fits.
+    title.style.setProperty("text-indent", "-200px");
+    natural = 100;
+    rerender(<ChatTitle>Fix the flaky checkout test before the release</ChatTitle>);
+    expect(title.hasAttribute("data-overflow")).toBe(false);
+  });
 });
 
 describe("ComposerBar", () => {

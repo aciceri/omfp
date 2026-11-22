@@ -182,7 +182,8 @@ ui/packages/kit       @omfp/kit: React Aria Components wrappers styled by token 
                       with HEAD), zoom.ts (the viewers' zoom steps and scroll anchoring), mermaid.tsx and
                       mermaid/render.ts (`MermaidDiagram`, the `mermaid` fences of `Markdown`: Mermaid, loaded on first
                       use, draws in the theme's tokens), theme-colors.ts (`cssColorReader`: resolves color tokens for
-                      diagrams and the contrast guard), theme-watch.ts (`watchTheme`: follows theme changes)
+                      diagrams and the contrast guard), theme-watch.ts (`watchTheme`: follows theme changes),
+                      marquee.ts (`useMarquee`: a title longer than its room scrolls, UI-202)
 ui/packages/app       @omfp/app: the web app; src/sdk (widget SDK `omfp/sdk`: host, frame store, hooks, commands,
                       widget hooks useStored/useJob/useToolRun, files: useFile/useOpenFile and the file tabs, live.ts:
                       the window's live voice session `LiveClient` and its browser `LiveMedia`, init.ts: the init files'

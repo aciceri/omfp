@@ -6,8 +6,8 @@
  * The desktop webview has no WebRTC: on the daemon's machine (`#local=1`) the window starts omp's own session instead
  * (`thread.live_start`: omp's microphone and speakers), and the spectrum draws omp's `live_levels` (transient frames,
  * PRT-054). The window sends `thread.live_stop` when its peer fails or closes, on the end key, on a thread switch and on
- * unload (UI-185). Both starts carry the voice of `[ui] live_voice` when it is set (UI-999). The browser parts sit
- * behind {@link LiveMedia}, which tests replace.
+ * unload (UI-185). Both starts carry the voice of `[ui] live_voice` when it is set (UI-999). While the window holds the
+ * microphone it keeps the screen on (UI-531). The browser parts sit behind {@link LiveMedia}, which tests replace.
  */
 
 import { CallError } from "@omfp/client";
@@ -18,6 +18,7 @@ import { IDLE, type LiveSupport, type LocalLive, liveSupport } from "../vm/live.
 import type { FrameStore } from "./frame-store.ts";
 import type { SdkClient, TopicRefs } from "./host.tsx";
 import { DRAFT_THREAD, SELECTED_THREAD } from "./keys.ts";
+import { holdBrowserScreenAwake } from "./wake-lock.ts";
 import type { WindowStore } from "./window-store.ts";
 
 /** The remote voice counts as speaking above this RMS … */
@@ -548,11 +549,14 @@ async function openPeer(onState: (state: RTCPeerConnectionState) => void): Promi
   } catch (error) {
     throw new LiveOpenError("microphone", failureMessage(error));
   }
+  // The screen stays on while the window holds the microphone (UI-531): a phone's screen turning off would stop it.
+  const awake = holdBrowserScreenAwake();
   const source = new AnalyserSource();
   const context = new AudioContext();
   const peer = new RTCPeerConnection();
   const audio = new Audio();
   const close = () => {
+    awake();
     peer.close();
     for (const track of microphone.getTracks()) {
       track.stop();

@@ -1372,6 +1372,8 @@ requirements = [
   "E2E-79",
   # Start a new thread in live voice from the draft composer (#243)
   "DMN-912",
+  # The phone's screen stays on during live voice (#274)
+  "UI-531",
 ]
 
 [M18]

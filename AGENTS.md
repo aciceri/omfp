@@ -185,7 +185,8 @@ ui/packages/kit       @omfp/kit: React Aria Components wrappers styled by token 
                       diagrams and the contrast guard), theme-watch.ts (`watchTheme`: follows theme changes)
 ui/packages/app       @omfp/app: the web app; src/sdk (widget SDK `omfp/sdk`: host, frame store, hooks, commands,
                       widget hooks useStored/useJob/useToolRun, files: useFile/useOpenFile and the file tabs, live.ts:
-                      the window's live voice session `LiveClient` and its browser `LiveMedia`, init.ts: the init files'
+                      the window's live voice session `LiveClient` and its browser `LiveMedia`, wake-lock.ts: the
+                      screen wake lock its microphone holds, init.ts: the init files'
                       runs and their API, init-views.ts: the views they build, layout.tsx: the layout components of
                       TSX views, results.ts: the data hooks' last results, answer.ts: `useAnswer` of the chat cards), vm
                       (view models), widgets (built-ins, each folder copyable: value imports only from react,

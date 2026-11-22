@@ -240,7 +240,7 @@ export {
   workspaceChip,
 } from "../vm/threads.ts";
 export { type GoalView, type TodoPhaseView, type TodoRow, type TodosView, todosView } from "../vm/todos.ts";
-export { type CardImage, expandedByDefault, formatDuration, type ToolCard } from "../vm/tool.ts";
+export { type CardImage, expandedByDefault, formatDuration, type ToolCard, type Turn } from "../vm/tool.ts";
 export {
   type AnswerState,
   type AstEditFile,
@@ -259,13 +259,13 @@ export {
   type DaySeparator,
   daySeparator,
   type Item as TranscriptItem,
-  inOpenTurn as transcriptOpenTurn,
   items as transcriptItems,
   type MessageView,
   type Role as MessageRole,
   type RowContent as TranscriptRowContent,
   rowContent as transcriptRowContent,
   startOfDay,
+  turnOf as transcriptTurn,
 } from "../vm/transcript.ts";
 export {
   messageEntryId,

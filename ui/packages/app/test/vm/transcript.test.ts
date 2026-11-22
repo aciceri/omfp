@@ -13,12 +13,12 @@ import {
   type Block,
   daySeparator,
   type Item,
-  inOpenTurn,
   items,
   type MessageView,
   messageView,
   rowContent,
   streamingView,
+  turnOf,
 } from "../../src/vm/transcript.ts";
 import { fixture, fixtureUntil, isFrame } from "../widgets/chat/fixtures.ts";
 
@@ -318,25 +318,25 @@ describe("turns", () => {
   });
 });
 
-describe("open turn", () => {
-  const open = (state: ThreadState) => items(state).map((item) => inOpenTurn(state, item));
+describe("turn of a row", () => {
+  const turn = (state: ThreadState) => items(state).map((item) => turnOf(state, item));
 
   // spec: UI-922
-  test("rows from the last user message on are in the open turn while the thread works, none once it settles", () => {
+  test("rows from the last user message on are open while the thread works, the latest exchange once it settles", () => {
     const working = { ...turns(), settled: false };
-    expect(open(working)).toEqual([false, false, false, false, true, true]);
-    expect(open({ ...working, settled: true })).toEqual([false, false, false, false, false, false]);
+    expect(turn(working)).toEqual(["past", "past", "past", "past", "open", "open"]);
+    expect(turn({ ...working, settled: true })).toEqual(["past", "past", "past", "past", "latest", "latest"]);
   });
 
   // spec: UI-922
-  test("the streaming reply is in it; a notice never is", () => {
+  test("the streaming reply is open; a notice never is", () => {
     const streaming: ThreadState["streaming"] = {
       message_id: "live",
       message: { role: "assistant", content: [{ type: "text", text: "…" }] },
     };
     const frame: NoticeFrame = { type: "unknown", data: { type: "mystery" } };
     const working = { ...turns(), settled: false, streaming, notices: [{ position: 8, frame }] };
-    expect(open(working).slice(-3)).toEqual([true, false, true]);
+    expect(turn(working).slice(-3)).toEqual(["open", "past", "open"]);
   });
 });
 

@@ -25,7 +25,7 @@ import { isObject } from "../sdk/json.ts";
 import { strings } from "../strings/index.ts";
 import { type NoticeRow, noticeRow, repeatsSkippedCompaction } from "./notice.ts";
 import { type SystemRow, systemMessage, systemNotice } from "./system.ts";
-import { type CardStatus, oneLine, prettyJson, type ToolCard, toolCard } from "./tool.ts";
+import { type CardStatus, oneLine, prettyJson, type ToolCard, type Turn, toolCard } from "./tool.ts";
 
 /**
  * What an item renders: `state.transcript[index]`, `state.notices[index]` or `state.streaming`. A turn runs from a
@@ -257,20 +257,19 @@ function lastUserIndex(transcript: readonly TranscriptEntry[]): number {
 }
 
 /**
- * Whether `item` belongs to the turn its thread still works on (UI-922): the thread is not settled and no user message
- * follows the item's message. The reply being streamed belongs to it while the thread works; a notice never does.
+ * Where `item` stands in its thread's conversation (UI-922): `past` once a user message follows the item's message,
+ * else `open` while the thread is not settled and `latest` once it is. The reply being streamed is `open` while the
+ * thread works; a notice is always `past`.
  */
-export function inOpenTurn(state: ThreadState, item: Item): boolean {
-  if (state.settled) {
-    return false;
-  }
+export function turnOf(state: ThreadState, item: Item): Turn {
+  const now = state.settled ? "latest" : "open";
   switch (item.kind.type) {
     case "streaming":
-      return true;
+      return now;
     case "message":
-      return item.kind.index >= lastUserIndex(state.transcript);
+      return item.kind.index >= lastUserIndex(state.transcript) ? now : "past";
     case "notice":
-      return false;
+      return "past";
   }
 }
 

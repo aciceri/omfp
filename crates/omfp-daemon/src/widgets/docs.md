@@ -162,8 +162,9 @@ views.json: mounting an id again replaces it, omfp_ui_update { id, props } drive
 For something the user needs for one moment of the conversation, a terminal to show something, a chart of a result,
 a question with its own controls, draw a **card**: `omfp_card { widget | code, props?, title?, wait?,
 timeoutSeconds? }` puts the widget in the card of that very tool call in the chat. Nothing goes into `views.json` and
-no file is written; later messages push the card up like any other, and once the turn ends it collapses. Content
-that should stay belongs in a mount instead (`omfp_ui_mount`).
+no file is written; later messages push the card up like any other. A card without `wait` stays open after your
+reply ends, until the user sends the next message, then it collapses; a waiting card collapses once its turn ends.
+Content that should stay belongs in a mount instead (`omfp_ui_mount`).
 
 - `widget` is a reference (`./widgets/<name>`, a bare name, `user:<name>`, `omfp:<name>`); `code` is the source of
   a one-file component (default export) that the daemon compiles at the call: a compile error is the tool's error

@@ -66,14 +66,21 @@ export interface CardImage extends ResultImage {
 }
 
 /**
- * Failed cards and live file mutations start open; successful history starts collapsed (UI-052, UI-695). A card of
- * `omfp_card` is open while it runs and while `openTurn`, its message being in the turn the thread still works on (no
- * user message after it, UI-922); otherwise collapsed, failed or not.
+ * Where a message stands in its thread's conversation (UI-922): `open` in the turn the thread still works on, `latest`
+ * in the latest exchange of a settled thread (no user message follows it), `past` once a user message follows it.
  */
-export function expandedByDefault(card: ToolCard, openTurn = false): boolean {
+export type Turn = "open" | "latest" | "past";
+
+/**
+ * Failed cards and live file mutations start open; successful history starts collapsed (UI-052, UI-695). A card of
+ * `omfp_card` is open while it runs and while no user message follows its message (`turn` not `past`); a waiting
+ * card only while its thread still works on that turn (`open`), so an answered question makes way (UI-922). Otherwise
+ * collapsed, failed or not.
+ */
+export function expandedByDefault(card: ToolCard, turn: Turn = "past"): boolean {
   const active = card.status === "composing" || card.status === "pending" || card.status === "running";
   if (card.view.kind === "card") {
-    return active || openTurn;
+    return active || turn === "open" || (turn === "latest" && !card.view.wait);
   }
   return card.status === "failed" || (active && (card.view.kind === "edit" || card.view.kind === "write"));
 }

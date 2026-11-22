@@ -14,7 +14,7 @@ import {
   ToolCard,
   type ToolStatus,
 } from "omfp/kit";
-import type { MessageBlock as Block, MessageView, NoticeRow, MessageRole as Role, SystemRow } from "omfp/sdk";
+import type { MessageBlock as Block, MessageView, NoticeRow, MessageRole as Role, SystemRow, Turn } from "omfp/sdk";
 import {
   type ToolCard as Card,
   expandedByDefault,
@@ -36,15 +36,15 @@ const text = strings.chat;
 
 /** One message of thread `threadId`: name line, blocks, error (UI-171). One that `continues` its turn has no name line
  * (UI-470). `cardKey` prefixes the keys of its collapsible blocks. While it streams, a block caret follows the last
- * character (UI-147). `actions` act on the message (fork from here, UI-660). `openTurn`: the message is in the turn
- * its thread still works on, whose cards stay open (UI-922). */
+ * character (UI-147). `actions` act on the message (fork from here, UI-660). `turn`: where the message stands in its
+ * thread's conversation, which decides whether its cards stay open (UI-922). */
 export function MessageRow({
   threadId,
   cardKey,
   view,
   streaming,
   continues,
-  openTurn = false,
+  turn = "past",
   actions,
 }: {
   threadId: string;
@@ -52,7 +52,7 @@ export function MessageRow({
   view: MessageView;
   streaming: boolean;
   continues: boolean;
-  openTurn?: boolean;
+  turn?: Turn;
   actions?: ReactNode;
 }) {
   const name = (
@@ -77,7 +77,7 @@ export function MessageRow({
       block={block}
       streaming={streaming}
       last={index === view.blocks.length - 1}
-      openTurn={openTurn}
+      turn={turn}
     />
   ));
   const error = view.error === undefined ? undefined : <span data-testid="message-error">{view.error}</span>;
@@ -147,7 +147,7 @@ const BlockView = memo(function BlockView({
   block,
   streaming,
   last,
-  openTurn,
+  turn,
 }: {
   threadId: string;
   /** The message's key, which its tool cards' keys start with. */
@@ -158,7 +158,7 @@ const BlockView = memo(function BlockView({
   streaming: boolean;
   /** The message's last block: a streaming text then trails the caret (UI-147). */
   last: boolean;
-  openTurn: boolean;
+  turn: Turn;
 }) {
   const openFile = useOpenFile();
   // Paths in the assistant's text open the file (UI-116).
@@ -185,7 +185,7 @@ const BlockView = memo(function BlockView({
     case "image":
       return <MessageImage src={`data:${block.mime};base64,${block.data}`} />;
     case "tool":
-      return <ToolCardView threadId={threadId} cardKey={cardKey} card={block.card} openTurn={openTurn} />;
+      return <ToolCardView threadId={threadId} cardKey={cardKey} card={block.card} turn={turn} />;
     case "readGroup":
       return <ReadGroupView threadId={threadId} rowKey={rowKey} cardKey={cardKey} group={block} />;
     case "record":
@@ -281,21 +281,21 @@ function markStatus(status: Card["status"]): ToolStatus {
 /** A tool card of thread `threadId` (UI-050, UI-163): collapsible, failed cards distinct and expanded by default
  * (UI-052); tools with a recorded shape show their specialized body, others the fallback's arguments and result. The
  * result's images show under it, open or not (UI-473). In a read group (`grouped`) a read's head adds its path's
- * selector (UI-765). An `omfp_card` call's card stays open while `openTurn` (UI-922). */
+ * selector (UI-765). An `omfp_card` call's card stays open while `turn` allows it (UI-922). */
 export function ToolCardView({
   threadId,
   cardKey,
   card,
   grouped = false,
-  openTurn = false,
+  turn = "past",
 }: {
   threadId: string;
   cardKey: string;
   card: Card;
   grouped?: boolean;
-  openTurn?: boolean;
+  turn?: Turn;
 }) {
-  const [expanded, setExpanded] = useExpanded(cardKey, expandedByDefault(card, openTurn));
+  const [expanded, setExpanded] = useExpanded(cardKey, expandedByDefault(card, turn));
   // `:open` on the focused card opens its file (UI-116).
   const target = fileTarget(card.view);
   const exitCode = card.view.kind === "bash" ? card.view.exitCode : undefined;

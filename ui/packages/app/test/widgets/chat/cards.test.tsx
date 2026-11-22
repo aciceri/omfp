@@ -22,7 +22,7 @@ import {
 } from "../../../src/sdk/index.ts";
 import { CardWidgetView, WidgetRegistryScope } from "../../../src/view/card.tsx";
 import type { WidgetRegistry } from "../../../src/view/resolve.ts";
-import type { ToolCard } from "../../../src/vm/tool.ts";
+import type { Turn as CardTurn, ToolCard } from "../../../src/vm/tool.ts";
 import { TranscriptWidget } from "../../../src/widgets/chat/index.ts";
 import { ToolCardView } from "../../../src/widgets/chat/message.tsx";
 import { omfpCard } from "../../support/cards.ts";
@@ -103,12 +103,12 @@ function setup(): Setup {
 }
 
 /** Renders the cards of thread `t1`, the built-ins of {@link REGISTRY} in reach. */
-function show(test: Setup, cards: readonly ToolCard[], openTurn = false): void {
+function show(test: Setup, cards: readonly ToolCard[], turn: CardTurn = "past"): void {
   renderWithHost(
     <WidgetRegistryScope value={REGISTRY}>
       <CardWidgetScope value={CardWidgetView}>
         {cards.map((card) => (
-          <ToolCardView key={card.toolCallId} threadId="t1" cardKey={card.toolCallId} card={card} openTurn={openTurn} />
+          <ToolCardView key={card.toolCallId} threadId="t1" cardKey={card.toolCallId} card={card} turn={turn} />
         ))}
       </CardWidgetScope>
     </WidgetRegistryScope>,
@@ -125,7 +125,7 @@ describe("cards in the chat", () => {
   // spec: UI-920
   test("a reference card draws the workspace's widget with its props in its body, under the instance card:<id>", async () => {
     const test = setup();
-    show(test, [omfpCard({ widget: "chart", props: { points: [1, 2] }, title: "Load" }, "succeeded", SHOWN)], true);
+    show(test, [omfpCard({ widget: "chart", props: { points: [1, 2] }, title: "Load" }, "succeeded", SHOWN)], "open");
     const card = toolCard();
     expect(within(card).getByTestId("tool-subject").textContent).toBe("Load");
     const slot = within(card).getByTestId("widget");
@@ -216,7 +216,7 @@ describe("useAnswer", () => {
         omfpCard(waits, "failed", "cancelled", "c5"),
         omfpCard({ widget: "omfp:probe" }, "succeeded", SHOWN, "c6"),
       ],
-      true,
+      "open",
     );
     expect(screen.getAllByTestId("probe").map((probe) => probe.textContent)).toEqual([
       "waiting ",
@@ -260,7 +260,7 @@ describe("useAnswer", () => {
   // spec: UI-921
   test("submit and cancel reject at once unless the card waits, without a call", async () => {
     const test = setup();
-    show(test, [omfpCard({ widget: "omfp:capture" }, "running", undefined, "c1")], true);
+    show(test, [omfpCard({ widget: "omfp:capture" }, "running", undefined, "c1")], "open");
     expect(captured?.state).toBe("none");
     await expect(captured?.submit(1)).rejects.toThrow(strings.widgets.notWaiting);
     await expect(captured?.cancel()).rejects.toThrow(strings.widgets.notWaiting);
@@ -278,13 +278,13 @@ describe("useAnswer", () => {
 
 /** A settled card whose turn the test opens and closes. */
 function Turn({ card }: { card: ToolCard }): ReactNode {
-  const [openTurn, setOpenTurn] = useState(true);
+  const [turn, setTurn] = useState<CardTurn>("open");
   return (
     <>
-      <button type="button" data-testid="end-turn" onClick={() => setOpenTurn((open) => !open)}>
+      <button type="button" data-testid="end-turn" onClick={() => setTurn((now) => (now === "open" ? "past" : "open"))}>
         turn
       </button>
-      <ToolCardView threadId="t1" cardKey={card.toolCallId} card={card} openTurn={openTurn} />
+      <ToolCardView threadId="t1" cardKey={card.toolCallId} card={card} turn={turn} />
     </>
   );
 }
@@ -329,11 +329,14 @@ describe("cards make way", () => {
   }
 
   // spec: UI-922
-  test("the transcript keeps a card open while its turn works; it collapses once the turn ends or a user message follows", () => {
+  test("the transcript keeps a card open while no user message follows it, settled or not; it folds after one", () => {
     renderThread(<TranscriptWidget />, cardTurn(false));
     expect([toolCard().dataset.view, expanded()]).toEqual(["card", "true"]);
     cleanup();
     renderThread(<TranscriptWidget />, cardTurn(true));
+    expect(expanded()).toBe("true");
+    cleanup();
+    renderThread(<TranscriptWidget />, cardTurn(true, true));
     expect(expanded()).toBe("false");
     cleanup();
     renderThread(<TranscriptWidget />, cardTurn(false, true));

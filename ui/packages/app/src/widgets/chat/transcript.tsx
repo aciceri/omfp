@@ -21,7 +21,6 @@ import {
   halfPageScrollTop,
   highlightRegistry,
   type ItemEdges,
-  transcriptOpenTurn as inOpenTurn,
   isScrollUpKey,
   transcriptItems as items,
   keyScrollTop,
@@ -50,6 +49,8 @@ import {
   stepSearch,
   strings,
   type TranscriptItem,
+  type Turn,
+  transcriptTurn as turnOf,
   useAnnounce,
   useCommand,
   useConversationActions,
@@ -664,7 +665,7 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
                     cardKey={`${threadId}/${row.key}`}
                     content={content}
                     forkIndex={forkIndex(state, row)}
-                    openTurn={inOpenTurn(state, row)}
+                    turn={turnOf(state, row)}
                     onFork={forkAt}
                     {...(row.kind.type === "message" && row.kind.day !== undefined ? { day: row.kind.day, today } : {})}
                   />
@@ -721,13 +722,13 @@ function firstLine(view: MessageView): string {
 }
 
 /** One row; renders again only when its content changes (a streaming delta changes the streaming row's only) or it
- * leaves the turn its thread works on (`openTurn`, UI-922). */
+ * moves in its thread's conversation (`turn`, UI-922). */
 const Row = memo(function Row({
   threadId,
   cardKey,
   content,
   forkIndex,
-  openTurn,
+  turn,
   onFork,
   day,
   today,
@@ -736,14 +737,14 @@ const Row = memo(function Row({
   cardKey: string;
   content: RowContent;
   forkIndex: number | undefined;
-  openTurn: boolean;
+  turn: Turn;
   onFork: (index: number) => void;
   /** The message's day mark, with the start of today to label it (UI-750). */
   day?: DayMark;
   today?: number;
 }) {
   const separator = day === undefined || today === undefined ? undefined : daySeparator(day, today);
-  const body = rowBody(threadId, cardKey, content, forkIndex, openTurn, onFork);
+  const body = rowBody(threadId, cardKey, content, forkIndex, turn, onFork);
   return separator === undefined ? (
     body
   ) : (
@@ -762,7 +763,7 @@ function rowBody(
   cardKey: string,
   content: RowContent,
   forkIndex: number | undefined,
-  openTurn: boolean,
+  turn: Turn,
   onFork: (index: number) => void,
 ): ReactNode {
   switch (content.type) {
@@ -787,7 +788,7 @@ function rowBody(
           view={content.view}
           streaming={content.streaming}
           continues={content.continues}
-          openTurn={openTurn}
+          turn={turn}
           {...(actions === undefined ? {} : { actions })}
         />
       );

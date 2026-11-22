@@ -847,11 +847,19 @@ describe("card of omfp_card", () => {
   });
 
   // spec: UI-922
-  test("open by default while it runs or its turn is open; collapsed otherwise, even failed", () => {
+  test("open by default while it runs or its turn is open; collapsed once a user message follows, even failed", () => {
     const running = omfpCard({ widget: "ask", wait: true }, "running");
     const done = omfpCard({ widget: "ask" }, "succeeded", '{"status":"shown"}');
     const failed = omfpCard({ widget: "ask", wait: true }, "failed", "cancelled");
     expect([running, done, failed].map((found) => expandedByDefault(found))).toEqual([true, false, false]);
-    expect([running, done, failed].map((found) => expandedByDefault(found, true))).toEqual([true, true, true]);
+    expect([running, done, failed].map((found) => expandedByDefault(found, "open"))).toEqual([true, true, true]);
+    expect([running, done, failed].map((found) => expandedByDefault(found, "past"))).toEqual([true, false, false]);
+  });
+
+  // spec: UI-922
+  test("once the thread settles a card without wait stays open in the latest exchange; a waiting one makes way", () => {
+    const shown = omfpCard({ widget: "chart" }, "succeeded", '{"status":"shown"}');
+    const answered = omfpCard({ widget: "ask", wait: true }, "succeeded", '{"status":"submitted","value":1}');
+    expect([shown, answered].map((found) => expandedByDefault(found, "latest"))).toEqual([true, false]);
   });
 });

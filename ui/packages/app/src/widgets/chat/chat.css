@@ -862,13 +862,15 @@
     margin-block-end: var(--omfp-s2);
   }
 
-  /* Current turn activity sits immediately over the text box: spinner, elapsed time, intent and the one Abort (UI-693). */
+  /* Current turn activity sits immediately over the text box: spinner, elapsed time, intent and the one Abort (UI-693).
+   * The gap under it keeps the Abort button, taller than the text, off the box's border. */
   .omfp-composer__activity {
     display: grid;
     grid-template-columns: auto auto auto minmax(0, 1fr) auto;
     gap: var(--omfp-s2);
     align-items: center;
     min-block-size: var(--omfp-row-h);
+    margin-block-end: var(--omfp-s2);
     padding: 0 var(--omfp-s1);
     font-size: var(--omfp-fs-xs);
     color: var(--omfp-on-surface-variant);

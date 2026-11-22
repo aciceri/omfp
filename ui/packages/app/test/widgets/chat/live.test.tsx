@@ -867,4 +867,76 @@ describe("the draft thread's mic", () => {
     expect(live.client.callsTo("threads.create")).toHaveLength(0);
     expect(live.host.window.get(ERRORS).map(({ text }) => text)).toEqual([strings.chat.live.insecure]);
   });
+
+  // spec: UI-180, UI-185
+  test("pressed again while the thread is created, it releases the microphone at once and starts nothing", async () => {
+    const live = renderDraft();
+    await press(mic());
+    expect(live.client.callsTo("threads.create")).toHaveLength(1);
+    await press(mic());
+    // Not when the daemon answers: the microphone stops capturing now.
+    expect(live.media.link.closed).toBe(true);
+    expect(mic().dataset.live).toBe("start");
+    await created(live);
+    expect(live.client.callsTo("thread.live_connect")).toHaveLength(0);
+  });
+
+  // spec: UI-023
+  test("a draft left for another workspace's while the microphone opens creates nothing", async () => {
+    const live = renderDraft("webrtc", "for the first workspace");
+    const microphone = Promise.withResolvers<void>();
+    live.media.gate = microphone.promise;
+    await press(mic());
+    act(() => threadActions(live.host).openDraft("02W"));
+    await act(async () => microphone.resolve());
+    expect(live.client.callsTo("threads.create")).toHaveLength(0);
+    expect(live.media.link.closed).toBe(true);
+    expect(live.host.window.get(DRAFT_THREAD)?.workspaceId).toBe("02W");
+    expect(mic().dataset.live).toBe("start");
+  });
+
+  // spec: UI-023
+  test("while the mic creates the thread the draft is read-only and takes no images", async () => {
+    const live = renderDraft("webrtc", "hello");
+    await press(mic());
+    const input = screen.getByTestId("composer-input");
+    expect(input).toHaveProperty("readOnly", true);
+    fireEvent.paste(input, { clipboardData: { files: [pngFile()], getData: () => "" } });
+    const [call] = live.client.callsTo("threads.create");
+    await act(async () => call?.reject(new Error("daemon down")));
+    expect(live.host.window.get(DRAFT_MESSAGE).images).toHaveLength(0);
+    expect(screen.getByTestId("composer-input")).toHaveProperty("readOnly", false);
+  });
+
+  // spec: UI-023, UI-060
+  test("an image still being read when the mic is pressed goes with the first message", async () => {
+    const live = renderDraft("host", "what is this?");
+    const slow = slowPngFile();
+    fireEvent.paste(screen.getByTestId("composer-input"), { clipboardData: { files: [slow.file], getData: () => "" } });
+    await press(mic());
+    expect(live.client.callsTo("threads.create")).toHaveLength(0);
+    await act(async () => {
+      slow.release();
+      await slow.read;
+    });
+    expect(live.client.callsTo("threads.create").map((call) => call.params)).toEqual([
+      { workspace: { id: "01W" }, prompt: "what is this?", images: [PNG] },
+    ]);
+  });
 });
+
+/** A tiny PNG file, as pasted, and the attachment it becomes (UI-060). */
+function pngFile(): File {
+  return new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], "a.png", { type: "image/png" });
+}
+const PNG = { type: "image" as const, data: "iVBORw==", mimeType: "image/png" };
+
+/** A PNG file whose bytes are read only once `release` is called; `read` is that read. */
+function slowPngFile(): { file: File; release: () => void; read: Promise<ArrayBuffer> } {
+  const file = pngFile();
+  const bytes = file.arrayBuffer();
+  const gate = Promise.withResolvers<void>();
+  const read = gate.promise.then(() => bytes);
+  Object.defineProperty(file, "arrayBuffer", { value: () => read });
+  return { file, release: () => gate.resolve(), read };
+}

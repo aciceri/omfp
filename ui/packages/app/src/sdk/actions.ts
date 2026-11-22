@@ -45,12 +45,13 @@ export interface ThreadActions {
    * for retry. */
   sendDraft(): Promise<boolean>;
   /**
-   * The draft thread's mic (UI-023, UI-180): opens the microphone at once, then creates the daemon thread as
-   * {@link ThreadActions.sendDraft} does — the draft's message, if any, its first one — and starts a live session on it
-   * (`useLive`'s `start`). A failure before the thread exists is reported and keeps the draft; once it exists, the
-   * thread's live panel shows it (UI-186).
+   * The draft thread's mic (UI-023, UI-180): opens the microphone at once, then, once `ready` resolves (the images
+   * being read are in), creates the daemon thread as {@link ThreadActions.sendDraft} does — the draft's message, if
+   * any, its first one — and starts a live session on it (`useLive`'s `start`). A draft left or replaced by another
+   * workspace's meanwhile creates nothing. A failure before the thread exists is reported and keeps the draft; once it
+   * exists, the thread's live panel shows it (UI-186).
    */
-  startDraftLive(): Promise<void>;
+  startDraftLive(ready?: Promise<unknown>): Promise<void>;
   archive(threadId: string): Promise<void>;
   unarchive(threadId: string): Promise<void>;
   /** Immediately deletes the thread and its history, keeping its workspace (UI-026). */
@@ -363,8 +364,21 @@ export function threadActions(host: OmfpHost): ThreadActions {
     },
     discardDraft: () => discardDraft(host),
     sendDraft: async () => (await createFromDraft(host, false)) !== undefined,
-    startDraftLive: () =>
-      host.live.start({ create: () => createFromDraft(host, true), fail: (message) => reportError(host, message) }),
+    startDraftLive: (ready) => {
+      const workspaceId = window.get(DRAFT_THREAD)?.workspaceId;
+      return host.live.start({
+        create: async () => {
+          await ready;
+          // Only the draft the mic was pressed in, still shown: not another workspace's opened meanwhile, nor a thread.
+          const kept =
+            workspaceId !== undefined &&
+            window.get(DRAFT_THREAD)?.workspaceId === workspaceId &&
+            window.get(SELECTED_THREAD) === undefined;
+          return kept ? createFromDraft(host, true) : undefined;
+        },
+        fail: (message) => reportError(host, message),
+      });
+    },
     archive: (threadId) => closeThread(host, "threads.archive", threadId),
     unarchive: (threadId) => attempt(() => client.call("threads.unarchive", { threadId })),
     remove: (threadId) => closeThread(host, "threads.delete", threadId),

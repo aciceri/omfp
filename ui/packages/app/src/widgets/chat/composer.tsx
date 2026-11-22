@@ -209,8 +209,9 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
   };
   useLineKeys(inputRef, typed, message.pastes);
   const images = imageInput((files) => {
-    // While the thread is created the message is read-only: images pasted or dropped then are ignored.
-    if (sending) {
+    // While the thread is created (sent or by the mic) the message is read-only: images pasted or dropped then are
+    // ignored.
+    if (sending || starting) {
       return;
     }
     // A read belongs to the draft it started in: once that draft is gone (sent, discarded, its workspace removed),
@@ -278,7 +279,7 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
               setInsert(false);
               word.dismiss();
             }}
-            isReadOnly={sending}
+            isReadOnly={sending || starting}
             inputRef={inputRef}
             onPaste={images.onPaste}
             ghost={word.ghost}
@@ -286,7 +287,7 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
           {completions.menu}
         </Autocomplete>
         <ComposerBar hints={touch ? undefined : <KeyHints abortable={false} interruptHint={false} />}>
-          <DraftMicButton disabled={sending} />
+          <DraftMicButton disabled={sending} ready={() => Promise.all(reads)} />
           <Button
             type="submit"
             variant="primary"

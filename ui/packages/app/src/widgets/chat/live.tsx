@@ -171,16 +171,17 @@ export function MicButton({ threadId, state }: { threadId: string; state: Thread
 
 /**
  * The draft thread's mic button (UI-023, UI-180): makes the thread and starts its live session at once; pressed while
- * that runs, it gives up. `disabled` while the draft's message is being sent.
+ * that runs, it gives up. `disabled` while the draft's message is being sent; `ready` resolves once the message is
+ * complete (the images being read are in).
  */
-export function DraftMicButton({ disabled }: { disabled: boolean }) {
+export function DraftMicButton({ disabled, ready }: { disabled: boolean; ready: () => Promise<unknown> }) {
   const [live, snapshot] = useLive();
   const actions = useThreadActions();
   return (
     <MicIconButton
       button={draftMicButton(snapshot.local, live.support())}
       disabled={disabled}
-      onStart={() => void actions.startDraftLive()}
+      onStart={() => void actions.startDraftLive(ready())}
       onEnd={() => live.end()}
     />
   );

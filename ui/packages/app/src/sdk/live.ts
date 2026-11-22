@@ -194,15 +194,19 @@ export class LiveClient {
 
   /**
    * Makes the thread of a start once the window holds what its session needs: its id, now the session's; `undefined`
-   * when that failed or the start ended meanwhile, which closes `link`.
+   * when that failed or the start ended meanwhile. The window holds `link` meanwhile, so ending the start releases the
+   * microphone at once, not when the thread exists.
    */
   async #create(thread: NewLiveThread, starting: LocalLive, link: LiveLink | undefined): Promise<string | undefined> {
+    this.#link = link;
     const threadId = await thread.create();
     if (this.#snapshot.local === starting && threadId !== undefined) {
       this.#set({ kind: "starting", threadId });
       return threadId;
     }
-    link?.close();
+    if (this.#link === link) {
+      this.#close();
+    }
     if (this.#snapshot.local === starting) {
       this.#set(IDLE);
     }

@@ -236,8 +236,13 @@ function discardDraft(host: OmfpHost): void {
  * resolves to its id. Without a message nothing is created, unless `empty` (the draft's mic). A failed creation keeps
  * the draft; a failed first prompt carrying a surviving thread ID transfers the unsent draft there for retry. Failures
  * are reported. {@link DRAFT_CREATING} holds the draft read-only meanwhile, also once the mic's live start ended.
+ * `created` hears of the thread before it is selected (the mic's start keeps its session for it).
  */
-async function createFromDraft(host: OmfpHost, empty: boolean): Promise<string | undefined> {
+async function createFromDraft(
+  host: OmfpHost,
+  empty: boolean,
+  created?: (threadId: string) => void,
+): Promise<string | undefined> {
   const { client, window } = host;
   const draft = window.get(DRAFT_THREAD);
   const message = window.get(DRAFT_MESSAGE);
@@ -255,6 +260,7 @@ async function createFromDraft(host: OmfpHost, empty: boolean): Promise<string |
       ...(images.length === 0 ? {} : { images: [...images] }),
       ...(draft.model === undefined ? {} : { model: draft.model }),
     });
+    created?.(thread.id);
     // The thread keeps the tabs its draft selected (UI-372).
     window.set(TAB_CHOICES, (choices) => adoptDraft(choices, draft.workspaceId, thread.id));
     if (window.get(DRAFT_THREAD)?.workspaceId === draft.workspaceId) {
@@ -371,16 +377,12 @@ export function threadActions(host: OmfpHost): ThreadActions {
     startDraftLive: (ready) => {
       const workspaceId = window.get(DRAFT_THREAD)?.workspaceId;
       return host.live.start({
-        create: async (running) => {
+        create: async ({ running, created }) => {
           await ready;
-          // Only a start still running, from the draft the mic was pressed in, still shown: not another workspace's
-          // opened meanwhile, nor a thread.
-          const kept =
-            running() &&
-            workspaceId !== undefined &&
-            window.get(DRAFT_THREAD)?.workspaceId === workspaceId &&
-            window.get(SELECTED_THREAD) === undefined;
-          return kept ? createFromDraft(host, true) : undefined;
+          // Only a start still running (no other thread shown meanwhile), from the draft the mic was pressed in: not
+          // another workspace's opened meanwhile.
+          const kept = running() && workspaceId !== undefined && window.get(DRAFT_THREAD)?.workspaceId === workspaceId;
+          return kept ? createFromDraft(host, true, created) : undefined;
         },
         fail: (message) => reportError(host, message),
       });

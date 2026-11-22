@@ -960,6 +960,45 @@ describe("the draft thread's mic", () => {
     expect(live.client.callsTo("threads.create")).toHaveLength(0);
     expect(live.host.window.get(DRAFT_THREAD)).toEqual({ workspaceId: "01W" });
   });
+
+  // spec: UI-185, UI-023
+  test("showing another thread while the thread is created ends the start at once; no session follows", async () => {
+    const live = renderDraft();
+    await press(mic());
+    act(() => live.host.window.set(SELECTED_THREAD, THREAD));
+    // Now, not when the daemon answers: the microphone stops capturing.
+    expect(live.media.link.closed).toBe(true);
+    await created(live);
+    // The thread the message went to is shown, as a send does, but nobody talks to it.
+    expect(live.host.window.get(SELECTED_THREAD)).toBe(NEW);
+    expect(live.client.callsTo("thread.live_connect")).toHaveLength(0);
+    expect(live.client.callsTo("thread.live_stop")).toHaveLength(0);
+  });
+
+  // spec: UI-185, UI-023
+  test("leaving the page while the microphone opens ends the start: no thread", async () => {
+    const live = renderDraft();
+    const microphone = Promise.withResolvers<void>();
+    live.media.gate = microphone.promise;
+    await press(mic());
+    act(() => void window.dispatchEvent(new Event("pagehide")));
+    expect(mic().dataset.live).toBe("start");
+    await act(async () => microphone.resolve());
+    expect(live.media.link.closed).toBe(true);
+    expect(live.client.callsTo("threads.create")).toHaveLength(0);
+  });
+
+  // spec: UI-185
+  test("a thread's mic: switching threads while the microphone opens ends the start, no live_connect", async () => {
+    const live = renderLive();
+    const microphone = Promise.withResolvers<void>();
+    live.media.gate = microphone.promise;
+    await press(mic());
+    act(() => live.host.window.set(SELECTED_THREAD, OTHER));
+    await act(async () => microphone.resolve());
+    expect(live.media.link.closed).toBe(true);
+    expect(live.client.callsTo("thread.live_connect")).toHaveLength(0);
+  });
 });
 
 /** A tiny PNG file, as pasted, and the attachment it becomes (UI-060). */

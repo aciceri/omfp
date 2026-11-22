@@ -448,6 +448,7 @@ export {
 export {
   LiveClient,
   type LiveClientOptions,
+  type LiveCreation,
   type LiveLink,
   type LiveMedia,
   type LiveSnapshot,

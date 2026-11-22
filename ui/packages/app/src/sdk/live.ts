@@ -91,13 +91,19 @@ function failureMessage(error: unknown): string {
 
 /** A thread {@link LiveClient.start} makes once the window holds what the session needs: the draft thread's (UI-023). */
 export interface NewLiveThread {
-  /**
-   * Creates the thread and selects it: its id, or `undefined` when that failed (`create` reports it) or gave up;
-   * `running()` says whether the start still runs, false once it ended (the mic pressed again): nothing is created then.
-   */
-  create(running: () => boolean): Promise<string | undefined>;
+  /** Creates the thread and selects it: its id, or `undefined` when that failed (`create` reports it) or gave up. */
+  create(start: LiveCreation): Promise<string | undefined>;
   /** Reports a start that failed before the thread existed: no live path here, the microphone or the peer. */
   fail(message: string): void;
+}
+
+/** What {@link NewLiveThread.create} knows of its start. */
+export interface LiveCreation {
+  /** Whether the start still runs: false once it ended (the mic pressed again, another thread shown, the page left),
+   * when nothing may be created. */
+  running(): boolean;
+  /** Says the thread exists, before it is selected: the window may show it; anything else shown ends the start. */
+  created(threadId: string): void;
 }
 
 /** Where {@link LiveClient.start} opens its session: an existing thread, or a new one. */
@@ -172,24 +178,32 @@ export class LiveClient {
     this.#seen = false;
     this.#connected = false;
     this.#speakingUntil = 0;
-    // omp's own session (`live_start`) needs nothing of the window.
+    // Until the session opens on its thread, showing another thread (a new thread's start: anything but the draft, then
+    // the new thread) or leaving the page ends the start at once (UI-185), the microphone with it.
+    const watch = this.#watchShown(starting);
     let link: LiveLink | undefined;
-    if (support === "webrtc") {
-      try {
-        link = await this.#media.open((state) => this.#peerState(link, state));
-      } catch (error) {
-        if (this.#snapshot.local === starting) {
-          const stage = error instanceof LiveOpenError ? error.stage : "peer";
-          this.#failed(target, strings.chat.live[stage](failureMessage(error)));
+    let threadId: string | undefined;
+    try {
+      // omp's own session (`live_start`) needs nothing of the window.
+      if (support === "webrtc") {
+        try {
+          link = await this.#media.open((state) => this.#peerState(link, state));
+        } catch (error) {
+          if (this.#snapshot.local === starting) {
+            const stage = error instanceof LiveOpenError ? error.stage : "peer";
+            this.#failed(target, strings.chat.live[stage](failureMessage(error)));
+          }
+          return;
         }
-        return;
+        if (this.#snapshot.local !== starting) {
+          link.close();
+          return;
+        }
       }
-      if (this.#snapshot.local !== starting) {
-        link.close();
-        return;
-      }
+      threadId = typeof target === "string" ? target : await this.#create(target, starting, link, watch.show);
+    } finally {
+      watch.stop();
     }
-    const threadId = typeof target === "string" ? target : await this.#create(target, starting, link);
     if (threadId !== undefined) {
       await (link === undefined ? this.#startHost(threadId) : this.#connect(threadId, link));
     }
@@ -200,9 +214,17 @@ export class LiveClient {
    * when that failed or the start ended meanwhile. The window holds `link` meanwhile, so ending the start releases the
    * microphone at once, not when the thread exists.
    */
-  async #create(thread: NewLiveThread, starting: LocalLive, link: LiveLink | undefined): Promise<string | undefined> {
+  async #create(
+    thread: NewLiveThread,
+    starting: LocalLive,
+    link: LiveLink | undefined,
+    show: (threadId: string) => void,
+  ): Promise<string | undefined> {
     this.#link = link;
-    const threadId = await thread.create(() => this.#snapshot.local === starting);
+    const threadId = await thread.create({
+      running: () => this.#snapshot.local === starting,
+      created: show,
+    });
     if (this.#snapshot.local === starting && threadId !== undefined) {
       this.#set({ kind: "starting", threadId });
       return threadId;
@@ -214,6 +236,34 @@ export class LiveClient {
       this.#set(IDLE);
     }
     return undefined;
+  }
+
+  /**
+   * Ends the start `starting` when the window shows another thread than now (the draft: none) or than the one `show`
+   * names, or leaves the page; until `stop`.
+   */
+  #watchShown(starting: LocalLive): { show(threadId: string): void; stop(): void } {
+    let shown = this.#window.get(SELECTED_THREAD);
+    const end = () => {
+      if (this.#snapshot.local === starting) {
+        this.end();
+      }
+    };
+    const unsubscribe = this.#window.subscribe(SELECTED_THREAD, () => {
+      if (this.#window.get(SELECTED_THREAD) !== shown) {
+        end();
+      }
+    });
+    window.addEventListener("pagehide", end);
+    return {
+      show: (threadId) => {
+        shown = threadId;
+      },
+      stop: () => {
+        unsubscribe();
+        window.removeEventListener("pagehide", end);
+      },
+    };
   }
 
   /** The peer's session on `threadId`: `thread.live_connect` with `link`'s offer, then omp's answer (UI-181). */

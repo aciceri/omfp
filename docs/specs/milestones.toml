@@ -604,6 +604,10 @@ requirements = [
   "UI-934",
   "TST-119",
   "E2E-80",
+  # omp's line selectors and paging on omfp:// reads (#266)
+  "DMN-378",
+  "DMN-379",
+  "DMN-380",
 ]
 
 [M10]

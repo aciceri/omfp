@@ -107,7 +107,8 @@ crates/omfp-daemon    daemon library: omp adapter (omp.rs), agent port + FakeLau
                       widgets/keymap-defaults.json `omfp://keymap` (written by the app's keymap-export test with
                       `OMFP_UPDATE_KEYMAP=1`; widgets/shell.rs serves them and the `omfp://docs` index;
                       server/services/file_checks.rs: `views.errors`, `omfp_views_errors` and the checks of init and
-                      TSX view files); widgets/keymap.rs: the workspace `.omfp/keymap.json`;
+                      TSX view files); widgets/keymap.rs: the workspace `.omfp/keymap.json`; widgets/selector.rs:
+                      omp's line selectors and paging on a thread's `omfp://` reads;
                       widgets/init.rs: the init files; widgets/mounts.rs: mounts and floating panels as `views.json`
                       edits; widgets/library.rs: the component library; widgets/native.rs: the native form controls
                       `omfp_widget_check` warns about; server/services/widget_tools.rs: what the widget check does), WebSocket server (polling of watched workspaces:

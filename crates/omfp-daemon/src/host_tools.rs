@@ -104,12 +104,15 @@ pub fn host_uris(
         let (workspace_id, host) = widgets
             .as_ref()
             .map_or(("", None), |(id, host)| (id.as_str(), Some(&**host)));
-        catalog::read_uri(url)
-            .or_else(|| widgets::read_check(url, || context.is_cancelled(), workspace_id, host))
-            .or_else(|| widgets::read_keymap(url, workspace_id, host))
-            .or_else(|| widgets::read_windows(url, workspace_id, host))
-            .unwrap_or_else(|| widgets::read_uri(url, builtin.as_deref()))
-            .map_err(Into::into)
+        let (base, selector) = widgets::selector::split(url);
+        widgets::selector::read(base, selector, |url| {
+            catalog::read_uri(url)
+                .or_else(|| widgets::read_check(url, || context.is_cancelled(), workspace_id, host))
+                .or_else(|| widgets::read_keymap(url, workspace_id, host))
+                .or_else(|| widgets::read_windows(url, workspace_id, host))
+                .unwrap_or_else(|| widgets::read_uri(url, builtin.as_deref()))
+        })
+        .map_err(Into::into)
     })?
     .description(format!(
         "omfp, the window the user works in: {} indexes these docs; {} lists the protocol methods omfp_call accepts \

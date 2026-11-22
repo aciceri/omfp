@@ -14,6 +14,7 @@ pub mod library;
 pub mod manifest;
 pub mod mounts;
 pub mod native;
+pub mod selector;
 pub mod shell;
 
 use std::collections::HashMap;
@@ -170,14 +171,16 @@ pub fn read_uri(url: &str, builtin: Option<&Path>) -> Result<HostUriRead, String
                  accepts) and {}/<name> (one's schemas), {DOCS_URL} (the widget SDK and kit reference), {} (the \
                  window: left column, mode line, view tabs, `:` commands), {} (the default keys and commands), \
                  {SCHEMA_URL} (the views manifest schema), {} (the workspace keymap schema), {} (the workspace jobs \
-                 schema), {BUILTIN_URL} (the built-in widgets) and {BUILTIN_URL}/<name>[/<path>] (their sources)",
+                 schema), {BUILTIN_URL} (the built-in widgets) and {BUILTIN_URL}/<name>[/<path>] (their sources); a \
+                 thread's read of any of them takes {}",
                 shell::INDEX_URL,
                 crate::agent_tools::catalog::METHODS_URL,
                 crate::agent_tools::catalog::METHODS_URL,
                 shell::SHELL_URL,
                 shell::KEYMAP_URL,
                 keymap::SCHEMA_URL,
-                crate::jobs::file::SCHEMA_URL
+                crate::jobs::file::SCHEMA_URL,
+                selector::ACCEPTED
             )),
         },
     }

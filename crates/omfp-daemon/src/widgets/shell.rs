@@ -117,6 +117,10 @@ pub fn index() -> String {
          - {BUILTIN_URL} — the built-in widgets; {BUILTIN_URL}/<name>[/<path>] their sources.\n\
          - {} — the protocol methods `omfp_call` accepts; {}/<name> gives one's params and result schemas.\n\
          \n\
+         A thread's read of any of these takes the read tool's line selectors after the URL (`:N`, `:N-M`, `:N+K`, \
+         `:-N`, comma lists, `:raw`, `:raw:N-M`); a long answer comes in pages and ends with the selector that \
+         reads on, in the document's own line numbers.\n\
+         \n\
          Check a widget, an init file (`init`, `user:init`) or a TSX view (`views/<file>`) with `omfp_widget_check`, \
          and what the open windows show with `omfp_windows` ({DOCS_URL}, \"Checking your work in the window\").\n",
         keymap::SCHEMA_URL,

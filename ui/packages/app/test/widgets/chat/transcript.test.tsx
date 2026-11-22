@@ -766,7 +766,10 @@ describe("transcript", () => {
           { role: "custom", customType: "marker", content: "", display: true, timestamp: 2 },
         ],
       },
-      { kind: "omp", frame: { type: "notice", level: "info", message: "xd://: mounted ast_edit", source: "xdev" } },
+      {
+        kind: "omp",
+        frame: { type: "notice", level: "info", message: "Tool commands: added ast_edit", source: "toolCommands" },
+      },
     ];
     const { client, flush } = renderThread(<TranscriptWidget />, startup);
     expect(screen.getAllByTestId("system-summary").map((row) => row.textContent)).toEqual([
@@ -781,7 +784,7 @@ describe("transcript", () => {
     const rows = screen.getAllByTestId("system-record");
     expect(rows.map((row) => within(row).getByTestId("system-summary").textContent)).toEqual([
       "xd:// device inventory changed.",
-      "xd://: mounted ast_edit",
+      "Tool commands: added ast_edit",
     ]);
     const [inventory, mounted] = rows;
     if (inventory === undefined || mounted === undefined) {

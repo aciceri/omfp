@@ -218,7 +218,39 @@ describe("search cards", () => {
   });
 });
 
-describe("xd:// device calls", () => {
+describe("tool commands", () => {
+  const bash = (toolCommands: unknown[]) => ({
+    text: "out",
+    images: [],
+    details: { toolCommands },
+  });
+
+  // spec: UI-915
+  test("a bash call running one tool command is a call of that tool, with its own arguments and result details", () => {
+    const args = { action: "diagnostics", file: "src/a.ts" };
+    const inner = { action: "diagnostics", serverName: "tsserver", success: true };
+    const output = bash([{ tool: "lsp", mode: "execute", exitCode: 0, args, inner }]);
+    expect(deviceCall("bash", { command: "lsp diagnostics src/a.ts" }, undefined, output)).toEqual({
+      name: "lsp",
+      args,
+      output: { text: "out", images: [], details: inner },
+    });
+  });
+
+  // spec: UI-915
+  test("several dispatches, help only or no details yet stay a bash call", () => {
+    const run = { command: "lsp diagnostics a.ts; ast_grep x" };
+    const lsp = { tool: "lsp", mode: "execute", exitCode: 0, args: {}, inner: {} };
+    const grep = { tool: "ast_grep", mode: "execute", exitCode: 0, args: {}, inner: {} };
+    expect(deviceCall("bash", run, undefined, bash([lsp, grep]))).toBeUndefined();
+    expect(deviceCall("bash", run, undefined, bash([{ tool: "lsp", mode: "help", exitCode: 0 }]))).toBeUndefined();
+    expect(deviceCall("bash", run, undefined, bash([]))).toBeUndefined();
+    expect(deviceCall("bash", run, undefined, { text: "out", images: [], details: {} })).toBeUndefined();
+    expect(deviceCall("bash", run, undefined, undefined)).toBeUndefined();
+  });
+});
+
+describe("xd:// device calls (sessions recorded by omp 18.x)", () => {
   // spec: UI-915, UI-051
   test("a write to xd://<tool> is a call of that tool, with its own arguments and result details", () => {
     const running = streaming("code_intel_tool_calls", "call_ast_grep_1");

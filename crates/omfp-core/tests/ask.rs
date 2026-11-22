@@ -1,7 +1,8 @@
-//! Boundary tests of `ask` answer validation (DMN-054), following omp's rules in rpc.md "Inbound response".
+//! Boundary tests of `ask` answer validation (DMN-054) and of `form` data shapes (DMN-055), following omp's rules in
+//! rpc.md "Inbound response".
 
-use omfp_core::validate_ask_answers;
 use omfp_core::wire::{AskAnswer, AskUiRequest};
+use omfp_core::{validate_ask_answers, validate_form_data};
 use serde_json::json;
 
 fn request() -> AskUiRequest {
@@ -133,4 +134,41 @@ fn errors_name_the_offending_question() {
         error.contains("features") && error.contains("Nope"),
         "{error}"
     );
+}
+
+fn data(value: serde_json::Value) -> serde_json::Map<String, serde_json::Value> {
+    match value {
+        serde_json::Value::Object(map) => map,
+        other => panic!("not an object: {other}"),
+    }
+}
+
+// spec: DMN-055
+#[test]
+fn form_data_takes_strings_numbers_and_string_arrays() {
+    let valid = data(json!({
+        "db": "postgres",
+        "replicas": 3,
+        "ratio": 0.5,
+        "features": ["auth", "Elasticsearch"],
+        "none": [],
+    }));
+    assert_eq!(validate_form_data(&valid), Ok(()));
+    assert_eq!(validate_form_data(&data(json!({}))), Ok(()));
+}
+
+// spec: DMN-055
+#[test]
+fn form_data_refuses_any_other_value_naming_the_field() {
+    for (name, value) in [
+        ("flag", json!(true)),
+        ("nothing", json!(null)),
+        ("nested", json!({ "x": 1 })),
+        ("mixed", json!(["a", 1])),
+    ] {
+        let mut invalid = data(json!({ "ok": "fine" }));
+        invalid.insert(name.to_owned(), value);
+        let error = validate_form_data(&invalid).expect_err("an invalid value");
+        assert!(error.contains(&format!("{name:?}")), "{error}");
+    }
 }

@@ -88,7 +88,7 @@ export function expandedByDefault(card: ToolCard, turn: Turn = "past"): boolean 
 /**
  * The card of one tool call. `call` is the assistant's tool-call block (absent when only the run is known), `run` the
  * execution tracked by the reducer, `result` the transcript's tool result message, `calledAt` the calling message's
- * completion timestamp. A `write` to an `xd://` device is the card of the device's tool (UI-915).
+ * completion timestamp. A `bash` call running one tool command (or an 18.x `write` to an `xd://` device) is the card of that tool (UI-915).
  */
 export function toolCard(
   toolCallId: string,

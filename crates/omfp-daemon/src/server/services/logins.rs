@@ -237,6 +237,7 @@ impl Flow {
                 ExtensionUiRequest::Confirm(dialog) => self.refuse(dialog.id),
                 ExtensionUiRequest::Editor(dialog) => self.refuse(dialog.id),
                 ExtensionUiRequest::Ask(dialog) => self.refuse(dialog.id),
+                ExtensionUiRequest::Form(dialog) => self.refuse(dialog.id),
                 ExtensionUiRequest::Cancel(_)
                 | ExtensionUiRequest::SetStatus(_)
                 | ExtensionUiRequest::SetWidget(_)

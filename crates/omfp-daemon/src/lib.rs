@@ -61,6 +61,6 @@ mod tests {
 
     #[test]
     fn version_string_names_daemon_omp_and_protocol_versions() {
-        assert_eq!(version_string(), "0.4.2 (omp 18.22.0, protocol 1)");
+        assert_eq!(version_string(), "0.4.2 (omp 19.1.0, protocol 1)");
     }
 }

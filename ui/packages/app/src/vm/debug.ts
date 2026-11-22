@@ -1,7 +1,9 @@
 /**
  * The `omfp:debug` widget (UI-946..UI-950): the agent's debug (DAP) session of a thread, rebuilt from the `details` of
- * its `debug` tool results. omp 18.22 sends them either on a `debug` result (`details: { action, snapshot, … }`) or, when
- * the tool is an `xd://debug` device, on a `write` result (`details.xdev: { tool: "debug", args, inner }`). Only the
+ * its `debug` tool results. omp sends them on a `debug` result (`details: { action, snapshot, … }`), on a `bash` result
+ * whose single dispatch is the `debug` tool command (`details.toolCommands: [{ tool: "debug", mode: "execute", args,
+ * inner }]`, omp 19) or, in sessions recorded by omp 18.x, on a `write` to the `xd://debug` device
+ * (`details.xdev: { tool: "debug", args, inner }`). Only the
  * transcript counts: after a branch navigation the reducer keeps the tool runs of the branch left, never replayed here.
  */
 
@@ -101,7 +103,7 @@ interface DebugCall {
   readonly details: Obj;
 }
 
-/** The debug call of a successful tool result, from a `debug` result or an `xd://debug` `write`. */
+/** The debug call of a successful tool result, from a `debug` result, a `debug` command or an 18.x `xd://debug` `write`. */
 function debugCall(message: Obj, argsById: ReadonlyMap<string, Obj>): DebugCall | undefined {
   if (message.role !== "toolResult" || message.isError === true || !isObj(message.details)) {
     return undefined;
@@ -110,6 +112,13 @@ function debugCall(message: Obj, argsById: ReadonlyMap<string, Obj>): DebugCall 
   if (message.toolName === "debug") {
     const id = str(message.toolCallId);
     return { args: (id === undefined ? undefined : argsById.get(id)) ?? {}, details };
+  }
+  if (message.toolName === "bash" && Array.isArray(details.toolCommands) && details.toolCommands.length === 1) {
+    const dispatch: unknown = details.toolCommands[0];
+    if (isObj(dispatch) && dispatch.tool === "debug" && dispatch.mode === "execute" && isObj(dispatch.inner)) {
+      return { args: isObj(dispatch.args) ? dispatch.args : {}, details: dispatch.inner };
+    }
+    return undefined;
   }
   const xdev = details.xdev;
   if (message.toolName === "write" && isObj(xdev) && xdev.tool === "debug" && isObj(xdev.inner)) {

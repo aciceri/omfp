@@ -625,6 +625,16 @@ export interface AskAnswer {
   customInput?: string;
 }
 
+/** The HTML `<form>` of one `ui.formDialog` call: the `ask` tool's form, or an extension's. */
+export interface FormUiRequest {
+  id: string;
+  html: string;
+  timeout?: number;
+}
+
+/** A `form` answer: the submitted values by control `name`, as an HTML form submits them. */
+export type FormAnswerData = Record<string, string | number | string[]>;
+
 export interface CancelUiRequest {
   id: string;
   targetId: string;
@@ -676,6 +686,7 @@ export type ExtensionUiRequest =
   | UiRequest<"input", InputUiRequest>
   | UiRequest<"editor", EditorUiRequest>
   | UiRequest<"ask", AskUiRequest>
+  | UiRequest<"form", FormUiRequest>
   | UiRequest<"cancel", CancelUiRequest>
   | UiRequest<"notify", NotifyUiRequest>
   | UiRequest<"setStatus", SetStatusUiRequest>
@@ -745,6 +756,7 @@ const UI_REQUESTS: { [M in ExtensionUiRequest["method"]]: Decoder<Extract<Extens
     record<EditorUiRequest>({ id: str, title: str, prefill: optional(str), promptStyle: optional(bool) }),
   ),
   ask: tagged("ask", askUiRequest),
+  form: tagged("form", record<FormUiRequest>({ id: str, html: str, timeout: optional(int) })),
   cancel: tagged("cancel", record<CancelUiRequest>({ id: str, targetId: str })),
   notify: tagged("notify", notifyUiRequest),
   setStatus: tagged("setStatus", record<SetStatusUiRequest>({ id: str, statusKey: str, statusText: optional(str) })),

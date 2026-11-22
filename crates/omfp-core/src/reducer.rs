@@ -340,7 +340,8 @@ impl ThreadState {
             | ExtensionUiRequest::Confirm(_)
             | ExtensionUiRequest::Input(_)
             | ExtensionUiRequest::Editor(_)
-            | ExtensionUiRequest::Ask(_) => self.interactions.push(request.clone()),
+            | ExtensionUiRequest::Ask(_)
+            | ExtensionUiRequest::Form(_) => self.interactions.push(request.clone()),
             ExtensionUiRequest::Cancel(cancel) => self.close_interaction(&cancel.target_id),
             ExtensionUiRequest::Notify(notify) => presentation.notifications.push(notify.clone()),
             ExtensionUiRequest::SetStatus(status) => match &status.status_text {
@@ -400,6 +401,7 @@ fn dialog_id(request: &ExtensionUiRequest) -> Option<&str> {
         ExtensionUiRequest::Input(input) => Some(&input.id),
         ExtensionUiRequest::Editor(editor) => Some(&editor.id),
         ExtensionUiRequest::Ask(ask) => Some(&ask.id),
+        ExtensionUiRequest::Form(form) => Some(&form.id),
         _ => None,
     }
 }

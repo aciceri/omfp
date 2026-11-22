@@ -1,10 +1,11 @@
-//! Answers to omp's interactive requests (DMN-050..054): `select`, `confirm`, `input`, `editor` and `ask` dialogs.
+//! Answers to omp's interactive requests (DMN-050..055): `select`, `confirm`, `input`, `editor`, `ask` and `form`
+//! dialogs.
 
 use omfp_core::wire::LitTrue;
-use omfp_core::{Resolution, ThreadEvent, validate_ask_answers};
+use omfp_core::{Resolution, ThreadEvent, validate_ask_answers, validate_form_data};
 use omfp_protocol::InteractionResponse;
 use omp_rpc::{
-    AnswersUiResponse, CancelUiResponse, ConfirmUiResponse, ExtensionUiRequest,
+    AnswersUiResponse, CancelUiResponse, ConfirmUiResponse, DataUiResponse, ExtensionUiRequest,
     ExtensionUiResponse, ValueUiResponse,
 };
 
@@ -12,7 +13,7 @@ use super::{Result, Supervisor, SupervisorError, lock};
 
 impl Supervisor {
     /// Answers a pending interactive request: the first valid answer is forwarded and recorded, later ones get
-    /// `already_resolved` (DMN-051); `ask` answers are validated first (DMN-054).
+    /// `already_resolved` (DMN-051); `ask` and `form` answers are validated first (DMN-054, DMN-055).
     pub async fn respond(
         &self,
         id: &str,
@@ -57,12 +58,13 @@ pub(super) fn dialog_id(request: &ExtensionUiRequest) -> Option<&str> {
         ExtensionUiRequest::Input(input) => Some(&input.id),
         ExtensionUiRequest::Editor(editor) => Some(&editor.id),
         ExtensionUiRequest::Ask(ask) => Some(&ask.id),
+        ExtensionUiRequest::Form(form) => Some(&form.id),
         _ => None,
     }
 }
 
 /// The omp answer for `request`, checked against its kind: `select` takes one of its options, `confirm` a boolean,
-/// `ask` answers in omp's shape (DMN-054); any request can be cancelled.
+/// `ask` answers in omp's shape (DMN-054), `form` its submitted data (DMN-055); any request can be cancelled.
 fn ui_response(
     request: &ExtensionUiRequest,
     id: &str,
@@ -110,6 +112,13 @@ fn ui_response(
                 answers,
             }))
         }
+        (ExtensionUiRequest::Form(_), InteractionResponse::Data(data)) => {
+            validate_form_data(&data)?;
+            Ok(ExtensionUiResponse::DataUiResponse(DataUiResponse {
+                id,
+                data,
+            }))
+        }
         (_, response) => Err(format!(
             "{} cannot answer this request",
             match response {
@@ -117,6 +126,7 @@ fn ui_response(
                 InteractionResponse::Confirmed(_) => "a confirmation",
                 InteractionResponse::Answers(_) => "ask answers",
                 InteractionResponse::Cancelled => "a cancellation",
+                InteractionResponse::Data(_) => "form data",
             }
         )),
     }

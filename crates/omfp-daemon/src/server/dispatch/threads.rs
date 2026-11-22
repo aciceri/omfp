@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use omfp_core::wire::{ImageContent, ThinkingLevel};
+use omfp_core::wire::{ConfiguredThinkingLevel, ImageContent, ThinkingLevel};
 use omfp_protocol::{
     Call, CloseJobs, CreatedBy, ErrorBody, ErrorCode, JobRunStatus, LiveMuted, MessageParams,
     PromptBehavior, PromptResult, RunInfo, RunTrigger, ThreadGit, ThreadWorkspace, ThreadsStopped,
@@ -37,6 +37,21 @@ fn thinking_name(level: ThinkingLevel) -> Result<String, ErrorBody> {
     match serde_json::to_value(level).map_err(internal)? {
         Value::String(name) => Ok(name),
         other => Err(internal(format!("unexpected thinking level {other}"))),
+    }
+}
+
+/// omp's selector for a thinking level: omp 19.1's `set_thinking_level` takes `ConfiguredThinkingLevel`, the levels
+/// plus `auto`, which the protocol does not offer.
+fn configured(level: ThinkingLevel) -> ConfiguredThinkingLevel {
+    match level {
+        ThinkingLevel::Inherit => ConfiguredThinkingLevel::Inherit,
+        ThinkingLevel::Off => ConfiguredThinkingLevel::Off,
+        ThinkingLevel::Minimal => ConfiguredThinkingLevel::Minimal,
+        ThinkingLevel::Low => ConfiguredThinkingLevel::Low,
+        ThinkingLevel::Medium => ConfiguredThinkingLevel::Medium,
+        ThinkingLevel::High => ConfiguredThinkingLevel::High,
+        ThinkingLevel::Xhigh => ConfiguredThinkingLevel::Xhigh,
+        ThinkingLevel::Max => ConfiguredThinkingLevel::Max,
     }
 }
 
@@ -357,6 +372,8 @@ pub(super) async fn thread(services: &Services, principal: &Principal, call: Cal
             let command = SetModelCommand {
                 provider: params.provider,
                 model_id: params.model_id,
+                thinking_level: None,
+                role: None,
             };
             supervisor
                 .set_model(&params.thread_id, command)
@@ -367,7 +384,7 @@ pub(super) async fn thread(services: &Services, principal: &Principal, call: Cal
         Call::ThreadSetThinking(params) => {
             let name = thinking_name(params.level)?;
             let command = SetThinkingLevelCommand {
-                level: params.level,
+                level: configured(params.level),
             };
             forward(params.thread_id.clone(), OmpCall::SetThinkingLevel(command)).await?;
             on_threads(services, move |all| {

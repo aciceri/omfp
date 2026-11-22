@@ -203,7 +203,8 @@ fn text(fields: &Map<String, Value>, key: &str) -> Option<String> {
 }
 
 /// Where a refresh goes (omp's `selectMcpOAuthRefreshMaterial`): the credential's own fields when it carries a
-/// `tokenUrl`, else the entry's `auth` block (credentials minted before omp stored them).
+/// `tokenUrl`, else the entry's `auth` block (credentials minted before omp stored them); the scope the grant holds
+/// always comes from the credential (omp 19.1, `refreshManagedMcpOAuthCredential`).
 struct Material {
     token_url: String,
     client_id: Option<String>,
@@ -211,6 +212,7 @@ struct Material {
     resource: Option<String>,
     authorization_url: Option<String>,
     from_credential: bool,
+    scope: Option<String>,
 }
 
 fn material(fields: &Map<String, Value>, auth: Option<&Auth>) -> Option<Material> {
@@ -222,6 +224,7 @@ fn material(fields: &Map<String, Value>, auth: Option<&Auth>) -> Option<Material
             resource: text(fields, "resource"),
             authorization_url: text(fields, "authorizationUrl"),
             from_credential: true,
+            scope: text(fields, "scope"),
         });
     }
     let auth = auth?;
@@ -232,6 +235,7 @@ fn material(fields: &Map<String, Value>, auth: Option<&Auth>) -> Option<Material
         resource: auth.resource.clone(),
         authorization_url: None,
         from_credential: false,
+        scope: text(fields, "scope"),
     })
 }
 
@@ -243,7 +247,8 @@ fn same_origin(a: &str, b: &str) -> bool {
 }
 
 /// omp's `refreshMCPOAuthToken`: the `refresh_token` grant, with the server URL as the fallback resource indicator
-/// unless it is on the authorization server's origin.
+/// unless it is on the authorization server's origin, and the scope the grant holds (Microsoft Entra refuses a refresh
+/// naming none when the client is also the resource).
 async fn exchange(
     http: &Client,
     material: &Material,
@@ -266,6 +271,9 @@ async fn exchange(
     }
     if let Some(secret) = material.client_secret.as_deref() {
         form.push(("client_secret", secret));
+    }
+    if let Some(scope) = material.scope.as_deref().map(str::trim) {
+        form.push(("scope", scope));
     }
     let response = http
         .post(&material.token_url)
@@ -1046,6 +1054,52 @@ pub(super) mod tests {
                 ("grant_type".to_owned(), "refresh_token".to_owned()),
                 ("refresh_token".to_owned(), "r".to_owned()),
             ]
+        );
+    }
+
+    // spec: DMN-353
+    #[tokio::test]
+    async fn a_refresh_asks_again_for_the_scope_the_grant_holds_and_keeps_it() {
+        let f = fixture();
+        let (server, token_url) = token_server().await;
+        let same_origin_server = token_url.replace("/token", "/mcp");
+        let provider = format!("mcp_oauth:profile:default:{same_origin_server}");
+        let id = f.insert(
+            &provider,
+            &json!({
+                "access": "a",
+                "refresh": "r",
+                "expires": now_ms(),
+                "tokenUrl": token_url,
+                "scope": " api://client/.default offline_access ",
+            }),
+        );
+
+        f.credentials
+            .token(
+                &Client::new(),
+                &remote(&same_origin_server, None),
+                false,
+                None,
+                false,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(
+            server.forms.lock().unwrap()[0],
+            vec![
+                ("grant_type".to_owned(), "refresh_token".to_owned()),
+                ("refresh_token".to_owned(), "r".to_owned()),
+                (
+                    "scope".to_owned(),
+                    "api://client/.default offline_access".to_owned()
+                ),
+            ]
+        );
+        assert_eq!(
+            f.data(id)["scope"],
+            " api://client/.default offline_access "
         );
     }
 }

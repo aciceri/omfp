@@ -99,6 +99,12 @@ impl LaunchSpec {
         let stderr = crate::paths::open_private_log(&self.stderr_log)?;
         let mut command = Command::new(&self.program);
         command.args(self.args()).current_dir(&self.cwd);
+        // omp 19 leaves tool-call intents out of RPC sessions unless `tools.intentTracing` is configured (sdk.ts,
+        // `intentTracingActive`); the tool cards and subagent rows show them (DMN-030), so a thread asks for them
+        // unless the daemon's own environment or an override decides.
+        if std::env::var_os(INTENT_TRACING).is_none() {
+            command.env(INTENT_TRACING, "1");
+        }
         for (key, value) in &self.env {
             match value {
                 Some(value) => command.env(key, value),
@@ -111,6 +117,9 @@ impl LaunchSpec {
         Ok(command)
     }
 }
+
+/// omp's environment switch for `tools.intentTracing`.
+const INTENT_TRACING: &str = "PI_INTENT_TRACING";
 
 /// Why omp could not be started or prepared.
 #[derive(Debug, thiserror::Error)]
@@ -499,6 +508,30 @@ mod tests {
         let envs: Vec<_> = command.get_envs().collect();
         assert!(envs.contains(&("KEEP".as_ref(), Some("1".as_ref()))));
         assert!(envs.contains(&("DROP".as_ref(), None)));
+        assert!(
+            std::env::var_os(INTENT_TRACING).is_some()
+                || envs.contains(&(INTENT_TRACING.as_ref(), Some("1".as_ref())))
+        );
+    }
+
+    // spec: DMN-030
+    #[test]
+    fn an_override_decides_intent_tracing() {
+        let root = tempfile::tempdir().unwrap();
+        let mut spec = spec();
+        spec.cwd = root.path().join("workspace");
+        spec.session_dir = root.path().join("sessions");
+        spec.stderr_log = root.path().join("logs/omp.log");
+        spec.env = vec![(INTENT_TRACING.into(), Some("0".into()))];
+
+        let command = spec.command().unwrap();
+
+        let last = command
+            .get_envs()
+            .filter(|(key, _)| *key == INTENT_TRACING)
+            .last()
+            .map(|(_, value)| value);
+        assert_eq!(last, Some(Some("0".as_ref())));
     }
 
     // spec: DMN-040, DMN-042, UI-043

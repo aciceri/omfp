@@ -109,7 +109,7 @@ fn hand_written_schemas_reach_the_method_schemas() {
     let variants = respond["$defs"]["InteractionResponse"]["oneOf"]
         .as_array()
         .expect("one schema per response kind");
-    assert_eq!(variants.len(), 4);
+    assert_eq!(variants.len(), 5);
     assert_eq!(
         variants[2]["properties"]["cancelled"],
         json!({ "const": true }),

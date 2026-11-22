@@ -235,21 +235,26 @@ fn approval_granted_shows_then_resolves_the_select() {
     assert_eq!(last_message_text(&state), "Done after approval.");
 }
 
-// spec: ARC-006, TST-012, DMN-050, DMN-051, DMN-054
+// spec: ARC-006, TST-012, DMN-050, DMN-051, DMN-055
 #[test]
-fn ask_answered_walks_selects_one_at_a_time() {
+fn ask_answered_shows_the_whole_form_once() {
     let events = fixture("ask_answered");
 
-    let first = state_through(&events, index_of(&events, "extension_ui_request", 1));
-    let titles: Vec<&str> = first
+    let pending = (0..events.len())
+        .map(|index| state_through(&events, index))
+        .find(|state| !state.interactions.is_empty())
+        .expect("a pending form");
+    let forms: Vec<bool> = pending
         .interactions
         .iter()
         .map(|request| match request {
-            ExtensionUiRequest::Select(select) => select.title.as_str(),
-            _ => "",
+            ExtensionUiRequest::Form(form) => {
+                form.html.contains("Which database?") && form.html.contains("Which features?")
+            }
+            _ => false,
         })
         .collect();
-    assert_eq!(titles, ["Which database?"]);
+    assert_eq!(forms, [true], "one request with every field");
 
     let most_pending = (0..events.len())
         .map(|index| state_through(&events, index).interactions.len())
@@ -266,7 +271,7 @@ fn ask_answered_walks_selects_one_at_a_time() {
     assert_eq!(run.status, ToolStatus::Succeeded);
     assert_eq!(
         last_message_text(&state),
-        "Using SQLite with Auth and Search."
+        "Using Postgres with Auth and Elasticsearch."
     );
 }
 

@@ -1,5 +1,5 @@
 # The omp release assets the release packages bundle (ENV-061), one per line: `<tag> <asset> <sha256>`, the hashes
 # copied from the release's SHA256SUMS.txt (https://github.com/can1357/oh-my-pi/releases). Every tag must be the pinned
 # omp's (`cargo xtask check-versions`, ENV-010); update the lines with every omp upgrade (ENV-020).
-v18.22.0 omp-darwin-arm64 d185113d63eba23925e5d70ab661a424b827c06c98f8e766c3bf4ad62ddaff9a
-v18.22.0 omp-linux-x64 f706b27ba845834d8f8360705a2e9ba1534f3593fa24411d41358272de33642b
+v19.1.0 omp-darwin-arm64 dca5643669ed5e553f707bd065499babd0fe3030696bbb24c9da09c798af5abb
+v19.1.0 omp-linux-x64 be2b45c437b623e15c29b1f8c98aacb842f92118196454b5e9eed884359e9a01

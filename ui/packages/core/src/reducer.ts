@@ -112,7 +112,7 @@ const NOTICE_FRAMES: { [T in NoticeType]: Decoder<Extract<NoticeFrame, { type: T
   command_output: commandOutputEvent,
 };
 
-/** The id of a dialog request (`select`, `confirm`, `input`, `editor`, `ask`); `undefined` for other methods. */
+/** The id of a dialog request (`select`, `confirm`, `input`, `editor`, `ask`, `form`); `undefined` for other methods. */
 export function dialogId(request: ExtensionUiRequest): string | undefined {
   switch (request.method) {
     case "select":
@@ -120,6 +120,7 @@ export function dialogId(request: ExtensionUiRequest): string | undefined {
     case "input":
     case "editor":
     case "ask":
+    case "form":
       return request.id;
     default:
       return undefined;
@@ -202,6 +203,7 @@ function applyUiRequest(state: ThreadState, request: ExtensionUiRequest): Thread
     case "input":
     case "editor":
     case "ask":
+    case "form":
       return { ...state, interactions: [...state.interactions, request] };
     case "cancel":
       return closeInteraction(state, request.targetId);

@@ -1,9 +1,9 @@
 /**
  * Specialized tool cards (UI-050, UI-051): what each card shows, read from the argument and result shapes recorded
  * from the pinned omp (`fixtures/threads/<omp>/*tool_call*.jsonl`, `crates/omfp-daemon/tests/contract_tool_cards.rs`).
- * Tools without a recorded shape keep the fallback card (`generic`). omp's discoverable tools run as `xd://` devices
- * (a `write` of their JSON arguments to `xd://<tool>`): `deviceCall` turns such a call back into one of the tool
- * (UI-915).
+ * Tools without a recorded shape keep the fallback card (`generic`). omp's discoverable tools run as tool commands
+ * inside a `bash` call (`lsp diagnostics src/a.ts`), and ran as `xd://` devices in omp 18.x (a `write` of their JSON
+ * arguments to `xd://<tool>`): `deviceCall` turns such a call back into one of the tool (UI-915).
  */
 
 import type { BackgroundJob, JobState } from "@omfp/core";
@@ -110,7 +110,7 @@ export type ToolView =
       readonly files: readonly AstEditFile[];
       /** `1 replacement in 1 file`. */
       readonly total: string | undefined;
-      /** omp stages an `ast_edit` as a preview until the agent resolves it (`xd://resolve`). */
+      /** omp stages an `ast_edit` as a preview until the agent resolves it (the `resolve` command). */
       readonly applied: boolean;
       readonly truncated: boolean;
     }
@@ -265,12 +265,15 @@ export function quietFailure(name: string, output: ToolOutput | undefined): stri
   return undefined;
 }
 
-/** A call of an omp tool mounted as an `xd://` device: the tool, its own arguments and its own result. */
+/** A call of an omp tool run as a tool command (or an 18.x `xd://` device): the tool, its arguments and result. */
 export interface DeviceCall {
   readonly name: string;
-  /** The validated arguments omp echoes in `details.xdev.args`, else the written JSON; `undefined` while partial. */
+  /**
+   * The validated arguments omp echoes (`details.toolCommands[0].args`, `details.xdev.args`), else the written JSON;
+   * `undefined` while partial.
+   */
   readonly args: Readonly<Record<string, unknown>> | undefined;
-  /** The result with the tool's own details (`details.xdev.inner`). */
+  /** The result with the tool's own details (the dispatch's `inner`). */
   readonly output: ToolOutput | undefined;
 }
 
@@ -280,9 +283,12 @@ const DEVICE_URL = /^xd:\/\/([\w.-]+)$/;
 const PARTIAL_PATH = /"path"\s*:\s*"(xd:\/\/[^"]*)"/;
 
 /**
- * The tool call a `write` to `xd://<tool>` runs (UI-915): omp 18.22.0 mounts its discoverable tools (`lsp`, `ast_grep`,
- * `ast_edit`, MCP tools, …) as devices while `tools.xdev` is on (its default), and the model writes their JSON
- * arguments as the content; `undefined` for any other call. `partial` is the argument text the model is writing.
+ * The tool call a `bash` call or a `write` to `xd://<tool>` runs (UI-915); `undefined` for any other call.
+ * omp 19 runs its discoverable tools (`lsp`, `ast_grep`, `ast_edit`, MCP tools, …) as commands in a `bash` call and
+ * lists the dispatches in the result's `details.toolCommands`: a call whose result holds exactly one `execute` dispatch
+ * is that tool's (several dispatches, help only or no details yet stay a bash card). omp 18.x mounted them as devices
+ * the model wrote JSON arguments to; sessions recorded by it still replay so. `partial` is the argument text the model
+ * is writing.
  */
 export function deviceCall(
   name: string,
@@ -290,6 +296,9 @@ export function deviceCall(
   partial: string | undefined,
   output: ToolOutput | undefined,
 ): DeviceCall | undefined {
+  if (name === "bash") {
+    return commandCall(output);
+  }
   if (name !== "write") {
     return undefined;
   }
@@ -307,6 +316,24 @@ export function deviceCall(
     name: device,
     args: echoed ?? writtenArguments(isRecord(args) ? str(args.content) : undefined),
     output: output === undefined ? undefined : { ...output, details: isRecord(xdev?.inner) ? xdev.inner : {} },
+  };
+}
+
+/** The tool a `bash` result's single `execute` dispatch (`details.toolCommands`) ran. */
+function commandCall(output: ToolOutput | undefined): DeviceCall | undefined {
+  const dispatches = output === undefined ? [] : list(output.details.toolCommands);
+  const dispatch = dispatches.length === 1 ? dispatches[0] : undefined;
+  if (output === undefined || !isRecord(dispatch) || dispatch.mode !== "execute") {
+    return undefined;
+  }
+  const tool = str(dispatch.tool);
+  if (tool === undefined) {
+    return undefined;
+  }
+  return {
+    name: tool,
+    args: isRecord(dispatch.args) ? dispatch.args : {},
+    output: { ...output, details: isRecord(dispatch.inner) ? dispatch.inner : {} },
   };
 }
 

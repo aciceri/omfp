@@ -95,10 +95,10 @@ describe("transcript items", () => {
   });
 
   // spec: UI-043
-  test("new and retained xdev info notices stay in state but only appear while opted in", () => {
+  test("new and retained tool command (and 18.x xdev) info notices stay in state but only appear while opted in", () => {
     const mounted: ThreadEvent = {
       kind: "omp",
-      frame: { type: "notice", level: "info", source: "xdev", message: "xd://: mounted mcp__test" },
+      frame: { type: "notice", level: "info", source: "toolCommands", message: "Tool commands: added mcp__test" },
     };
     const unmounted: ThreadEvent = {
       kind: "omp",
@@ -106,7 +106,7 @@ describe("transcript items", () => {
     };
     const fresh = reduce(emptyThreadState(), mounted);
     const retained = reduce(fixture("text_reply"), mounted);
-    const mountRow = { summary: "xd://: mounted mcp__test", text: undefined };
+    const mountRow = { summary: "Tool commands: added mcp__test", text: undefined };
     const unmountRow = { summary: "xd://: unmounted mcp__test", text: "xd://: unmounted mcp__test\nNo devices." };
     for (const [state, expected] of [
       [fresh, [mountRow]],

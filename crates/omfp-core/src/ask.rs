@@ -1,5 +1,7 @@
-//! Validation of `ask` dialog answers (DMN-054), mirroring omp's own check (rpc.md, "Inbound response"): any other
-//! shape fails omp's `ask` call, so the daemon rejects it before forwarding.
+//! Validation of `ask` dialog answers (DMN-054) and of `form` answers (DMN-055), mirroring omp's own check (rpc.md,
+//! "Inbound response"): any other shape fails omp's `ask` call, so the daemon rejects it before forwarding.
+
+use serde_json::{Map, Value};
 
 use crate::wire::{AskAnswer, AskUiRequest};
 
@@ -41,6 +43,25 @@ pub fn validate_ask_answers(request: &AskUiRequest, answers: &[AskAnswer]) -> Re
             return Err(format!(
                 "answer {:?} is single-select but carries more than one answer",
                 question.id
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Checks the shape of a `form` answer: every value is a string, a number or an array of strings, as an HTML form
+/// submits them. The form's own constraints (names, options, `required`, `pattern`, …) need its HTML: the window
+/// enforces them, and omp fails the `ask` call on any it finds broken. The error names the first bad entry.
+pub fn validate_form_data(data: &Map<String, Value>) -> Result<(), String> {
+    for (name, value) in data {
+        let valid = match value {
+            Value::String(_) | Value::Number(_) => true,
+            Value::Array(items) => items.iter().all(Value::is_string),
+            _ => false,
+        };
+        if !valid {
+            return Err(format!(
+                "form field {name:?} must be a string, a number or an array of strings, got {value}"
             ));
         }
     }

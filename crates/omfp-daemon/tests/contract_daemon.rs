@@ -11,7 +11,7 @@ use clap::Parser;
 use client::{Client, Follower};
 use common::{Harness, system_prompt, workspace_roots};
 use fake_llm::{Reply, Step, ToolCall};
-use omfp_core::wire::{AgentMessage, ExtensionUiRequest, SelectUiRequest};
+use omfp_core::wire::{AgentMessage, ExtensionUiRequest, FormUiRequest, SelectUiRequest};
 use omfp_core::{ProcessState, ThreadState};
 use omfp_daemon::config::{Cli, Config};
 use omfp_daemon::{DaemonHandle, Ports, start_with};
@@ -513,36 +513,30 @@ async fn every_approval_mode_starts_a_working_thread_and_other_values_are_refuse
     harness.assert_no_stray_network();
 }
 
-/// Answer for the form fallback's `select` dialogs (see contract scenario `ask_answered`): SQLite for the radio
-/// group; for the checkbox loop, the first of Auth and Search not checked yet (`checkedIndices`), then Done.
-fn choose(select: &SelectUiRequest) -> String {
-    let option = |needle: &str| {
-        select
-            .options
-            .iter()
-            .find(|option| option.contains(needle))
-            .cloned()
-            .unwrap_or_else(|| panic!("no `{needle}` option in {:?}", select.options))
-    };
-    if select.title.contains("database") {
-        return option("SQLite");
-    }
-    let checked: Vec<&str> = select
-        .checked_indices
-        .iter()
-        .flatten()
-        .map(|index| select.options[usize::try_from(*index).unwrap()].as_str())
-        .collect();
-    let next = ["Auth", "Search"]
-        .into_iter()
-        .find(|wanted| !checked.contains(wanted))
-        .unwrap_or("Done");
-    option(next)
+fn pending_form(state: &ThreadState) -> Option<FormUiRequest> {
+    state.interactions.iter().find_map(|request| match request {
+        ExtensionUiRequest::Form(form) => Some(form.clone()),
+        _ => None,
+    })
 }
 
-// spec: DMN-054, DMN-051, DMN-050
+async fn answer_form(
+    client: &mut Client,
+    thread: &str,
+    id: &str,
+    data: Value,
+) -> Result<Value, Value> {
+    client
+        .call(
+            "interaction.respond",
+            json!({ "threadId": thread, "interactionId": id, "response": { "data": data } }),
+        )
+        .await
+}
+
+// spec: DMN-055, DMN-051, DMN-050
 #[tokio::test(flavor = "multi_thread")]
-async fn ask_dialogs_round_trip_through_the_protocol() {
+async fn ask_forms_round_trip_through_the_protocol() {
     let form = r#"<form>
   <fieldset><legend>Which database?</legend>
     <label><input type="radio" name="db" value="postgres"> Postgres</label>
@@ -575,37 +569,42 @@ async fn ask_dialogs_round_trip_through_the_protocol() {
     let mut view = Follower::snapshot(&mut client, &thread, None).await;
 
     let prompt_id = prompt(&mut client, &thread, "set it up").await;
-    let mut selects: Vec<SelectUiRequest> = Vec::new();
-    loop {
-        view.until(&mut client, |state| {
-            pending_select(state).is_some() || settled_after(&prompt_id)(state)
-        })
+    view.until(&mut client, |state| pending_form(state).is_some())
         .await;
-        let Some(select) = pending_select(&view.state) else {
-            break;
-        };
-        respond(&mut client, &thread, &select.id, &choose(&select))
-            .await
-            .unwrap();
-        view.until(&mut client, |state| {
-            pending_select(state).is_none_or(|pending| pending.id != select.id)
-        })
-        .await;
-        selects.push(select);
-    }
+    let request = pending_form(&view.state).unwrap();
+    // The whole form reaches the window through the daemon (DMN-050).
+    assert_eq!(request.html, form);
 
-    assert_eq!(
-        selects.first().map(|select| select.title.as_str()),
-        Some("Which database?")
-    );
-    // omp's checkbox state reaches the window through the daemon (DMN-050).
-    assert_eq!(
-        selects
-            .iter()
-            .map(|select| select.checked_indices.clone())
-            .collect::<Vec<_>>(),
-        [None, Some(vec![]), Some(vec![0]), Some(vec![0, 2])]
-    );
+    // A value no HTML form submits is refused before omp sees it, and the request stays open (DMN-055).
+    let refused = answer_form(
+        &mut client,
+        &thread,
+        &request.id,
+        json!({ "db": { "x": 1 } }),
+    )
+    .await;
+    assert!(refused.is_err(), "{refused:?}");
+    assert!(pending_form(&view.state).is_some());
+
+    answer_form(
+        &mut client,
+        &thread,
+        &request.id,
+        json!({ "db": "sqlite", "features": ["auth", "search"] }),
+    )
+    .await
+    .unwrap();
+    // A second answer comes too late (DMN-051).
+    let late = answer_form(
+        &mut client,
+        &thread,
+        &request.id,
+        json!({ "db": "postgres" }),
+    )
+    .await;
+    assert!(late.is_err(), "{late:?}");
+    view.until(&mut client, settled_after(&prompt_id)).await;
+
     let answers = view
         .state
         .tools

@@ -1,6 +1,7 @@
 /**
  * `:set <key>=<value>` (UI-097): one setting of the daemon's `[ui]` or `[keymap]`, sent with `settings.set`. Keys:
- * `density`, `font_size` (px, 10..=28), `motion`, `notifications`, `show_xdev_notices`, `theme` (UI-510), `skin`
+ * `density`, `font_size` (px, 10..=28), `motion`, `notifications`, `show_xdev_notices` (tool command mount notices: MCP and extension tools mounted or
+ * unmounted as commands), `theme` (UI-510), `skin`
  * (UI-794), `recent_threads` (0..=100 or `all`, UI-996), `live_voice` (UI-999), `fonts.prose|ui|code`,
  * `keymap.<keys>` (normal mode) and
  * `keymap.<mode>.<keys>`; a keymap value is a command id, `""`

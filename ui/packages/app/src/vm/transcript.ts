@@ -163,7 +163,7 @@ function endsWithRead(message: AssistantMessage): boolean {
 /**
  * The transcript's rows in order: each notice goes after the messages that preceded it, tool results shown inside
  * their call's card are left out, and the streaming reply comes last; each message and the streaming reply say
- * whether they continue their turn (UI-470). Informational xdev notices are hidden unless opted in (UI-043); omp's
+ * whether they continue their turn (UI-470). Informational tool command mount notices are hidden unless opted in (UI-043); omp's
  * `/compact` output repeating the skipped compaction before it always is (UI-911).
  * An assistant message showing only reads joins the row before it when that row ends with reads and nothing came
  * between them (a notice, a record, a day separator), and so does the streaming reply (UI-765).

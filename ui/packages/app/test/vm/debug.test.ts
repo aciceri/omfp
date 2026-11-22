@@ -59,6 +59,31 @@ function deviceCall(args: Obj, details: Obj): TranscriptEntry[] {
   ] as TranscriptEntry[];
 }
 
+/** The same call as the `debug` tool command of a `bash` call (omp 19): its single dispatch carries the details. */
+function commandCall(args: Obj, details: Obj, extra: Obj[] = []): TranscriptEntry[] {
+  counter += 1;
+  const id = `bash-${counter}`;
+  const dispatch = { tool: "debug", mode: "execute", exitCode: 0, args, inner: { success: true, ...details } };
+  return [
+    {
+      message_id: null,
+      message: {
+        role: "assistant",
+        content: [{ type: "toolCall", id, name: "bash", arguments: { command: "debug set_breakpoint" } }],
+      },
+    },
+    {
+      message_id: null,
+      message: {
+        role: "toolResult",
+        toolCallId: id,
+        toolName: "bash",
+        details: { toolCommands: [dispatch, ...extra] },
+      },
+    },
+  ] as TranscriptEntry[];
+}
+
 function state(...calls: TranscriptEntry[][]): Pick<ThreadState, "transcript"> {
   return { transcript: calls.flat() };
 }
@@ -219,6 +244,17 @@ describe("debugView", () => {
     expect(view?.program).toBe("/w/other.py");
     expect([view?.status, view?.stop, view?.exitCode]).toEqual(["terminated", undefined, 1]);
     expect(view?.breakpoints).toEqual([]);
+  });
+
+  // spec: UI-946, UI-948, UI-915
+  test("through the debug tool command of a bash call; a bash call with several dispatches is not read", () => {
+    const set = { action: "set_breakpoint", file: "job.py", line: 2 };
+    const result = { action: "set_breakpoint", snapshot: snapshot(), breakpoints: [{ verified: true, line: 2 }] };
+    expect(debugView(state(launch, commandCall(set, result)))?.breakpoints.map((row) => row.label)).toEqual([
+      "job.py:2",
+    ]);
+    const twice = commandCall(set, result, [{ tool: "lsp", mode: "execute", exitCode: 0 }]);
+    expect(debugView(state(launch, twice))?.breakpoints).toEqual(debugView(state(launch))?.breakpoints);
   });
 
   // spec: UI-949

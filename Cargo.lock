@@ -844,7 +844,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d045de693cb712d0b22c6a64be5b953f67b3ce00ab5ad3dd5d8b441886ab8e1a"
 dependencies = [
  "quote",
- "syn 3.0.10",
+ "syn 2.0.119",
 ]
 
 [[package]]
@@ -3008,7 +3008,7 @@ dependencies = [
 [[package]]
 name = "omp-rpc"
 version = "0.1.0"
-source = "git+https://github.com/can1357/oh-my-pi?tag=v18.22.0#3e8cff3b7ce19a805c11a26a6dd1703066435851"
+source = "git+https://github.com/can1357/oh-my-pi?tag=v19.1.0#a7135b8f31826c878734388b648f52bed8da436e"
 dependencies = [
  "libc",
  "serde",

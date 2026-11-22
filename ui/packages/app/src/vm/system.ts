@@ -1,7 +1,7 @@
 /**
  * omp's own bookkeeping in the transcript (UI-043): `custom` records omp keeps out of its own transcript
- * (`display: false`, e.g. the `<system-notice>` device inventory it sends the model at startup) or that wrap a
- * `<system-notice>`, and its info notices about its own setup (the `xdev` mount notice, hidden unless opted in).
+ * (`display: false`, e.g. the `<system-notice>` tool inventory it sends the model at startup) or that wrap a
+ * `<system-notice>`, and its info notices about its own setup (the `toolCommands` mount notice, `xdev` in sessions recorded by omp 18.x, hidden unless opted in).
  * When visible, each renders as one muted `system` row: its first line, expandable to the whole text when there is more.
  * The spoken conversation of an ended live session (`omfp-voice`, DMN-113) is such a row too (UI-199): `Voice
  * conversation · N turns`, expandable to its turns.
@@ -18,7 +18,7 @@ export interface SystemRow {
 }
 
 /** Sources of the omp notices that only report omp's own setup. */
-const SYSTEM_NOTICE_SOURCES: readonly string[] = ["xdev"];
+const SYSTEM_NOTICE_SOURCES: readonly string[] = ["xdev", "toolCommands"];
 
 /** The `customType` of the spoken conversation of an ended live session (DMN-113). */
 const VOICE_LOG = "omfp-voice";

@@ -1,6 +1,6 @@
 /**
- * UI settings kept by the daemon (DMN-009, UI-097): `[ui]` density, font size, motion, notifications, xdev notice
- * visibility, fonts, theme (UI-510), skin (UI-794) and kept threads (UI-996), and `[keymap]` entries, pushed on `index`
+ * UI settings kept by the daemon (DMN-009, UI-097): `[ui]` density, font size, motion, notifications, tool command mount notice
+ * visibility (MCP and extension tools mounted or unmounted as commands), fonts, theme (UI-510), skin (UI-794) and kept threads (UI-996), and `[keymap]` entries, pushed on `index`
  * so windows apply changes live.
  * `settings.set` merges a patch into the config file.
  */

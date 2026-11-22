@@ -26,7 +26,7 @@
     # Shares our nixpkgs and rust-overlay; the Intel-macOS inputs are collapsed
     # because x86_64-darwin is not a supported system here.
     oh-my-pi = {
-      url = "github:can1357/oh-my-pi/v18.22.0";
+      url = "github:can1357/oh-my-pi/v19.1.0";
       inputs = {
         nixpkgs.follows = "nixpkgs";
         nixpkgs-darwin-x64.follows = "nixpkgs";

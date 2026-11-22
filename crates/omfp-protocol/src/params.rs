@@ -725,19 +725,22 @@ pub enum InteractionResponse {
     Cancelled,
     /// Answers `ask`: one entry per question, in order (DMN-054).
     Answers(Vec<AskAnswer>),
+    /// Answers `form`: the submitted values by control `name` (a string, a number or a string array), DMN-055.
+    Data(serde_json::Map<String, Value>),
 }
 
 // Wire form of `InteractionResponse`.
 #[derive(Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 #[schemars(
-    description = "Answer to an interactive request: exactly one of `value`, `confirmed`, `cancelled` (always true) or `answers`."
+    description = "Answer to an interactive request: exactly one of `value`, `confirmed`, `cancelled` (always true), `answers` or `data`."
 )]
 enum ResponseRepr {
     Value(String),
     Confirmed(bool),
     Cancelled(#[schemars(with = "ConstTrue")] LitTrue),
     Answers(#[schemars(with = "Vec<Value>")] Vec<AskAnswer>),
+    Data(serde_json::Map<String, Value>),
 }
 
 impl From<ResponseRepr> for InteractionResponse {
@@ -747,6 +750,7 @@ impl From<ResponseRepr> for InteractionResponse {
             ResponseRepr::Confirmed(confirmed) => Self::Confirmed(confirmed),
             ResponseRepr::Cancelled(LitTrue) => Self::Cancelled,
             ResponseRepr::Answers(answers) => Self::Answers(answers),
+            ResponseRepr::Data(data) => Self::Data(data),
         }
     }
 }
@@ -758,6 +762,7 @@ impl From<InteractionResponse> for ResponseRepr {
             InteractionResponse::Confirmed(confirmed) => Self::Confirmed(confirmed),
             InteractionResponse::Cancelled => Self::Cancelled(LitTrue),
             InteractionResponse::Answers(answers) => Self::Answers(answers),
+            InteractionResponse::Data(data) => Self::Data(data),
         }
     }
 }

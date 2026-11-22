@@ -290,7 +290,7 @@ async fn write_tool_calls() {
 // spec: TST-012, UI-051
 #[tokio::test(flavor = "multi_thread")]
 async fn search_tool_calls() {
-    // omp 18.22.0 advertises `grep` and `glob`; `find` and `ast_grep` are not offered to the model.
+    // omp 19.1 advertises `grep` and `glob`; `find` and `ast_grep` are not offered as tools.
     let harness = Harness::new(vec![
         call(
             "call_grep_1",
@@ -334,54 +334,65 @@ async fn search_tool_calls() {
     finish(&harness, &recorder, "search_tool_calls");
 }
 
-/// A `write` of the JSON arguments `args` to the `xd://<device>` URL: how omp 18.22.0 runs its discoverable tools
-/// (`lsp`, `ast_grep`, `ast_edit`) while `tools.xdev` (on by default) mounts them as devices.
-fn device_call(id: &str, device: &str, args: &Value, intent: &str) -> Step {
+/// A `bash` call running the tool command `tool` with the JSON arguments `args` (`-j`): how omp 19.1 runs its
+/// discoverable tools (`lsp`, `ast_grep`, `ast_edit`) while `tools.commands` (on by default) mounts them as commands.
+fn command_call(id: &str, tool: &str, args: &Value, intent: &str) -> Step {
+    let json = args.to_string();
+    assert!(!json.contains('\''), "single-quoted for the shell: {json}");
     call(
         id,
-        "write",
-        json!({ "path": format!("xd://{device}"), "content": args.to_string(), "i": intent }),
+        "bash",
+        json!({ "command": format!("{tool} -j '{json}'"), "i": intent }),
     )
+}
+
+/// The dispatch of the single tool command a `bash` result ran (`details.toolCommands`, omp 19.1).
+fn dispatch(result: &Value) -> &Value {
+    let dispatches = result["details"]["toolCommands"]
+        .as_array()
+        .unwrap_or_else(|| panic!("no tool commands: {result:#}"));
+    assert_eq!(dispatches.len(), 1, "{result:#}");
+    &dispatches[0]
 }
 
 // spec: TST-012, UI-051
 #[tokio::test(flavor = "multi_thread")]
 async fn code_intel_tool_calls() {
     let harness = Harness::new(vec![
-        device_call(
+        command_call(
             "call_ast_grep_1",
             "ast_grep",
             &json!({ "pat": "pub fn $NAME($$$ARGS) -> $RET { $$$BODY }", "path": "src" }),
             "Finding the functions",
         ),
-        device_call(
+        command_call(
             "call_ast_grep_2",
             "ast_grep",
             &json!({ "pat": "pub fn $NAME($$$ARGS)", "path": "missing" }),
             "Searching a missing folder",
         ),
-        device_call(
+        command_call(
             "call_lsp_1",
             "lsp",
             &json!({ "action": "diagnostics", "file": "notes.txt" }),
             "Checking the notes",
         ),
-        device_call(
+        command_call(
             "call_ast_edit_1",
             "ast_edit",
             &json!({ "ops": [{ "pat": "left + right", "out": "left.saturating_add(right)" }], "paths": ["src"] }),
             "Saturating the addition",
         ),
-        // An `ast_edit` is a preview pending until the agent resolves it; every other tool is refused meanwhile.
+        // An `ast_edit` is a preview pending until the agent resolves it (`resolve <reason>`).
         call(
             "call_resolve_1",
-            "write",
-            json!({ "path": "xd://resolve", "content": "Saturating is safer.", "i": "Applying the rewrite" }),
+            "bash",
+            json!({ "command": "resolve 'Saturating is safer.'", "i": "Applying the rewrite" }),
         ),
         Step::reply(Reply::text("Two functions; the addition saturates now.")),
     ])
     .await;
-    // omfp's profile turns the AST tools on; omp offers them as `xd://` devices (`tools.xdev`).
+    // omfp's profile turns the AST tools on; omp offers them as bash tool commands (`tools.commands`).
     harness
         .env
         .configure(
@@ -403,15 +414,16 @@ async fn code_intel_tool_calls() {
     assert_ast_grep(&events);
     let diagnostics = ended(&events, "call_lsp_1", false);
     assert_eq!(
-        diagnostics["details"]["xdev"]["inner"]["action"], "diagnostics",
+        dispatch(&diagnostics)["inner"]["action"],
+        "diagnostics",
         "{diagnostics:#}"
     );
     assert!(
-        text(&diagnostics).ends_with("notes.txt: No language server found"),
+        text(&diagnostics).contains("notes.txt: No language server found"),
         "{diagnostics:#}"
     );
     let preview = ended(&events, "call_ast_edit_1", false);
-    let inner = &preview["details"]["xdev"]["inner"];
+    let inner = &dispatch(&preview)["inner"];
     assert_eq!(
         (&inner["totalReplacements"], &inner["applied"]),
         (&json!(1), &json!(false)),
@@ -437,37 +449,34 @@ async fn code_intel_tool_calls() {
     finish(&harness, &recorder, "code_intel_tool_calls");
 }
 
-/// The `ast_grep` device calls of [`code_intel_tool_calls`]: `details.xdev` echoes the device and its arguments and
-/// carries the tool's own details (`inner`).
+/// The `ast_grep` command calls of [`code_intel_tool_calls`]: the `bash` result's dispatch names the tool and its
+/// arguments and carries the tool's own details (`inner`).
 fn assert_ast_grep(events: &[ThreadEvent]) {
     let found = ended(events, "call_ast_grep_1", false);
-    let xdev = &found["details"]["xdev"];
+    let dispatched = dispatch(&found);
     assert_eq!(
-        (&xdev["tool"], &xdev["mode"]),
+        (&dispatched["tool"], &dispatched["mode"]),
         (&json!("ast_grep"), &json!("execute")),
         "{found:#}"
     );
     assert_eq!(
-        xdev["args"]["pat"],
+        dispatched["args"]["pat"],
         "pub fn $NAME($$$ARGS) -> $RET { $$$BODY }"
     );
-    assert_eq!(xdev["inner"]["matchCount"], 2, "{found:#}");
+    assert_eq!(dispatched["inner"]["matchCount"], 2, "{found:#}");
     assert_eq!(
-        xdev["inner"]["fileMatches"],
+        dispatched["inner"]["fileMatches"],
         json!([{ "path": "src/lib.rs", "count": 2 }])
     );
     assert!(
-        xdev["inner"]["displayContent"]
+        dispatched["inner"]["displayContent"]
             .as_str()
             .unwrap()
             .contains("pub fn add(left: u64, right: u64) -> u64 {"),
         "{found:#}"
     );
     let missing = ended(events, "call_ast_grep_2", true);
-    assert_eq!(
-        missing["details"]["xdev"]["tool"], "ast_grep",
-        "{missing:#}"
-    );
+    assert_eq!(dispatch(&missing)["tool"], "ast_grep", "{missing:#}");
 }
 
 // spec: TST-012, UI-051
@@ -699,7 +708,7 @@ async fn task_tool_call() {
     finish(&harness, &recorder, "task_tool_call");
 }
 
-// spec: TST-012, UI-051
+// spec: TST-012, UI-051, DMN-050
 #[tokio::test(flavor = "multi_thread")]
 async fn ask_cancelled() {
     let form = r#"<form>
@@ -721,16 +730,17 @@ async fn ask_cancelled() {
         let (mut process, startup) = start(&spec);
         let recorder = Recorder::attach(&mut process, &startup);
         process.client().call(&prompt("set it up")).unwrap();
-        let select = |events: &[ThreadEvent]| {
+        // omp 19.1 sends the whole form as one `form` request.
+        let form_id = |events: &[ThreadEvent]| {
             events.iter().find_map(|event| match event {
                 ThreadEvent::Omp {
-                    frame: RpcNotification::ExtensionUiRequest(ExtensionUiRequest::Select(select)),
-                } => Some(select.id.clone()),
+                    frame: RpcNotification::ExtensionUiRequest(ExtensionUiRequest::Form(form)),
+                } => Some(form.id.clone()),
                 _ => None,
             })
         };
-        recorder.wait_until("the select dialog", |events| select(events).is_some());
-        let id = select(&recorder.events()).unwrap();
+        recorder.wait_until("the form dialog", |events| form_id(events).is_some());
+        let id = form_id(&recorder.events()).unwrap();
         // Recorded before the answer goes out, so omp's reaction always follows it (stable fixture).
         recorder.push(ThreadEvent::InteractionResolved {
             id: id.clone(),

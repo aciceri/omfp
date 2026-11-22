@@ -632,7 +632,7 @@ export type IndexSnapshot = {
   workspaces: Workspace[];
 };
 
-/** Answer to an interactive request: exactly one of `value`, `confirmed`, `cancelled` (always true) or `answers`. */
+/** Answer to an interactive request: exactly one of `value`, `confirmed`, `cancelled` (always true), `answers` or `data`. */
 export type InteractionResponse =
   | {
     value: string;
@@ -645,6 +645,9 @@ export type InteractionResponse =
   }
   | {
     answers: unknown[];
+  }
+  | {
+    data: Record<string, unknown>;
   };
 
 /** A workspace's declared jobs at a glance, on the `index` topic (PRT-210). */

@@ -10,7 +10,7 @@ mod reducer;
 mod state;
 mod stream;
 
-pub use ask::validate_ask_answers;
+pub use ask::{validate_ask_answers, validate_form_data};
 pub use event::{
     LiveOwner, NotifyRequest, OpenFileRequest, ProcessState, Resolution, SessionInfo, ThreadEvent,
 };

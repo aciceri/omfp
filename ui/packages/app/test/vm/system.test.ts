@@ -76,7 +76,7 @@ describe("system records", () => {
   });
 
   // spec: UI-043
-  test("omp's xdev mount notice is a system record; other notices are not", () => {
+  test("omp's tool command mount notice (xdev in 18.x) is a system record; other notices are not", () => {
     const mounted = systemNotice({
       type: "notice",
       data: { level: "info", message: "xd://: mounted ast_edit, debug", source: "xdev" },
@@ -85,6 +85,11 @@ describe("system records", () => {
     expect(systemNotice({ type: "notice", data: { level: "error", message: "mount failed", source: "xdev" } })).toBe(
       undefined,
     );
+    const commands = systemNotice({
+      type: "notice",
+      data: { level: "info", message: "Tool commands: added mcp__a; removed mcp__b", source: "toolCommands" },
+    });
+    expect(commands).toEqual({ summary: "Tool commands: added mcp__a; removed mcp__b", text: undefined });
     expect(
       systemNotice({ type: "notice", data: { level: "info", message: "joined", source: "collab" } }),
     ).toBeUndefined();

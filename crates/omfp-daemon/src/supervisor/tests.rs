@@ -595,6 +595,8 @@ async fn a_thread_whose_saved_model_cannot_start_shows_its_history_and_resumes_w
             SetModelCommand {
                 provider: "fake".into(),
                 model_id: "scripted".into(),
+                thinking_level: None,
+                role: None,
             },
         )
         .await
@@ -636,6 +638,8 @@ async fn a_running_thread_switches_its_model_through_omp_and_stores_it() {
             SetModelCommand {
                 provider: "fake".into(),
                 model_id: "scripted".into(),
+                thinking_level: None,
+                role: None,
             },
         )
         .await
@@ -1783,6 +1787,8 @@ async fn the_first_message_gives_a_placeholder_then_a_generated_title_and_sessio
     let h = harness(|_| {});
     h.launcher.push_run(fixture("text_reply"));
     h.launcher.push_title(Ok("Greeting the room"));
+    // Held until the placeholder is checked: a fast title run would otherwise replace it first.
+    let gate = h.launcher.gate_titles();
     let (id, _) = h.untitled_thread();
 
     h.supervisor
@@ -1796,6 +1802,7 @@ async fn the_first_message_gives_a_placeholder_then_a_generated_title_and_sessio
             TitleSource::Placeholder
         )
     );
+    gate.open();
     h.supervisor.title_generated(&id).await;
 
     assert_eq!(

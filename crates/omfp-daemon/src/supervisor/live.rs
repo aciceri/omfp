@@ -1,20 +1,23 @@
-//! Live voice relay (DMN-100..113): one session per thread, opened on the client's peer (`live_connect`) or on the
-//! daemon machine (`live_start`), owned by the connection that opened it; what was said stays in the thread.
+//! Live voice relay (DMN-100..114): one session per thread, opened on the client's peer (`live_connect`) or on the
+//! daemon machine (`live_start`), owned by the connection that opened it; what was said stays in the thread, and a
+//! session nobody talks to ends.
 
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
 use omfp_core::{LiveOwner, ThreadEvent, live_error_message};
 use omfp_protocol::LiveVoice;
 use omp_rpc::{
-    LiveConnectCommand, LiveConnectResult, LiveLevelsEvent, LiveMuteCommand, LiveStartCommand,
-    LiveStartResult, PromptCommand,
+    LiveConnectCommand, LiveConnectResult, LiveLevelsEvent, LiveMuteCommand, LivePhase,
+    LiveStartCommand, LiveStartResult, PromptCommand,
 };
 use serde_json::Value;
 use tokio::sync::broadcast;
-use tracing::warn;
+use tokio::time::Instant;
+use tracing::{info, warn};
 
-use super::{Result, Supervisor, SupervisorError, VoiceSlot, blocking, lock};
+use super::{Actor, Result, Supervisor, SupervisorError, VoiceSlot, blocking, lock};
 use crate::agent::OmpCall;
 
 /// omp's `live_connect`/`live_start` failures that come before a session exists: no `live_end` follows them (S-09).
@@ -27,6 +30,10 @@ const LIVE_NOT_STARTED: &[&str] = &[
 
 /// omp's `live_mute` failure without a session.
 const LIVE_NO_SESSION: &str = "No live session is active";
+
+/// How long a live session may go without a word spoken and without delegated work before the daemon ends it
+/// (DMN-114).
+pub(super) const LIVE_SILENCE: Duration = Duration::from_mins(10);
 
 impl Supervisor {
     /// Starts a live voice session for `owner` on the client's peer (DMN-100), speaking with `voice` when given
@@ -103,6 +110,7 @@ impl Supervisor {
             *voice = Some(VoiceSlot {
                 id: slot,
                 owner: owner.clone(),
+                heard: Instant::now(),
             });
         }
         let (process, title) = async {
@@ -120,6 +128,7 @@ impl Supervisor {
             .log
             .with_state(|state| crate::live_context::live_instructions(&title, state, &spoken));
         self.push(&actor, ThreadEvent::LiveSession { owner: Some(owner) });
+        self.watch_silence(&actor, slot);
         let call = call(instructions);
         let answer = blocking(move || process.call(call)).await?;
         actor.touch();
@@ -254,6 +263,50 @@ impl Supervisor {
                 logs.remove(0);
             }
         }
+    }
+
+    /// Ends the thread's live session `slot` once nobody spoke and no delegated work ran for [`LIVE_SILENCE`]
+    /// (DMN-114): a forgotten session holds a realtime call and the thread's omp (DMN-103). The watch ends with the
+    /// session; it holds neither the supervisor nor the thread.
+    fn watch_silence(&self, actor: &Arc<Actor>, slot: u64) {
+        let inner = Arc::downgrade(&self.inner);
+        let thread = Arc::downgrade(actor);
+        tokio::spawn(async move {
+            loop {
+                let Some(actor) = thread.upgrade() else {
+                    return;
+                };
+                let Some(heard) = lock(&actor.voice)
+                    .as_ref()
+                    .filter(|voice| voice.id == slot)
+                    .map(|voice| voice.heard)
+                else {
+                    return;
+                };
+                let deadline = heard + LIVE_SILENCE;
+                if Instant::now() < deadline {
+                    drop(actor);
+                    tokio::time::sleep_until(deadline).await;
+                    continue;
+                }
+                // Delegated work can take longer than the silence: the voice is waiting for it.
+                let working = actor.log.with_state(|state| {
+                    state.live.as_ref().and_then(|live| live.phase) == Some(LivePhase::Working)
+                });
+                if working {
+                    actor.heard();
+                    continue;
+                }
+                let Some(inner) = inner.upgrade() else {
+                    return;
+                };
+                info!(thread = %actor.id, "ending a silent live session");
+                if let Err(error) = (Supervisor { inner }).live_stop(&actor.id).await {
+                    warn!(thread = %actor.id, %error, "cannot end a silent live session");
+                }
+                return;
+            }
+        });
     }
 }
 

@@ -2342,6 +2342,94 @@ async fn the_reaper_keeps_a_process_with_a_live_session() {
     reaper.abort();
 }
 
+/// How many `live_stop` commands the thread's first process got.
+fn live_stops(h: &Harness) -> usize {
+    h.launcher
+        .process(0)
+        .calls()
+        .into_iter()
+        .filter(|call| matches!(call, FakeCall::Call(OmpCall::LiveStop)))
+        .count()
+}
+
+// spec: DMN-114
+#[tokio::test]
+async fn a_live_session_nobody_talks_to_ends() {
+    let h = harness(|_| {});
+    let id = h.thread();
+    h.launcher
+        .script_live(crate::agent::FakeLive::connect(Vec::new()));
+    h.supervisor
+        .live_connect(&id, owner(1), OFFER.into(), None)
+        .await
+        .unwrap();
+    h.wait(&id, "the listening phase", |state| {
+        live_phase(state) == Some("listening")
+    })
+    .await;
+    // The clock moves only by `advance` from here, and the spoken line goes straight into the thread: no frame is in
+    // transit while time jumps.
+    tokio::time::pause();
+    let actor = h.supervisor.lookup(&id).unwrap();
+    let almost = live::LIVE_SILENCE.saturating_sub(Duration::from_mins(1));
+
+    tokio::time::advance(almost).await;
+    h.supervisor.push(
+        &actor,
+        ThreadEvent::Omp {
+            frame: crate::agent::live_transcript(omp_rpc::LiveRole::User, 1, "still here", true),
+        },
+    );
+    tokio::time::advance(almost).await;
+    assert_eq!(live_stops(&h), 0, "a word restarts the silence");
+
+    tokio::time::advance(Duration::from_mins(2)).await;
+    h.wait(&id, "the end of the silent session", |state| {
+        state.live.is_none()
+    })
+    .await;
+    assert_eq!(live_stops(&h), 1);
+}
+
+// spec: DMN-114
+#[tokio::test]
+async fn delegated_work_keeps_the_live_session_and_its_end_restarts_the_silence() {
+    let h = harness(|_| {});
+    let id = h.thread();
+    h.launcher.script_live(crate::agent::FakeLive::connect(vec![
+        crate::agent::live_phase(omp_rpc::LivePhase::Working),
+    ]));
+    h.supervisor
+        .live_connect(&id, owner(1), OFFER.into(), None)
+        .await
+        .unwrap();
+    h.wait(&id, "the working phase", |state| {
+        live_phase(state) == Some("working")
+    })
+    .await;
+    tokio::time::pause();
+    let actor = h.supervisor.lookup(&id).unwrap();
+
+    tokio::time::advance(live::LIVE_SILENCE * 3 + Duration::from_mins(5)).await;
+    assert_eq!(live_stops(&h), 0, "the voice waits for its delegated work");
+
+    // The work ends between two looks of the watch: the silence counts from then.
+    h.supervisor.push(
+        &actor,
+        ThreadEvent::Omp {
+            frame: crate::agent::live_phase(omp_rpc::LivePhase::Listening),
+        },
+    );
+    tokio::time::advance(live::LIVE_SILENCE.saturating_sub(Duration::from_mins(1))).await;
+    assert_eq!(live_stops(&h), 0);
+    tokio::time::advance(Duration::from_mins(2)).await;
+    h.wait(&id, "the end of the silent session", |state| {
+        state.live.is_none()
+    })
+    .await;
+    assert_eq!(live_stops(&h), 1);
+}
+
 /// The `live_start` calls a fake process received, with their instructions.
 fn live_starts(process: &crate::agent::FakeProcess) -> Vec<Option<String>> {
     process

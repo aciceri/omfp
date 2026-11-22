@@ -82,6 +82,7 @@ const COMMAND_GROUPS: Readonly<Record<string, KeyGroup>> = {
   "threads.toggle": "views",
   "threads.collapse": "views",
   "live.voice": "commands",
+  "live.toggle": "threads",
 };
 
 /** The group of a command id's namespace (the part before its first dot). */

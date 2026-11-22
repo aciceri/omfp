@@ -214,6 +214,24 @@ describe("live voice", () => {
     expect(live.media.link.closed).toBe(false);
   });
 
+  // spec: UI-108
+  test(":live starts the session like the mic button, and ends it", async () => {
+    const live = renderLive();
+    await act(async () => {
+      expect(live.host.commands.run("live")).toBe(true);
+    });
+    expect(live.client.callsTo("thread.live_connect").map((call) => call.params)).toEqual([
+      { threadId: THREAD, sdpOffer: OFFER },
+    ]);
+    live.events(session(1), phase("connecting"), phase("listening"));
+    await answer(live);
+    live.media.peer("connected");
+    await act(async () => {
+      expect(live.host.commands.run("live.toggle")).toBe(true);
+    });
+    expect(live.client.callsTo("thread.live_stop").map((call) => call.params)).toEqual([{ threadId: THREAD }]);
+  });
+
   // spec: UI-180
   test("outside a secure context the mic button only says why: no microphone, no call", async () => {
     const live = renderLive(fixtureEvents("text_reply"), "insecure");

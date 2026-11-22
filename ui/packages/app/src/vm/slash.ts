@@ -98,6 +98,7 @@ const ROUTES: Readonly<Record<string, (args: string) => SlashRoute | undefined>>
   new: (args) => (args === "" ? command("thread.new") : undefined),
   hotkeys: (args) => (args === "" ? command("help.open") : undefined),
   resume: (args) => (args === "" ? command("threads.pick") : undefined),
+  live: (args) => (args === "" ? command("live.toggle") : undefined),
 };
 
 /** omp's `/name args` (`parseSlashCommand`): the name ends at the first whitespace or `:`. */

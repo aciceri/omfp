@@ -7,7 +7,7 @@
 
 import type { ThreadState } from "@omfp/core";
 import { Button, Icon, IconButton, type LiveHint, LivePanel, Spectrum } from "omfp/kit";
-import { keyLabel, livePanelView, micButton, strings, useLive, useSnapshot } from "omfp/sdk";
+import { keyLabel, livePanelView, micButton, strings, useCommand, useLive, useSnapshot } from "omfp/sdk";
 import { type KeyboardEvent, useEffect, useId, useRef } from "react";
 
 const text = strings.chat.live;
@@ -143,11 +143,16 @@ export function LiveVoicePanel({ threadId, state }: { threadId: string; state: T
   );
 }
 
-/** The composer's mic button (UI-180): starts a live session, ends the running one, or says why it cannot start. */
+/**
+ * The composer's mic button (UI-180): starts a live session, ends the running one, or says why it cannot start. It
+ * registers `:live` (`live.toggle`, UI-108), which does the same from the keyboard, the Commands sheet and `/live`.
+ */
 export function MicButton({ threadId, state }: { threadId: string; state: ThreadState }) {
   const [live, snapshot] = useLive();
   const reasonId = useId();
   const button = micButton(threadId, state, snapshot.local, live.support());
+  const toggle = () => (button.kind === "end" ? live.endThread(threadId) : void live.start(threadId));
+  useCommand({ id: "live.toggle", title: text.toggle, aliases: ["live"], run: toggle });
   if (button.kind === "end") {
     return (
       <IconButton
@@ -156,7 +161,7 @@ export function MicButton({ threadId, state }: { threadId: string; state: Thread
         aria-pressed
         data-testid="live-mic"
         data-live="end"
-        onPress={() => live.endThread(threadId)}
+        onPress={toggle}
       />
     );
   }
@@ -170,7 +175,7 @@ export function MicButton({ threadId, state }: { threadId: string; state: Thread
         {...(reason === undefined ? {} : { "aria-describedby": reasonId, "data-unavailable": true })}
         data-testid="live-mic"
         data-live={button.kind}
-        onPress={() => void live.start(threadId)}
+        onPress={toggle}
       />
       {reason !== undefined && (
         <span id={reasonId} className="omfp-visually-hidden">

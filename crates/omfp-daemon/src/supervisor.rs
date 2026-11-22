@@ -330,6 +330,8 @@ struct VoiceSlot {
     /// Tells a session from the next one on the same thread.
     id: u64,
     owner: LiveOwner,
+    /// When someone last spoke in it, or its delegated work last ran (DMN-114).
+    heard: Instant,
 }
 
 /// A thread's prompts as `omfp_thread_wait` follows them (DMN-152).
@@ -479,6 +481,13 @@ impl Actor {
 
     fn touch(&self) {
         *lock(&self.last_activity) = Instant::now();
+    }
+
+    /// Someone spoke in the thread's live session, or it waits for its delegated work (DMN-114).
+    fn heard(&self) {
+        if let Some(voice) = lock(&self.voice).as_mut() {
+            voice.heard = Instant::now();
+        }
     }
 
     /// Running, settled, without pending requests and unwatched since at least `timeout` (DMN-034): subscriptions
@@ -1234,6 +1243,9 @@ impl Supervisor {
                 RpcNotification::ExtensionUiRequest(ExtensionUiRequest::OpenUrl(open)) => {
                     lock(&actor.oauth).opened(&open.url, Instant::now());
                 }
+                // Someone spoke, or the session changed phase (its delegated work started or ended, a mute): the
+                // session is in use (DMN-114).
+                RpcNotification::LiveTranscript(_) | RpcNotification::LivePhase(_) => actor.heard(),
                 // omp ended the session: the thread may start another (DMN-101), and keeps what was said (DMN-113).
                 RpcNotification::LiveEnd(_) => {
                     lock(&actor.voice).take();

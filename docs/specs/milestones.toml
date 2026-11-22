@@ -417,6 +417,7 @@ requirements = [
   "DMN-104",
   "DMN-105",
   "DMN-113",
+  "DMN-114",
   # Protocol: methods, connection number, live state in the reducer
   "PRT-050",
   "PRT-051",
@@ -432,6 +433,7 @@ requirements = [
   "UI-185",
   "UI-186",
   "UI-199",
+  "UI-108",
   # End-to-end journey
   "E2E-14",
 ]

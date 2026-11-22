@@ -90,6 +90,7 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   "window.theme": commandTitles.theme,
   "density.set": commandTitles.density,
   "live.voice": commandTitles.voice,
+  "live.toggle": strings.chat.live.toggle,
   "settings.set": commandTitles.set,
   "view.switch": commandTitles.view,
   "view.next": commandTitles.nextView,

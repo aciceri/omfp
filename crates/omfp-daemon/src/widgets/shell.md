@@ -116,6 +116,7 @@ bind. The built-in ones (`omfp://keymap` has them all):
 | `:set show_xdev_notices=true\|false` | Show/hide informational MCP mount/unmount notices in new and retained transcripts, live (default `false`). Only presentation changes; other notices, startup inventory records, tools and omp configuration stay intact. The API field is `ui.showXdevNotices` in `settings.set`. |
 | `:set recent_threads=<n>\|all` | How many hidden threads each window keeps followed so switching back to one is instant (`[ui] recent_threads`, 0–100 or `all`, default 20), live; `all` keeps every thread shown in the window until it closes or reloads. A kept thread does not keep its omp running: idle, it stops after the idle timeout like an unwatched one, its transcript stays in the window. Each kept thread costs the window memory (about its snapshot: a few MB for a very long thread), so `all` can reach gigabytes after hundreds of long threads, too much for a phone. |
 | `:voice <voice>`, `:set live_voice=<voice>` | The voice of live sessions (`[ui] live_voice`): one of omp's `arbor`, `breeze`, `cove`, `ember`, `juniper`, `maple`, `sol` (omp's default), `spruce`, `vale`, sent with every start of a live session from then on (the running one keeps its voice). The API field is `ui.liveVoice` in `settings.set`; `thread.live_connect`/`thread.live_start` take a `voice` of their own. |
+| `:live` | Start live voice on the current thread, or end the running session, as the composer's microphone does (`/live` too). The daemon ends a session after 10 minutes in which nobody spoke and no delegated work ran; what was said stays in the thread as a *Voice conversation* row. |
 | `:help` | Every effective key and command, filterable (`?` too). |
 | `:describe-key`, `:describe-command <name>` | What a key runs and where it was bound; a command's names, keys and who registered it. |
 | `:notice` | Open the newest notice. |
@@ -168,8 +169,8 @@ word autocomplete, `spelling.autocomplete` in omfp's omp profile; not on touch s
 
 `/` at the start of the message suggests omp's commands. omp runs most of them, but some only work in its terminal UI:
 omfp runs its own equivalent for `/login`, `/logout`, `/model` (the header's model list), `/compact [<mode>] [<focus>]` (`:compact`),
-`/fork` (a new thread with the whole conversation), `/copy`, `/export`, `/new`, `/hotkeys` (`:help`) and `/resume`
-(`:threads`); the other terminal-only ones (`/settings`, `/quit`, `/tree`, …) show greyed out with the reason and are
+`/fork` (a new thread with the whole conversation), `/copy`, `/export`, `/new`, `/hotkeys` (`:help`), `/resume`
+(`:threads`) and `/live` (`:live`); the other terminal-only ones (`/settings`, `/quit`, `/tree`, …) show greyed out with the reason and are
 not sent. A command defined by the workspace, a skill or a plugin always goes to omp. When omp refuses a command, the
 error says why.
 

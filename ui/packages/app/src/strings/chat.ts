@@ -242,6 +242,7 @@ export const chat = {
         new: "New thread in the current workspace (:new)",
         hotkeys: "Show every key and command (:help)",
         resume: "Pick another thread (:threads)",
+        live: "Start or end live voice on this thread (:live)",
       } as Readonly<Record<string, string>>,
       /** The argument hints of the routed commands omp does not announce. */
       routedHints: { login: "[<provider>]", logout: "[<provider>]" } as Readonly<Record<string, string>>,
@@ -255,7 +256,6 @@ export const chat = {
         exit: ":stop stops the thread's process",
         quit: ":stop stops the thread's process",
         restart: ":stop then :restart restarts the thread's process",
-        live: "the composer's microphone starts live voice",
       } as Readonly<Record<string, string>>,
       refused: (name: string, reason: string) => `/${name} was not sent: ${reason}`,
       noArguments: (name: string) => `/${name} was not sent: omfp runs it without arguments`,
@@ -269,6 +269,8 @@ export const chat = {
   live: {
     start: "Start live voice",
     end: "End live voice",
+    /** `:live` (UI-108). */
+    toggle: "Start or end live voice (:live)",
     panel: "Live voice",
     level: "Voice level",
     status: {

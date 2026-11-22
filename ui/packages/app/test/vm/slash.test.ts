@@ -57,6 +57,7 @@ describe("slash commands over omp's RPC", () => {
     expect(route("/new")).toEqual(["new", { type: "command", id: "thread.new", args: [] }]);
     expect(route("/hotkeys")).toEqual(["hotkeys", { type: "command", id: "help.open", args: [] }]);
     expect(route("/resume")).toEqual(["resume", { type: "command", id: "threads.pick", args: [] }]);
+    expect(route("/live")).toEqual(["live", { type: "command", id: "live.toggle", args: [] }]);
   });
 
   // spec: UI-976

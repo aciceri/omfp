@@ -206,7 +206,7 @@ const ASK_FORM: &str = r#"<form>
   </fieldset>
 </form>"#;
 
-// spec: E2E-03
+// spec: E2E-03, UI-074
 #[tokio::test(flavor = "multi_thread")]
 async fn an_ask_with_two_questions_is_answered_and_the_agent_gets_the_answers() -> anyhow::Result<()>
 {
@@ -223,43 +223,47 @@ async fn an_ask_with_two_questions_is_answered_and_the_agent_gets_the_answers() 
     let thread = journey.create_thread("ask journey").await?;
     journey.send("set it up").await?;
 
-    // omp walks the form with one `select` dialog per question; the multiple choice repeats until "Done".
-    let mut headings = Vec::new();
-    let mut features = ["Auth", "Search", "Done"].into_iter();
-    loop {
-        let next = journey
-            .until("a question or the answer", async |page| {
-                if let Some(heading) = pending_request(page).await? {
-                    return Ok(Some(Some(heading)));
-                }
-                let replies = page
-                    .texts("[data-testid=message][data-role=assistant]")
-                    .await?;
-                Ok(replies
-                    .iter()
-                    .any(|reply| reply.contains("Using SQLite"))
-                    .then_some(None))
-            })
-            .await?;
-        let Some(heading) = next else { break };
-        let choice = if heading.contains("database") {
-            "SQLite"
-        } else {
-            features.next().expect("at most three feature questions")
-        };
-        choose(&journey, choice).await?;
-        headings.push(heading);
-        // The answered card closes before the next request shows.
+    // omp sends the whole form as one `form` request: both questions show at once in one card.
+    let card = "[data-testid=interaction][data-kind=form]:not([aria-busy=true])";
+    let legends = journey
+        .until("the form with both questions", async |page| {
+            let legends = page
+                .texts(&format!("{card} [data-testid=form-section] > legend"))
+                .await?;
+            Ok((legends.len() == 2).then_some(legends))
+        })
+        .await?;
+    assert_eq!(legends, ["Which database?", "Which features?"]);
+    for (name, value) in [
+        ("db", "sqlite"),
+        ("features", "auth"),
+        ("features", "search"),
+    ] {
         journey
-            .gone("[data-testid=interaction][aria-busy=true]")
+            .click(&format!(
+                "{card} [data-testid=form-field][data-name={name}] \
+                 [data-testid=form-option][data-value={value}]"
+            ))
             .await?;
     }
-    assert!(
-        headings
-            .first()
-            .is_some_and(|heading| heading.contains("Which database?")),
-        "{headings:?}"
-    );
+    journey
+        .until("the three choices", async |page| {
+            let selected = page
+                .attrs(
+                    &format!("{card} [data-testid=form-option][data-selected=true]"),
+                    "data-value",
+                )
+                .await?;
+            Ok(
+                (selected == ["sqlite", "auth", "search"].map(|value| Some(value.to_owned())))
+                    .then_some(()),
+            )
+        })
+        .await?;
+    journey
+        .click(&format!("{card} [data-testid=interaction-submit]"))
+        .await?;
+    journey.gone("[data-testid=interaction]").await?;
     journey.status(&thread, "idle").await?;
     let second = journey.fake.requests()[1].to_string().to_lowercase();
     assert!(

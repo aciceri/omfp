@@ -241,6 +241,21 @@ async fn pending(journey: &Journey) -> anyhow::Result<Option<String>> {
         .await
 }
 
+/// Picks the option of value `value` of field `name` in the pending form card (UI-074), submits the form, then waits
+/// until it closes.
+async fn answer_form(journey: &Journey, name: &str, value: &str) -> anyhow::Result<()> {
+    let card = "[data-testid=interaction][data-kind=form]:not([aria-busy=true])";
+    journey
+        .click(&format!(
+            "{card} [data-testid=form-field][data-name={name}] [data-testid=form-option][data-value={value}]"
+        ))
+        .await?;
+    journey
+        .click(&format!("{card} [data-testid=interaction-submit]"))
+        .await?;
+    journey.gone("[data-testid=interaction]").await
+}
+
 /// Clicks the option containing `needle` (omp's label) of the pending request, then waits until it closes.
 async fn answer(journey: &Journey, needle: &str) -> anyhow::Result<()> {
     let clicked = journey
@@ -335,7 +350,8 @@ async fn the_workspace_panel_path_completion_a_pending_approval_and_an_ask_quest
     journey.gone("[data-testid=path-option]").await?;
 
     journey.send("build it").await?;
-    // Approvals (bash, and the ask tool if it needs one) until the question shows; the first one is captured.
+    // Approvals (bash, and the ask tool if it needs one) until the question's form card shows (titled by its legend);
+    // the first approval is captured.
     let mut approvals = 0;
     loop {
         let heading = journey
@@ -352,7 +368,7 @@ async fn the_workspace_panel_path_completion_a_pending_approval_and_an_ask_quest
     }
     anyhow::ensure!(approvals > 0, "no approval was asked");
     journey.screenshot("c-ask").await?;
-    answer(&journey, "SQLite").await?;
+    answer_form(&journey, "db", "sqlite").await?;
     journey.reply("Using SQLite.").await?;
     journey.status(&thread, "idle").await?;
     journey

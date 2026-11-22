@@ -719,6 +719,7 @@ function FormChoice({
             // biome-ignore lint/suspicious/noArrayIndexKey: see above
             key={at}
             data-testid="form-option"
+            data-value={option.value}
             value={String(at)}
             isSelected={choice.checked.includes(at)}
             isDisabled={disabled || option.disabled}
@@ -758,9 +759,15 @@ function FormChoice({
         }
       >
         {field.options.map((option, at) => (
-          // Options are fixed for the request's lifetime.
-          // biome-ignore lint/suspicious/noArrayIndexKey: see above
-          <Radio key={at} data-testid="form-option" value={String(at)} isDisabled={option.disabled}>
+          <Radio
+            // Options are fixed for the request's lifetime.
+            // biome-ignore lint/suspicious/noArrayIndexKey: see above
+            key={at}
+            data-testid="form-option"
+            data-value={option.value}
+            value={String(at)}
+            isDisabled={option.disabled}
+          >
             <Spans spans={option.label} />
           </Radio>
         ))}

@@ -3609,8 +3609,9 @@
     min-inline-size: 0;
   }
 
-  /* A message's actions (UI-660): at the end of its name line, shown while it is hovered or holds the focus; always on
-     touch screens, where nothing hovers. */
+  /* A message's actions (UI-660): at the end of its name line, shown while it is hovered or holds the focus. On touch
+     screens, where nothing hovers, they always show and take their room on the name line (as tall as a touch target)
+     instead of lying over the body. */
   .omfp-msg__actions {
     position: absolute;
     inset-block-start: 0;
@@ -3626,7 +3627,24 @@
   }
 
   @media (hover: none) {
+    .omfp-msg:has(> .omfp-msg__actions) {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: var(--omfp-s1) var(--omfp-s2);
+    }
+
+    .omfp-msg:has(> .omfp-msg__actions) > :not(.omfp-msg__name, .omfp-msg__actions) {
+      grid-column: 1 / -1;
+    }
+
+    .omfp-msg:has(> .omfp-msg__actions) > .omfp-msg__name {
+      align-self: center;
+    }
+
     .omfp-msg__actions {
+      position: static;
+      grid-column: 2;
       opacity: 1;
     }
   }

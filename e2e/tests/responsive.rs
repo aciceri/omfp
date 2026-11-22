@@ -277,6 +277,19 @@ async fn touch_chat(journey: &Journey) -> anyhow::Result<()> {
         .await?;
     let title = title.as_f64().unwrap_or_default();
     anyhow::ensure!(title >= 120.0, "the thread title is {title} px wide");
+    // Always shown on touch, "Fork from here" sits on the name line, above the message's text, not over it (UI-660).
+    let clear = journey
+        .eval(
+            "const fork = document.querySelector('[data-testid=message-fork]');
+             const body = fork.closest('.omfp-msg').querySelector('.omfp-msg__body').getBoundingClientRect();
+             return fork.getBoundingClientRect().bottom <= body.top + 0.5;",
+            Vec::new(),
+        )
+        .await?;
+    anyhow::ensure!(
+        clear.as_bool() == Some(true),
+        "Fork from here lies over the message's text"
+    );
     journey.screenshot("touch-412-chat").await?;
     journey.click("[data-testid=header-more]").await?;
     journey

@@ -859,6 +859,14 @@
       ]
     },
     {
+      "id": "thread.resume",
+      "title": "Resume the turn a daemon restart interrupted",
+      "aliases": [
+        "resume"
+      ],
+      "description": "Starts the selected thread's agent and tells it that its previous turn was interrupted by a daemon restart, so it checks what was in progress and continues. Offered while the thread's last turn is marked interrupted; any message you send clears the mark too."
+    },
+    {
       "id": "thread.stop",
       "title": "Stop process",
       "aliases": [

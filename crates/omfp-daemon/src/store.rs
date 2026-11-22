@@ -699,6 +699,49 @@ impl Store {
         )
     }
 
+    // Turns a daemon stop interrupted (DMN-370)
+
+    /// Marks the turns of `ids` interrupted by a daemon stop at `at` (DMN-370); a thread marked already takes the
+    /// later time. Threads deleted meanwhile are skipped.
+    pub fn mark_interrupted(&self, ids: &[String], at: i64) -> Result<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction()?;
+        {
+            let mut stmt = tx.prepare(
+                "INSERT INTO interrupted_turns (thread_id, interrupted_at)
+                 SELECT id, ?2 FROM threads WHERE id = ?1
+                 ON CONFLICT (thread_id) DO UPDATE SET interrupted_at = excluded.interrupted_at",
+            )?;
+            for id in ids {
+                stmt.execute(params![id, at])?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// Takes the thread's mark (DMN-372, DMN-373): when its turn was interrupted, `None` when it was not marked.
+    pub fn take_interrupted(&self, id: &str) -> Result<Option<i64>> {
+        Ok(self
+            .conn()
+            .query_row(
+                "DELETE FROM interrupted_turns WHERE thread_id = ?1 RETURNING interrupted_at",
+                [id],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+
+    /// When each marked thread's turn was interrupted, by thread id (DMN-371).
+    pub fn interrupted_turns(&self) -> Result<HashMap<String, i64>> {
+        query_all(
+            &self.conn(),
+            "SELECT thread_id, interrupted_at FROM interrupted_turns",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+    }
+
     // Widget state
 
     /// Every stored widget value of a workspace (DMN-086): instance → key → value.

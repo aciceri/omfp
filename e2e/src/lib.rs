@@ -287,6 +287,8 @@ pub struct Journey {
     data: TempDir,
     _profile: TempDir,
     daemon: Option<DaemonHandle>,
+    /// The web bundle the daemon serves.
+    bundle: PathBuf,
     pub driver: WebDriver,
     _chromedriver: ChromeDriver,
     /// The daemon's git of a [`Journey::start_fake`] journey (repositories and their `HEAD` set by the test);
@@ -353,7 +355,16 @@ impl Journey {
         let env = OmpEnv::new(&fake.base_url(), Some(&proxy))?;
         let data = tempfile::tempdir()?;
         let git = launcher.as_ref().map(|_| Arc::new(FakeGit::new()));
-        let daemon = start_daemon(&env, data.path(), &bundle, launcher, git.clone(), setup).await?;
+        let daemon = start_daemon(
+            &env,
+            data.path(),
+            &bundle,
+            "127.0.0.1:0",
+            launcher,
+            git.clone(),
+            setup,
+        )
+        .await?;
         let profile = tempfile::tempdir()?;
         let chromedriver = ChromeDriver::start()?;
         let driver = WebDriver::new(&chromedriver.url, chrome(profile.path())?).await?;
@@ -365,6 +376,7 @@ impl Journey {
             data,
             _profile: profile,
             daemon: Some(daemon),
+            bundle,
             driver,
             _chromedriver: chromedriver,
             git,
@@ -392,6 +404,26 @@ impl Journey {
     #[must_use]
     pub fn daemon(&self) -> &DaemonHandle {
         self.daemon.as_ref().expect("the daemon runs until finish")
+    }
+
+    /// Stops a [`Journey::start_fake`] journey's daemon and starts another over the same data directory and address with
+    /// `launcher` (TST-119), as an upgrade restarts the daemon: the page reconnects by itself.
+    pub async fn restart_fake(&mut self, launcher: FakeLauncher) -> anyhow::Result<()> {
+        let daemon = self.daemon.take().context("the daemon runs until finish")?;
+        let addr = daemon.addr().to_string();
+        daemon.shutdown().await?;
+        let daemon = start_daemon(
+            &self.env,
+            self.data.path(),
+            &self.bundle,
+            &addr,
+            Some(launcher),
+            self.git.clone(),
+            |_, _| Ok(()),
+        )
+        .await?;
+        self.daemon = Some(daemon);
+        Ok(())
     }
 
     /// Where the protocol client of the command line reaches the daemon.
@@ -1023,10 +1055,12 @@ fn trace_daemon() {
         .try_init();
 }
 
+/// A daemon over `data` serving `bundle`, listening on `bind` (`127.0.0.1:0`: any free port).
 async fn start_daemon(
     env: &OmpEnv,
     data: &Path,
     bundle: &Path,
+    bind: &str,
     launcher: Option<FakeLauncher>,
     git: Option<Arc<FakeGit>>,
     setup: impl FnOnce(&OmpEnv, &mut Ports) -> anyhow::Result<()>,
@@ -1036,7 +1070,7 @@ async fn start_daemon(
     let cli = Cli::try_parse_from([
         "daemon".to_owned(),
         "--bind".to_owned(),
-        "127.0.0.1:0".to_owned(),
+        bind.to_owned(),
         "--data-dir".to_owned(),
         path(data),
         "--workspaces-root".to_owned(),

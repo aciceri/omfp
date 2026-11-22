@@ -1937,6 +1937,12 @@ export type ThreadSummary = {
   /** The thread this one was forked from (`threads.fork`, DMN-300); absent for a thread that is no fork. */
   forkedFrom?: ForkOrigin | null;
   id: string;
+  /**
+   * When the daemon stopped (unix ms) while the thread's omp was mid-turn or waiting on async work: its last turn
+   * was interrupted by a daemon restart and nothing continued it since (PRT-229, DMN-370). `thread.resume`
+   * continues it; any message to the thread clears it. Absent otherwise.
+   */
+  interruptedAt?: number | null;
   /** Interactive requests are waiting for an answer. */
   needsAttention: boolean;
   /**
@@ -2614,6 +2620,7 @@ export interface Methods {
   "thread.state": { params: ThreadRef; result: unknown };
   "thread.session": { params: ThreadRef; result: ThreadSession };
   "thread.restart": { params: ThreadRef; result: Empty };
+  "thread.resume": { params: ThreadRef; result: PromptResult };
   "thread.stop": { params: StopThreadParams; result: ThreadsStopped };
   "thread.live_connect": { params: LiveConnectParams; result: LiveConnected };
   "thread.live_start": { params: LiveStartParams; result: LiveStarted };
@@ -2735,6 +2742,7 @@ export const METHODS: readonly MethodName[] = [
   "thread.state",
   "thread.session",
   "thread.restart",
+  "thread.resume",
   "thread.stop",
   "thread.live_connect",
   "thread.live_start",

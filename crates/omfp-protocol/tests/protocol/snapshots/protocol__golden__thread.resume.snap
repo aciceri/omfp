@@ -1,0 +1,23 @@
+---
+source: crates/omfp-protocol/tests/protocol/golden.rs
+expression: golden
+---
+{
+  "request": {
+    "id": "c42",
+    "method": "thread.resume",
+    "params": {
+      "threadId": "01JD8X3Q4T9V2W6Y5Z7A1B3C4D"
+    },
+    "type": "request"
+  },
+  "response": {
+    "id": "c42",
+    "ok": true,
+    "result": {
+      "agentInvoked": true,
+      "promptId": "p18"
+    },
+    "type": "response"
+  }
+}

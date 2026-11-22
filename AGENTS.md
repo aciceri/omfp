@@ -87,7 +87,8 @@ crates/omfp-daemon    daemon library: omp adapter (omp.rs), agent port + FakeLau
                       calls and their answers; supervisor/naming.rs: thread titles and session names;
                       supervisor/stopped.rs: what a thread answers without starting omp, its `/` commands and its
                       history on show; supervisor/predict.rs: the predictor omp relaying omp's word completion,
-                      `prompts.predict_word`), agent
+                      `prompts.predict_word`; supervisor/interrupted.rs: the turns a daemon stop cut, marked at
+                      shutdown in the store and continued by `thread.resume`), agent
                       conventions and the widget-builder agent (conventions.rs),
                       event log, store (+ migrations, store/migrate.rs; activity log and prompt history,
                       store/history.rs), workspaces (folder scanner in

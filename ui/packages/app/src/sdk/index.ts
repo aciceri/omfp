@@ -136,6 +136,7 @@ export {
   title as interactionTitle,
   toggleOption,
 } from "../vm/interaction.ts";
+export { type InterruptedTurn, interruptedTurn } from "../vm/interrupted.ts";
 export {
   formatWhen,
   type JobCountsView,

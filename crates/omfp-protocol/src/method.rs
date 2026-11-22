@@ -236,6 +236,9 @@ methods! {
     ThreadSession = "thread.session" (params::ThreadRef) -> session::ThreadSession;
     /// Restarts the omp process.
     ThreadRestart = "thread.restart" (params::ThreadRef) -> params::Empty;
+    /// Continues a turn a daemon restart interrupted (`interruptedAt`, PRT-230): starts omp and sends a notice asking
+    /// the agent to check what was in progress and continue; `conflict` when the thread has no interrupted turn.
+    ThreadResume = "thread.resume" (params::ThreadRef) -> params::PromptResult;
     /// Stops the omp process; with `cascade`, those of every thread it spawned too (PRT-085, AGT-071).
     ThreadStop = "thread.stop" (activity::StopThreadParams) -> activity::ThreadsStopped;
     /// Starts a live voice session on the client's WebRTC peer (omp `live_connect`, DMN-100).

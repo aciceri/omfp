@@ -21,7 +21,7 @@ use crate::names::{is_entry_name, slugify, unique};
 
 /// Every migration's SQL in order: the `n`th brings the schema to `user_version` `n`. Migrations 3 and 6 are run by
 /// code around their SQL.
-const MIGRATIONS: [&str; 13] = [
+const MIGRATIONS: [&str; 14] = [
     include_str!("0001_initial.sql"),
     include_str!("0002_created_client.sql"),
     include_str!("0003_workspace_folders.sql"),
@@ -35,10 +35,11 @@ const MIGRATIONS: [&str; 13] = [
     include_str!("0011_order.sql"),
     include_str!("0012_thread_forks.sql"),
     include_str!("0013_jobs.sql"),
+    include_str!("0014_interrupted_turns.sql"),
 ];
 
 /// Number of migrations: the highest `user_version` this daemon knows.
-const LATEST: i64 = 13;
+const LATEST: i64 = 14;
 
 /// Applies pending migrations. Foreign keys are off while migrating (tables are rebuilt) and checked before each
 /// commit; the caller turns them on afterwards.

@@ -60,6 +60,9 @@ export interface ThreadActions {
   rename(threadId: string, title: string): Promise<void>;
   stop(threadId: string): Promise<void>;
   restart(threadId: string): Promise<void>;
+  /** Continues the turn a daemon restart interrupted (`thread.resume`, UI-933); a refusal or a failed start is
+   * reported. */
+  resume(threadId: string): Promise<void>;
   /**
    * Forks `threadId` into a new thread of its workspace holding the conversation through entry `entryId` (the whole
    * session without one, `threads.fork`), then shows it with a success toast (UI-666). Resolves to the new thread's
@@ -393,6 +396,7 @@ export function threadActions(host: OmfpHost): ThreadActions {
     rename: (threadId, title) => attempt(() => client.call("threads.update", { threadId, title })),
     stop: (threadId) => attempt(() => client.call("thread.stop", { threadId })),
     restart: (threadId) => attempt(() => client.call("thread.restart", { threadId })),
+    resume: (threadId) => attempt(() => client.call("thread.resume", { threadId })),
     fork: (threadId, entryId) => forkThread(host, threadId, entryId),
     forkAtMessage: async (threadId, { role, timestamp }) => {
       if (typeof timestamp !== "number") {

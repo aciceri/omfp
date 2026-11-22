@@ -740,6 +740,7 @@ fn load_index(
 ) -> Result<IndexSnapshot, ErrorBody> {
     let clients = store.created_clients()?;
     let forks = store.thread_forks()?;
+    let interrupted = store.interrupted_turns()?;
     let threads = store.threads()?;
     let positions = store.positions()?;
     let position = |id: &str| positions.get(id).copied().unwrap_or_default();
@@ -790,6 +791,7 @@ fn load_index(
                 supervisor.status(&thread.id),
                 &clients,
                 &forks,
+                &interrupted,
                 updated_at,
                 position(&thread.id),
             );

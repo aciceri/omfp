@@ -22,7 +22,7 @@ fn user_version(path: &Path) -> i64 {
 }
 
 /// The `user_version` of a database with every migration applied.
-const LATEST: i64 = 13;
+const LATEST: i64 = 14;
 
 fn tables(path: &Path) -> Vec<String> {
     let conn = raw(path);
@@ -84,16 +84,18 @@ fn thread(workspace_id: &str) -> Thread {
     }
 }
 
-/// Turns a database back into a version-10 one: no order of the left column, no fork lineage, no declared jobs.
+/// Turns a database back into a version-10 one: no order of the left column, no fork lineage, no declared jobs, no
+/// interrupted turns.
 const BACK_TO_10: &str = "DROP TABLE thread_forks; DROP TABLE job_runs; DROP TABLE job_state;
+    DROP TABLE interrupted_turns;
     ALTER TABLE workspaces DROP COLUMN position; ALTER TABLE threads DROP COLUMN position;";
 
 /// Turns a database back into a version-5 one: no widget state, no activity log, no prompt history, no order, no fork
-/// lineage, no declared jobs, thread tags and `workspaces.owned` again.
+/// lineage, no declared jobs, no interrupted turns, thread tags and `workspaces.owned` again.
 const BACK_TO_5: &str =
     "ALTER TABLE workspaces DROP COLUMN position; ALTER TABLE threads DROP COLUMN position;
     DROP TABLE widget_state; DROP TABLE activity; DROP TABLE prompt_history;
-    DROP TABLE thread_forks; DROP TABLE job_runs; DROP TABLE job_state;
+    DROP TABLE thread_forks; DROP TABLE job_runs; DROP TABLE job_state; DROP TABLE interrupted_turns;
     CREATE TABLE thread_tags (
     thread_id TEXT NOT NULL REFERENCES threads (id) ON DELETE CASCADE, tag TEXT NOT NULL,
     PRIMARY KEY (thread_id, tag));
@@ -112,6 +114,7 @@ fn opening_an_empty_file_applies_every_migration() {
         tables(&db),
         [
             "activity",
+            "interrupted_turns",
             "job_runs",
             "job_state",
             "prompt_history",
@@ -605,6 +608,7 @@ fn migration_3_moves_every_thread_into_its_own_workspace_folder() {
         tables(&old.db),
         [
             "activity",
+            "interrupted_turns",
             "job_runs",
             "job_state",
             "prompt_history",
@@ -900,4 +904,42 @@ fn migration_11_keeps_the_order_the_column_showed() {
     store.insert_thread(&third).unwrap();
     let positions = store.positions().unwrap();
     assert_eq!((positions[&late.id], positions[&third.id]), (3, 2));
+}
+
+// spec: DMN-010, DMN-370, DMN-371, DMN-372
+#[test]
+fn migration_14_adds_interrupted_turns_kept_until_taken_and_gone_with_their_thread() {
+    let dir = TempDir::new().unwrap();
+    let db = dir.path().join("omfp.db");
+    let ws = workspace("a");
+    let (busy, other) = (thread(&ws.id), thread(&ws.id));
+    {
+        let store = open(&dir);
+        store.insert_workspace(&ws).unwrap();
+        store.insert_thread(&busy).unwrap();
+        store.insert_thread(&other).unwrap();
+    }
+    raw(&db)
+        .execute_batch("DROP TABLE interrupted_turns; PRAGMA user_version = 13;")
+        .unwrap();
+
+    let store = open(&dir);
+
+    assert_eq!(user_version(&db), LATEST);
+    assert_eq!(store.interrupted_turns().unwrap(), HashMap::new());
+    // A thread deleted meanwhile is skipped; marking again takes the later time.
+    store
+        .mark_interrupted(&[busy.id.clone(), other.id.clone(), new_id()], 10)
+        .unwrap();
+    store
+        .mark_interrupted(std::slice::from_ref(&busy.id), 20)
+        .unwrap();
+    assert_eq!(
+        store.interrupted_turns().unwrap(),
+        HashMap::from([(busy.id.clone(), 20), (other.id.clone(), 10)])
+    );
+    assert_eq!(store.take_interrupted(&busy.id).unwrap(), Some(20));
+    assert_eq!(store.take_interrupted(&busy.id).unwrap(), None);
+    store.delete_thread(&other.id).unwrap();
+    assert_eq!(count(&db, "interrupted_turns"), 0);
 }

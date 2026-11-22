@@ -144,6 +144,11 @@ pub struct ThreadSummary {
     /// DMN-204): each reason once, in the order they came; `thread.mcp_reconnect` restarts it now. Absent when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub restart_pending: Vec<RestartReason>,
+    /// When the daemon stopped (unix ms) while the thread's omp was mid-turn or waiting on async work: its last turn
+    /// was interrupted by a daemon restart and nothing continued it since (PRT-229, DMN-370). `thread.resume`
+    /// continues it; any message to the thread clears it. Absent otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interrupted_at: Option<i64>,
     pub provenance: Provenance,
     pub created_at: i64,
     pub updated_at: i64,

@@ -315,6 +315,13 @@ export const chat = {
     halfDown: "Scroll half a page down",
     halfUp: "Scroll half a page up",
   },
+  /** A turn a daemon restart interrupted (UI-932, UI-933). */
+  interrupted: {
+    text: (when: string) => `The agent's last turn was interrupted when the daemon restarted (${when}).`,
+    resume: "Resume",
+    resumeHint:
+      "Starts the thread's agent and tells it its previous turn was interrupted, to check what was in progress and continue",
+  },
   interactions: {
     label: "Requests",
     dismiss: "Dismiss",

@@ -264,6 +264,15 @@ export function GlobalCommands({ viewIds, currentView, widgets, addWidget }: Glo
     enabled: () => ["stopped", "failed"].includes(summary()?.process.state ?? ""),
     run: onSelected(actions.restart),
   });
+  // `:resume` (UI-934): the Resume of the chat's notice of a turn a daemon restart interrupted (UI-932).
+  useCommand({
+    id: "thread.resume",
+    title: titles.resume,
+    description: titles.resumeDescription,
+    aliases: ["resume"],
+    enabled: () => summary()?.interruptedAt != null,
+    run: onSelected(actions.resume),
+  });
   // The whole conversation; the transcript's `:copy` copies its focused message (UI-790, UI-791).
   useCommand({
     id: "thread.copy",

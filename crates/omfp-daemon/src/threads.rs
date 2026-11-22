@@ -183,6 +183,16 @@ impl Threads {
         Ok(self.store.set_thread_roots(id, roots)?)
     }
 
+    /// Marks the turns of `ids` interrupted by a daemon stop at `at` (DMN-370).
+    pub fn mark_interrupted(&self, ids: &[String], at: i64) -> Result<()> {
+        Ok(self.store.mark_interrupted(ids, at)?)
+    }
+
+    /// Takes the thread's interrupted mark: when its turn was interrupted, `None` when it was not (DMN-372, DMN-373).
+    pub fn take_interrupted(&self, id: &str) -> Result<Option<i64>> {
+        Ok(self.store.take_interrupted(id)?)
+    }
+
     /// Puts the thread into `workspace_id` (`None`: its own) before its thread `before`, or last (DMN-282); `true`
     /// when it moved to another workspace (DMN-283). The caller restarts its omp then.
     pub fn reorder(

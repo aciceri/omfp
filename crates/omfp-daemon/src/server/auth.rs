@@ -148,6 +148,7 @@ pub fn permission(method: &str) -> Option<Permission> {
         | "thread.btw"
         | "thread.bash"
         | "thread.restart"
+        | "thread.resume"
         | "thread.stop"
         | "thread.live_connect"
         | "thread.live_start"

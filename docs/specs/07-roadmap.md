@@ -469,6 +469,14 @@ of `just ci` and run on every push as the CI jobs `mutants` and `cov`. The first
 `-` and `_` in topic ids), now killed by tests; coverage was 97.4% (core), 98.6% (protocol), 92.3% (daemon) and 96.2%
 (view models).
 
+Turns a daemon restart interrupted (#264, DMN-370..DMN-374, PRT-229, PRT-230, UI-932..UI-934, TST-119, E2E-80): the
+shutdown records in the store (migration 14) the threads whose omp was mid-turn or waiting on async work, their summary
+carries `interruptedAt` until something continues the turn, and `thread.resume` (the chat's notice's Resume, `:resume`)
+starts the thread's omp with a notice telling the agent its previous turn was interrupted, to check what was in
+progress and continue; any message to the thread clears the mark too. Left out: resuming interrupted threads by
+themselves once the daemon is up (a setting), and a warning before a planned stop beyond the tray's Quit label, which
+already counts the running threads (UI-218). A daemon that dies without its shutdown (a crash, SIGKILL) marks nothing.
+
 ## M10 — Agent control (done)
 
 Scope: the rest of [08](08-agent-control.md) (D-17): every protocol method as an agent tool, plus `omfp_call`, through

@@ -858,6 +858,10 @@ export const shell = {
     stopSpawned: "Stop process of the thread and of every thread it spawned",
     spawnedBy: "Show only the threads the selected one spawned (again: every thread)",
     restart: "Restart the thread's process",
+    resume: "Resume the turn a daemon restart interrupted",
+    /** `:describe-command resume` (UI-934). */
+    resumeDescription:
+      "Starts the selected thread's agent and tells it that its previous turn was interrupted by a daemon restart, so it checks what was in progress and continues. Offered while the thread's last turn is marked interrupted; any message you send clears the mark too.",
     fork: "Fork a new thread from the selected message (transcript) or entry (session tree)",
     /** `:describe-command fork` (UI-663). */
     forkDescription:

@@ -470,6 +470,16 @@ pub(super) async fn thread(services: &Services, principal: &Principal, call: Cal
                 .map_err(supervisor_error)?;
             empty()
         }
+        Call::ThreadResume(params) => {
+            let admission = supervisor
+                .resume(&params.thread_id)
+                .await
+                .map_err(supervisor_error)?;
+            ok(&PromptResult {
+                prompt_id: admission.prompt_id,
+                agent_invoked: admission.agent_invoked,
+            })
+        }
         Call::ThreadMcpServers(params) => ok(&supervisor
             .thread_mcp_servers(&params.thread_id)
             .await

@@ -7,6 +7,14 @@ The version's section is also the source of the GitHub release notes.
 
 ## Unreleased
 
+### Added
+
+- A turn cut by a daemon restart (an upgrade, `omfp desktop` restarting its background daemon, Quit) is no longer
+  lost silently: the daemon remembers which threads were working when it stopped, and once it runs again their chat
+  ends with a notice saying the last turn was interrupted, with a Resume button (`:resume`) that restarts the agent and
+  tells it to check what was in progress and continue. Any message you send clears the notice too. Agents see it as
+  `interruptedAt` on the thread's summary and resume with `thread.resume` (#264).
+
 ### Fixed
 
 - A repository without commits (right after `git init`) no longer stops the changes view of its whole workspace: it

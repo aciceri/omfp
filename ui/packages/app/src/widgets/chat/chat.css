@@ -658,6 +658,22 @@
     flex-basis: 100%;
   }
 
+  /* A turn a daemon restart interrupted, with Resume (UI-932). */
+  .omfp-interrupted {
+    align-items: center;
+    margin-block: var(--omfp-s2);
+    font-size: var(--omfp-fs-sm);
+    color: var(--omfp-on-surface);
+  }
+
+  .omfp-interrupted > .omfp-ic {
+    color: var(--omfp-warn);
+  }
+
+  .omfp-interrupted__text {
+    flex: 1 1 auto;
+  }
+
   /* A command's output and the URLs omp opened (UI-345, UI-347). */
   .omfp-command {
     flex-direction: column;

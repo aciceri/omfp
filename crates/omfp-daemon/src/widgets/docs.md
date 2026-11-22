@@ -41,7 +41,10 @@ lists, reloads a widget as soon as one of its files changes, and shows any error
 
 Layout nodes: a reference (`"omfp:chat"`), `[reference, props]`, or `[container, props, ...children]` where the
 container is `row`, `col`, `tabs` or `stack` and `props.sizes` (optional) gives one positive flex weight per child.
-Built-in widgets: `omfp:header`, `omfp:chat` (transcript, interactions, queue and composer), `omfp:transcript`,
+Built-in widgets: `omfp:header`, `omfp:chat` (transcript, interactions, queue and composer; while the thread's summary
+carries `interruptedAt`, its last turn was cut by a daemon restart and the transcript ends with a notice whose Resume is
+`thread.resume { threadId }`, which starts its omp and tells the agent to check what was in progress and continue; any
+message to the thread clears the mark too), `omfp:transcript`,
 `omfp:interactions`, `omfp:composer`, `omfp:workspace`, `omfp:changes` (`{ repo? }`: changed files and diffs of the
 workspace's repositories, or of the repository named `repo` only), `omfp:background` (the selected thread's background
 jobs and subagents: state, duration, last output line; stop a job, cancel a subagent; a subagent's row opens its kind,

@@ -43,7 +43,11 @@ struct TestDaemon {
 }
 
 async fn daemon() -> TestDaemon {
-    let dir = tempfile::tempdir().unwrap();
+    daemon_in(tempfile::tempdir().unwrap()).await
+}
+
+/// A daemon over `dir`'s data directory, with a fake launcher and git of its own.
+async fn daemon_in(dir: TempDir) -> TestDaemon {
     let data_dir = dir.path().join("data");
     let cli = Cli::try_parse_from([
         "daemon",
@@ -78,6 +82,12 @@ async fn daemon() -> TestDaemon {
 }
 
 impl TestDaemon {
+    /// Stops the daemon and starts it again over the same data directory (TST-119).
+    async fn restart(self) -> Self {
+        self.handle.shutdown().await.unwrap();
+        daemon_in(self.dir).await
+    }
+
     async fn client(&self) -> Client {
         Client::hello(self.handle.addr(), self.handle.token().expose(), "test").await
     }
@@ -498,4 +508,71 @@ async fn agent_methods_the_daemon_answers_itself_return_their_declared_results()
     client
         .typed::<ActivityList>(ListActivityParams::default())
         .await;
+}
+
+// spec: TST-117, TST-119, PRT-229, PRT-230, DMN-370, DMN-372
+#[tokio::test(flavor = "multi_thread")]
+async fn a_turn_a_daemon_restart_interrupted_shows_in_the_summary_and_resume_continues_it() {
+    use omfp_protocol::method::{ThreadResume, ThreadsList};
+    use omfp_protocol::{ErrorCode, ListThreadsParams};
+
+    let daemon = daemon().await;
+    daemon.launcher.push_run(fixture("approval_granted"));
+    let mut client = daemon.client().await;
+    let busy = client.typed::<ThreadsCreate>(new_thread("busy")).await.id;
+    let idle = client.typed::<ThreadsCreate>(new_thread("idle")).await.id;
+    let mut view = Follower::snapshot(&mut client, &busy, None).await;
+    client
+        .typed::<ThreadPrompt>(PromptParams {
+            thread_id: busy.clone(),
+            text: "run it".into(),
+            images: Vec::new(),
+            behavior: None,
+        })
+        .await;
+    // The turn waits on the approval: not settled when the daemon stops.
+    view.until(&mut client, |state| !state.interactions.is_empty())
+        .await;
+    drop(client);
+
+    let daemon = daemon.restart().await;
+    let mut client = daemon.client().await;
+    let listed = client
+        .typed::<ThreadsList>(ListThreadsParams::default())
+        .await;
+    let interrupted = |list: &omfp_protocol::ThreadList, id: &str| {
+        list.threads
+            .iter()
+            .find(|thread| thread.id == id)
+            .and_then(|thread| thread.interrupted_at)
+    };
+    assert!(interrupted(&listed, &busy).is_some(), "{listed:?}");
+    assert_eq!(interrupted(&listed, &idle), None);
+
+    let resumed = client.typed::<ThreadResume>(thread_ref(&busy)).await;
+
+    assert!(resumed.agent_invoked);
+    let prompts: Vec<String> = daemon
+        .launcher
+        .process(0)
+        .calls()
+        .into_iter()
+        .filter_map(|call| match call {
+            omfp_daemon::agent::FakeCall::Prompt(prompt) => Some(prompt.message),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(prompts, [omfp_daemon::supervisor::RESUME_NOTICE]);
+    let listed = client
+        .typed::<ThreadsList>(ListThreadsParams::default())
+        .await;
+    assert_eq!(interrupted(&listed, &busy), None);
+    let again = client
+        .call("thread.resume", serde_json::json!({ "threadId": busy }))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        again["code"],
+        serde_json::to_value(ErrorCode::Conflict).unwrap()
+    );
 }

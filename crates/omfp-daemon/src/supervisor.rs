@@ -39,6 +39,7 @@ mod cards;
 mod dialogs;
 mod fork;
 mod import;
+mod interrupted;
 mod live;
 mod login;
 mod mcp;
@@ -52,6 +53,7 @@ mod roots;
 mod stopped;
 
 pub use cards::CardWait;
+pub use interrupted::RESUME_NOTICE;
 pub use login::{AuthOmp, LOGIN_MODEL};
 pub use oauth::OAuthOwner;
 pub use restart::Restart;
@@ -237,6 +239,13 @@ pub enum SupervisorError {
     /// Standalone omp's login store cannot be copied (DMN-229, DMN-230): the reason, never its content.
     #[error("{0}")]
     StandaloneStore(String),
+    /// `thread.resume` on a thread whose last turn no daemon stop interrupted, or that was resumed or got a message
+    /// since (DMN-372).
+    #[error(
+        "the thread has no turn interrupted by a daemon restart (never interrupted, resumed already, or a message was \
+         sent since)"
+    )]
+    NotInterrupted,
 }
 
 pub type Result<T, E = SupervisorError> = std::result::Result<T, E>;
@@ -422,6 +431,10 @@ struct Actor {
     oauth: Mutex<crate::oauth_relay::Flows>,
     /// The `omfp_card` calls waiting for an answer, by tool call id (DMN-911, AGT-097).
     cards: Mutex<HashMap<String, tokio::sync::oneshot::Sender<omfp_protocol::CardAnswer>>>,
+    /// A message went to omp as agent work and the turn it starts has not settled yet: the shutdown counts the thread
+    /// as mid-turn even before omp reports the turn (DMN-370). Cleared when the session settles, a prompt turns out to
+    /// be a local command, a send fails, or a new process starts.
+    turn_requested: AtomicBool,
 }
 
 impl Actor {
@@ -459,6 +472,7 @@ impl Actor {
             session_model: Mutex::new(None),
             oauth: Mutex::new(crate::oauth_relay::Flows::default()),
             cards: Mutex::new(HashMap::new()),
+            turn_requested: AtomicBool::new(false),
         }
     }
 
@@ -553,6 +567,9 @@ struct Inner {
     /// server once its windows exist.
     focused_notify: Mutex<Option<host_tools::FocusedNotify>>,
     shutting_down: AtomicBool,
+    /// Held (shared) while a message's admission clears a thread's interrupted mark, and exclusively while the shutdown
+    /// marks the unsettled threads, so a clear never deletes a mark the shutdown just wrote (DMN-370, DMN-373).
+    interrupted_marks: tokio::sync::RwLock<()>,
     /// The running `auth.login` and the numbers telling logins apart (DMN-222).
     login: Mutex<Option<login::Running>>,
     logins: AtomicU64,
@@ -680,6 +697,7 @@ impl Supervisor {
                 agent_host: Mutex::new(None),
                 focused_notify: Mutex::new(None),
                 shutting_down: AtomicBool::new(false),
+                interrupted_marks: tokio::sync::RwLock::new(()),
                 login: Mutex::new(None),
                 models: models::UsableModels::default(),
                 logins: AtomicU64::new(0),
@@ -1020,9 +1038,17 @@ impl Supervisor {
     }
 
     /// Sends a prompt, starting omp first when needed (DMN-070); returns at admission (PRT-030).
-    /// Admitted agent work names or reconsiders the thread's automatic title (DMN-073). A `/mcp` command that would
-    /// make omp write its user MCP config is refused (DMN-350).
+    /// Admitted agent work names or reconsiders the thread's automatic title (DMN-073) and clears the thread's
+    /// interrupted mark (DMN-373). A `/mcp` command that would make omp write its user MCP config is refused
+    /// (DMN-350). Cancellation-safe ([`Self::detached`]): a send under way reaches omp anyway, so its bookkeeping
+    /// runs to the end even when the caller goes away.
     pub async fn prompt(&self, id: &str, command: PromptCommand) -> Result<PromptAdmission> {
+        let id = id.to_owned();
+        self.detached(|supervisor| async move { supervisor.prompt_now(&id, command).await })
+            .await
+    }
+
+    async fn prompt_now(&self, id: &str, command: PromptCommand) -> Result<PromptAdmission> {
         let actor = self.actor(id).await?;
         self.refuse_user_mcp_config(id, &command.message).await?;
         let message = command.message.clone();
@@ -1032,14 +1058,24 @@ impl Supervisor {
             .await?;
         if admission.agent_invoked {
             sending.admitted(admission.prompt_id.clone());
+            self.clear_interrupted(&actor).await;
             self.consider_title(&actor, message).await;
+        } else {
+            actor.turn_requested.store(false, Ordering::SeqCst);
         }
         Ok(admission)
     }
 
     /// Puts a message in omp's steering or follow-up queue with a prompt's bookkeeping (DMN-226):
-    /// omp started when needed, root sync first, automatic-title consideration from admitted text (DMN-073).
+    /// omp started when needed, root sync first, automatic-title consideration from admitted text (DMN-073), the
+    /// interrupted mark cleared (DMN-373). Cancellation-safe, as [`Self::prompt`].
     pub async fn queue(&self, id: &str, message: QueuedMessage) -> Result<()> {
+        let id = id.to_owned();
+        self.detached(|supervisor| async move { supervisor.queue_now(&id, message).await })
+            .await
+    }
+
+    async fn queue_now(&self, id: &str, message: QueuedMessage) -> Result<()> {
         let actor = self.actor(id).await?;
         let (text, call) = match message {
             QueuedMessage::Steer(command) => (command.message.clone(), OmpCall::Steer(command)),
@@ -1049,12 +1085,16 @@ impl Supervisor {
         };
         self.deliver(&actor, move |process| process.call(call))
             .await?;
+        self.clear_interrupted(&actor).await;
         self.consider_title(&actor, text).await;
         Ok(())
     }
 
     /// What every message of the user goes through (DMN-226): omp started when needed (DMN-070), a root change made
-    /// before it reaches omp first (DMN-029), and the send holds `prompting` so a reload never cuts it (DMN-203).
+    /// before it reaches omp first (DMN-029), and the send holds `prompting` so a reload never cuts it (DMN-203). The
+    /// send also holds the interrupted marks (shared): it is refused once the shutdown began, and a message sent before
+    /// marks its turn requested, so the shutdown's marking, which waits for it, counts that turn even before omp
+    /// reports it (DMN-370).
     async fn deliver<T: Send + 'static>(
         &self,
         actor: &Arc<Actor>,
@@ -1067,10 +1107,20 @@ impl Supervisor {
             self.record_voice(&actor.id).await;
         }
         actor.touch();
+        let marks = self.inner.interrupted_marks.read().await;
+        if self.inner.shutting_down.load(Ordering::SeqCst) {
+            return Err(SupervisorError::ShuttingDown);
+        }
+        actor.turn_requested.store(true, Ordering::SeqCst);
         let sending = actor.prompting.read().await;
         let sent = blocking(move || send(process.as_ref())).await;
         drop(sending);
-        let sent = sent??;
+        drop(marks);
+        let sent = sent.and_then(|sent| sent.map_err(SupervisorError::from));
+        if sent.is_err() {
+            actor.turn_requested.store(false, Ordering::SeqCst);
+        }
+        let sent = sent?;
         actor.touch();
         Ok(sent)
     }
@@ -1150,13 +1200,16 @@ impl Supervisor {
     }
 
     /// Stops every process (DMN-005): closing the `omp-rpc` client closes omp's stdin, then terminates its process
-    /// group. Gives up waiting after [`SHUTDOWN_GRACE`]. Later starts are refused.
+    /// group. Gives up waiting after [`SHUTDOWN_GRACE`] in all, the marking of the interrupted turns (DMN-370) included.
+    /// Later starts are refused. The threads whose turn it cuts are marked interrupted first.
     pub async fn shutdown(&self) {
+        let deadline = Instant::now() + SHUTDOWN_GRACE;
         self.inner.shutting_down.store(true, Ordering::SeqCst);
         lock(&self.inner.widget_host).take();
         lock(&self.inner.agent_host).take();
         self.cancel_login(None);
         self.stop_predictor();
+        self.mark_interrupted().await;
         let actors: Vec<Arc<Actor>> = lock(&self.inner.actors).values().cloned().collect();
         let stops = actors.iter().map(|actor| async move {
             let _lifecycle = actor.lifecycle.lock().await;
@@ -1164,7 +1217,7 @@ impl Supervisor {
                 warn!(thread = %actor.id, %error, "stopping omp failed");
             }
         });
-        if tokio::time::timeout(SHUTDOWN_GRACE, futures::future::join_all(stops))
+        if tokio::time::timeout_at(deadline, futures::future::join_all(stops))
             .await
             .is_err()
         {
@@ -1344,6 +1397,10 @@ impl Supervisor {
         }
         if tool_end {
             let _ = self.inner.tool_ends.send(actor.id.clone());
+        }
+        // The turn a message asked for ended (DMN-370).
+        if after.settled && !before.settled {
+            actor.turn_requested.store(false, Ordering::SeqCst);
         }
         self.restart_when_free(actor);
         if after.settled && !before.settled && actor.roots_pending.load(Ordering::SeqCst) {

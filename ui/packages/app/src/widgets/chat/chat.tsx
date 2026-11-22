@@ -1,11 +1,13 @@
 /**
- * `omfp:chat`: the conversation of the selected thread — the transcript with the pending interactions inline at its
- * bottom (UI-070), then the queue chips and the composer; with no thread selected, the draft thread (UI-023).
+ * `omfp:chat`: the conversation of the selected thread — the transcript with the notice of a turn a daemon restart
+ * interrupted (UI-932) and the pending interactions inline at its bottom (UI-070), then the queue chips and the
+ * composer; with no thread selected, the draft thread (UI-023).
  */
 
 import { DRAFT_THREAD, strings, useWindowState } from "omfp/sdk";
 import { ComposerWidget } from "./composer.tsx";
 import { Interactions } from "./interactions.tsx";
+import { InterruptedTurn } from "./interrupted.tsx";
 import type { WidgetProps } from "./props.ts";
 import { useSelectedThread } from "./state.ts";
 import { ThreadPlaceholder, Transcript } from "./transcript.tsx";
@@ -32,7 +34,12 @@ export function ChatWidget(_props: WidgetProps) {
         key={threadId}
         threadId={threadId}
         state={view.state}
-        footer={<Interactions threadId={threadId} view={view} />}
+        footer={
+          <>
+            <InterruptedTurn threadId={threadId} />
+            <Interactions threadId={threadId} view={view} />
+          </>
+        }
       />
       <ComposerWidget />
     </section>

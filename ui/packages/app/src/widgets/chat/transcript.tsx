@@ -72,6 +72,7 @@ import {
   useState,
 } from "react";
 import { ImageViewer } from "./image-viewer.tsx";
+import { InterruptedTurn } from "./interrupted.tsx";
 import { blockCardKey, MessageRow, NoticeRowView, SystemRowView } from "./message.tsx";
 import type { WidgetProps } from "./props.ts";
 import { collapsedThinkingHints, NO_MARKS, revealInline, textRanges, useSearchHighlights } from "./search.ts";
@@ -101,7 +102,14 @@ export function TranscriptWidget(_props: WidgetProps) {
   if (threadId === undefined || view === undefined) {
     return <ThreadPlaceholder threadId={threadId} />;
   }
-  return <Transcript key={threadId} threadId={threadId} state={view.state} />;
+  return (
+    <Transcript
+      key={threadId}
+      threadId={threadId}
+      state={view.state}
+      footer={<InterruptedTurn threadId={threadId} />}
+    />
+  );
 }
 
 /** Shown while no thread is selected or its snapshot has not arrived yet. */

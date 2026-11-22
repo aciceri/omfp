@@ -788,6 +788,13 @@ fn tool_examples() -> Vec<(&'static str, Value)> {
         ),
         example::<method::ThreadSession>(thread_ref(), &thread_session()),
         example::<method::ThreadRestart>(thread_ref(), &Empty {}),
+        example::<method::ThreadResume>(
+            thread_ref(),
+            &PromptResult {
+                prompt_id: "p18".to_owned(),
+                agent_invoked: true,
+            },
+        ),
         example::<method::ThreadStop>(
             StopThreadParams {
                 thread_id: THREAD_ID.to_owned(),
@@ -2437,6 +2444,23 @@ fn a_held_back_restart_carries_its_reasons_and_none_is_absent() {
     assert_eq!(
         serde_json::from_value::<ThreadSummary>(summary).unwrap(),
         held
+    );
+}
+
+// spec: PRT-229
+#[test]
+fn an_interrupted_turn_carries_when_the_daemon_stopped_and_none_is_absent() {
+    let summary = serde_json::to_value(thread()).unwrap();
+    assert_eq!(summary.get("interruptedAt"), None);
+    let interrupted = ThreadSummary {
+        interrupted_at: Some(1_732_000_000_000),
+        ..thread()
+    };
+    let summary = serde_json::to_value(&interrupted).unwrap();
+    assert_eq!(summary["interruptedAt"], json!(1_732_000_000_000_i64));
+    assert_eq!(
+        serde_json::from_value::<ThreadSummary>(summary).unwrap(),
+        interrupted
     );
 }
 

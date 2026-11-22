@@ -121,6 +121,7 @@ pub fn thread() -> ThreadSummary {
         settled: true,
         needs_attention: false,
         restart_pending: Vec::new(),
+        interrupted_at: None,
         provenance: user_provenance(),
         created_at: CREATED_AT,
         updated_at: CREATED_AT + 60_000,

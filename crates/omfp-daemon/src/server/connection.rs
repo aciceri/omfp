@@ -565,14 +565,16 @@ impl Connection {
     }
 }
 
-/// The thread a request sends something to on the user's behalf (a message, a shell command, an answer, an abort or
-/// a live session): the window that sent it is the one the user last used on that thread (DMN-060).
+/// The thread a request sends something to on the user's behalf (a message, a resume of an interrupted turn, a shell
+/// command, an answer, an abort or a live session): the window that sent it is the one the user last used on that
+/// thread (DMN-060, DMN-372).
 fn driven_thread(call: &Call) -> Option<&str> {
     match call {
         Call::ThreadPrompt(PromptParams { thread_id, .. })
         | Call::ThreadSteer(MessageParams { thread_id, .. })
         | Call::ThreadFollowUp(MessageParams { thread_id, .. })
         | Call::ThreadAbort(ThreadRef { thread_id })
+        | Call::ThreadResume(ThreadRef { thread_id })
         | Call::ThreadBash(BashParams { thread_id, .. })
         | Call::ThreadBtw(BtwParams { thread_id, .. })
         | Call::InteractionRespond(RespondParams { thread_id, .. })
@@ -695,6 +697,15 @@ mod tests {
         omfp_protocol::IndexEvent::ThreadRemoved {
             thread_id: id.to_owned(),
         }
+    }
+
+    // spec: DMN-372
+    #[test]
+    fn a_resume_makes_its_window_the_last_used_on_the_thread() {
+        let call = Call::ThreadResume(ThreadRef {
+            thread_id: "t1".to_owned(),
+        });
+        assert_eq!(driven_thread(&call), Some("t1"));
     }
 
     // spec: PRT-023

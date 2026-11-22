@@ -167,6 +167,7 @@ impl Supervisor {
         let generation = self.inner.generations.fetch_add(1, Ordering::SeqCst);
         let (ended_tx, ended) = watch::channel(false);
         let process = launched.process;
+        actor.turn_requested.store(false, Ordering::SeqCst);
         *lock(&actor.live) = Some(Live {
             process: Arc::clone(&process),
             generation,

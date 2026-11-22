@@ -379,6 +379,7 @@ mod tests {
             settled: true,
             needs_attention: false,
             restart_pending: Vec::new(),
+            interrupted_at: None,
             provenance: Provenance {
                 created_by: CreatedBy::User,
                 client: None,

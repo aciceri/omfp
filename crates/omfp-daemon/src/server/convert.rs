@@ -143,6 +143,7 @@ pub(crate) fn supervisor_error(error: SupervisorError) -> ErrorBody {
         | SupervisorError::NoLiveSession
         | SupervisorError::Busy
         | SupervisorError::BusyMove
+        | SupervisorError::NotInterrupted
         | SupervisorError::LoginRunning => ErrorCode::Conflict,
         SupervisorError::Live { omp, .. } => {
             // omp's own refusal of a second session (DMN-104): the same conflict the daemon reports itself.
@@ -225,12 +226,14 @@ pub(crate) fn workspace(
     }
 }
 
-/// The protocol's thread summary, with its place among the threads of its workspace (DMN-284).
+/// The protocol's thread summary, with its place among the threads of its workspace (DMN-284) and when a daemon stop
+/// interrupted its turn (`interrupted`, by thread id, DMN-371).
 pub(crate) fn thread_summary(
     thread: &store::Thread,
     status: ThreadStatus,
     clients: &HashMap<String, String>,
     forks: &HashMap<String, store::ThreadFork>,
+    interrupted: &HashMap<String, i64>,
     updated_at: i64,
     position: u32,
 ) -> ThreadSummary {
@@ -247,6 +250,7 @@ pub(crate) fn thread_summary(
         settled: status.settled,
         needs_attention: status.needs_attention,
         restart_pending: status.restart_pending,
+        interrupted_at: interrupted.get(&thread.id).copied(),
         provenance: provenance(&thread.created_by, clients.get(&thread.id)),
         created_at: thread.created_at,
         updated_at,

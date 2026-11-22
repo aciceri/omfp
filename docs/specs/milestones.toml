@@ -591,6 +591,19 @@ requirements = [
   "DMN-382",
   "DMN-383",
   "DMN-384",
+  # Turns a daemon restart interrupted: recorded at shutdown, shown, resumed (#264)
+  "DMN-370",
+  "DMN-371",
+  "DMN-372",
+  "DMN-373",
+  "DMN-374",
+  "PRT-229",
+  "PRT-230",
+  "UI-932",
+  "UI-933",
+  "UI-934",
+  "TST-119",
+  "E2E-80",
 ]
 
 [M10]

@@ -24,9 +24,9 @@ use omfp_protocol::{
     SuggestReposParams, TerminalCursor, TerminalInfo, TerminalInputParams, TerminalRef,
     TerminalResizeParams, TerminalScreen, TerminalScreenParams, TerminalStatus, Theme, ThreadGit,
     ThreadRef, ThreadSearchResult, ThreadSearchResults, ThreadWorkspace, Topic, TopicParams,
-    UpdateThreadParams, UpdateWorkspaceParams, WidgetCopied, WidgetJobReport, WidgetReport,
-    WidgetReportState, WidgetSource, WorkspaceDiffParams, WorkspaceRef, WriteFileParams,
-    decode_request, method,
+    UpdateThreadParams, UpdateWorkspaceParams, ViewsFile, WidgetCopied, WidgetJobReport,
+    WidgetReport, WidgetReportState, WidgetSource, WorkspaceDiffParams, WorkspaceRef,
+    WriteFileParams, decode_request, method,
 };
 use omfp_protocol::{
     AnswerWindowParams, CheckWidgetParams, CommandSource, KeymapMode, ListWindowsParams,
@@ -833,6 +833,7 @@ fn widget_examples() -> Vec<(&'static str, Value)> {
                     "default": "work",
                     "views": { "work": { "title": "Work", "layout": ["row", {}, "omfp:chat", "./widgets/tests"] } }
                 }),
+                expected: Some(ViewsFile::Manifest(json!({ "views": {} }))),
             },
             &Empty {},
         ),

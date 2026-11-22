@@ -1,6 +1,7 @@
-//! The UI mount journey of M10 (AGT-060..063, UI-230..232): a scripted agent mounts inline code into the workspace's
-//! view and as a floating panel, drives the mounted widget by updating its props while the user's state in it stays,
-//! and the user closes the panel. Takes `omfp-m10-mount.png` (in the run's screenshot directory). Run with
+//! The UI mount journeys of M10 (AGT-060..063, UI-230..232) and M17 (UI-375, UI-376): a scripted agent mounts inline
+//! code into the workspace's view and as a floating panel, drives the mounted widget by updating its props while the
+//! user's state in it stays, and the user closes the panel; the user closes a tab an agent mounted and takes it back.
+//! Takes `omfp-m10-mount.png` and `omfp-m17-close-mounted-tab.png` (in the run's screenshot directory). Run with
 //! `just test-e2e`.
 
 use e2e::Journey;
@@ -149,4 +150,81 @@ async fn an_agent_mounts_a_widget_into_the_view_and_a_floating_panel_and_drives_
         serde_json::from_str(&std::fs::read_to_string(folder.join(".omfp/views.json"))?)?;
     assert_eq!(manifest.get("panels"), None, "{manifest}");
     journey.finish("M10 mount").await
+}
+
+/// The views.json the daemon wrote for the workspace in `folder`.
+fn views_json(folder: &std::path::Path) -> anyhow::Result<Value> {
+    Ok(serde_json::from_str(&std::fs::read_to_string(
+        folder.join(".omfp/views.json"),
+    )?)?)
+}
+
+/// The references of the default view's side tabs in `manifest`.
+fn side_tabs(manifest: &Value) -> Vec<Value> {
+    manifest["views"]["default"]["layout"][3]
+        .as_array()
+        .map(|tabs| tabs[2..].to_vec())
+        .unwrap_or_default()
+}
+
+// spec: E2E-79, UI-375, UI-376
+#[tokio::test(flavor = "multi_thread")]
+async fn the_user_closes_a_tab_an_agent_mounted_and_takes_it_back() -> anyhow::Result<()> {
+    let journey = Journey::start(vec![
+        Step::reply(Reply::tool_calls(vec![ToolCall::new(
+            "call_mount_tab",
+            "omfp_ui_mount",
+            json!({ "id": "progress", "code": PROGRESS, "props": { "value": 1, "title": "Progress" } }),
+        )])),
+        Step::reply(Reply::text("Mounted the progress.")),
+    ])
+    .await?;
+    journey.connected().await?;
+    let thread = journey.create_thread("close journey").await?;
+    let folder = journey.workspace_folder(&thread).await?;
+    journey.send("show me your progress").await?;
+    journey.reply("Mounted the progress.").await?;
+
+    // The mounted tab is the last side tab, with its own ×; the chat alone in the main slot has none.
+    let tab = "[data-testid=view] [data-testid=view-tab][data-tab=\"layout:progress#0\"]";
+    journey.element(tab).await?;
+    assert_eq!(journey.text(tab).await?, "Progress");
+    assert_eq!(
+        journey
+            .count("[data-testid=view] [data-testid=layout-tab-close]")
+            .await?,
+        5
+    );
+    journey.click(tab).await?;
+    progress_shows(&journey, "value", "1").await?;
+    let mounted = views_json(&folder)?;
+    assert_eq!(side_tabs(&mounted).len(), 5, "{mounted}");
+    journey.hover(tab).await?;
+    journey.screenshot("m17-close-mounted-tab").await?;
+
+    // Its × writes views.json without it, so the agent and every window see it gone.
+    journey
+        .click(&format!("{tab} [data-testid=layout-tab-close]"))
+        .await?;
+    journey.gone(tab).await?;
+    let toast = "[data-testid=success] .omfp-toast__text";
+    journey.element(toast).await?;
+    assert_eq!(journey.text(toast).await?, "Closed Progress");
+    let closed = views_json(&folder)?;
+    assert_eq!(
+        side_tabs(&closed),
+        [
+            "omfp:workspace",
+            "omfp:changes",
+            "omfp:background",
+            "omfp:mcp"
+        ],
+        "{closed}"
+    );
+
+    // Undo writes the file back as it was: the tab returns.
+    journey.click("[data-testid=success-undo]").await?;
+    journey.element(tab).await?;
+    assert_eq!(views_json(&folder)?, mounted);
+    journey.finish("M17 close a mounted tab").await
 }

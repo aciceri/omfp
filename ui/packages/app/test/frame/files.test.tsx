@@ -297,7 +297,7 @@ describe("file tabs in the main slot", () => {
     await test.user.click(tabElements()[0] as HTMLElement);
     expect(screen.getByTestId("stub-input")).toBeDefined();
     expect(test.host.window.get(OPEN_FILES).w1?.tabs.map((tab) => tab.path)).toEqual(["a.rs"]);
-    expect(storedTab(test.storage, "default")).toBe("0.0.1.0");
+    expect(storedTab(test.storage, "default")).toBe("layout:omfp:chat#0");
   });
 
   // spec: UI-115, UI-366

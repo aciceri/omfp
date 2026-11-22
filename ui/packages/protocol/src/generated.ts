@@ -1606,8 +1606,13 @@ export type SetThinkingParams = {
   threadId: string;
 };
 
-/** `views.set` params (DMN-083). */
+/** `views.set` params (DMN-083, DMN-364). */
 export type SetViewsParams = {
+  /**
+   * The manifest this one was made from: written only while `views.json` still holds it (equal as JSON), or, with
+   * `null`, only while there is no `views.json`; else `conflict` (DMN-364). Absent: written whatever the file holds.
+   */
+  expected?: ViewsFile | null;
   /** The whole manifest (AGT-010), written to `<workspace>/.omfp/views.json`. */
   manifest: unknown;
   workspaceId: string;
@@ -2125,6 +2130,9 @@ export type ViewsEvent =
     kind: "widget_stored";
     value: unknown;
   };
+
+/** What `views.json` holds, as `views.set`'s `expected` names it (DMN-364): `null`, no file; else its manifest. */
+export type ViewsFile = null | unknown;
 
 /** State of a `views/<workspaceId>` topic (PRT-040, DMN-082). */
 export type ViewsState = {

@@ -123,11 +123,13 @@ export interface ReportedError {
 export const ERRORS = windowKey<readonly ReportedError[]>("errors", []);
 
 /** A message of an action that worked (UI-385), e.g. "Logged in to Anthropic"; `key` is unique per window. `info`: a
- * neutral toast, the action was taken but its outcome shows elsewhere (UI-913). */
+ * neutral toast, the action was taken but its outcome shows elsewhere (UI-913). `undo`: takes the action back, offered
+ * as the toast's Undo button (UI-376). */
 export interface Success {
   readonly key: number;
   readonly text: string;
   readonly tone?: "info";
+  readonly undo?: () => void;
 }
 
 /** Messages of actions that worked, oldest first, shown by the frame as success toasts that go by themselves. */

@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use omfp_protocol::{
     CopyWidgetParams, ErrorBody, ErrorCode, SetViewsParams, SetWidgetStateParams, ViewsEvent,
-    ViewsState, WidgetCopied,
+    ViewsFile, ViewsState, WidgetCopied,
 };
 use tracing::warn;
 
@@ -207,15 +207,39 @@ impl Services {
         Ok(())
     }
 
-    /// `views.set` (DMN-083): checks the manifest, writes `.omfp/views.json` with sorted keys, then publishes it.
+    /// `views.set` (DMN-083): checks the manifest, writes `.omfp/views.json` with sorted keys, then publishes it; with
+    /// `expected`, only while the file still holds that manifest (DMN-364).
     pub async fn set_views(&self, params: SetViewsParams) -> Result<(), ErrorBody> {
         manifest::check(&params.manifest).map_err(bad_request)?;
-        // Never between a mount's read and write (PRT-080..082).
+        // Never between a mount's read and write (PRT-080..082), nor between the check of `expected` and the write.
         let _edit = self.manifest_edits.lock().await;
         let store = Arc::clone(&self.store);
         let id = params.workspace_id.clone();
         blocking(move || {
             let path = manifest_path(&workspace_path(&store, &id)?);
+            if let Some(expected) = &params.expected {
+                // What the file holds; `None` when it cannot be read as JSON, which no expectation matches.
+                let holds = match std::fs::read_to_string(&path) {
+                    Ok(text) => serde_json::from_str(&text).ok().map(ViewsFile::Manifest),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        Some(ViewsFile::Missing)
+                    }
+                    Err(_) => None,
+                };
+                let unchanged = match (&holds, expected) {
+                    (Some(ViewsFile::Missing), ViewsFile::Missing) => true,
+                    (Some(ViewsFile::Manifest(holds)), ViewsFile::Manifest(expected)) => {
+                        manifest::same(holds, expected)
+                    }
+                    _ => false,
+                };
+                if !unchanged {
+                    return Err(ErrorBody::new(
+                        ErrorCode::Conflict,
+                        ".omfp/views.json changed since: it no longer holds the expected manifest",
+                    ));
+                }
+            }
             replace_file(&path, manifest::to_text(&params.manifest).as_bytes(), None)
                 .map_err(|error| internal(format!("{}: {error}", path.display())))
         })

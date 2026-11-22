@@ -1,13 +1,14 @@
 /**
- * What the window writes into `views.json` itself: a widget added with `:widget add` (UI-300), written with
- * `views.set` before the window renders what the daemon pushes back. Splitter sizes stay this window's own (UI-206):
- * {@link resizeSizes} computes them. Agents change views through the daemon (`views.mount`, `views.set`, AGT-061).
+ * What the window writes into `views.json` itself: a widget added with `:widget add` (UI-300) and a layout tab closed
+ * (UI-375), written with `views.set` before the window renders what the daemon pushes back. Splitter sizes stay this
+ * window's own (UI-206): {@link resizeSizes} computes them. Agents change views through the daemon (`views.mount`,
+ * `views.set`, AGT-061).
  */
 
-import { isObject } from "../sdk/json.ts";
+import { isObject, sameJson } from "../sdk/json.ts";
 import { strings } from "../strings/index.ts";
-import { CONTAINER_KINDS, type LayoutNode, type Parsed } from "./layout.ts";
-import { DEFAULT_MANIFEST, DEFAULT_VIEW } from "./views.ts";
+import { CONTAINER_KINDS, childKeys, type LayoutNode, type LayoutTree, type Parsed, parseLayout } from "./layout.ts";
+import { DEFAULT_MANIFEST } from "./views.ts";
 
 /** One keyboard step of a splitter: 5 % of the container. */
 export const RESIZE_STEP = 0.05;
@@ -108,29 +109,114 @@ export interface ManifestSource {
   readonly error?: string | null;
 }
 
+type JsonObject = Readonly<Record<string, unknown>>;
+
 /**
- * The manifest `views.set` writes to add `reference` to the view `viewId` (UI-300): the current manifest with that
- * view's layout changed, or, for a workspace without `views.json`, a new manifest holding the default view with it. An
- * invalid file is never overwritten: the change is refused until it is fixed.
+ * The manifest whose view `viewId` the window changes, with its views and that view: the current manifest, or, for a
+ * workspace without `views.json`, the default one. An invalid file is never overwritten: the change is refused until
+ * it is fixed.
  */
-export function manifestWithWidget(source: ManifestSource, viewId: string, reference: string): Parsed<unknown> {
+function writtenView(
+  source: ManifestSource,
+  viewId: string,
+): Parsed<{ manifest: JsonObject; views: JsonObject; view: JsonObject }> {
   if (source.error !== undefined && source.error !== null) {
     return { ok: false, error: text.invalidManifest };
   }
-  const { manifest } = source;
-  if (manifest === undefined || manifest === null) {
-    const layout = addWidget(DEFAULT_VIEW.layout, reference);
-    return {
-      ok: true,
-      value: { ...DEFAULT_MANIFEST, views: { [DEFAULT_VIEW.id]: { title: DEFAULT_VIEW.title, layout } } },
-    };
-  }
+  const manifest = source.manifest ?? DEFAULT_MANIFEST;
   const views = isObject(manifest) ? manifest.views : undefined;
   const view = isObject(views) ? views[viewId] : undefined;
   if (!isObject(manifest) || !isObject(views) || !isObject(view) || !Object.hasOwn(view, "layout")) {
     return { ok: false, error: text.noView(viewId) };
   }
+  return { ok: true, value: { manifest, views, view } };
+}
+
+/**
+ * The tree of the view `viewId` as `views.json` holds it (the default view's while there is no file): a tab closes
+ * only where the view shown has the same node (UI-375), not where an init file changed it. `undefined` while the file
+ * is invalid or lacks that view as a layout.
+ */
+export function writtenTree(source: ManifestSource, viewId: string): LayoutTree | undefined {
+  const written = writtenView(source, viewId);
+  const parsed = written.ok ? parseLayout(written.value.view.layout) : undefined;
+  return parsed?.ok === true ? parsed.value : undefined;
+}
+
+/** A manifest with the layout of the view `viewId` changed by `edit`, as {@link writtenView} finds it. */
+function editView(
+  source: ManifestSource,
+  viewId: string,
+  edit: (layout: LayoutNode) => Parsed<LayoutNode>,
+): Parsed<unknown> {
+  const written = writtenView(source, viewId);
+  if (!written.ok) {
+    return written;
+  }
+  const { manifest, views, view } = written.value;
   // The manifest is valid (the daemon pushes only valid ones), so the layout is a node.
-  const layout = addWidget(view.layout as LayoutNode, reference);
-  return { ok: true, value: { ...manifest, views: { ...views, [viewId]: { ...view, layout } } } };
+  const layout = edit(view.layout as LayoutNode);
+  return layout.ok
+    ? { ok: true, value: { ...manifest, views: { ...views, [viewId]: { ...view, layout: layout.value } } } }
+    : layout;
+}
+
+/** The manifest `views.set` writes to add `reference` to the view `viewId` (UI-300), as {@link editView} does. */
+export function manifestWithWidget(source: ManifestSource, viewId: string, reference: string): Parsed<unknown> {
+  return editView(source, viewId, (layout) => ({ ok: true, value: addWidget(layout, reference) }));
+}
+
+/**
+ * `node` (shown as `tree`) without the tab its children's identity `keys` lead to ({@link childKeys}, from `node`'s
+ * children down); `undefined` when there is no such tab, it is the last of its `tabs` container, or it is no longer the
+ * node `expected` the window showed. A container with `sizes` loses the tab's weight.
+ */
+function withoutTab(
+  node: LayoutNode,
+  tree: LayoutTree,
+  keys: readonly string[],
+  expected: LayoutTree,
+): LayoutNode | undefined {
+  const found = container(node);
+  const [key, ...rest] = keys;
+  if (found === undefined || tree.kind === "widget" || key === undefined) {
+    return undefined;
+  }
+  const index = childKeys(tree.children).indexOf(key);
+  const child = found.children[index];
+  const shown = tree.children[index];
+  if (child === undefined || shown === undefined) {
+    return undefined;
+  }
+  if (rest.length > 0) {
+    const inner = withoutTab(child, shown, rest, expected);
+    return inner === undefined
+      ? undefined
+      : ([found.kind, found.props, ...found.children.with(index, inner)] as LayoutNode);
+  }
+  if (found.kind !== "tabs" || found.children.length < 2 || !sameJson(shown, expected)) {
+    return undefined;
+  }
+  const { sizes } = found.props;
+  const props = Array.isArray(sizes) ? { ...found.props, sizes: sizes.toSpliced(index, 1) } : found.props;
+  return [found.kind, props, ...found.children.toSpliced(index, 1)] as LayoutNode;
+}
+
+/**
+ * The manifest `views.set` writes to close a tab of the view `viewId` (UI-375), as {@link editView} does: the tab is
+ * found by the identity `keys` of its node and its ancestors from the view's root ({@link keysAt}), so tabs closed
+ * before it never move it, and it must still be the node `expected` the window showed. Only a tab of a `tabs`
+ * container that keeps another one closes.
+ */
+export function manifestWithoutTab(
+  source: ManifestSource,
+  viewId: string,
+  keys: readonly string[],
+  expected: LayoutTree,
+): Parsed<unknown> {
+  return editView(source, viewId, (layout) => {
+    const tree = parseLayout(layout);
+    const changed = tree.ok ? withoutTab(layout, tree.value, keys, expected) : undefined;
+    return changed === undefined ? { ok: false, error: text.noTab(viewId) } : { ok: true, value: changed };
+  });
 }

@@ -37,7 +37,7 @@ export interface OpenFileOptions {
   readonly workspaceId?: string | undefined;
 }
 
-/** The tab id of a file in the `main` slot (the slot's own children use their layout path). */
+/** The tab id of a file in the `main` slot (the slot's own children use `layout:<instance>#<n>`, UI-375). */
 export function fileTabId(path: string): string {
   return `file:${path}`;
 }

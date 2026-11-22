@@ -1,4 +1,4 @@
-/** L4: views init files make and TSX views in the window (UI-267, UI-268, UI-300, UI-304). */
+/** L4: views init files make and TSX views in the window (UI-267, UI-268, UI-300, UI-304, UI-375). */
 
 import { afterEach, describe, expect, test } from "bun:test";
 import type { CallMethod } from "@omfp/client";
@@ -184,6 +184,13 @@ function banner(): string | undefined {
   return screen.queryByTestId("view-file-error")?.textContent ?? undefined;
 }
 
+/** The titles of the view's tabs that close as `views.json` edits (UI-375). */
+function closable(): string[] {
+  return within(screen.getByTestId("view"))
+    .queryAllByTestId("layout-tab-close")
+    .map((mark) => mark.closest('[role="tab"]')?.textContent ?? "");
+}
+
 describe("TSX views", () => {
   // spec: UI-268
   test("a TSX view renders like the same layout in views.json: tree, main slot, splitters", async () => {
@@ -205,6 +212,17 @@ describe("TSX views", () => {
     test.flush();
     expect(within(screen.getByTestId("view")).getAllByTestId("file-tab").length).toBe(1);
     expect(banner()).toBeUndefined();
+  });
+
+  // spec: UI-268, UI-375
+  test("its tabs have no ×, which the same tabs of views.json have", async () => {
+    const test = setup({ [opsUrl("f1")]: { default: Ops } });
+    show(test, "same");
+    await settle(test);
+    expect(closable()).toEqual(["Background", "MCP servers"]);
+    show(test, "ops");
+    await settle(test);
+    expect(closable()).toEqual([]);
   });
 
   // spec: UI-268, UI-300
@@ -435,5 +453,12 @@ describe("views of init files in the window", () => {
     await settle(test);
     expect(test.host.init.getSnapshot().views?.manifest).toBe(pushed);
     expect(tabs().slice(-5)).toEqual(["Workspace", "Changes", "Background", "Header", "Todos"]);
+  });
+
+  // spec: UI-267, UI-375
+  test("in a views.json view an init file transforms, the file's own tabs close, never the tab the init file added", async () => {
+    const test = setup({ [USER_URL]: { default: userInit } }, { manifest: EDITABLE, user: "u1" });
+    await settle(test);
+    expect(closable()).toEqual(["Workspace", "Changes", "Background"]);
   });
 });

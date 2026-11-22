@@ -197,9 +197,10 @@ ui/packages/app       @omfp/app: the web app; src/sdk (widget SDK `omfp/sdk`: ho
                       describe.ts(x): `:describe-key` / `:describe-command`; which-key.tsx: the which-key panel;
                       window-state.ts: the window state agents read; window-requests.tsx: the daemon's requests,
                       commands run and out-of-sight widget checks), view (layout tree, `:widget add`'s
-                      manifest edit (edit.ts), reference resolution, widget slot,
-                      the `main` slot's file tabs and the widget tabs reveals open there (opened-tab.tsx: their label
-                      and close gestures); file-view.tsx: TSX views; card.tsx: the widget of a chat card (`omfp_card`);
+                      manifest edit (edit.ts) and a layout tab's close with its Undo (close-tab.ts), reference
+                      resolution, widget slot, the `main` slot's file tabs and the widget tabs reveals open there
+                      (closable-tab.tsx: the label and close gestures of these and of layout tabs); file-view.tsx: TSX
+                      views; card.tsx: the widget of a chat card (`omfp_card`);
                       kept.ts: the views kept mounted, hidden;
                       sizes.ts and splitter.tsx:
                       the window's splitter sizes), gallery

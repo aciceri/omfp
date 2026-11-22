@@ -705,8 +705,14 @@
     inset-block-end: 0;
   }
 
-  /* Each file tab's own close mark, in the main slot and the floating panel (UI-366): faint until the tab is hovered,
-     selected or focused. */
+  /* An opened tab's title (a file, a revealed widget: this window's, never in views.json) is italic, so a layout tab
+     (views.json's, every window's) reads apart from it (UI-377). */
+  .omfp-tabs__tab [data-opened] {
+    font-style: italic;
+  }
+
+  /* Each closable tab's own close mark (UI-366, UI-375), in the main slot, the floating panel and a view's layout:
+     faint until the tab is hovered, selected or focused. */
   .omfp-file-tab__close {
     display: inline-flex;
     align-items: center;

@@ -313,8 +313,8 @@ export interface FileTabsState extends FileTabs {
   /** The tab the selected thread (else the draft thread) selected in the `main` slot (or the floating file panel) of
    * the view shown (UI-372); `undefined`: the slot's first tab. */
   readonly active: string | undefined;
-  /** Selects a tab by id (a file's `fileTabId`, a widget's `widgetTabId`, a slot child's layout path) for the
-   * selected thread in the view shown; `undefined`: the slot's first tab. */
+  /** Selects a tab by id (a file's `fileTabId`, a widget's `widgetTabId`, a slot child's `layout:<instance>#<n>`) for
+   * the selected thread in the view shown; `undefined`: the slot's first tab. */
   select(id: string | undefined): void;
   /** Closes the file `path`. */
   close(path: string): void;

@@ -106,6 +106,46 @@ export function containsWidget(tree: LayoutTree, names: readonly string[]): bool
     : tree.children.some((child) => containsWidget(child, names));
 }
 
+/**
+ * Each child's identity among its siblings: its widget instance (the `instance` prop, else the reference) or its
+ * container kind, numbered among equal siblings (`omfp:changes#0`). A path is a position, so a tab closed before a
+ * sibling would move it (UI-375); this key stays: the renderer keys and names tabs by it, and a close finds its node
+ * by the keys from the view's root.
+ */
+export function childKeys(children: readonly LayoutTree[]): string[] {
+  const seen = new Map<string, number>();
+  return children.map((child) => {
+    const instance = child.kind === "widget" ? child.props.instance : undefined;
+    const base = child.kind !== "widget" ? child.kind : typeof instance === "string" ? instance : child.name;
+    const count = seen.get(base) ?? 0;
+    seen.set(base, count + 1);
+    return `${base}#${count}`;
+  });
+}
+
+/** The {@link childKeys} from `tree`, a view's root (the renderer's path `0`), down to its node at the renderer's
+ * `path` (`0.1.2`); `undefined` when it has none there. */
+export function keysAt(tree: LayoutTree, path: string): string[] | undefined {
+  const [root, ...indices] = path.split(".").map(Number);
+  if (root !== 0) {
+    return undefined;
+  }
+  const keys: string[] = [];
+  let node: LayoutTree | undefined = tree;
+  for (const index of indices) {
+    if (node === undefined || node.kind === "widget") {
+      return undefined;
+    }
+    const key = childKeys(node.children)[index];
+    node = node.children[index];
+    if (key === undefined) {
+      return undefined;
+    }
+    keys.push(key);
+  }
+  return keys;
+}
+
 /** The `id` of the `tabs` container where files open (UI-115). */
 export const MAIN_SLOT = "main";
 

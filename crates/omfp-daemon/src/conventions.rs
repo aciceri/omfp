@@ -115,7 +115,8 @@ pub fn widgets_note(path: &Path, user_library: &Path) -> String {
          - Cards: content of one moment of the conversation (a terminal to show something, a chart, a question with \
          its own controls) goes in a card, omfp_card {{ widget | code, props?, title?, wait? }}, drawn in your tool \
          call in the chat (with wait: true the user's answer is its result); content that stays goes in a mount \
-         (omfp_ui_mount). Details: omfp://docs/widgets (Cards in the chat).\n\
+         (omfp_ui_mount), a tab of every window's layout until it is removed or the user closes it. Details: \
+         omfp://docs/widgets (Cards in the chat).\n\
          - Keys: {display}/.omfp/keymap.json (schema omfp://schemas/keymap.json) binds keys to commands, built-in or a \
          widget's useCommand, in windows showing this workspace; give a widget a command and bind it there.\n\
          - Jobs: a workspace's recurring commands, schedules, watchers and prompts are declared in \
@@ -625,7 +626,8 @@ mod tests {
                 "- Cards: content of one moment of the conversation (a terminal to show something, a chart, a \
                  question with its own controls) goes in a card, omfp_card { widget | code, props?, title?, wait? }, \
                  drawn in your tool call in the chat (with wait: true the user's answer is its result); content that \
-                 stays goes in a mount (omfp_ui_mount). Details: omfp://docs/widgets (Cards in the chat)."
+                 stays goes in a mount (omfp_ui_mount), a tab of every window's layout until it is removed or the \
+                 user closes it. Details: omfp://docs/widgets (Cards in the chat)."
             ]
         );
     }

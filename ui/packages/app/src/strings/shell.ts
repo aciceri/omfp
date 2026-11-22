@@ -666,6 +666,8 @@ export const shell = {
     viewTabs: "Views",
     invalidView: (error: string) => `The view is invalid, showing the default view: ${error}`,
     dismiss: "Dismiss",
+    /** The button of a success toast whose action can be taken back (UI-376). */
+    undo: "Undo",
     /** A URL omp opened in a browser (UI-346). */
     openedUrl: (host: string) => `omp opened ${host} in the browser`,
     commandLine: "Command line",
@@ -733,6 +735,11 @@ export const shell = {
     loading: "The views of this workspace are still loading",
     noWorkspace: "No current workspace",
     reset: ".omfp/views.json reset to the default view",
+    /** Closing a tab of a view's layout (UI-375, UI-376). */
+    noTab: (id: string) => `View ${id} no longer has that tab: .omfp/views.json changed meanwhile`,
+    closed: (title: string) => `Closed ${title}`,
+    closeStale: (title: string) => `${title} not closed: .omfp/views.json changed meanwhile, close it again`,
+    undoStale: (title: string) => `Nothing restored: .omfp/views.json changed since ${title} was closed`,
   },
   /** `:view-reset` asks first (UI-430): it replaces every view, mount and added widget of the workspace. */
   resetViews: {

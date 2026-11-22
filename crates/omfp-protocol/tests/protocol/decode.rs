@@ -1,7 +1,8 @@
 //! Rules for decoding client frames (`decode_request`).
 
 use omfp_protocol::{
-    ApprovalMode, Call, Empty, ErrorCode, ProtocolError, Request, StopThreadParams, decode_request,
+    ApprovalMode, Call, Empty, ErrorCode, ProtocolError, Request, SetViewsParams, StopThreadParams,
+    ViewsFile, decode_request,
 };
 use serde_json::json;
 
@@ -153,4 +154,28 @@ fn a_request_deserializes_like_decode_request() {
     let request: Request = serde_json::from_value(frame.clone()).unwrap();
     assert_eq!(request, decode(&frame).unwrap());
     assert_eq!(serde_json::to_value(&request).unwrap(), frame);
+}
+
+// spec: DMN-364
+#[test]
+fn views_set_tells_an_expected_absent_file_from_no_expectation() {
+    let params = |expected: Option<serde_json::Value>| {
+        let mut params = json!({ "workspaceId": "w1", "manifest": { "views": {} } });
+        if let Some(expected) = expected {
+            params["expected"] = expected;
+        }
+        params
+    };
+    for (sent, expected) in [
+        (None, None),
+        (Some(json!(null)), Some(ViewsFile::Missing)),
+        (
+            Some(json!({ "views": {} })),
+            Some(ViewsFile::Manifest(json!({ "views": {} }))),
+        ),
+    ] {
+        let decoded: SetViewsParams = serde_json::from_value(params(sent.clone())).unwrap();
+        assert_eq!(decoded.expected, expected);
+        assert_eq!(serde_json::to_value(&decoded).unwrap(), params(sent));
+    }
 }

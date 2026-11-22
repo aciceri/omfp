@@ -1352,6 +1352,12 @@ requirements = [
   # Error toasts go by themselves; a toast holds while hovered or focused (#242)
   "UI-535",
   "UI-536",
+  # Closing the tabs of a view's layout, with Undo; opened tabs in italics (#246)
+  "UI-375",
+  "UI-376",
+  "UI-377",
+  "DMN-364",
+  "E2E-79",
 ]
 
 [M18]

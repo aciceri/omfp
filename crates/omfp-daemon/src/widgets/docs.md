@@ -112,8 +112,14 @@ workspace folder `.omfp/widgets/subagents/` still replaces it); write `omfp:back
 - Splitters between the cells of a `row` or `col` resize them for this window only (a double click goes back to the
   layout's `sizes`); nothing the user does by hand rewrites `views.json` except `:widget add <reference>`, which adds
   a widget (built-in, `./widgets/<name>`, `user:<name>`) to the current view as the last tab of its `tabs` with
-  `"id": "side"`, else at the end of its root container. It refuses views that exist only in code (an init file's
-  `views.add`, a TSX view) and names the file to edit. Agents change views with `omfp_ui_mount` and `views.set`.
+  `"id": "side"`, else at the end of its root container, and closing a tab of the layout. `:widget add` refuses views
+  that exist only in code (an init file's `views.add`, a TSX view) and names the file to edit. Agents change views
+  with `omfp_ui_mount` and `views.set`.
+- **Layout tabs close**: a tab of a `tabs` container of `views.json` carries its own `×` (a middle click and Delete
+  close it too), unless it is the container's only tab or holds the chat: closing it writes `views.json` without it,
+  for every window, and a toast offers Undo while nobody changed the file since. Tabs of views in code (TSX views,
+  init files) have no `×`. The tabs this window opened itself (files, revealed widgets, never in `views.json`) show
+  their titles in italics.
 - A **reveal** (`REVEAL_WIDGET`: the header's background badge and workspace chip, or any widget's
   `useWindowState(REVEAL_WIDGET)` setter) shows a widget: the view's tab holding
   it is selected; a view without it opens it as a closable tab of the `main` slot after the open files (titled like a
@@ -138,13 +144,18 @@ views.json: mounting an id again replaces it, omfp_ui_update { id, props } drive
 - `omfp_ui_update { id, props?, code? }` merges `props` into the mounted widget (`null` deletes one) or replaces its
   inline code; windows re-render it in place, its state kept. Drive a mounted widget (a progress, a status) this way.
 - `omfp_ui_remove { id }` removes it (a view it filled goes too); its folder stays.
+- A mount is part of the layout: its tab stays in every window until it is removed, by `omfp_ui_remove` or by the
+  user closing it (its `×` removes the node from `views.json`). Mount what should stay; show the content of one
+  moment of the conversation in a card instead.
 - Floating panels are `"panels": { "<id>": <node> }` in `views.json`: the `title` prop labels the panel, the user moves,
   resizes, minimises and closes it (closing removes it from the file).
 - The component library is the user library: `omfp_component_save { name, widget | code, replace? }` saves a
   workspace widget or code as `user:<name>`, `omfp_component_list` lists it. Start a component's entry with a comment
   saying what it shows and which props it takes: the list shows it.
 - Widgets reach the same through `useCall()`, with the same arguments (`place` included) plus `workspaceId`:
-  `views.mount`, `views.mount_update`, `views.unmount`, `widgets.save`, `widgets.library`.
+  `views.mount`, `views.mount_update`, `views.unmount`, `widgets.save`, `widgets.library`. A whole-file
+  `views.set { workspaceId, manifest, expected }` written from the manifest you read writes only while the file still
+  holds `expected`, else `conflict`: read it again and redo the change rather than overwrite someone else's.
 
 ## Cards in the chat
 
@@ -314,8 +325,8 @@ file, `views/ops.tsx` for a TSX view) compiles the file as the windows import it
 ### Views of init files
 
 Without an init file, or one that never calls `views.use`, the window shows `views.json`'s views (that is the default
-init). Everything is window-local: only `:widget add` and agents (`omfp_ui_mount`, `views.set`) write `views.json`, and
-an init file that read it runs again with the new file.
+init). Everything is window-local: only `:widget add`, closing a layout tab and agents (`omfp_ui_mount`, `views.set`)
+write `views.json`, and an init file that read it runs again with the new file.
 
 ```ts
 // ~/.config/omfp/init.ts: every workspace gets the Todos tab.

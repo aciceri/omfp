@@ -187,6 +187,24 @@ fn sorted(value: &Value) -> Value {
     }
 }
 
+/// Whether two manifests are the same JSON as a browser reads it (DMN-364): numbers compare by value, as JavaScript
+/// has one number type (`3.0` in the file is the `3` a window sends back), objects whatever their key order.
+#[must_use]
+pub fn same(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::Number(a), Value::Number(b)) => a.as_f64() == b.as_f64(),
+        (Value::Array(a), Value::Array(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(a, b)| same(a, b))
+        }
+        (Value::Object(a), Value::Object(b)) => {
+            a.len() == b.len()
+                && a.iter()
+                    .all(|(key, a)| b.get(key).is_some_and(|b| same(a, b)))
+        }
+        (a, b) => a == b,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -283,5 +301,28 @@ mod tests {
              {\n          \"a\": 2,\n          \"z\": 1\n        },\n        \"omfp:chat\"\n      ],\n      \"title\": \
              \"Work\"\n    }\n  }\n}\n"
         );
+    }
+
+    // spec: DMN-364
+    #[test]
+    fn manifests_are_the_same_json_as_a_browser_reads_it() {
+        let file: Value =
+            serde_json::from_str(r#"{"views":{"w":{"layout":["row",{"sizes":[3.0,1.5]},"a"]}}}"#)
+                .unwrap();
+        let sent = json!({ "views": { "w": { "layout": ["row", { "sizes": [3, 1.5] }, "a"] } } });
+        assert!(same(&file, &sent));
+        assert!(!same(
+            &file,
+            &json!({ "views": { "w": { "layout": ["row", { "sizes": [3, 1] }, "a"] } } })
+        ));
+        assert!(!same(&json!({ "a": 1 }), &json!({ "a": 1, "b": 2 })));
+        assert!(!same(
+            &json!({ "a": 1, "b": 2 }),
+            &json!({ "a": 1, "c": 2 })
+        ));
+        assert!(!same(&json!([1, 2]), &json!([1, 2, 3])));
+        assert!(!same(&json!([1, 2]), &json!([2, 1])));
+        assert!(!same(&json!("1"), &json!(1)));
+        assert!(same(&json!(null), &json!(null)));
     }
 }

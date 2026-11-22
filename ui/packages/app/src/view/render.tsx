@@ -8,7 +8,17 @@
 
 import { Tab, TabList, TabPanel, Tabs } from "@omfp/kit";
 import type { ViewsState } from "@omfp/protocol";
-import { Fragment, memo, type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  Fragment,
+  memo,
+  type ReactNode,
+  type RefObject,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { closeOpened, useWorkspaceFolder } from "../sdk/files.ts";
 import {
   type FileTabsState,
@@ -20,21 +30,25 @@ import {
   useWindowState,
   widgetTabId,
 } from "../sdk/index.ts";
+import { sameJson } from "../sdk/json.ts";
 import { useChosenTab } from "../sdk/tab-choices.ts";
 import { strings } from "../strings/index.ts";
 import { workspaceTabId } from "../vm/files.ts";
-import { resizeSizes } from "./edit.ts";
+import { ClosableTabLabel, closableTabBarHandlers } from "./closable-tab.tsx";
+import { closeLayoutTab } from "./close-tab.ts";
+import { resizeSizes, writtenTree } from "./edit.ts";
 import {
   type Area,
   chatCell,
+  childKeys,
   containsWidget,
   FILE_WIDGET,
   fileProps,
   hasMainSlot,
+  keysAt,
   type LayoutTree,
   MAIN_SLOT,
 } from "./layout.ts";
-import { OpenedTabLabel, openedTabBarHandlers } from "./opened-tab.tsx";
 import { builtinReference, type WidgetRegistry } from "./resolve.ts";
 import { effectiveSizes, PANE_SIZES, sizesKey, withSizes } from "./sizes.ts";
 import { WidgetSlot } from "./slot.tsx";
@@ -65,6 +79,9 @@ interface Scope {
   readonly viewId: string;
   /** On a phone: the area shown. */
   readonly area: Area | undefined;
+  /** The view's tree as `views.json` holds it, which closing a layout tab rewrites (UI-375); `undefined` for a TSX
+   * view, an init file's view, a floating panel, or while the views topic has not answered or refuses the file. */
+  readonly written: LayoutTree | undefined;
 }
 
 /**
@@ -79,7 +96,14 @@ export const ViewRenderer = memo(function ViewRenderer({
   area,
   shown = true,
 }: ViewRendererProps): ReactNode {
-  const scope: Scope = { registry, workspaceId, views, viewId: view.id, area };
+  const written = useMemo(
+    () =>
+      views === undefined || view.init !== undefined || view.file !== undefined
+        ? undefined
+        : writtenTree(views, view.id),
+    [views, view.id, view.init, view.file],
+  );
+  const scope: Scope = { registry, workspaceId, views, viewId: view.id, area, written };
   const root = useRef<HTMLDivElement>(null);
   const focused = useRef<HTMLElement | null>(null);
   // Effects are cleaned up as `<Activity>` hides the view and run again as it shows it. The layout cleanup sees the
@@ -132,7 +156,7 @@ export interface PanelLayoutProps {
 /** A floating panel's node (UI-230), rendered like a view's nodes. */
 export function PanelLayout({ id, tree, registry, workspaceId, views }: PanelLayoutProps): ReactNode {
   const path = `panel:${id}`;
-  const scope: Scope = { registry, workspaceId, views, viewId: path, area: undefined };
+  const scope: Scope = { registry, workspaceId, views, viewId: path, area: undefined, written: undefined };
   return <Node tree={tree} path={path} scope={scope} />;
 }
 
@@ -266,9 +290,10 @@ function openedTabs(files: FileTabsState): OpenedTab[] {
  * and view (UI-372); one remembered that is gone (closed, removed from the view) gives way to the first tab. The one
  * with `"id": "main"` (UI-115) also holds this window's open files of the workspace and the widgets reveals opened
  * there (UI-373), after its own children; a middle click closes the opened tab under the pointer (UI-365), as browsers
- * and editors do. One tab alone needs no tab bar (AGT-010): the default view's `main` slot holds the chat alone until
- * files open. Every tab stays mounted, the ones not selected hidden with their effects paused, so they show again as
- * they were (UI-400): a file keeps its edit.
+ * and editors do. Its own children close too, as `views.json` edits (UI-375), when another one stays and they do not
+ * hold the conversation. One tab alone needs no tab bar (AGT-010): the default view's `main` slot holds the chat alone
+ * until files open. Every tab stays mounted, the ones not selected hidden with their effects paused, so they show
+ * again as they were (UI-400): a file keeps its edit.
  */
 function TabsNode({
   tree,
@@ -286,25 +311,64 @@ function TabsNode({
   const [kept, select] = useChosenTab(scope.viewId, main ? MAIN_SLOT : path);
   // A file's tab selected with another spelling of its path (UI-119) is that file's tab.
   const chosen = main && kept !== undefined ? workspaceTabId(folder, kept) : kept;
+  // The choice when a close completes: one the user made meanwhile stays.
+  const latest = useRef(chosen);
+  latest.current = chosen;
   // Closing an opened tab selects its neighbour here, in this view or floating panel (UI-366, UI-372).
   const closeTab = (id: string) => {
     if (scope.workspaceId !== undefined) {
       closeOpened(host, scope.workspaceId, id, scope.viewId);
     }
   };
-  const own = tree.children.map((child, index) => ({ child, id: `${path}.${index}` }));
+  // A tab's id is its child's identity among its siblings, not its position: a tab closed before it (here or in
+  // another window) leaves its id, its selection and its state alone (UI-375).
+  const keys = childKeys(tree.children);
+  const own = tree.children.map((child, index) => ({ child, path: `${path}.${index}`, id: `layout:${keys[index]}` }));
   const opened = main ? openedTabs(files) : [];
   useRevealTab(own, select);
   const ids = [...own.map(({ id }) => id), ...opened.map(({ id }) => id)];
   const selected = chosen !== undefined && ids.includes(chosen) ? chosen : ids[0];
   const bar = useTabBar(selected);
   const slot = main ? MAIN_SLOT : undefined;
+  // An own child closes when views.json has the same node there, in a container keeping another one, and it does not
+  // hold the conversation (UI-375); a tab an init file added or changed stays.
+  const written = treeAt(scope.written, path);
+  const writtenTabs = written?.kind === "tabs" && written.children.length > 1 ? written.children : undefined;
+  const editable = writtenTabs !== undefined;
+  const closable = (child: LayoutTree, index: number) =>
+    writtenTabs !== undefined && !holdsChat(child) && sameJson(writtenTabs[index], child);
+  // Closing an own child writes views.json; a closed selected tab gives way to its neighbour (UI-375).
+  const closeOwn = (index: number) => {
+    const target = own[index];
+    const keys = scope.written === undefined ? undefined : keysAt(scope.written, target?.path ?? "");
+    if (target === undefined || keys === undefined || scope.workspaceId === undefined) {
+      return;
+    }
+    const at = ids.indexOf(target.id);
+    const next = selected === target.id ? (ids[at + 1] ?? ids[at - 1]) : undefined;
+    const title = nodeTitle(target.child);
+    const tab = { workspaceId: scope.workspaceId, viewId: scope.viewId, keys, node: target.child, title };
+    void closeLayoutTab(host, tab).then((written) => {
+      const unchanged = latest.current === undefined || latest.current === target.id;
+      if (written && next !== undefined && unchanged) {
+        select(next);
+      }
+    });
+  };
+  const close = (id: string) => {
+    const index = own.findIndex((tab) => tab.id === id);
+    if (index === -1) {
+      closeTab(id);
+    } else {
+      closeOwn(index);
+    }
+  };
   const [only] = own;
   if (only !== undefined && ids.length === 1) {
     return (
       <div className="omfp-view__tabs" data-layout="tabs" data-path={path} data-slot={slot}>
         <div className="omfp-view__panel">
-          <Node tree={only.child} path={only.id} scope={scope} />
+          <Node tree={only.child} path={only.path} scope={scope} />
         </div>
       </div>
     );
@@ -318,17 +382,30 @@ function TabsNode({
       {...(selected === undefined ? {} : { selectedKey: selected })}
       onSelectionChange={(key) => select(String(key))}
     >
-      <div className="omfp-view__tabbar" ref={bar} {...(main ? openedTabBarHandlers(closeTab) : {})}>
+      <div className="omfp-view__tabbar" ref={bar} {...(main || editable ? closableTabBarHandlers(close) : {})}>
         <TabList aria-label={strings.shell.responsive.tabs(tree.kind, main ? MAIN_SLOT : path)}>
           {[
-            ...own.map(({ child, id }) => (
-              <Tab key={id} id={id} data-testid="view-tab">
-                {nodeTitle(child)}
-              </Tab>
-            )),
+            ...own.map(({ child, id }, index) => {
+              const closes = closable(child, index);
+              return (
+                <Tab key={id} id={id} data-testid="view-tab" data-tab={closes ? id : undefined}>
+                  {closes ? (
+                    <ClosableTabLabel
+                      id={id}
+                      title={nodeTitle(child)}
+                      tooltip={child.kind === "widget" ? child.name : child.kind}
+                      kind="layout"
+                      onClose={close}
+                    />
+                  ) : (
+                    nodeTitle(child)
+                  )}
+                </Tab>
+              );
+            }),
             ...opened.map((tab) => (
               <Tab key={tab.id} id={tab.id} data-testid={`${tab.kind}-tab`} data-tab={tab.id} data-file={tab.file}>
-                <OpenedTabLabel
+                <ClosableTabLabel
                   id={tab.id}
                   title={tab.title}
                   tooltip={tab.tooltip}
@@ -340,9 +417,9 @@ function TabsNode({
           ]}
         </TabList>
       </div>
-      {own.map(({ child, id }) => (
+      {own.map(({ child, path: at, id }) => (
         <TabPanel key={id} id={id} className="omfp-view__panel" keepMounted>
-          <Node tree={child} path={id} scope={scope} />
+          <Node tree={child} path={at} scope={scope} />
         </TabPanel>
       ))}
       {opened.map((tab) => (
@@ -390,6 +467,7 @@ function Cells({
   const key = sizesKey(scope.workspaceId, scope.viewId, path);
   const [own, setOwn] = useWindowState(PANE_SIZES);
   const count = tree.children.length;
+  const keys = childKeys(tree.children);
   const sizes = effectiveSizes(tree.props.sizes, own[key], count);
   // A pointer drag's sizes, shown until the window's new sizes arrive.
   const [preview, setPreview] = useState<{ base: readonly number[] | undefined; sizes: readonly number[] }>();
@@ -438,11 +516,11 @@ function Cells({
         {tree.children.map((child, index) => {
           const id = `${path}.${index}`;
           return choices.includes(index) ? (
-            <TabPanel key={id} id={String(index)} className="omfp-view__cell" keepMounted>
+            <TabPanel key={keys[index]} id={String(index)} className="omfp-view__cell" keepMounted>
               <Node tree={child} path={id} scope={scope} />
             </TabPanel>
           ) : (
-            <div key={id} className="omfp-view__cell" hidden>
+            <div key={keys[index]} className="omfp-view__cell" hidden>
               <Node tree={child} path={id} scope={scope} />
             </div>
           );
@@ -463,7 +541,7 @@ function Cells({
         const before = shown?.[index - 1] ?? 1;
         const after = shown?.[index] ?? 1;
         return (
-          <Fragment key={id}>
+          <Fragment key={keys[index]}>
             {resizable && index > 0 && !fixed(index - 1) && !fixed(index) && (
               <Resizer
                 orientation={tree.kind === "row" ? "vertical" : "horizontal"}
@@ -496,6 +574,16 @@ function Cells({
       })}
     </div>
   );
+}
+
+/** The node of `tree` (a view's root, path `0`) at the renderer's `path`; `undefined` when it has none there. */
+function treeAt(tree: LayoutTree | undefined, path: string): LayoutTree | undefined {
+  const [root, ...indices] = path.split(".");
+  let node = root === "0" ? tree : undefined;
+  for (const index of indices) {
+    node = node === undefined || node.kind === "widget" ? undefined : node.children[Number(index)];
+  }
+  return node;
 }
 
 /** A tab's label: the widget's `title` prop, else {@link widgetTitle}; a container's kind. */

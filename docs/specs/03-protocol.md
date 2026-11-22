@@ -166,7 +166,7 @@ previous settings stay). A thread summary carries `title` (`""` until the first 
 | `theme.set` | `css` (string, at most 1 MiB, else `bad_request`; `null` restores the built-in themes) | `{}`; every client gets `theme_changed` on `index` |
 | `settings.get` | — | `settings` (DMN-009, UI-097) |
 | `settings.set` | `ui?` (values to set; absent ones unchanged), `keymap?` (entries replacing the ones with the same `mode` and `keys`) | the new `settings`; merged into the config file, written back with its comments and other keys (`bad_request` for an invalid value or a config file that is not valid TOML); every client gets `settings_changed` |
-| `views.set` | `workspaceId`, `manifest` (AGT-010) | `{}`; writes `.omfp/views.json` (DMN-083) |
+| `views.set` | `workspaceId`, `manifest` (AGT-010), `expected?` (the manifest it was made from; `null`: no file) | `{}`; writes `.omfp/views.json` (DMN-083); `conflict` when the file no longer holds `expected` (DMN-364) |
 | `widgets.copy` | `workspaceId`, `widget` (`omfp:<name>` \| `user:<name>`), `name?` | `{ name }`: the new folder `.omfp/widgets/<name>/` (DMN-087) |
 | `widgets.state_set` | `workspaceId`, `instance`, `key`, `value` (JSON; `null` deletes) | `{}`; `widget_stored` on `views/<id>` (DMN-086) |
 | `widgets.compile` | `code` | `{ module }`: the ES module of a card's one-file widget (PRT-225) |

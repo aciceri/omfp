@@ -801,13 +801,36 @@ pub struct SetSettingsParams {
     pub keymap: Option<Vec<KeymapEntry>>,
 }
 
-/// `views.set` params (DMN-083).
+/// `views.set` params (DMN-083, DMN-364).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SetViewsParams {
     pub workspace_id: String,
     /// The whole manifest (AGT-010), written to `<workspace>/.omfp/views.json`.
     pub manifest: Value,
+    /// The manifest this one was made from: written only while `views.json` still holds it (equal as JSON), or, with
+    /// `null`, only while there is no `views.json`; else `conflict` (DMN-364). Absent: written whatever the file holds.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub expected: Option<ViewsFile>,
+}
+
+/// What `views.json` holds, as `views.set`'s `expected` names it (DMN-364): `null`, no file; else its manifest.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum ViewsFile {
+    Missing,
+    Manifest(Value),
+}
+
+/// A field that is present, `null` included (`ViewsFile::Missing`), as an absent one is `None` (`default`).
+fn present<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<ViewsFile>, D::Error> {
+    ViewsFile::deserialize(deserializer).map(Some)
 }
 
 /// `widgets.copy` params (DMN-087).

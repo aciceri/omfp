@@ -77,7 +77,12 @@ not show opens there too when something reveals it (the header's `N in backgroun
 titled with the widget's name after the files, selected, and selected again on the next reveal; a view showing the
 widget selects its own tab instead, and a view without `main` floats it in a panel. Each of these tabs has its own `×`;
 a middle click on a tab or Delete on the focused tab closes it too, without selecting it first. They stay open across
-reloads, per workspace, in this window only.
+reloads, per workspace, in this window only, and their titles show in italics.
+
+The view's own tabs, those of `views.json` (`:widget add`, an agent's mount), close the same way, unless a tab is
+alone in its container or holds the chat: closing one writes `views.json` without it, so every window loses it, and
+the toast `Closed <title>` offers Undo while nobody changed the file since. Views in code (a TSX view, an init file's)
+keep their tabs.
 
 ## The `:` line
 

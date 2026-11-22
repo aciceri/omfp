@@ -413,6 +413,72 @@ async fn views_set_checks_writes_sorted_json_and_publishes_before_answering() {
     );
 }
 
+// spec: DMN-364
+#[tokio::test(flavor = "multi_thread")]
+async fn views_set_with_an_expected_manifest_writes_only_over_that_manifest() {
+    let daemon = Daemon::new().await;
+    let mut client = daemon.client().await;
+    let (id, folder) = workspace(&mut client).await;
+    let written = views(&mut client, &id).await["manifest"].clone();
+    let one = json!({ "views": { "one": { "layout": "omfp:chat" } } });
+    let two = json!({ "views": { "two": { "layout": "omfp:chat" } } });
+    let on_disk = || -> Value {
+        serde_json::from_str(&std::fs::read_to_string(folder.join(".omfp/views.json")).unwrap())
+            .unwrap()
+    };
+
+    // The file still holds the expected manifest: written.
+    client
+        .ok(
+            "views.set",
+            json!({ "workspaceId": id, "manifest": one, "expected": written }),
+        )
+        .await;
+    assert_eq!(on_disk(), one);
+    // A write based on the file before is refused, the file left as it is.
+    let error = client
+        .call(
+            "views.set",
+            json!({ "workspaceId": id, "manifest": two, "expected": written }),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error["code"], "conflict");
+    assert_eq!(on_disk(), one);
+    // The comparison is of JSON values: the file's sorted keys and spacing do not matter.
+    std::fs::write(
+        folder.join(".omfp/views.json"),
+        "{\"views\":{\"one\":{\"layout\":\"omfp:chat\"}}}",
+    )
+    .unwrap();
+    client
+        .ok(
+            "views.set",
+            json!({ "workspaceId": id, "manifest": two, "expected": one }),
+        )
+        .await;
+    assert_eq!(on_disk(), two);
+
+    // `expected: null` is a file that is not there: written once, refused once the file exists.
+    std::fs::remove_file(folder.join(".omfp/views.json")).unwrap();
+    client
+        .ok(
+            "views.set",
+            json!({ "workspaceId": id, "manifest": one, "expected": null }),
+        )
+        .await;
+    assert_eq!(on_disk(), one);
+    let error = client
+        .call(
+            "views.set",
+            json!({ "workspaceId": id, "manifest": two, "expected": null }),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error["code"], "conflict");
+    assert_eq!(on_disk(), one);
+}
+
 // spec: DMN-086, AGT-018, PRT-040
 #[tokio::test(flavor = "multi_thread")]
 async fn widget_state_is_published_kept_across_restarts_and_bounded() {

@@ -107,10 +107,13 @@ export function reportError(host: OmfpHost, error: unknown): void {
 
 /**
  * The outcome of a user action (UI-385, UI-520): a success toast that goes by itself, also announced through the live
- * region and kept in the window's messages (UI-521).
+ * region and kept in the window's messages (UI-521); with `undo`, the toast offers to take the action back (UI-376).
  */
-export function reportSuccess(host: OmfpHost, text: string): void {
-  host.window.set(SUCCESSES, (shown) => [...shown, { key: (shown.at(-1)?.key ?? 0) + 1, text }]);
+export function reportSuccess(host: OmfpHost, text: string, undo?: () => void): void {
+  host.window.set(SUCCESSES, (shown) => [
+    ...shown,
+    { key: (shown.at(-1)?.key ?? 0) + 1, text, ...(undo === undefined ? {} : { undo }) },
+  ]);
   host.announcer.announce(text);
   host.notices.remember("success", text);
 }

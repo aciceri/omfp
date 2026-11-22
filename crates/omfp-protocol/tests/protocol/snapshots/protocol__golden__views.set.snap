@@ -7,6 +7,9 @@ expression: golden
     "id": "c42",
     "method": "views.set",
     "params": {
+      "expected": {
+        "views": {}
+      },
       "manifest": {
         "default": "work",
         "views": {

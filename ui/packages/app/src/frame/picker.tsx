@@ -1,5 +1,5 @@
 /** Keyboard picker: fuzzy subsequence filtering, live highlight, Enter commits, Escape/blur cancels. */
-import { CommandItem, CommandLine, CommandMenu, Kbd } from "@omfp/kit";
+import { CommandItem, CommandLine, CommandMenu, Kbd, KeyHint } from "@omfp/kit";
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { CMDLINE_ATTRIBUTE } from "../keymap/handler.ts";
 import { strings } from "../strings/index.ts";
@@ -72,18 +72,24 @@ export function Picker({
         listProps={{ id: listId, "aria-label": title, "aria-busy": busy }}
         footer={
           <>
-            <Kbd>up</Kbd>
-            <Kbd>down</Kbd>
-            {preview === undefined ? strings.shell.frame.pickerKeys.move : strings.shell.frame.pickerKeys.preview}
-            <Kbd>enter</Kbd>
-            {strings.shell.frame.pickerKeys.choose}
-            <Kbd>esc</Kbd>
-            {strings.shell.frame.commandKeys.cancel}
+            <KeyHint>
+              <Kbd>up</Kbd>
+              <Kbd>down</Kbd>
+              {preview === undefined ? strings.shell.frame.pickerKeys.move : strings.shell.frame.pickerKeys.preview}
+            </KeyHint>
+            <KeyHint>
+              <Kbd>enter</Kbd>
+              {strings.shell.frame.pickerKeys.choose}
+            </KeyHint>
+            <KeyHint>
+              <Kbd>esc</Kbd>
+              {strings.shell.frame.commandKeys.cancel}
+            </KeyHint>
             {numbered && (
-              <>
+              <KeyHint>
                 <Kbd>1–9</Kbd>
                 {strings.shell.frame.pickerKeys.choose}
-              </>
+              </KeyHint>
             )}
             {notice !== undefined && <span role="status">{notice}</span>}
           </>
@@ -100,7 +106,10 @@ export function Picker({
               description={
                 numbered && at < 9 ? (
                   <>
-                    <Kbd>{at + 1}</Kbd> {option.description}
+                    <KeyHint>
+                      <Kbd>{at + 1}</Kbd>
+                    </KeyHint>{" "}
+                    {option.description}
                   </>
                 ) : (
                   option.description

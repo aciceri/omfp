@@ -6,7 +6,7 @@
  * command with arguments can immediately offer its completions.
  */
 
-import { CommandItem, CommandMenu, Kbd, ModeSegment, CommandLine as Prompt } from "@omfp/kit";
+import { CommandItem, CommandMenu, Kbd, KeyHint, ModeSegment, CommandLine as Prompt } from "@omfp/kit";
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useReducer, useRef, useState } from "react";
 import { CMDLINE_ATTRIBUTE } from "../keymap/handler.ts";
 import { type Binding, keyLabel, keysFor } from "../keymap/keymap.ts";
@@ -179,12 +179,18 @@ function CommandLineInput({
 export function MenuKeys(): ReactNode {
   return (
     <>
-      <Kbd>{keyLabel("Tab")}</Kbd>
-      <span>{text.commandKeys.complete}</span>
-      <Kbd>{keyLabel("Enter")}</Kbd>
-      <span>{text.commandKeys.run}</span>
-      <Kbd>{keyLabel("Escape")}</Kbd>
-      <span>{text.commandKeys.cancel}</span>
+      <KeyHint>
+        <Kbd>{keyLabel("Tab")}</Kbd>
+        <span>{text.commandKeys.complete}</span>
+      </KeyHint>
+      <KeyHint>
+        <Kbd>{keyLabel("Enter")}</Kbd>
+        <span>{text.commandKeys.run}</span>
+      </KeyHint>
+      <KeyHint>
+        <Kbd>{keyLabel("Escape")}</Kbd>
+        <span>{text.commandKeys.cancel}</span>
+      </KeyHint>
     </>
   );
 }

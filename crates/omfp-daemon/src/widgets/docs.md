@@ -774,6 +774,7 @@ scheme changes live; the colors you pass in `options.theme` win over them.
 | `StateMark` | The glyph of a state in its status color: `state` (`running`, `awaiting`, `failed`, `unread`, `idle`, `done`), `label` (decorative without one), `spinner` (`activity` or `status`). |
 | `Icon` | A decorative Lucide icon (`aria-hidden`; the control around it carries the name): `name` (`archive`, `check`, `circle-alert`, `copy`, `file`, `folder`, `inbox`, `play`, `plus`, `refresh-cw`, `search`, `x`, …). |
 | `Kbd` | A key chip: the key or sequence as lowercase words (`spc n`, `enter`) as children. |
+| `KeyHint` | A hint that only teaches keys, e.g. `<KeyHint><Kbd>esc</Kbd> cancel</KeyHint>`: hidden whole (chips, label, separator) on touch-only screens. Wrap every key hint in one; a `Kbd` that is the content (a key list) stays bare. |
 | `Markdown` | Renders Markdown text (no raw HTML): `text`. A closed ```` ```mermaid ```` fence is drawn as a diagram, as `MermaidDiagram` draws it. |
 | `MermaidDiagram` | A Mermaid diagram drawn in the theme's colors, with a `Source` toggle: `source` (Mermaid's text). A source Mermaid cannot draw shows as code with Mermaid's reason. Loaded on first use. |
 | `Code` | Code: `code`, `block`, `language` (a name or file extension; highlights a block). |

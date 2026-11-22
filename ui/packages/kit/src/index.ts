@@ -124,7 +124,7 @@ export {
   type ImageViewLabels,
   type ImageViewProps,
 } from "./image.tsx";
-export { Kbd, type KbdProps } from "./kbd.tsx";
+export { Kbd, type KbdProps, KeyHint, type KeyHintProps } from "./kbd.tsx";
 export {
   Disclosure,
   type DisclosureProps,

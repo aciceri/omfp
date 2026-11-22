@@ -86,9 +86,12 @@
   }
 
   /* Touch-only screens (UI-418): the decorative key chips of buttons, fields, menu items and notices (`esc`, `tab`,
-     `ctrl+enter`) name keys the device has not; their labels already say what they do. */
+     `ctrl+enter`) name keys the device has not; their labels already say what they do. Hint rows that only teach keys
+     (`KeyHint`: the live panel's `spc mute`, the pickers' and command menu's key rows, numbered option chips) go whole,
+     label and separator included; `span.` outweighs the hints' own `display` rules declared later. */
   @media (hover: none) and (pointer: coarse) {
-    .omfp-kbd[aria-hidden="true"] {
+    .omfp-kbd[aria-hidden="true"],
+    span.omfp-keyhint {
       display: none;
     }
   }
@@ -2699,7 +2702,14 @@
     color: var(--omfp-on-surface-variant);
   }
 
-  .omfp-cmdmenu__foot .omfp-kbd + * {
+  .omfp-cmdmenu__foot > .omfp-kbd + * {
+    margin-inline-end: var(--omfp-s2);
+  }
+
+  :where(.omfp-cmdmenu__foot) .omfp-keyhint {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--omfp-s1);
     margin-inline-end: var(--omfp-s2);
   }
 

@@ -12,7 +12,7 @@ import { type HTMLAttributes, type ReactNode, type Ref, useEffect, useRef, useSt
 import { Meter as AriaMeter } from "react-aria-components";
 import { BorderBox } from "./cards.tsx";
 import { cx } from "./class.ts";
-import { Kbd } from "./kbd.tsx";
+import { Kbd, KeyHint } from "./kbd.tsx";
 import { type MotionLevel, useMotionLevel } from "./motion.ts";
 
 /** Bars of the spectrum. */
@@ -536,12 +536,12 @@ export function LivePanel({
           </>
         )}
         {hints.map((hint) => (
-          <span key={hint.keys} className="omfp-live__hint">
+          <KeyHint key={hint.keys} className="omfp-live__hint">
             <span className="omfp-live__sep" aria-hidden="true">
               ·
             </span>
             <Kbd>{hint.keys}</Kbd> {hint.label}
-          </span>
+          </KeyHint>
         ))}
         {actions !== undefined && <span className="omfp-live__actions">{actions}</span>}
       </div>

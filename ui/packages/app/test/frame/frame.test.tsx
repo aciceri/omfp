@@ -17,6 +17,7 @@ import {
   DRAFT_THREAD,
   ERRORS,
   FOCUS_COMPOSER,
+  FRAME_LAYOUT,
   type KeyValueStorage,
   MESSAGES,
   NOTICES,
@@ -1727,6 +1728,19 @@ describe("responsive frame", () => {
     expect(screen.getByTestId("left-column").dataset.open).toBeUndefined();
     expect(screen.getByTestId("view").dataset.area).toBe("chat");
     expect(areas()[1]).toEqual(["chat", "true"]);
+  });
+
+  // spec: UI-419
+  test("on a phone the mode line takes the header's place: the state as its mark, then the thread's ⋯", () => {
+    const { host } = setup();
+    const app = screen.getByTestId("app");
+    act(() => host.window.set(SELECTED_THREAD, "t1"));
+    const state = () => within(screen.getByTestId("mode-bar")).getByTestId("mode-thread-state");
+    const more = () => within(screen.getByTestId("mode-bar")).queryAllByTestId("header-more").length;
+    expect([host.window.get(FRAME_LAYOUT), state().textContent, more()]).toEqual(["wide", "idle", 0]);
+    resize(app, 390);
+    expect([host.window.get(FRAME_LAYOUT), state().textContent, more()]).toEqual(["mobile", "", 1]);
+    expect(within(state()).getByRole("img").getAttribute("aria-label")).toBe("idle");
   });
 
   // spec: UI-205

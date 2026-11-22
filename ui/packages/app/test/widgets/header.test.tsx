@@ -8,14 +8,19 @@ import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent, { type UserEvent } from "@testing-library/user-event";
 import {
   AUTH_REVISION,
+  DRAFT_THREAD,
   draftKey,
   ERRORS,
+  FRAME_LAYOUT,
   LOGIN,
+  OmfpProvider,
+  RENAMING_THREAD,
   REVEAL_WIDGET,
   SELECTED_THREAD,
   SUCCESSES,
 } from "../../src/sdk/index.ts";
 import { Composer } from "../../src/widgets/chat/composer.tsx";
+import { ThreadMoreButton, ThreadRename } from "../../src/widgets/header/header.tsx";
 import { HeaderWidget } from "../../src/widgets/header/index.ts";
 import { captureDownloads } from "../support/downloads.ts";
 import { repo, thread, workspace } from "../support/fixtures.ts";
@@ -581,6 +586,103 @@ describe("`:model`, omp's `/model` in omfp", () => {
       empty.host.commands.run("model");
     });
     expect(empty.host.window.get(LOGIN)).toEqual({ providerId: undefined });
+  });
+});
+
+describe("the header on a phone", () => {
+  // spec: UI-419
+  test("a thread's header gives way to the mode line; its ⋯ there holds the model, which :model opens", async () => {
+    const base = testHost();
+    answer(base.client);
+    base.host.window.set(SELECTED_THREAD, "t1");
+    base.host.window.set(FRAME_LAYOUT, "mobile");
+    const summary = thread("t1", "checkout", "w1");
+    const test = renderWithHost(
+      <>
+        <HeaderWidget />
+        <ThreadMoreButton summary={summary} shown />
+      </>,
+      base,
+    );
+    test.client.connected();
+    test.client.index({ workspaces: [workspace("w1", [repo("w1", "fe", "main")])], threads: [summary] });
+    test.flush();
+    const user = userEvent.setup();
+    expect(screen.queryAllByTestId("thread-header").length).toBe(0);
+    // The model is in the popover only: `:model` opens the popover with its list.
+    expect(screen.queryAllByTestId("model-select").length).toBe(0);
+    act(() => {
+      test.host.commands.run("model");
+    });
+    const more = await screen.findByTestId("header-more-dialog");
+    expect(within(more).queryAllByTestId("model-select").length).toBe(1);
+    await user.click(await screen.findByRole("option", { name: "Haiku (anthropic)" }));
+    expect(test.client.callsTo("thread.set_model").map((call) => call.params)).toEqual([
+      { threadId: "t1", provider: "anthropic", modelId: "haiku" },
+    ]);
+  });
+
+  // spec: UI-419
+  test("a draft keeps its header: its workspace and model have nowhere else to go", () => {
+    const base = testHost();
+    answer(base.client);
+    base.host.window.set(FRAME_LAYOUT, "mobile");
+    base.host.window.set(DRAFT_THREAD, { workspaceId: "w1" });
+    const test = renderWithHost(<HeaderWidget />, base);
+    test.client.connected();
+    test.client.index({ workspaces: [workspace("w1")], threads: [] });
+    test.flush();
+    expect(screen.getByTestId("thread-header").dataset.draft).toBe("true");
+  });
+
+  // spec: UI-419, UI-980
+  test("while the : line hides the ⋯, :model stays registered and opens the popover with its list once it shows", async () => {
+    const base = testHost();
+    answer(base.client);
+    base.host.window.set(SELECTED_THREAD, "t1");
+    const summary = thread("t1", "checkout", "w1");
+    const more = (shown: boolean) => (
+      <OmfpProvider host={base.host}>
+        <ThreadMoreButton summary={summary} shown={shown} />
+      </OmfpProvider>
+    );
+    const test = renderWithHost(<ThreadMoreButton summary={summary} shown={false} />, base);
+    test.client.connected();
+    test.client.index({ workspaces: [workspace("w1")], threads: [summary] });
+    test.flush();
+    expect(screen.queryAllByTestId("header-more").length).toBe(0);
+    act(() => {
+      expect(test.host.commands.run("model")).toBe(true);
+    });
+    test.view.rerender(more(true));
+    const dialog = await screen.findByTestId("header-more-dialog");
+    expect(within(dialog).queryAllByTestId("model-select").length).toBe(1);
+    expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toContain("Haiku (anthropic)");
+  });
+
+  // spec: UI-419
+  test("renaming in the mode line: the editor takes the title's place, Enter saves, Escape leaves it as it was", async () => {
+    const base = testHost();
+    answer(base.client);
+    const summary = thread("t1", "checkout", "w1");
+    base.host.window.set(RENAMING_THREAD, "t1");
+    const test = renderWithHost(<ThreadRename summary={summary} />, base);
+    const user = userEvent.setup();
+    const input = screen.getByTestId("title-input") as HTMLInputElement;
+    expect(input.value).toBe("checkout");
+    await user.clear(input);
+    await user.type(input, "Fix checkout{Enter}");
+    expect(test.client.callsTo("threads.update").map((call) => call.params)).toEqual([
+      { threadId: "t1", title: "Fix checkout" },
+    ]);
+    expect([test.host.window.get(RENAMING_THREAD), screen.queryAllByTestId("title-input").length]).toEqual([
+      undefined,
+      0,
+    ]);
+    act(() => test.host.window.set(RENAMING_THREAD, "t1"));
+    await user.type(screen.getByTestId("title-input"), " later{Escape}");
+    expect(test.client.callsTo("threads.update").length).toBe(1);
+    expect(test.host.window.get(RENAMING_THREAD)).toBeUndefined();
   });
 });
 

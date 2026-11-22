@@ -232,22 +232,42 @@ async fn touch_screen(journey: &Journey, width: u32, height: u32) -> anyhow::Res
         .await
 }
 
-/// The chat on a touch phone: the title keeps room in the compact header (UI-419); the header's `⋯` popover, an
-/// overlay portalled out of the app, has touch-sized controls (UI-413). Boxes are measured at rest (TST-110).
+/// The chat on a touch phone (UI-419): no chat header, the mode line at the top in its place with the title keeping
+/// room and the thread's `⋯`, whose popover, an overlay portalled out of the app, holds the model and has touch-sized
+/// controls (UI-413). Boxes are measured at rest (TST-110).
 async fn touch_chat(journey: &Journey) -> anyhow::Result<()> {
     journey
-        .settled("[data-testid=thread-header][data-compact]")
+        .settled("[data-testid=mode-bar] [data-testid=header-more]")
         .await?;
+    anyhow::ensure!(journey.count("[data-testid=thread-header]").await? == 0);
+    // Above the view, the state's mark on the same line as the title (not wrapped away under it).
+    let placed = journey
+        .eval(
+            "const bar = document.querySelector('[data-testid=mode-bar]').getBoundingClientRect();
+             const view = document.querySelector('[data-testid=view]').getBoundingClientRect();
+             const mark = document.querySelector('[data-testid=mode-thread-state] [role=img]').getBoundingClientRect();
+             return bar.bottom <= view.top + 0.5 && mark.width > 0
+               && mark.top >= bar.top - 0.5 && mark.bottom <= bar.bottom + 0.5 && mark.right <= bar.right;",
+            Vec::new(),
+        )
+        .await?;
+    anyhow::ensure!(
+        placed.as_bool() == Some(true),
+        "the mode line is not above the view, or its state mark is cut"
+    );
     let title = journey
         .eval(
-            "return document.querySelector('[data-testid=thread-title]').getBoundingClientRect().width;",
+            "return document.querySelector('[data-testid=mode-thread-title]').getBoundingClientRect().width;",
             Vec::new(),
         )
         .await?;
     let title = title.as_f64().unwrap_or_default();
-    anyhow::ensure!(title >= 120.0, "the chat title is {title} px wide");
+    anyhow::ensure!(title >= 120.0, "the thread title is {title} px wide");
     journey.screenshot("touch-412-chat").await?;
     journey.click("[data-testid=header-more]").await?;
+    journey
+        .element(".omfp-popdialog [data-testid=model-select]")
+        .await?;
     journey.settled(".omfp-popdialog").await?;
     none(
         journey,
@@ -355,7 +375,7 @@ async fn a_touch_phone_gets_touch_sizes_in_both_orientations() -> anyhow::Result
     layout(&journey, "mobile").await?;
     journey.element("[data-testid=area-bar]").await?;
     journey
-        .element("[data-testid=thread-header][data-compact]")
+        .element("[data-testid=mode-bar] [data-testid=header-more]")
         .await?;
     journey.fits("[data-testid=app]").await?;
     journey.screenshot("touch-915-landscape").await?;

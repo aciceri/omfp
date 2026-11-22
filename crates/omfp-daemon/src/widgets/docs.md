@@ -542,6 +542,7 @@ export default function Tests({ command = "make test" }: { command?: string }) {
 | `OPEN_JOB` | Window key of a request to open a declared job's row (its runs) in `omfp:jobs`: set `{ workspaceId, job, nonce }` (`nonce`: a new number per request), and reveal `omfp:jobs` (`REVEAL_WIDGET`, with `workspaceId` for another workspace) to show it; `omfp:jobs` clears it once applied. The left column's job rows do this. |
 | `FOCUS_COMPOSER` | Window key of the thread whose composer takes the focus once it shows; the composer clears it. |
 | `DRAFT_THREAD` | Window key of the draft thread, `{ workspaceId }` (`undefined` without one): a new thread being written before its first message is sent. |
+| `FRAME_LAYOUT` | Window key of the frame's layout, `"wide"`, `"narrow"` (the left column as a strip) or `"mobile"` (a phone: one area at a time, the mode line at the top with the thread's title, state and `⋯`); read it to give way on a phone, never set it. |
 
 ### MCP tools
 

@@ -11,6 +11,7 @@ import {
   ModeNotice,
   ModeSegment,
   ModeViews,
+  StateMark,
   type VimMode,
 } from "@omfp/kit";
 import { type ReactNode, useEffect, useState } from "react";
@@ -22,6 +23,7 @@ import {
   NOTICES,
   type Notice,
   type NoticeTone,
+  RENAMING_THREAD,
   SELECTED_THREAD,
   useAnnounce,
   useCommand,
@@ -31,7 +33,8 @@ import {
   useWindowState,
 } from "../sdk/index.ts";
 import { strings } from "../strings/index.ts";
-import { displayTitle, statusLabel, threadStatus } from "../vm/threads.ts";
+import { displayTitle, statusLabel, threadMark, threadStatus } from "../vm/threads.ts";
+import { ThreadMoreButton, ThreadRename } from "../widgets/header/header.tsx";
 import { MESSAGES_COMMAND } from "./messages.tsx";
 
 const text = strings.shell.mode;
@@ -93,7 +96,8 @@ export interface ModeLineViews {
  * UI-986), the mode pill — the keymap's mode, or vim's while a file editor has the focus (`vim`, UI-112) — then the
  * selected thread's title and state, the window's views when it has several (UI-301), and the newest notice at the
  * right end (UI-192) with the messages button (UI-523); in command mode `children` (the `:` line or the file picker)
- * replace the segments, the views and the notice.
+ * replace the segments, the views and the notice. On a phone (`phone`) it stands at the top in place of the chat
+ * header (UI-419): the state is its mark, and the thread's `⋯` ends the line.
  */
 export function WindowModeLine({
   mode,
@@ -101,6 +105,7 @@ export function WindowModeLine({
   bindings,
   views,
   lead,
+  phone = false,
   children,
 }: {
   mode: Mode;
@@ -109,6 +114,7 @@ export function WindowModeLine({
   bindings: readonly Binding[];
   views?: ModeLineViews | undefined;
   lead?: ReactNode;
+  phone?: boolean;
   children?: ReactNode;
 }): ReactNode {
   const shown = vim === undefined ? mode : vim === "insert" || vim === "replace" ? "insert" : "normal";
@@ -128,15 +134,18 @@ export function WindowModeLine({
         views.views.length > 1 && <ModeViews label={strings.shell.frame.viewTabs} data-testid="mode-views" {...views} />
       }
       notice={
-        mode !== "cmdline" && (
-          <>
-            <NoticeSlot bindings={bindings} open={open} />
-            <MessagesButton />
-          </>
-        )
+        <>
+          {mode !== "cmdline" && (
+            <>
+              <NoticeSlot bindings={bindings} open={open} />
+              <MessagesButton />
+            </>
+          )}
+          {phone && <ThreadMore shown={mode !== "cmdline"} />}
+        </>
       }
     >
-      {mode !== "cmdline" && <ThreadSegments />}
+      {mode !== "cmdline" && <ThreadSegments phone={phone} />}
       {children}
     </ModeLine>
   );
@@ -216,19 +225,35 @@ function MessagesButton(): ReactNode {
   );
 }
 
-/** The selected thread's title and state. */
-function ThreadSegments(): ReactNode {
+/** The selected thread's title and state: on a phone its mark, a spinner while it works, with the word as its name,
+ * and its rename editor in their place while it is renamed (UI-419). */
+function ThreadSegments({ phone }: { phone: boolean }): ReactNode {
   const [selected] = useWindowState(SELECTED_THREAD);
+  const [renaming] = useWindowState(RENAMING_THREAD);
   const summary = useThreadSummary(selected);
   if (summary === undefined) {
     return null;
   }
+  if (phone && renaming === summary.id) {
+    return <ThreadRename summary={summary} />;
+  }
+  const status = threadStatus(summary);
   return (
     <>
       <ModeSegment kind="title" data-testid="mode-thread-title">
         {displayTitle(summary)}
       </ModeSegment>
-      <ModeSegment data-testid="mode-thread-state">{statusLabel(threadStatus(summary))}</ModeSegment>
+      <ModeSegment data-testid="mode-thread-state" data-status={status}>
+        {phone ? <StateMark state={threadMark(status)} label={statusLabel(status)} /> : statusLabel(status)}
+      </ModeSegment>
     </>
   );
+}
+
+/** The selected thread's `⋯` (UI-419), keyed by the thread so its popover and session follow the selection; mounted
+ * in command mode too, its button hidden (`shown`), so `:model` stays registered. */
+function ThreadMore({ shown }: { shown: boolean }): ReactNode {
+  const [selected] = useWindowState(SELECTED_THREAD);
+  const summary = useThreadSummary(selected);
+  return summary === undefined ? null : <ThreadMoreButton key={summary.id} summary={summary} shown={shown} />;
 }

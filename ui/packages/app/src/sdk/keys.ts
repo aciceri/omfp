@@ -9,6 +9,13 @@ import { type WindowKey, windowKey } from "./window-store.ts";
 /** The thread this window shows; `undefined` for none. */
 export const SELECTED_THREAD = windowKey<string | undefined>("selectedThread", undefined);
 
+/** The window frame's layout (UI-200): `wide`, `narrow` (the left column as a strip) or `mobile` (one area at a time,
+ * UI-204). */
+export type FrameLayout = "wide" | "narrow" | "mobile";
+
+/** The frame's layout, set by the frame; a phone's chat header gives its place to the mode line (UI-419). */
+export const FRAME_LAYOUT = windowKey<FrameLayout>("frameLayout", "wide");
+
 /** A large paste kept as a chip (UI-357): its number in the draft and its text. */
 export interface Paste {
   readonly id: number;

@@ -229,13 +229,9 @@ describe("kit styles", () => {
   });
 
   // spec: UI-465
-  test("on a touch phone the mode line has no mode pill; a narrow window with a mouse keeps it", () => {
+  test("on a phone the mode line has no mode pill, whatever the pointer", () => {
     const appRules = parseCss(readFileSync(join(APP_SRC, "styles.css"), "utf8"));
-    const hidden = findRule(
-      appRules,
-      ["@layer omfp-widgets", "@media (pointer: coarse)"],
-      '.omfp-app[data-layout="mobile"] .omfp-mode-pill',
-    );
+    const hidden = findRule(appRules, ["@layer omfp-widgets"], '.omfp-app[data-layout="mobile"] .omfp-mode-pill');
     expect(Object.fromEntries(hidden.declarations)).toEqual({ display: "none" });
   });
 

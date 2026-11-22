@@ -20,11 +20,11 @@ import {
   IconButton,
   type Key,
   Meter,
+  ModeButton,
   PopoverDialog,
   Select,
   StateBadge,
   TextField,
-  useMediaQuery,
   useWidthClass,
 } from "omfp/kit";
 import {
@@ -37,6 +37,7 @@ import {
   decodeModels,
   decodeSession,
   decodeThinkingLevels,
+  FRAME_LAYOUT,
   forkLineage,
   type HeaderView,
   headerView,
@@ -79,15 +80,18 @@ const text = strings.shell.header;
 
 /** Below this width (in `rem`) the header is one row (UI-202). */
 const COMPACT_BELOW_REM = 48;
-/** A touch screen too short for two header rows: a phone held sideways (UI-419). */
-const SHORT_TOUCH_SCREEN = "(pointer: coarse) and (max-height: 500px)";
 
 export function HeaderWidget(_props: WidgetProps): ReactNode {
   const [selected] = useWindowState(SELECTED_THREAD);
   const [draft] = useWindowState(DRAFT_THREAD);
+  const [layout] = useWindowState(FRAME_LAYOUT);
   const summary = useThreadSummary(selected);
   if (selected === undefined && draft !== undefined) {
     return <DraftHeader draft={draft} />;
+  }
+  // On a phone the mode line carries the thread's title, state and `⋯` (UI-419).
+  if (layout === "mobile") {
+    return null;
   }
   if (summary === undefined) {
     return (
@@ -145,9 +149,19 @@ function ThreadHeader({ summary }: { summary: ThreadSummary }): ReactNode {
   const [details, refreshSession] = useThreadDetails(summary.id, summary.process.state);
   const view = headerView(summary, details, list);
   const header = useRef<HTMLElement>(null);
-  // Its own width decides, wherever the view puts it (UI-202); a phone held sideways is always compact (UI-419).
-  const narrow = useWidthClass(header, (width, rem) => width > 0 && width < COMPACT_BELOW_REM * rem);
-  const compact = useMediaQuery(SHORT_TOUCH_SCREEN) || narrow;
+  // Its own width decides, wherever the view puts it (UI-202).
+  const compact = useWidthClass(header, (width, rem) => width > 0 && width < COMPACT_BELOW_REM * rem);
+  const [modelOpen, setModelOpen] = useState(false);
+  usePickModel(view, () => setModelOpen(true));
+  const model = (
+    <ModelSelect
+      threadId={summary.id}
+      view={view}
+      onChanged={refreshSession}
+      isOpen={modelOpen}
+      onOpenChange={setModelOpen}
+    />
+  );
   return (
     <ChatHeader
       ref={header}
@@ -162,7 +176,7 @@ function ThreadHeader({ summary }: { summary: ThreadSummary }): ReactNode {
             <Chips view={view} summary={summary} />
             <UnavailableModel view={view} />
             <div className="omfp-thread-header__session">
-              <ModelSelect threadId={summary.id} view={view} onChanged={refreshSession} />
+              {model}
               <ThinkingSelect threadId={summary.id} view={view} onChanged={refreshSession} />
               <Usage threadId={summary.id} view={view} />
             </div>
@@ -176,7 +190,7 @@ function ThreadHeader({ summary }: { summary: ThreadSummary }): ReactNode {
           <HeaderState status={view.status} failure={view.failure} />
           <BackgroundBadge threadId={summary.id} />
           <PendingRestart threadId={summary.id} view={view} />
-          <ModelSelect threadId={summary.id} view={view} onChanged={refreshSession} />
+          {model}
           <More threadId={summary.id} summary={summary} view={view} onChanged={refreshSession} compact />
         </>
       ) : (
@@ -196,9 +210,98 @@ function ThreadHeader({ summary }: { summary: ThreadSummary }): ReactNode {
 }
 
 /**
+ * The thread's `⋯` in a phone's mode line (UI-419), where the chat header gives way: the compact header's popover
+ * (UI-202) with the model selector in it. `thread.pickModel` opens the popover with the model list. It stays mounted
+ * while the `:` line hides the button (`shown` false), so `:model` stays registered there and opens the popover once
+ * the line closes.
+ */
+export function ThreadMoreButton({ summary, shown }: { summary: ThreadSummary; shown: boolean }): ReactNode {
+  const workspaces = useWorkspaces();
+  const list = useMemo(() => [...workspaces.values()], [workspaces]);
+  const [details, refreshSession] = useThreadDetails(summary.id, summary.process.state);
+  const view = headerView(summary, details, list);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [modelOpen, setModelOpen] = useState(false);
+  usePickModel(view, () => {
+    setMoreOpen(true);
+    setModelOpen(true);
+  });
+  if (!shown) {
+    return null;
+  }
+  return (
+    <More
+      threadId={summary.id}
+      summary={summary}
+      view={view}
+      onChanged={refreshSession}
+      compact
+      trigger={<ModeButton label={text.more} icon="ellipsis" data-testid="header-more" />}
+      model={
+        <ModelSelect
+          threadId={summary.id}
+          view={view}
+          onChanged={refreshSession}
+          isOpen={modelOpen}
+          onOpenChange={setModelOpen}
+        />
+      }
+      isOpen={moreOpen}
+      onOpenChange={setMoreOpen}
+    />
+  );
+}
+
+/**
+ * A phone's rename (UI-419): while the thread is being renamed (`Space r`, `:rename`, the `⋯` popover's Rename) the
+ * mode line shows this editor in place of its title, as the header's title does elsewhere; `null` otherwise.
+ */
+export function ThreadRename({ summary }: { summary: ThreadSummary }): ReactNode {
+  const [renaming, setRenaming] = useWindowState(RENAMING_THREAD);
+  const actions = useThreadActions();
+  if (renaming !== summary.id) {
+    return null;
+  }
+  const untitled = summary.titleSource === "placeholder" || summary.title.trim() === "";
+  return (
+    <InlineEditor
+      testid="rename-form"
+      inputTestId="title-input"
+      label={text.renameLabel}
+      initial={untitled ? "" : summary.title}
+      onSave={(value) => {
+        setRenaming(undefined);
+        if (value !== "") {
+          void actions.rename(summary.id, value);
+        }
+      }}
+      onCancel={() => setRenaming(undefined)}
+    />
+  );
+}
+
+/** `thread.pickModel` (`:model`, omp's `/model`, UI-980): `open` shows the model list; without a model, logs in. */
+function usePickModel(view: HeaderView, open: () => void): void {
+  const host = useHost();
+  useCommand({
+    id: "thread.pickModel",
+    title: strings.shell.commands.pickModel,
+    aliases: ["model"],
+    run: () => {
+      if (view.noModels) {
+        requestLogin(host);
+      } else {
+        open();
+      }
+    },
+  });
+}
+
+/**
  * The header's `⋯` (UI-482): a popover with why the process failed, rename, archive and delete, copying and exporting
  * the conversation (UI-793), compacting the context with an optional focus (UI-912); the compact header's (UI-202) adds
- * stop or restart, the thinking level, the chips, context usage and cost. An action closes it.
+ * stop or restart, the thinking level, the chips, context usage and cost, and in a phone's mode line the model
+ * (UI-419). An action closes it.
  */
 function More({
   threadId,
@@ -206,11 +309,30 @@ function More({
   view,
   onChanged,
   compact,
-}: SessionProps & { summary: ThreadSummary; compact: boolean }): ReactNode {
+  trigger,
+  model,
+  isOpen,
+  onOpenChange,
+}: SessionProps & {
+  summary: ThreadSummary;
+  compact: boolean;
+  /** The button opening it; the header's bordered `⋯` by default. */
+  trigger?: ReactNode;
+  /** The model selector, where nothing beside the popover shows it. */
+  model?: ReactNode;
+  /** Open, when the caller controls it (`thread.pickModel`). */
+  isOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
+}): ReactNode {
   const [, setRenaming] = useWindowState(RENAMING_THREAD);
   return (
-    <DialogTrigger>
-      <IconButton variant="secondary" label={text.more} icon={<Icon name="ellipsis" />} data-testid="header-more" />
+    <DialogTrigger
+      {...(isOpen === undefined ? {} : { isOpen })}
+      {...(onOpenChange === undefined ? {} : { onOpenChange })}
+    >
+      {trigger ?? (
+        <IconButton variant="secondary" label={text.more} icon={<Icon name="ellipsis" />} data-testid="header-more" />
+      )}
       <PopoverDialog title={text.moreTitle} className="omfp-thread-header__more" data-testid="header-more-dialog">
         {({ close }) => (
           <>
@@ -239,6 +361,7 @@ function More({
             {!view.archived && <Compaction threadId={threadId} onDone={close} />}
             {compact && (
               <>
+                {model}
                 <ThinkingSelect threadId={threadId} view={view} onChanged={onChanged} />
                 <Chips view={view} summary={summary} onDone={close} />
                 <div className="omfp-thread-header__actions">
@@ -643,25 +766,17 @@ function useSessionChange(onChanged: () => void): (request: Promise<unknown>) =>
 /** The model list; when omp offers no model, Log in instead (UI-388). Picking a usable model for a thread whose start
  * failed on its saved one stores it and starts omp with it on the same conversation (DMN-339, UI-751). `:model`
  * (`thread.pickModel`, omp's `/model` too) opens the list, or logs in without a model (UI-980). */
-function ModelSelect({ threadId, view, onChanged }: SessionProps): ReactNode {
-  const host = useHost();
+function ModelSelect({
+  threadId,
+  view,
+  onChanged,
+  isOpen,
+  onOpenChange,
+}: SessionProps & { isOpen: boolean; onOpenChange: (open: boolean) => void }): ReactNode {
   const call = useCall();
   const report = useReportError();
   const [changing, setChanging] = useWindowState(MODEL_CHANGING);
-  const [open, setOpen] = useState(false);
   const pending = changing.includes(threadId);
-  useCommand({
-    id: "thread.pickModel",
-    title: strings.shell.commands.pickModel,
-    aliases: ["model"],
-    run: () => {
-      if (view.noModels) {
-        requestLogin(host);
-      } else {
-        setOpen(true);
-      }
-    },
-  });
   const onModel = (key: Key | null) => {
     const model = splitModel(String(key ?? ""));
     if (!pending && model !== undefined && String(key) !== view.model) {
@@ -671,7 +786,9 @@ function ModelSelect({ threadId, view, onChanged }: SessionProps): ReactNode {
         .finally(() => setChanging((previous) => previous.filter((id) => id !== threadId)));
     }
   };
-  return <ModelPicker {...view} disabled={pending} isOpen={open} onOpenChange={setOpen} onSelectionChange={onModel} />;
+  return (
+    <ModelPicker {...view} disabled={pending} isOpen={isOpen} onOpenChange={onOpenChange} onSelectionChange={onModel} />
+  );
 }
 
 /** The same usable-model control before and after daemon thread creation; a saved model omp cannot use shows as the

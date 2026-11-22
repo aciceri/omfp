@@ -10,7 +10,7 @@
  */
 
 import { type FileErrorReport, type ViewsState, viewsTopic } from "@omfp/protocol";
-import { Activity, type ReactNode, type RefObject, useEffect, useMemo, useRef, useState } from "react";
+import { Activity, type ReactNode, type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createKeyHandler } from "../keymap/handler.ts";
 import { type Binding, DEFAULT_BINDINGS } from "../keymap/keymap.ts";
 import { globalKeyTimers, type KeyTimers, WhichKeyState } from "../keymap/which-key.ts";
@@ -20,6 +20,7 @@ import { CardWidgetScope } from "../sdk/card.tsx";
 import {
   chooseView,
   EDITOR_MODE,
+  FRAME_LAYOUT,
   type ReportTimers,
   SELECTED_THREAD,
   useActiveView,
@@ -203,6 +204,9 @@ export function Frame({
   // The frame's own width picks the layout (UI-200); a short touch screen is a phone (UI-414).
   const breakpoint = useFrameBreakpoint(appRef);
   useLeftDrawer(breakpoint, asideRef);
+  // Widgets read the layout (the chat header gives way on a phone, UI-419); set before paint, so no frame flashes.
+  const [, setLayout] = useWindowState(FRAME_LAYOUT);
+  useLayoutEffect(() => setLayout(breakpoint), [breakpoint, setLayout]);
   const revealColumn = useRevealColumn(breakpoint);
   useVisualViewport(breakpoint);
   const [leftOpen] = useWindowState(LEFT_OPEN);
@@ -305,6 +309,7 @@ export function Frame({
                 views={modeViews}
                 whichKey={whichKey}
                 threadsCollapsed={collapsed}
+                phone={breakpoint === "mobile"}
               />
             </div>
           </main>
@@ -349,12 +354,14 @@ function FrameModeLine({
   views,
   whichKey,
   threadsCollapsed,
+  phone,
 }: {
   appRef: RefObject<HTMLDivElement | null>;
   bindings: readonly Binding[];
   views: ModeLineViews;
   whichKey: WhichKeyState;
   threadsCollapsed: boolean;
+  phone: boolean;
 }): ReactNode {
   const mode = useMode();
   const [editorMode] = useWindowState(EDITOR_MODE);
@@ -369,6 +376,7 @@ function FrameModeLine({
       bindings={bindings}
       views={views}
       lead={threadsCollapsed ? <ShowThreadsButton /> : undefined}
+      phone={phone}
     >
       <CommandLine bindings={bindings} />
       <WhichKey state={whichKey} bindings={bindings} />

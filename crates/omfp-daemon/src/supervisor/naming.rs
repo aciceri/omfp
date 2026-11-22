@@ -1,9 +1,11 @@
-//! Automatic and explicit thread titles, and their omp session names (DMN-073).
+//! Automatic and explicit thread titles, and their omp session names (DMN-073); the title of a thread started by voice
+//! (DMN-912).
 
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use omp_rpc::SetSessionNameCommand;
+use omfp_core::ThreadEvent;
+use omp_rpc::{LiveRole, RpcNotification, SetSessionNameCommand};
 use tokio::time::Instant;
 use tracing::warn;
 
@@ -72,6 +74,21 @@ impl Supervisor {
         };
         policy.begin(now);
         self.spawn_title_generation(actor, cwd, context, thread);
+    }
+
+    /// A thread started by voice has no admitted message to name it: the user's final live transcript line names it
+    /// as a first message would (DMN-912). Only while it is unnamed: speech never counts toward reconsideration.
+    pub(super) async fn name_from_voice(&self, actor: &Arc<Actor>, line: String) {
+        let id = actor.id.clone();
+        let unnamed = self
+            .stores(move |inner| inner.threads.get(&id))
+            .await
+            .is_ok_and(|thread| {
+                thread.title_source == TitleSource::Placeholder && thread.title.is_empty()
+            });
+        if unnamed {
+            self.consider_title(actor, line).await;
+        }
     }
 
     /// Reuses the isolated print-mode launcher; publication checks the source and starting title atomically.
@@ -180,5 +197,15 @@ impl Supervisor {
         if let Err(error) = named {
             warn!(thread = %id, %error, "cannot name the omp session");
         }
+    }
+}
+
+/// The text of the user's final line of a live transcript (DMN-912); partials and the assistant's lines are `None`.
+pub(super) fn spoken_line(event: &ThreadEvent) -> Option<String> {
+    match event {
+        ThreadEvent::Omp {
+            frame: RpcNotification::LiveTranscript(line),
+        } if line.r#final && line.role == LiveRole::User => Some(line.text.clone()),
+        _ => None,
     }
 }

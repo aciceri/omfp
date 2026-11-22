@@ -1707,6 +1707,46 @@ async fn without_title_generation_the_placeholder_stays() {
     assert_eq!(h.launcher.title_requests(), Vec::new());
 }
 
+// spec: DMN-912
+#[tokio::test]
+async fn a_thread_started_by_voice_is_named_by_the_users_first_final_line() {
+    let h = harness(|_| {});
+    h.launcher.push_title(Ok("Checking the line"));
+    h.launcher.script_live(crate::agent::FakeLive::connect(
+        crate::agent::FakeLive::call_frames(),
+    ));
+    let (untitled, _) = h.untitled_thread();
+    let titled = h.thread();
+    let finals = |state: &ThreadState| {
+        state.live.as_ref().is_some_and(|live| {
+            live.transcript.len() == 2 && live.transcript.iter().all(|line| line.r#final)
+        })
+    };
+
+    for id in [&untitled, &titled] {
+        h.supervisor
+            .live_connect(id, owner(1), OFFER.into(), None)
+            .await
+            .unwrap();
+        h.wait(id, "the call's final transcript", finals).await;
+        h.supervisor.title_generated(id).await;
+    }
+
+    assert_eq!(
+        h.title(&untitled),
+        ("Checking the line".into(), TitleSource::Generated)
+    );
+    assert_eq!(h.title(&titled), ("t".into(), TitleSource::Set));
+    // Neither the partials nor the assistant's lines count; a named thread asks for nothing.
+    let asked: Vec<String> = h
+        .launcher
+        .title_requests()
+        .into_iter()
+        .map(|request| request.message)
+        .collect();
+    assert_eq!(asked, vec!["Ciao, mi senti? Dimmi solo sì".to_owned()]);
+}
+
 fn steer(text: &str) -> QueuedMessage {
     QueuedMessage::Steer(SteerCommand {
         message: text.into(),

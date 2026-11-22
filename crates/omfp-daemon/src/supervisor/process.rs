@@ -350,6 +350,10 @@ impl Supervisor {
                 {
                     supervisor.keep_commands(&actor.id, &update.commands).await;
                 }
+                // Named before the state shows the line, as a first message names the thread (DMN-912).
+                if let Some(line) = super::naming::spoken_line(&event) {
+                    supervisor.name_from_voice(&actor, line).await;
+                }
                 supervisor.push(&actor, event);
             }
             // A live session ends with its process (DMN-103).

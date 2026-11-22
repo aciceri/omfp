@@ -1362,6 +1362,8 @@ requirements = [
   "UI-377",
   "DMN-364",
   "E2E-79",
+  # Start a new thread in live voice from the draft composer (#243)
+  "DMN-912",
 ]
 
 [M18]

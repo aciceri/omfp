@@ -868,17 +868,37 @@ describe("the draft thread's mic", () => {
     expect(live.host.window.get(ERRORS).map(({ text }) => text)).toEqual([strings.chat.live.insecure]);
   });
 
-  // spec: UI-180, UI-185
-  test("pressed again while the thread is created, it releases the microphone at once and starts nothing", async () => {
-    const live = renderDraft();
+  // spec: UI-180, UI-185, UI-023
+  test("pressed again while the thread is created, it releases the microphone at once; the thread comes without a session", async () => {
+    const live = renderDraft("webrtc", "hello");
     await press(mic());
     expect(live.client.callsTo("threads.create")).toHaveLength(1);
     await press(mic());
     // Not when the daemon answers: the microphone stops capturing now.
     expect(live.media.link.closed).toBe(true);
     expect(mic().dataset.live).toBe("start");
+    // The message is still on its way: no edits, no other send, no other thread until the daemon answers.
+    expect(screen.getByTestId("composer-input")).toHaveProperty("readOnly", true);
+    expect(screen.getByTestId("send").hasAttribute("disabled")).toBe(true);
+    expect(mic().hasAttribute("disabled")).toBe(true);
     await created(live);
+    expect(live.host.window.get(SELECTED_THREAD)).toBe(NEW);
+    expect(live.host.window.get(DRAFT_THREAD)).toBeUndefined();
     expect(live.client.callsTo("thread.live_connect")).toHaveLength(0);
+  });
+
+  // spec: UI-023, UI-185
+  test("given up while the thread is created, a failed creation unlocks the draft with its message", async () => {
+    const live = renderDraft("webrtc", "hello");
+    await press(mic());
+    await press(mic());
+    const [call] = live.client.callsTo("threads.create");
+    await act(async () => call?.reject(new Error("daemon down")));
+    expect(live.host.window.get(ERRORS).map(({ text }) => text)).toEqual(["daemon down"]);
+    expect(live.host.window.get(DRAFT_MESSAGE).text).toBe("hello");
+    expect(screen.getByTestId("composer-input")).toHaveProperty("readOnly", false);
+    expect(screen.getByTestId("send").hasAttribute("disabled")).toBe(false);
+    expect(mic().hasAttribute("disabled")).toBe(false);
   });
 
   // spec: UI-023

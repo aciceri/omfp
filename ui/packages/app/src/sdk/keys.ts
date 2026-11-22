@@ -100,6 +100,10 @@ export const DRAFT_THREAD = windowKey<DraftThread | undefined>("draftThread", un
 /** The composer text of the {@link DRAFT_THREAD}; dropped with it. */
 export const DRAFT_MESSAGE = windowKey<Draft>("draft/draftThread", EMPTY_DRAFT);
 
+/** The {@link DRAFT_THREAD}'s `threads.create` is on its way (its composer's send or mic, UI-023): its message stays
+ * read-only and unsent until the call settles, whatever became of the live session the mic started. */
+export const DRAFT_CREATING = windowKey<boolean>("draftCreating", false);
+
 /** The workspace whose delete confirmation is open (UI-020, DMN-028). */
 export const DELETE_WORKSPACE = windowKey<string | undefined>("deleteWorkspace", undefined);
 

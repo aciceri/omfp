@@ -30,6 +30,7 @@ import {
   canAbort,
   commandsOf,
   complete,
+  DRAFT_CREATING,
   DRAFT_MESSAGE,
   DRAFT_THREAD,
   type Draft,
@@ -154,8 +155,10 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
   const [message, setMessage] = useWindowState(DRAFT_MESSAGE);
   const [sending, setSending] = useState(false);
   const [, live] = useLive();
-  /** The mic is making the thread to talk to: the message goes with it. */
-  const starting = live.local.kind === "starting" && live.local.threadId === undefined;
+  const [creating] = useWindowState(DRAFT_CREATING);
+  /** The message is on its way: sent, taken by the mic making the thread, or in a `threads.create` still pending
+   * after the mic gave up. It is read-only and takes no images meanwhile. */
+  const locked = sending || creating || (live.local.kind === "starting" && live.local.threadId === undefined);
   /** The input has the focus: the keymap is in insert mode (UI-098), drawn as the gradient border (UI-172). */
   const [insert, setInsert] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -168,7 +171,7 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
     inputRef.current?.focus();
   }, [draft]);
   const send = () => {
-    if (sending || starting || (isBlank(message) && reads.size === 0)) {
+    if (locked || (isBlank(message) && reads.size === 0)) {
       return;
     }
     word.dismiss();
@@ -211,7 +214,7 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
   const images = imageInput((files) => {
     // While the thread is created (sent or by the mic) the message is read-only: images pasted or dropped then are
     // ignored.
-    if (sending || starting) {
+    if (locked) {
       return;
     }
     // A read belongs to the draft it started in: once that draft is gone (sent, discarded, its workspace removed),
@@ -279,7 +282,7 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
               setInsert(false);
               word.dismiss();
             }}
-            isReadOnly={sending || starting}
+            isReadOnly={locked}
             inputRef={inputRef}
             onPaste={images.onPaste}
             ghost={word.ghost}
@@ -287,7 +290,7 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
           {completions.menu}
         </Autocomplete>
         <ComposerBar hints={touch ? undefined : <KeyHints abortable={false} interruptHint={false} />}>
-          <DraftMicButton disabled={sending} ready={() => Promise.all(reads)} />
+          <DraftMicButton disabled={sending || creating} ready={() => Promise.all(reads)} />
           <Button
             type="submit"
             variant="primary"
@@ -296,7 +299,7 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
             kbd={touch ? undefined : keyLabel("Enter")}
             data-testid="send"
             data-mode="draft"
-            isDisabled={sending || starting}
+            isDisabled={locked}
           >
             {labels.send}
           </Button>

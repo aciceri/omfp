@@ -20,6 +20,7 @@ import { isObject } from "./json.ts";
 import {
   CLOSE_THREAD,
   type CloseRequest,
+  DRAFT_CREATING,
   DRAFT_MESSAGE,
   DRAFT_THREAD,
   draftKey,
@@ -234,7 +235,7 @@ function discardDraft(host: OmfpHost): void {
  * Creates the daemon thread of the draft with its message (text, images or both) as the first one, then selects it;
  * resolves to its id. Without a message nothing is created, unless `empty` (the draft's mic). A failed creation keeps
  * the draft; a failed first prompt carrying a surviving thread ID transfers the unsent draft there for retry. Failures
- * are reported.
+ * are reported. {@link DRAFT_CREATING} holds the draft read-only meanwhile, also once the mic's live start ended.
  */
 async function createFromDraft(host: OmfpHost, empty: boolean): Promise<string | undefined> {
   const { client, window } = host;
@@ -246,6 +247,7 @@ async function createFromDraft(host: OmfpHost, empty: boolean): Promise<string |
   if (draft === undefined || (!empty && prompt === "" && images.length === 0)) {
     return undefined;
   }
+  window.set(DRAFT_CREATING, true);
   try {
     const thread = await client.call("threads.create", {
       workspace: { id: draft.workspaceId },
@@ -276,6 +278,8 @@ async function createFromDraft(host: OmfpHost, empty: boolean): Promise<string |
     }
     reportError(host, error);
     return undefined;
+  } finally {
+    window.set(DRAFT_CREATING, false);
   }
 }
 

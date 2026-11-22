@@ -409,6 +409,7 @@ export {
   COLOR_SCHEME,
   type ColorScheme,
   DELETE_WORKSPACE,
+  DRAFT_CREATING,
   DRAFT_MESSAGE,
   DRAFT_THREAD,
   type Draft,

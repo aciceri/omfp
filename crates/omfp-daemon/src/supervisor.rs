@@ -504,6 +504,21 @@ impl Actor {
             && lock(&self.voice).is_none()
     }
 
+    /// No omp, the status of a thread never loaded, nothing a session file cannot give back, and unused since at least
+    /// `timeout` (DMN-365): the daemon may forget the actor once nothing else holds it.
+    fn is_dormant(&self, timeout: Duration, now: Instant) -> bool {
+        lock(&self.live).is_none()
+            && self.status() == ThreadStatus::default()
+            && lock(&self.voice).is_none()
+            && lock(&self.voice_logs).is_empty()
+            && lock(&self.fork_source).is_none()
+            && lock(&self.session_model).is_none()
+            && lock(&self.title_task)
+                .as_ref()
+                .is_none_or(JoinHandle::is_finished)
+            && now.saturating_duration_since(*lock(&self.last_activity)) >= timeout
+    }
+
     /// Frees the live session slot if it still holds session `id`; `true` when it did.
     fn release_voice(&self, id: u64) -> bool {
         lock(&self.voice).take_if(|slot| slot.id == id).is_some()
@@ -1125,7 +1140,8 @@ impl Supervisor {
         }
     }
 
-    /// Stops idle threads every so often (DMN-034) until the supervisor is dropped or shut down.
+    /// Stops idle threads and forgets dormant ones every so often (DMN-034, DMN-365) until the supervisor is dropped or
+    /// shut down.
     #[must_use]
     pub fn spawn_reaper(&self) -> JoinHandle<()> {
         let inner = Arc::downgrade(&self.inner);
@@ -1164,6 +1180,29 @@ impl Supervisor {
                     warn!(thread = %actor.id, %error, "stopping idle omp failed");
                 }
             }
+        }
+        self.release_dormant(timeout);
+    }
+
+    /// Forgets the actors of dormant threads (DMN-365), so their conversation leaves memory; showing one again reads it
+    /// from its session file (DMN-359). An actor only the map holds, whose log only it holds, is out of every
+    /// subscription, operation and reader: none can reach it but through the map, locked here. They are dropped once
+    /// the map is unlocked.
+    fn release_dormant(&self, timeout: Duration) {
+        let now = Instant::now();
+        let released: Vec<Arc<Actor>> = lock(&self.inner.actors)
+            .extract_if(|_, actor| {
+                Arc::strong_count(actor) == 1
+                    && Arc::strong_count(&actor.log) == 1
+                    && actor.is_dormant(timeout, now)
+            })
+            .map(|(_, actor)| actor)
+            .collect();
+        if !released.is_empty() {
+            info!(
+                threads = released.len(),
+                "released the memory of dormant threads"
+            );
         }
     }
 

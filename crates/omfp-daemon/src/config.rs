@@ -46,7 +46,8 @@ pub struct Cli {
     /// Run even if omp is not the pinned release (DMN-001); the UI shows a warning.
     #[arg(long)]
     pub allow_omp_mismatch: bool,
-    /// Minutes before an idle, unwatched thread's omp is stopped (DMN-034; default: 15).
+    /// Minutes before an idle, unwatched thread's omp is stopped, and a stopped thread nobody shows leaves memory
+    /// (DMN-034, DMN-365; default: 15).
     #[arg(long)]
     pub idle_timeout_minutes: Option<u64>,
     /// Maximum number of omp processes running at once (DMN-038; default: 64).

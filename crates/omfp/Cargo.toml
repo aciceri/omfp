@@ -50,6 +50,9 @@ tokio-tungstenite.workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 gio = { workspace = true, optional = true }
 webkit2gtk = { workspace = true, optional = true }
+# The binary's allocator (DMN-366): jemalloc with its background threads gives freed memory back to the system while
+# the daemon idles; glibc's malloc keeps it in its arenas.
+tikv-jemallocator.workspace = true
 
 # macOS (M11, S-15): the menu bar item through Tauri's tray (tray-icon, AppKit's NSStatusItem); the page's
 # notifications through Foundation's user notification center (UI-252); the app icon through AppKit (UI-222); the wait

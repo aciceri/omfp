@@ -69,6 +69,10 @@ The version's section is also the source of the GitHub release notes.
 
 ### Fixed
 
+- The daemon gives back the memory of threads you looked at: a thread whose omp is stopped and that no window shows
+  or keeps leaves memory after the idle timeout (`idle_timeout_minutes`, 15 by default), and showing it again reads
+  it from its session file. On Linux the `omfp` binary now allocates with jemalloc, which returns freed memory to the
+  system; before, a daemon that had shown a few long threads stayed at a gigabyte or more until restarted (#260).
 - Boring skin: the focused composer shows one accent ring around its rounded box instead of a misaligned second
   ring around the text area inside it (#215).
 - Copy and paste work in the terminal (`omfp:terminal`): Ctrl+Shift+C copies the selection and Ctrl+Shift+V pastes,

@@ -579,6 +579,9 @@ requirements = [
   "DMN-039",
   # A daemon outliving the terminal it was started from
   "DMN-355",
+  # Stopped threads nobody holds give their memory back to the system (#260)
+  "DMN-365",
+  "DMN-366",
 ]
 
 [M10]

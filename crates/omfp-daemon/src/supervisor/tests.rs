@@ -1391,6 +1391,102 @@ async fn the_reaper_stops_an_idle_thread_a_window_only_keeps_and_not_one_watched
     .await;
 }
 
+/// The epoch of the thread's log: a new one once the daemon forgot the thread's conversation and loaded it again.
+async fn epoch(h: &Harness, id: &str) -> String {
+    h.log(id).await.position().epoch
+}
+
+// spec: DMN-365, DMN-359, DMN-034
+#[tokio::test(start_paused = true)]
+async fn the_reaper_releases_the_conversation_of_threads_without_omp_nobody_holds() {
+    let timeout = Duration::from_mins(1);
+    let h = harness(|config| config.idle_timeout = timeout);
+    let (shown, kept, failed, ran) = (h.thread(), h.thread(), h.thread(), h.thread());
+    for id in [&shown, &kept, &failed] {
+        saved_session(&h, id, &format!("S-{id}"), "anthropic/claude-opus-5-5");
+        h.supervisor.read_history(id).await.unwrap();
+    }
+    let _kept = h.supervisor.watch(&kept, 1, false).await.unwrap();
+    h.launcher
+        .fail_next_launch("SessionModelRestoreError: Could not restore model");
+    h.supervisor.start(&failed).await.unwrap_err();
+    h.supervisor.start(&ran).await.unwrap();
+    let mut epochs = Vec::new();
+    for id in [&shown, &kept, &failed, &ran] {
+        epochs.push(epoch(&h, id).await);
+    }
+
+    h.supervisor.reap_idle().await;
+    assert_eq!(
+        epoch(&h, &shown).await,
+        epochs[0],
+        "kept until unused for the idle timeout"
+    );
+
+    tokio::time::advance(timeout).await;
+    h.supervisor.reap_idle().await;
+    h.wait(&ran, "the idle stop", |state| {
+        state.process == ProcessState::Stopped
+    })
+    .await;
+    tokio::time::advance(timeout).await;
+    h.supervisor.reap_idle().await;
+
+    assert_ne!(epoch(&h, &shown).await, epochs[0], "forgotten");
+    assert_eq!(transcript(&h, &shown).await, Vec::<String>::new());
+    assert_eq!(
+        h.supervisor.status(&shown),
+        ThreadStatus::default(),
+        "the thread list shows it as before"
+    );
+    h.supervisor.read_history(&shown).await.unwrap();
+    assert_eq!(
+        transcript(&h, &shown).await,
+        ["user: old question", "assistant: old answer"],
+        "showing it again reads its session file"
+    );
+    assert_ne!(
+        epoch(&h, &ran).await,
+        epochs[3],
+        "a stopped omp's thread is forgotten too"
+    );
+    assert_eq!(epoch(&h, &kept).await, epochs[1], "a window keeps it");
+    assert_eq!(
+        transcript(&h, &kept).await,
+        ["user: old question", "assistant: old answer"]
+    );
+    assert_eq!(
+        epoch(&h, &failed).await,
+        epochs[2],
+        "a failed start stays shown until it is resolved"
+    );
+    assert_eq!(
+        h.launcher.launches().len(),
+        1,
+        "only `ran`'s: forgetting and reading again starts no omp"
+    );
+}
+
+// spec: DMN-365
+#[tokio::test(start_paused = true)]
+async fn the_reaper_keeps_a_thread_whose_log_is_still_read() {
+    let timeout = Duration::from_mins(1);
+    let h = harness(|config| config.idle_timeout = timeout);
+    let id = h.thread();
+    let log = h.log(&id).await;
+    let before = log.position().epoch;
+
+    tokio::time::advance(timeout).await;
+    h.supervisor.reap_idle().await;
+
+    assert_eq!(
+        epoch(&h, &id).await,
+        before,
+        "a reader of the log (a wait, a job) keeps the thread"
+    );
+    drop(log);
+}
+
 // spec: DMN-005
 #[tokio::test]
 async fn shutdown_stops_every_process_and_refuses_new_ones() {

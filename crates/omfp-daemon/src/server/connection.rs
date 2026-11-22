@@ -451,11 +451,13 @@ impl Connection {
             Topic::Thread(thread_id) => {
                 let (log, levels, guard) = async {
                     let supervisor = &services.supervisor;
+                    // The guard first: it holds the thread's actor, so the reaper cannot forget it (DMN-365) between
+                    // the history read and the log it goes to.
+                    let guard = supervisor.watch(thread_id, self.number, watching).await?;
                     // A thread shown or kept starts no omp: its history comes from its session file (DMN-359).
                     supervisor.read_history(thread_id).await?;
                     let log = supervisor.thread_log(thread_id).await?;
                     let levels = supervisor.live_levels(thread_id).await?;
-                    let guard = supervisor.watch(thread_id, self.number, watching).await?;
                     Ok((log, levels, guard))
                 }
                 .await

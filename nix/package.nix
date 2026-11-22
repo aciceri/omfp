@@ -23,6 +23,7 @@
   rcodesign,
   sqlite,
   aws-lc,
+  rust-jemalloc-sys,
   omp,
   web,
   desktop ? true,
@@ -108,10 +109,18 @@ rustPlatform.buildRustPackage {
   # gsettings-desktop-schemas the GTK settings schemas.
   # WebKitGTK delegates HTML media to GStreamer; the explicit plug-ins provide the demuxers and codecs in Nix's
   # isolated runtime.
+  # On Linux the binary allocates with jemalloc (DMN-366): nixpkgs' cargo setup hook points tikv-jemalloc-sys at
+  # nixpkgs' rust-jemalloc-sys (JEMALLOC_OVERRIDE), built here with the background threads the crate's own build turns
+  # on, which purge freed pages while the daemon idles.
   buildInputs = [
     sqlite
     aws-lc
   ]
+  ++ lib.optional stdenv.hostPlatform.isLinux (
+    rust-jemalloc-sys.overrideAttrs (old: {
+      configureFlags = old.configureFlags ++ [ "--with-malloc-conf=background_thread:true" ];
+    })
+  )
   ++ lib.optionals linuxDesktop (
     [
       webkitgtk_4_1

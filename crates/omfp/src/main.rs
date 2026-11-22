@@ -6,6 +6,13 @@ use std::process::ExitCode;
 
 use clap::{CommandFactory, FromArgMatches, Parser, Subcommand};
 
+/// jemalloc's background threads give the memory the daemon frees back to the system (DMN-366): glibc's malloc keeps
+/// it in its arenas, so the daemon would stay at the size of its largest moment (a long conversation read, then
+/// forgotten, DMN-365).
+#[cfg(target_os = "linux")]
+#[global_allocator]
+static ALLOCATOR: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 /// omfp: many omp agent threads in parallel, from the browser or the desktop.
 #[derive(Debug, Parser)]
 #[command(name = "omfp")]

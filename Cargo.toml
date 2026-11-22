@@ -104,6 +104,8 @@ objc2-foundation = { version = "0.3.2", default-features = false, features = [
 # codegen already builds.
 png = "0.18"
 thiserror = "2"
+# The `omfp` binary's allocator on Linux (DMN-366): its background threads purge freed pages while the daemon idles.
+tikv-jemallocator = { version = "0.7", features = ["background_threads"] }
 tokio = { version = "1", features = [
   "macros",
   "rt-multi-thread",
@@ -134,3 +136,8 @@ module_name_repetitions = "allow"
 similar_names = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
+
+# jemalloc's configure checks fail at -O0 under Nix's fortify hardening (`_FORTIFY_SOURCE requires compiling with
+# optimization`, an error with `-Werror`): dev builds compile its C optimized too (DMN-366).
+[profile.dev.package.tikv-jemalloc-sys]
+opt-level = 1

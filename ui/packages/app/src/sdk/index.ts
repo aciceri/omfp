@@ -427,6 +427,7 @@ export {
   RENAMING_THREAD,
   RESET_VIEWS,
   REVEAL_WIDGET,
+  type ReportedError,
   type RevealRequest,
   SELECTED_THREAD,
   SUCCESSES,

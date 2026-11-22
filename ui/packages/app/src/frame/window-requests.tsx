@@ -58,7 +58,10 @@ export async function runRequested(host: OmfpHost, name: string, args: readonly 
     return { kind: "not_run", reason: "failed", message: errorMessage(error) };
   }
   const reported = [
-    ...host.window.get(ERRORS).filter((message, index) => errors[index] !== message),
+    ...host.window
+      .get(ERRORS)
+      .filter((error) => !errors.includes(error))
+      .map((error) => error.text),
     ...host.init
       .getSnapshot()
       .errors.filter((error) => !initErrors.some((old) => old.file === error.file && old.message === error.message))

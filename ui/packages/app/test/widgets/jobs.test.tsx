@@ -200,7 +200,7 @@ describe("omfp:jobs", () => {
       test.client.callsTo("jobs.run")[0]?.reject(refused);
       await Promise.resolve();
     });
-    expect(test.host.window.get(ERRORS)).toEqual(["deploy is running (conflict)"]);
+    expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual(["deploy is running (conflict)"]);
   });
 
   // spec: UI-743

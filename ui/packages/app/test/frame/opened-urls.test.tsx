@@ -107,7 +107,7 @@ describe("opened URLs", () => {
   // spec: UI-346, UI-160
   test("the toasts share the error toasts' region and stay as long as omp's OAuth wait", () => {
     const test = setup();
-    act(() => test.host.window.set(ERRORS, ["boom"]));
+    act(() => test.host.window.set(ERRORS, [{ key: 1, text: "boom" }]));
     test.client.threadEvents("t1", openUrl("n2", LOGIN));
     test.flush();
     const regions = screen.getAllByTestId("toasts");

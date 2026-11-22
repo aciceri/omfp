@@ -203,7 +203,7 @@ describe("composer", () => {
     expect(client.callsTo("thread.prompt")).toEqual([]);
     // `/model` opens the header's model list: without a header nothing runs it, and the error says so.
     await userEvent.keyboard("/model{Tab}{Enter}");
-    expect(host.window.get(ERRORS)).toEqual(["/model: nothing in this window runs it now"]);
+    expect(host.window.get(ERRORS).map(({ text }) => text)).toEqual(["/model: nothing in this window runs it now"]);
     await userEvent.keyboard("/compact soft{Enter}");
     expect(ran.at(-1)).toEqual(["compact", "soft"]);
     expect(client.callsTo("thread.prompt")).toEqual([]);
@@ -215,7 +215,9 @@ describe("composer", () => {
     await userEvent.click(input());
     await userEvent.keyboard("/settings{Enter}");
     expect(client.callsTo("thread.prompt")).toEqual([]);
-    expect(host.window.get(ERRORS)).toEqual(["/settings was not sent: Needs omp's terminal UI"]);
+    expect(host.window.get(ERRORS).map(({ text }) => text)).toEqual([
+      "/settings was not sent: Needs omp's terminal UI",
+    ]);
     expect(input().value).toBe("/settings");
   });
 
@@ -225,7 +227,7 @@ describe("composer", () => {
     await userEvent.click(input());
     await userEvent.keyboard("/dirs{Tab}{Enter}");
     await act(async () => client.callsTo("thread.prompt")[0]?.reject(new Error("Cannot list the directories")));
-    expect(host.window.get(ERRORS)).toEqual(["/dirs failed: Cannot list the directories"]);
+    expect(host.window.get(ERRORS).map(({ text }) => text)).toEqual(["/dirs failed: Cannot list the directories"]);
     expect(input().value).toBe("/dirs");
 
     await userEvent.clear(input());
@@ -1209,7 +1211,7 @@ describe("word completion", () => {
     expect(ghost()).toBeNull();
     await act(async () => asked(client)[2]?.reject(new Error("omp not started")));
     expect(ghost()).toBeNull();
-    expect(host.window.get(ERRORS)).toEqual([]);
+    expect(host.window.get(ERRORS).map(({ text }) => text)).toEqual([]);
   });
 
   // spec: UI-175, UI-177

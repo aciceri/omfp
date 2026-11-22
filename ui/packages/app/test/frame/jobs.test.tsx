@@ -256,7 +256,7 @@ describe("jobs in the left column", () => {
       test.client.callsTo("jobs.run")[0]?.reject(refused);
       await Promise.resolve();
     });
-    expect(test.host.window.get(ERRORS)).toEqual(["deploy is running (conflict)"]);
+    expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual(["deploy is running (conflict)"]);
   });
 
   // spec: UI-746, UI-992
@@ -461,7 +461,7 @@ describe("closing a thread with its runs", () => {
       await Promise.resolve();
     });
     expect(screen.queryByTestId("close-runs-dialog")).toBeNull();
-    expect(test.host.window.get(ERRORS)).toEqual(["busy (conflict)"]);
+    expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual(["busy (conflict)"]);
   });
 });
 
@@ -503,7 +503,7 @@ describe("job commands", () => {
     act(() => {
       test.host.commands.run("job-run", []);
     });
-    expect(test.host.window.get(ERRORS)).toEqual(["Name a job of the current workspace"]);
+    expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual(["Name a job of the current workspace"]);
     expect(DEFAULT_BINDINGS.filter((binding) => binding.command.startsWith("job."))).toEqual([]);
   });
 });

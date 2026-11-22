@@ -419,7 +419,7 @@ describe("frame", () => {
     expect(document.documentElement.dataset.theme).toBe("gruvbox");
     press(":");
     await user.type(screen.getByTestId("command-line-input"), "theme dracula{Enter}");
-    expect(host.window.get(ERRORS)).toEqual(["Unknown colour scheme or theme: dracula"]);
+    expect(host.window.get(ERRORS).map(({ text }) => text)).toEqual(["Unknown colour scheme or theme: dracula"]);
     expect(client.callsTo("settings.set").length).toBe(1);
   });
 
@@ -453,7 +453,7 @@ describe("frame", () => {
     expect(client.callsTo("settings.set").map((call) => call.params)).toEqual([{ ui: { liveVoice: "maple" } }]);
     press(":");
     await user.type(screen.getByTestId("command-line-input"), "voice alloy{Enter}");
-    expect(host.window.get(ERRORS)).toEqual(["Invalid value for live_voice: alloy"]);
+    expect(host.window.get(ERRORS).map(({ text }) => text)).toEqual(["Invalid value for live_voice: alloy"]);
     expect(client.callsTo("settings.set").length).toBe(1);
   });
 
@@ -883,7 +883,7 @@ describe("frame", () => {
   // spec: UI-092, UI-160
   test("errors of failed actions show as error toasts, closed by their ×", async () => {
     const { host, user } = setup();
-    act(() => host.window.set(ERRORS, ["boom"]));
+    act(() => host.window.set(ERRORS, [{ key: 1, text: "boom" }]));
     const shown = screen.getAllByTestId("error");
     expect(shown.map((error) => [error.textContent, error.dataset.tone, error.getAttribute("role")])).toEqual([
       ["boom", "error", "alert"],
@@ -934,6 +934,32 @@ describe("frame", () => {
       );
       elapse(60 * 60_000);
       expect(screen.getAllByTestId("login-progress").length).toBe(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  // spec: UI-536
+  test("an error reported twice is two toasts, each going on its own clock", () => {
+    jest.useFakeTimers();
+    try {
+      const { host } = renderWithHost(<Toasts />);
+      const shown = () => screen.queryAllByTestId("error").map((error) => error.textContent);
+      const elapse = (ms: number) =>
+        act(() => {
+          jest.advanceTimersByTime(ms);
+        });
+      act(() => reportError(host, new Error("disk full")));
+      elapse(ERROR_TOAST_MS / 2);
+      act(() => reportError(host, new Error("disk full")));
+      expect(shown()).toEqual(["disk full", "disk full"]);
+      elapse(ERROR_TOAST_MS / 2);
+      expect(shown()).toEqual(["disk full"]);
+      // The second keeps its own time: it goes 12 s after it showed, not 12 s after the first went.
+      elapse(ERROR_TOAST_MS / 2 - 1);
+      expect(shown()).toEqual(["disk full"]);
+      elapse(1);
+      expect(screen.queryByTestId("toasts")).toBeNull();
     } finally {
       jest.useRealTimers();
     }
@@ -1062,7 +1088,7 @@ describe("daemon settings", () => {
     ]);
     press(":");
     await user.type(screen.getByTestId("command-line-input"), "set density=huge{Enter}");
-    expect(host.window.get(ERRORS)).toEqual(["Invalid value for density: huge"]);
+    expect(host.window.get(ERRORS).map(({ text }) => text)).toEqual(["Invalid value for density: huge"]);
   });
 
   // spec: UI-097
@@ -1152,7 +1178,7 @@ describe("views of the current workspace", () => {
     expect(screen.getByTestId("view").dataset.view).toBe("work");
     press(":");
     await user.type(screen.getByTestId("command-line-input"), "view gone{Enter}");
-    expect(host.window.get(ERRORS)).toEqual(["No view gone"]);
+    expect(host.window.get(ERRORS).map(({ text }) => text)).toEqual(["No view gone"]);
   });
 
   // spec: UI-302, UI-431
@@ -1531,20 +1557,20 @@ describe("adding a widget", () => {
     await failing.user.type(screen.getByTestId("command-line-input"), "widget add omfp:header{Enter}");
     const [pending] = failing.client.callsTo("views.set");
     await act(async () => pending?.reject(new Error("views.json: permission denied")));
-    expect(failing.host.window.get(ERRORS)).toEqual(["views.json: permission denied"]);
+    expect(failing.host.window.get(ERRORS).map(({ text }) => text)).toEqual(["views.json: permission denied"]);
     cleanup();
     const invalid = adding({ manifest: null, error: "views: no view" });
     press(":");
     await invalid.user.type(screen.getByTestId("command-line-input"), "widget add omfp:header{Enter}");
     expect(written(invalid)).toEqual([]);
-    expect(invalid.host.window.get(ERRORS)).toEqual([
+    expect(invalid.host.window.get(ERRORS).map(({ text }) => text)).toEqual([
       "The layout cannot change while .omfp/views.json is invalid: fix the file first",
     ]);
     cleanup();
     const none = setup();
     press(":");
     await none.user.type(screen.getByTestId("command-line-input"), "widget add omfp:header{Enter}");
-    expect(none.host.window.get(ERRORS)).toEqual(["No current workspace"]);
+    expect(none.host.window.get(ERRORS).map(({ text }) => text)).toEqual(["No current workspace"]);
   });
 });
 
@@ -1554,7 +1580,7 @@ describe("widget copy", () => {
     const { client, host, user } = setup();
     press(":");
     await user.type(screen.getByTestId("command-line-input"), "widget copy omfp:workspace{Enter}");
-    expect(host.window.get(ERRORS)).toEqual(["No current workspace"]);
+    expect(host.window.get(ERRORS).map(({ text }) => text)).toEqual(["No current workspace"]);
     act(() => host.window.set(ERRORS, []));
     act(() => host.window.set(SELECTED_THREAD, "t1"));
     client.answers.set("widgets.copy", () => ({ name: "board" }));
@@ -1573,10 +1599,10 @@ describe("widget copy", () => {
     const [, failing] = client.callsTo("widgets.copy");
     expect(failing?.params).toEqual({ workspaceId: "w1", widget: "user:clock" });
     await act(async () => failing?.reject(new Error("./widgets/clock already exists")));
-    expect(host.window.get(ERRORS)).toEqual(["./widgets/clock already exists"]);
+    expect(host.window.get(ERRORS).map(({ text }) => text)).toEqual(["./widgets/clock already exists"]);
     press(":");
     await user.type(screen.getByTestId("command-line-input"), "widget paste{Enter}");
-    expect(host.window.get(ERRORS)).toEqual([
+    expect(host.window.get(ERRORS).map(({ text }) => text)).toEqual([
       "./widgets/clock already exists",
       "Usage: :widget add <reference> | :widget copy <reference> [<name>] | :widget save[!] <widget> [<name>]",
     ]);
@@ -1587,7 +1613,7 @@ describe("widget copy", () => {
     const { client, host, user } = setup();
     press(":");
     await user.type(screen.getByTestId("command-line-input"), "view-reset{Enter}");
-    expect(host.window.get(ERRORS)).toEqual(["No current workspace"]);
+    expect(host.window.get(ERRORS).map(({ text }) => text)).toEqual(["No current workspace"]);
     act(() => host.window.set(ERRORS, []));
     act(() => host.window.set(SELECTED_THREAD, "t1"));
     client.views("w1", { manifest: null, error: "views: expected an object of views" });
@@ -1618,7 +1644,7 @@ describe("widget copy", () => {
     await user.click(screen.getByTestId("confirm-view-reset"));
     const [, failing] = client.callsTo("views.set");
     await act(async () => failing?.reject(new Error("disk full")));
-    expect(host.window.get(ERRORS)).toEqual(["disk full"]);
+    expect(host.window.get(ERRORS).map(({ text }) => text)).toEqual(["disk full"]);
   });
 });
 

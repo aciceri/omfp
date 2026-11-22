@@ -77,7 +77,7 @@ describe(":compact", () => {
     act(() => {
       test.host.commands.run("compact", ["snapcompact", "the", "plan"]);
     });
-    expect(test.host.window.get(ERRORS)).toEqual([
+    expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual([
       "snapcompact takes no focus: it keeps the history as images, without a summary",
     ]);
     expect(test.client.callsTo("thread.prompt").length).toBe(1);
@@ -91,7 +91,7 @@ describe(":compact", () => {
     act(() => {
       test.host.commands.run("compact", []);
     });
-    expect(test.host.window.get(ERRORS)).toEqual([
+    expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual([
       "The thread is working: compact it once its turn ends (Abort ends it now)",
     ]);
     expect(test.client.callsTo("thread.compact")).toEqual([]);
@@ -112,7 +112,9 @@ describe(":compact", () => {
       }),
     );
     await waitFor(() =>
-      expect(test.host.window.get(ERRORS)).toEqual(["Nothing to compact (session too small) (omp_error)"]),
+      expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual([
+        "Nothing to compact (session too small) (omp_error)",
+      ]),
     );
     expect(successes(test.host)).toEqual([]);
   });

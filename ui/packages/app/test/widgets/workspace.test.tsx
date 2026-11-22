@@ -261,6 +261,6 @@ describe("omfp:workspace", () => {
     await user.click(within(screen.getByTestId("add-repo-kind")).getByRole("radio", { name: "Clone" }));
     await user.type(screen.getByTestId("add-repo-url"), "https://example.invalid/x.git{Enter}");
     act(() => client.callsTo("workspaces.add_repo")[0]?.reject(new Error("git_error: boom")));
-    await waitFor(() => expect(host.window.get(ERRORS)).toEqual(["git_error: boom"]));
+    await waitFor(() => expect(host.window.get(ERRORS).map(({ text }) => text)).toEqual(["git_error: boom"]));
   });
 });

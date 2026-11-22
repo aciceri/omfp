@@ -237,7 +237,7 @@ describe("floating panels", () => {
     const [, failing] = test.client.callsTo("views.unmount");
     expect(failing?.params).toEqual({ workspaceId: "w1", id: "board" });
     await act(async () => failing?.reject(new Error("nothing is mounted as board")));
-    expect(test.host.window.get(ERRORS)).toEqual(["nothing is mounted as board"]);
+    expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual(["nothing is mounted as board"]);
     expect(panels().length).toBe(1);
   });
 
@@ -349,7 +349,7 @@ describe("widget save", () => {
     await act(async () => failing?.reject(new Error("user:clock already exists")));
     press(":");
     await test.user.type(screen.getByTestId("command-line-input"), "widget save{Enter}");
-    expect(test.host.window.get(ERRORS)).toEqual([
+    expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual([
       "user:clock already exists",
       "Usage: :widget add <reference> | :widget copy <reference> [<name>] | :widget save[!] <widget> [<name>]",
     ]);

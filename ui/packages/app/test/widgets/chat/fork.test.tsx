@@ -87,7 +87,7 @@ describe("fork from the transcript", () => {
     const test = setup({ leafId: null, tree: [] });
     await test.user.click(within(messages()[0] as HTMLElement).getByTestId("message-fork"));
     await waitFor(() => expect(test.host.window.get(ERRORS).length).toBe(1));
-    expect(test.host.window.get(ERRORS)[0]).toContain("not on the session's current branch");
+    expect(test.host.window.get(ERRORS)[0]?.text).toContain("not on the session's current branch");
     expect(test.client.callsTo("threads.fork")).toEqual([]);
   });
 
@@ -95,7 +95,9 @@ describe("fork from the transcript", () => {
   test(":fork forks from the focused message, an answer too; without one it says what to select", async () => {
     const test = setup();
     test.host.commands.run("thread.fork", [], ["transcript"]);
-    expect(test.host.window.get(ERRORS)).toEqual(["Select a message to fork from: j and k move between messages"]);
+    expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual([
+      "Select a message to fork from: j and k move between messages",
+    ]);
 
     act(() => (screen.getAllByTestId("transcript-item")[1] as HTMLElement).focus());
     test.host.commands.run("thread.fork", [], ["transcript"]);

@@ -207,7 +207,7 @@ describe("omfp:mcp", () => {
     const [prompt] = client.callsTo("thread.prompt");
     expect(prompt?.params).toEqual({ threadId: "t1", text: "/mcp reauth docs" });
     prompt?.reject(new Error("the thread is busy"));
-    await waitFor(() => expect(host.window.get(ERRORS)).toEqual(["the thread is busy"]));
+    await waitFor(() => expect(host.window.get(ERRORS).map(({ text }) => text)).toEqual(["the thread is busy"]));
   });
 
   // spec: UI-349

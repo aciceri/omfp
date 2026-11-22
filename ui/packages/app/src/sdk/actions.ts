@@ -93,11 +93,16 @@ function stderrTail({ failure }: CallError): string | undefined {
   return typeof tail === "string" && tail.trim() !== "" ? tail.trim() : undefined;
 }
 
-/** Adds `error` to the window's error list and its messages (UI-521). */
+/** The last key {@link reportError} gave: never reused, so a new error is never taken for one that just went. */
+let lastErrorKey = 0;
+
+/** Adds `error` to the window's error list, as its own entry even when the message repeats, and its messages (UI-521). */
 export function reportError(host: OmfpHost, error: unknown): void {
-  const message = errorMessage(error);
-  host.window.set(ERRORS, (errors) => [...errors, message]);
-  host.notices.remember("error", message);
+  const text = errorMessage(error);
+  lastErrorKey += 1;
+  const key = lastErrorKey;
+  host.window.set(ERRORS, (errors) => [...errors, { key, text }]);
+  host.notices.remember("error", text);
 }
 
 /**

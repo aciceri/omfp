@@ -2,7 +2,7 @@
  * running login and opened URLs, and the live region (UI-092). */
 
 import { Button, Disclosure, LiveRegion, Toast, ToastRegion } from "@omfp/kit";
-import { type ReactNode, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { type ReactNode, useEffect, useMemo, useSyncExternalStore } from "react";
 import {
   ERRORS,
   requestLogin,
@@ -44,7 +44,6 @@ export function ConnectionBanner(): ReactNode {
 export function Toasts(): ReactNode {
   const host = useHost();
   const [errors, setErrors] = useWindowState(ERRORS);
-  const errorKeys = useErrorKeys(errors);
   const [successes, setSuccesses] = useWindowState(SUCCESSES);
   const [login] = useWindowState(LOGIN_RUN);
   const [opened, setOpened] = useWindowState(OPENED_URLS);
@@ -54,12 +53,12 @@ export function Toasts(): ReactNode {
   }
   return (
     <ToastRegion data-testid="toasts">
-      {errors.map((error, index) => {
-        const dismiss = () => setErrors((all) => all.filter((_, at) => at !== index));
-        const problem = loginProblem(error);
+      {errors.map((error) => {
+        const dismiss = () => setErrors((all) => all.filter((other) => other.key !== error.key));
+        const problem = loginProblem(error.text);
         return (
           <Toast
-            key={errorKeys[index]}
+            key={error.key}
             tone="error"
             className="omfp-error-toast"
             data-testid="error"
@@ -82,13 +81,13 @@ export function Toasts(): ReactNode {
             }
           >
             {problem === undefined ? (
-              error
+              error.text
             ) : (
               <>
                 <span className="omfp-error-toast__problem">{problem}</span>
                 <Disclosure title={strings.shell.login.details} level={2} toggleTestId="error-details">
                   <span className="omfp-error-toast__raw" data-testid="error-raw">
-                    {error}
+                    {error.text}
                   </span>
                 </Disclosure>
               </>
@@ -118,35 +117,6 @@ export function Toasts(): ReactNode {
       <IndexLoginUrlToast />
     </ToastRegion>
   );
-}
-
-/**
- * One key per error toast that stays with its message while others go before it: the list only grows at its end or
- * loses messages, so each message takes the key of the first earlier one equal to it after the last matched, a new
- * one else. A toast's place would hand its timer, focus and open Details to the next toast once one timed out.
- */
-function useErrorKeys(errors: readonly string[]): readonly number[] {
-  const last = useRef<{ errors: readonly string[]; keys: readonly number[]; next: number }>({
-    errors: [],
-    keys: [],
-    next: 0,
-  });
-  const shown = last.current;
-  if (shown.errors !== errors) {
-    let from = 0;
-    let next = shown.next;
-    const keys = errors.map((message) => {
-      const at = shown.errors.indexOf(message, from);
-      if (at === -1) {
-        next += 1;
-        return next;
-      }
-      from = at + 1;
-      return shown.keys[at] ?? 0;
-    });
-    last.current = { errors, keys, next };
-  }
-  return last.current.keys;
 }
 
 /** Announces the status line (connection, selected thread's state, threads awaiting input) whenever it changes, and

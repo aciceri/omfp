@@ -110,7 +110,7 @@ describe("logging in", () => {
       login?.reject(new CallError({ kind: "daemon", error: { code: "omp_error", message: "Login cancelled" } })),
     );
     expect(screen.queryAllByTestId("login-progress").length).toBe(0);
-    expect(test.host.window.get(ERRORS)).toEqual([]);
+    expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual([]);
   });
 
   // spec: UI-382, UI-386, UI-389
@@ -397,7 +397,7 @@ describe("logging in", () => {
     // Cancelling the input cancels the login: its rejection is no error.
     const [login] = test.client.callsTo("auth.login");
     await settle(() => login?.reject(new Error("Login cancelled")));
-    expect(test.host.window.get(ERRORS)).toEqual([]);
+    expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual([]);
   });
 
   // spec: UI-385
@@ -418,7 +418,7 @@ describe("logging in", () => {
         new CallError({ kind: "daemon", error: { code: "omp_error", message: "Token exchange failed: 400" } }),
       ),
     );
-    expect(test.host.window.get(ERRORS)).toEqual(["Token exchange failed: 400 (omp_error)"]);
+    expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual(["Token exchange failed: 400 (omp_error)"]);
     expect(test.host.window.get(AUTH_REVISION)).toBe(1);
   });
 
@@ -437,7 +437,7 @@ describe("logging in", () => {
       "Logged out of anthropic: removed 1 stored credential. anthropic still authenticates with ANTHROPIC_API_KEY.",
     );
     run(test, "logout");
-    expect(test.host.window.get(ERRORS)).toEqual(["Usage: :logout <provider>"]);
+    expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual(["Usage: :logout <provider>"]);
   });
 
   // spec: UI-506
@@ -470,7 +470,7 @@ describe("logging in", () => {
     const [, second] = test.client.callsTo("auth.import");
     await settle(() => second?.resolve({ providers: [] }));
     expect(test.host.window.get(SUCCESSES).at(-1)).toMatchObject({ text: "omp has no logins to copy", tone: "info" });
-    expect(test.host.window.get(ERRORS)).toEqual([]);
+    expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual([]);
 
     run(test, "import-logins");
     const [, , third] = test.client.callsTo("auth.import");
@@ -479,7 +479,7 @@ describe("logging in", () => {
         new CallError({ kind: "daemon", error: { code: "omp_error", message: "auth broker is configured" } }),
       ),
     );
-    expect(test.host.window.get(ERRORS)).toEqual(["auth broker is configured (omp_error)"]);
+    expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual(["auth broker is configured (omp_error)"]);
 
     run(test, "import-logins");
     const [, , , fourth] = test.client.callsTo("auth.import");
@@ -491,7 +491,7 @@ describe("logging in", () => {
         }),
       ),
     );
-    expect(test.host.window.get(ERRORS)).toEqual([
+    expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual([
       "auth broker is configured (omp_error)",
       "a login is running; copy omp's logins after it ends (conflict)",
     ]);
@@ -529,7 +529,7 @@ describe("logging in", () => {
     expect(other !== undefined && within(other).queryAllByTestId("error-login").length).toBe(0);
     await test.user.click(within(needing as HTMLElement).getByTestId("error-login"));
     await screen.findByTestId("login-picker");
-    expect(test.host.window.get(ERRORS)).toEqual(["git failed"]);
+    expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual(["git failed"]);
     expect(test.client.callsTo("auth.providers").length).toBe(1);
   });
 

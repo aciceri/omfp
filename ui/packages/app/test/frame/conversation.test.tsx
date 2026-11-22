@@ -102,7 +102,9 @@ describe(":copy and :export", () => {
       act(() => {
         test.host.commands.run("thread.copy");
       });
-      await waitFor(() => expect(test.host.window.get(ERRORS)).toEqual(["Clipboard access denied"]));
+      await waitFor(() =>
+        expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual(["Clipboard access denied"]),
+      );
       expect(test.host.window.get(SUCCESSES)).toEqual([]);
     } finally {
       Reflect.deleteProperty(navigator, "clipboard");

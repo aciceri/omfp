@@ -292,6 +292,8 @@ describe("omfp:threads reordering", () => {
       host.commands.run("threads.moveUp", [], ["threads"]);
     });
     act(() => client.callsTo("threads.reorder")[0]?.reject(new Error("thread t1 is not in workspace w1")));
-    await waitFor(() => expect(host.window.get(ERRORS)).toEqual(["thread t1 is not in workspace w1"]));
+    await waitFor(() =>
+      expect(host.window.get(ERRORS).map(({ text }) => text)).toEqual(["thread t1 is not in workspace w1"]),
+    );
   });
 });

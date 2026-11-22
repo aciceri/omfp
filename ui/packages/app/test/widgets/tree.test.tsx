@@ -162,6 +162,6 @@ describe("omfp:tree", () => {
     );
     (document.activeElement as HTMLElement | null)?.blur();
     test.host.commands.run("thread.fork", [], ["tree"]);
-    expect(test.host.window.get(ERRORS)).toEqual(["Select a message of the tree to fork from"]);
+    expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual(["Select a message of the tree to fork from"]);
   });
 });

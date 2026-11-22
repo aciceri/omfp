@@ -223,7 +223,7 @@ describe("TSX views", () => {
     // The view exists only in code: nothing writes a views.json the window would not show.
     await command("widget add omfp:mcp");
     expect(written(test)).toEqual([]);
-    expect(test.host.window.get(ERRORS)).toEqual([
+    expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual([
       'View ops is the TSX file .omfp/views/ops.tsx: add the widget there (<Widget use="…" />), :widget add writes only views.json',
     ]);
   });
@@ -359,7 +359,7 @@ describe("views of init files in the window", () => {
     ).toEqual(["chat", "changes api"]);
     await command("widget add omfp:mcp");
     expect(written(test).length).toBe(1);
-    expect(test.host.window.get(ERRORS)).toEqual([
+    expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual([
       "View review comes from the workspace's .omfp/init.ts: add the widget there (layout.addTab), :widget add writes only views.json",
     ]);
 

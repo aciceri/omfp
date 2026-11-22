@@ -109,7 +109,7 @@ describe("draft thread", () => {
     const { client, host, user } = setup();
     await user.type(screen.getByTestId("composer-input"), "fix it{Enter}");
     act(() => client.callsTo("threads.create")[0]?.reject(new Error("daemon down")));
-    await waitFor(() => expect(host.window.get(ERRORS)).toEqual(["daemon down"]));
+    await waitFor(() => expect(host.window.get(ERRORS).map(({ text }) => text)).toEqual(["daemon down"]));
     expect(host.window.get(DRAFT_THREAD)).toEqual({ workspaceId: "w1" });
     expect(screen.getByTestId("composer-input")).toHaveProperty("value", "fix it");
     await waitFor(() => expect(screen.getByTestId("send").hasAttribute("disabled")).toBe(false));
@@ -184,7 +184,7 @@ describe("draft thread", () => {
     await waitFor(() => expect(screen.getAllByTestId("attachment").length).toBe(1));
     await user.type(input, "fix it{Enter}");
     act(() => client.callsTo("threads.create")[0]?.reject(new Error("daemon down")));
-    await waitFor(() => expect(host.window.get(ERRORS)).toEqual(["daemon down"]));
+    await waitFor(() => expect(host.window.get(ERRORS).map(({ text }) => text)).toEqual(["daemon down"]));
     expect(host.window.get(DRAFT_MESSAGE).images).toEqual([PNG]);
     expect(screen.getAllByTestId("attachment").length).toBe(1);
     expect(input).toHaveProperty("value", "fix it");

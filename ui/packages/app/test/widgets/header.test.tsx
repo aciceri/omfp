@@ -425,7 +425,9 @@ describe("omfp:header", () => {
     const [reconnect] = client.callsTo("thread.mcp_reconnect");
     expect(reconnect?.params).toEqual({ threadId: "t1" });
     reconnect?.reject(new Error("busy: the turn has not settled"));
-    await waitFor(() => expect(host.window.get(ERRORS)).toEqual(["busy: the turn has not settled"]));
+    await waitFor(() =>
+      expect(host.window.get(ERRORS).map(({ text }) => text)).toEqual(["busy: the turn has not settled"]),
+    );
   });
 
   // spec: UI-388
@@ -640,7 +642,7 @@ describe("compacting from the header", () => {
     const test = setup(thread("t1", "checkout", "w1", { settled: false }));
     await fromMore(test.user, "compact-context");
     await waitFor(() =>
-      expect(test.host.window.get(ERRORS)).toEqual([
+      expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual([
         "The thread is working: compact it once its turn ends (Abort ends it now)",
       ]),
     );

@@ -171,7 +171,7 @@ describe("the first run", () => {
     });
     expect(welcomed()).toBe(true);
     expect(screen.queryAllByTestId("welcome-import").length).toBe(0);
-    expect(failing.host.window.get(ERRORS)).toEqual([]);
+    expect(failing.host.window.get(ERRORS).map(({ text }) => text)).toEqual([]);
 
     // A window with usable models never asks.
     cleanup();

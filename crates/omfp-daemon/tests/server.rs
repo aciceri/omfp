@@ -14,7 +14,7 @@ use omfp_daemon::agent::{FakeLauncher, FakeReply, FakeRun};
 use omfp_daemon::config::{Cli, Config};
 use omfp_daemon::git::FakeGit;
 use omfp_daemon::{
-    DaemonHandle, Ports, discover, discover_through_restart, restarting, start_with,
+    DaemonHandle, Ports, discover, discover_through_restart, restart, restarting, start_with,
 };
 use omfp_protocol::{ServerFrame, TopicEvent};
 use serde_json::{Value, json};
@@ -506,6 +506,29 @@ async fn a_daemon_restarting_in_place_is_waited_for_not_replaced() {
     assert_ne!(found.started, before.started);
     assert!(!restarting(&data_dir).unwrap());
     restarted.shutdown().await.unwrap();
+}
+
+// spec: DMN-391, DMN-394
+#[tokio::test(flavor = "multi_thread")]
+async fn a_daemon_run_in_process_is_not_restarted() {
+    // `start_with` catches no SIGUSR2 (only `omfp daemon` does): the signal would end this process.
+    let daemon = daemon(&[]).await;
+    let data_dir = daemon.dir.path().to_owned();
+    let info = discover(&data_dir).unwrap().expect("a running daemon");
+    assert!(!info.restarts_in_place);
+
+    let error = tokio::task::spawn_blocking({
+        let data_dir = data_dir.clone();
+        move || restart(&data_dir, Path::new("/bin/omfp"), std::time::Duration::ZERO)
+    })
+    .await
+    .unwrap()
+    .unwrap_err()
+    .to_string();
+    assert!(error.contains("does not restart in place"), "{error}");
+    assert!(!data_dir.join("daemon.restart").exists());
+    assert_eq!(discover(&data_dir).unwrap(), Some(info));
+    daemon.handle.shutdown().await.unwrap();
 }
 
 // spec: DMN-392

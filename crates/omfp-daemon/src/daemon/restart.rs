@@ -44,14 +44,15 @@ pub fn restart(data_dir: &Path, program: &Path, deadline: Duration) -> anyhow::R
         }
         bail!("no omfp daemon is running for {}", data_dir.display());
     };
-    // Only a daemon that writes `started` catches the signal: to an older one it is fatal (SIGUSR2's default).
-    let Some(started) = running.started else {
+    // Only a daemon that says so catches the signal: to any other it is fatal (SIGUSR2's default).
+    if !running.restarts_in_place {
         bail!(
-            "the omfp daemon of {} (pid {}) is older than `omfp daemon restart`: stop it and start it again",
+            "the omfp daemon of {} (pid {}) does not restart in place (an omfp older than `omfp daemon restart`, or a \
+             daemon another program runs in-process): stop it and start it again",
             data_dir.display(),
             running.pid
         );
-    };
+    }
     // A Flatpak's daemon shares the data directory with the host, but its pid names another process here.
     let pid = running.local_pid().with_context(|| {
         format!(
@@ -76,7 +77,7 @@ pub fn restart(data_dir: &Path, program: &Path, deadline: Duration) -> anyhow::R
     let until = Instant::now() + deadline;
     loop {
         if let Some(info) = discover(data_dir)?
-            && info.started != Some(started)
+            && info.started != running.started
         {
             return Ok(info);
         }
@@ -225,19 +226,19 @@ mod tests {
         };
         assert!(error(dir.path()).contains("no omfp daemon is running"));
 
-        // A daemon of an older omfp holds the lock: its daemon.json has no `started`.
+        // A daemon of an older omfp holds the lock: its daemon.json does not say it restarts in place.
         let lock = File::create(dir.path().join("daemon.lock")).unwrap();
         lock.lock().unwrap();
         let older = format!(r#"{{"addr":"127.0.0.1:9","pid":{}}}"#, std::process::id());
         std::fs::write(dir.path().join("daemon.json"), older).unwrap();
-        assert!(error(dir.path()).contains("older than `omfp daemon restart`"));
+        assert!(error(dir.path()).contains("does not restart in place"));
         assert!(!dir.path().join(REQUEST_FILE).exists());
 
         // A daemon in a Flatpak sandbox shares the data directory, but its pid is not one of this namespace's.
         let mut gone = Command::new("true").spawn().unwrap();
         gone.wait().unwrap();
         let sandboxed = format!(
-            r#"{{"addr":"127.0.0.1:9","pid":{},"started":1,"pid_namespace":"pid:[1]"}}"#,
+            r#"{{"addr":"127.0.0.1:9","pid":{},"started":1,"restarts_in_place":true,"pid_namespace":"pid:[1]"}}"#,
             gone.id()
         );
         std::fs::write(dir.path().join("daemon.json"), sandboxed).unwrap();

@@ -95,6 +95,7 @@ fn the_daemon_restarts_in_place_and_logs_each_line_once() {
     let _stop = Stop(Pid::from_child(&child));
     let first = running(&data);
     assert_eq!(first.pid, child.id());
+    assert!(first.restarts_in_place);
 
     let restart = omfp(
         dir.path(),

@@ -102,6 +102,9 @@ pub struct Config {
     pub config_file: Option<PathBuf>,
     /// `[daemon]` as the file held at startup: a reload that changes it needs a restart.
     pub file_options: DaemonOptions,
+    /// The process catches `SIGUSR2` to restart the daemon in place, which `daemon.json` then says (DMN-394).
+    /// [`Config::from_cli`] leaves it `false`; `omfp daemon` ([`crate::run`]) sets it once it caught the signal.
+    pub restarts_in_place: bool,
 }
 
 /// `$XDG_CONFIG_HOME/omfp` when absolute, else `$HOME/.config/omfp`: where the config and theme files live.
@@ -202,6 +205,7 @@ impl Config {
             title_generation: !cli.no_title_generation && options.title_generation.unwrap_or(true),
             config_file: cli.config,
             file_options,
+            restarts_in_place: false,
         })
     }
 }

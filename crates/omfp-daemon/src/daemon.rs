@@ -122,10 +122,15 @@ pub struct DaemonInfo {
     /// Address the daemon listens on.
     pub addr: SocketAddr,
     pub pid: u32,
-    /// When this daemon started (unix ms): a restart in place keeps the pid, not this (DMN-391). `None`: a daemon of
-    /// an omfp older than restarts in place, which `SIGUSR2` would kill.
+    /// When this daemon started (unix ms): a restart in place keeps the pid, not this (DMN-391). `None`: an omfp
+    /// older than restarts in place.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub started: Option<u64>,
+    /// The daemon catches `SIGUSR2` and restarts in place on it (`omfp daemon`, DMN-394). `false`: an omfp older than
+    /// restarts in place, or a daemon another program runs in-process ([`start`], [`start_with`]), which the signal
+    /// would end.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub restarts_in_place: bool,
     /// The PID namespace `pid` belongs to (Linux: the target of `/proc/self/ns/pid`; `None` elsewhere): a client in
     /// another one (a Flatpak sandbox, a container) can neither signal nor watch that pid (DMN-391).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -567,6 +572,7 @@ pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHa
         addr,
         pid: std::process::id(),
         started: Some(started),
+        restarts_in_place: config.restarts_in_place,
         pid_namespace: pid_namespace(),
         restarting: false,
     };
@@ -658,9 +664,11 @@ pub fn run_with<A>(mut cli: Cli, attach: impl FnOnce(&DaemonHandle) -> A) -> any
         .enable_all()
         .build()?;
     let outcome = runtime.block_on(async {
-        // Caught before daemon.json names this process: from then on `omfp daemon restart` may send it (DMN-394).
+        // Caught before daemon.json names this process and says so: from then on `omfp daemon restart` may send it
+        // (DMN-394).
         let mut restart_requests =
             tokio::signal::unix::signal(tokio::signal::unix::SignalKind::user_defined2())?;
+        config.restarts_in_place = true;
         let daemon = start(config).await?;
         // Signals are caught before the URL is printed: whoever waits for it may stop the daemon at once.
         let signal = signal_handler()?;

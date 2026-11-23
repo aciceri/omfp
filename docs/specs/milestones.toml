@@ -621,6 +621,8 @@ requirements = [
   "DMN-394",
   "ENV-066",
   "ENV-067",
+  # The first omp of a fresh profile starts alone (omp creates agent.db's schema without a lock)
+  "DMN-913",
 ]
 
 [M10]

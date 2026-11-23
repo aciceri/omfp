@@ -3,12 +3,13 @@
 //! component tests (TST-014).
 
 mod fake;
+mod first_start;
 
 use std::io::Write;
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
-use std::sync::{Arc, PoisonError, RwLock};
+use std::sync::{Arc, LazyLock, PoisonError, RwLock};
 use std::time::Duration;
 
 use omp_rpc::{
@@ -36,6 +37,7 @@ pub use fake::{
 
 use crate::omp::{LaunchSpec, OmpProcess, StartError, Startup};
 use crate::titles::{TitleError, TitleRequest, clean_title};
+use first_start::{FirstStart, agent_dir};
 
 /// One omp command the daemon forwards (02-daemon, "Commands towards omp"); prompts go through
 /// [`AgentProcess::prompt`] because their id matters (PRT-030).
@@ -213,6 +215,9 @@ pub trait AgentLauncher: Send + Sync {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct OmpLauncher;
 
+/// The profiles of this process's omp runs, each started alone until one got past its startup (DMN-913).
+static FIRST_START: LazyLock<FirstStart> = LazyLock::new(FirstStart::default);
+
 impl AgentLauncher for OmpLauncher {
     fn launch(
         &self,
@@ -220,7 +225,9 @@ impl AgentLauncher for OmpLauncher {
         tools: Vec<HostTool>,
         uris: Vec<HostUri>,
     ) -> Result<Launched, StartError> {
-        let (process, startup) = OmpProcess::start(spec, tools, uris)?;
+        let (process, startup) = FIRST_START.run(agent_dir(&spec.env), || {
+            OmpProcess::start(spec, tools, uris)
+        })?;
         let next_request = process.next_request();
         let (client, events) = process.into_parts();
         let events = events.ok_or(StartError::Connect(omp_rpc::Error::Closed))?;
@@ -247,29 +254,35 @@ impl AgentLauncher for OmpLauncher {
                 None => command.env_remove(key),
             };
         }
-        let output = crate::flatpak::on_host(command).output()?;
-        if !output.status.success() {
-            return Err(StartError::LeaseCheck(
-                String::from_utf8_lossy(&output.stderr).trim().to_owned(),
-            ));
-        }
-        parse_lease(&output.stdout, session_id)
+        FIRST_START.run(agent_dir(&spec.env), || {
+            let output = crate::flatpak::on_host(command).output()?;
+            if !output.status.success() {
+                return Err(StartError::LeaseCheck(
+                    String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+                ));
+            }
+            parse_lease(&output.stdout, session_id)
+        })
     }
 
     fn generate_title(&self, request: &TitleRequest) -> Result<String, TitleError> {
-        let output = request.command().output()?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let tail: Vec<&str> = stderr.trim().lines().rev().take(5).collect();
-            return Err(TitleError::Failed(format!(
-                "{}: {}",
-                output.status,
-                tail.into_iter().rev().collect::<Vec<_>>().join("\n")
-            )));
-        }
+        let output = FIRST_START.run(agent_dir(&request.env), || {
+            let output = request.command().output()?;
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let tail: Vec<&str> = stderr.trim().lines().rev().take(5).collect();
+                return Err(TitleError::Failed(format!(
+                    "{}: {}",
+                    output.status,
+                    tail.into_iter().rev().collect::<Vec<_>>().join("\n")
+                )));
+            }
+            Ok(output)
+        })?;
         clean_title(&String::from_utf8_lossy(&output.stdout)).ok_or(TitleError::Empty)
     }
 
+    /// Through [`Self::launch`], which starts it alone on a fresh profile (DMN-913).
     fn usable_models(&self, spec: &LaunchSpec) -> Result<u32, StartError> {
         let launched = self.launch(spec, Vec::new(), Vec::new())?;
         let listed = launched
@@ -288,11 +301,13 @@ impl AgentLauncher for OmpLauncher {
     }
 
     fn export_logins(&self, spec: &LaunchSpec) -> Result<String, StartError> {
-        export_logins(spec, AUTH_DEADLINE)
+        FIRST_START.run(agent_dir(&spec.env), || export_logins(spec, AUTH_DEADLINE))
     }
 
     fn import_logins(&self, spec: &LaunchSpec, document: String) -> Result<(), StartError> {
-        import_logins(spec, document, AUTH_DEADLINE)
+        FIRST_START.run(agent_dir(&spec.env), || {
+            import_logins(spec, document, AUTH_DEADLINE)
+        })
     }
 }
 

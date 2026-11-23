@@ -76,7 +76,8 @@ Clippy runs with `pedantic` as errors. Notable: `assert_is_empty` forbids `asser
 ```text
 crates/omfp-core      reducer over omp events (ThreadEvent → ThreadState); no I/O
 crates/omfp-protocol  UI ↔ daemon protocol types, JSON Schemas
-crates/omfp-daemon    daemon library: omp adapter (omp.rs), agent port + FakeLauncher (agent.rs, agent/fake.rs; omp's live voice
+crates/omfp-daemon    daemon library: omp adapter (omp.rs), agent port + FakeLauncher (agent.rs, agent/fake.rs; the
+                      first omp of a fresh profile started alone in agent/first_start.rs, DMN-913; omp's live voice
                       sequence in agent/fake/live.rs), live voice relay (supervisor/live.rs: one session per thread;
                       live_context.rs: omp's vendored live prompt live_instructions.txt + the thread's conversation;
                       voice_log.rs: an ended session's spoken turns, appended to the thread by omfp's omp extension
@@ -279,6 +280,11 @@ tag, the `omp-rpc` git tag in `Cargo.toml`, `omfp_core::OMP_VERSION` and the rel
   `<data-dir>/login/` where SQLite replays or rolls back and `VACUUM INTO` writes the copy, exports from it with omfp's
   profile environment, and deletes it after (DMN-229). omp also loads `~/.env`, `<config root>/.env` and
   `<agent dir>/.env` for variables left empty.
+- omp creates `agent.db`'s `settings` table with a check, then a plain `CREATE TABLE` outside any transaction
+  (`AgentStorage#initializeSchema`, still so on omp's main after 19.1.0): two omps starting at once on a fresh profile
+  race, and the loser exits at startup with `SQLiteError: … table settings already exists` (seen as `omp did not
+  become ready: server closed`). The daemon starts a profile's omps one at a time until one got past startup
+  (DMN-913).
 - omp reads project config from its cwd (the workspace folder) and loads a repo's `AGENTS.md` only when the repo is an
   `--add-dir` root; it does not resolve symlinked roots, and tools write through symlinks. Roots saved in a session
   survive a restart without their flag: detach with `/remove-dir` (S-10).

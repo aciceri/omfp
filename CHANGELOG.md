@@ -45,6 +45,9 @@ The version's section is also the source of the GitHub release notes.
 
 ### Fixed
 
+- Threads started together right after the daemon's first start (or several title, model and login checks at once on
+  a fresh install) no longer fail with "omp did not become ready": omp 19.1 crashes when two of its processes create
+  its credential store at the same time, so the daemon starts the first omp of its profile alone.
 - A repository without commits (right after `git init`) no longer stops the changes view of its whole workspace: it
   shows its branch and every file as added. A repository whose git status fails for another reason shows that error
   in `omfp:changes` while the others keep updating, and the daemon logs it once instead of every 30 s (#268).

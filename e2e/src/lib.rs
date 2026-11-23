@@ -30,6 +30,7 @@ use omfp_testkit::{
 use serde_json::{Value, json};
 use tempfile::TempDir;
 use thirtyfour::ChromeCapabilities;
+use thirtyfour::error::WebDriverErrorInner;
 use thirtyfour::prelude::*;
 
 /// Longest wait for any condition (omp startup and a model turn included).
@@ -557,15 +558,41 @@ impl Journey {
         .await
     }
 
-    /// The first element matching `css`, once it is displayed.
+    /// The first element matching `css`, once it is displayed. An element React replaces between being found and
+    /// being checked is skipped (`ignore_errors`) and the query polls again, instead of failing as stale.
     pub async fn element(&self, css: &str) -> anyhow::Result<WebElement> {
         Ok(self
             .driver
             .query(By::Css(css))
             .wait(TIMEOUT, POLL)
+            .ignore_errors(true)
             .and_displayed()
             .first()
             .await?)
+    }
+
+    /// Runs `act` on the first displayed element matching `css`, finding it again while the page replaces it under
+    /// the action (a stale element reference: WebDriver performed nothing), until [`TIMEOUT`].
+    async fn on_element(
+        &self,
+        css: &str,
+        mut act: impl AsyncFnMut(WebElement) -> WebDriverResult<()>,
+    ) -> anyhow::Result<()> {
+        let deadline = tokio::time::Instant::now() + TIMEOUT;
+        loop {
+            let element = self.element(css).await?;
+            match act(element).await {
+                Err(error)
+                    if matches!(
+                        error.as_inner(),
+                        WebDriverErrorInner::StaleElementReference(_)
+                    ) && tokio::time::Instant::now() < deadline =>
+                {
+                    tokio::time::sleep(POLL).await;
+                }
+                result => return Ok(result?),
+            }
+        }
     }
 
     /// Waits until an element matching `css` is displayed, then until the first one is at rest: every finite animation
@@ -598,26 +625,27 @@ impl Journey {
 
     /// Clicks the first displayed element matching `css`.
     pub async fn click(&self, css: &str) -> anyhow::Result<()> {
-        self.element(css).await?.click().await?;
-        Ok(())
+        self.on_element(css, async |element| element.click().await)
+            .await
     }
 
     /// Moves the mouse over the first displayed element matching `css`, as a user does before clicking what a hover
     /// shows or moves (a row's delete ×, UI-205; a section's actions, UI-415).
     pub async fn hover(&self, css: &str) -> anyhow::Result<()> {
-        let element = self.element(css).await?;
-        self.driver
-            .action_chain()
-            .move_to_element_center(&element)
-            .perform()
-            .await?;
-        Ok(())
+        self.on_element(css, async |element| {
+            self.driver
+                .action_chain()
+                .move_to_element_center(&element)
+                .perform()
+                .await
+        })
+        .await
     }
 
     /// Types `text` into the first displayed element matching `css`.
     pub async fn type_into(&self, css: &str, text: &str) -> anyhow::Result<()> {
-        self.element(css).await?.send_keys(text).await?;
-        Ok(())
+        self.on_element(css, async |element| element.send_keys(text).await)
+            .await
     }
 
     /// Presses `keys` on whatever has the focus.

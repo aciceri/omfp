@@ -35,23 +35,51 @@ pub(super) fn tool() -> AgentTool {
     }
 }
 
+/// `thread.*` methods that only read: a missing `threadId` means the calling thread (AGT-041).
+const READS_OWN_THREAD: &[&str] = &[
+    "thread.session",
+    "thread.state",
+    "thread.mcp_servers",
+    "thread.commands",
+    "thread.models",
+    "thread.thinking_levels",
+    "thread.tree",
+    "thread.subagents",
+    "thread.subagent_messages",
+    "thread.git",
+];
+
 fn run(context: ToolContext, arguments: Map<String, Value>) -> ToolFuture {
     Box::pin(async move {
         let method = match arguments.get("method") {
             Some(Value::String(method)) if !method.trim().is_empty() => method.trim().to_owned(),
             _ => return Err("`method` must be a non-empty string".to_owned()),
         };
-        let params = match arguments.get("params") {
-            None | Some(Value::Null) => Value::Object(Map::new()),
-            Some(params @ Value::Object(_)) => params.clone(),
+        let mut params = match arguments.get("params") {
+            None | Some(Value::Null) => Map::new(),
+            Some(Value::Object(params)) => params.clone(),
             Some(_) => return Err("`params` must be an object".to_owned()),
         };
+        let own_thread = context.thread_id();
+        if let Some(own) = own_thread
+            && READS_OWN_THREAD.contains(&method.as_str())
+        {
+            params
+                .entry("threadId")
+                .or_insert_with(|| Value::String(own.to_owned()));
+        }
         if let Some(why) = not_for_agents(&method) {
             return Err(why);
         }
         let frame = json!({ "id": CALL, "type": "request", "method": method, "params": params });
         let request = decode_request(&frame.to_string()).map_err(|error| {
-            format!("{error}; {METHODS_URL} lists the methods and their params")
+            let text = format!("{error}; {METHODS_URL} lists the methods and their params");
+            match own_thread {
+                Some(own) if text.contains("missing field `threadId`") => {
+                    format!("{text} (your own thread is {own})")
+                }
+                _ => text,
+            }
         })?;
         let result = call(&context, request.call)
             .await
@@ -170,5 +198,37 @@ mod tests {
         .await
         .unwrap_err();
         assert!(error.starts_with("not_found: "), "{error}");
+    }
+
+    // spec: AGT-041
+    #[tokio::test]
+    async fn reading_thread_methods_default_to_the_calling_thread() {
+        let harness = Harness::new().await;
+
+        let session = call_tool(
+            &harness,
+            json!({ "method": "thread.session", "params": {} }),
+        )
+        .await
+        .unwrap();
+        let explicit = call_tool(
+            &harness,
+            json!({ "method": "thread.session", "params": { "threadId": harness.thread } }),
+        )
+        .await
+        .unwrap();
+        assert_eq!(session, explicit);
+
+        let error = call_tool(
+            &harness,
+            json!({ "method": "thread.prompt", "params": { "message": "hi" } }),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.contains("missing field `threadId`"), "{error}");
+        assert!(
+            error.contains(&format!("(your own thread is {})", harness.thread)),
+            "{error}"
+        );
     }
 }

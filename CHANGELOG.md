@@ -15,6 +15,12 @@ The version's section is also the source of the GitHub release notes.
   tells it to check what was in progress and continue. Any message you send clears the notice too. Agents see it as
   `interruptedAt` on the thread's summary and resume with `thread.resume` (#264).
 
+### Changed
+
+- Agents' `omfp_call` of a reading `thread.*` method (`thread.session`, `thread.state`, `thread.mcp_servers`, …)
+  without `threadId` now reads their own thread; the other `thread.*` methods still need it, and their error names the
+  agent's own thread id (#284).
+
 ### Fixed
 
 - A repository without commits (right after `git init`) no longer stops the changes view of its whole workspace: it

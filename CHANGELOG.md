@@ -67,6 +67,9 @@ The version's section is also the source of the GitHub release notes.
   in `omfp:changes` while the others keep updating, and the daemon logs it once instead of every 30 s (#268).
 - Refreshing an MCP server's OAuth login asks for the same scope as the original sign-in, as omp 19.1 does, so
   Microsoft Entra servers whose client is also the resource keep working.
+- Images an agent shows in the chat appear: a card of `omfp:file` on an image or a PDF gives the viewer a height of
+  its own instead of an empty strip, and an image in the agent's reply whose source is a file path
+  (`![map](out/map.png)`, relative to the workspace folder, or absolute) loads that file (#294, #295).
 
 ## 0.4.2 — 2026-11-22
 

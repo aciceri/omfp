@@ -154,55 +154,9 @@
       "error": "panels.clock: a widget name is empty"
     },
     {
-      "name": "a TSX view (AGT-074)",
-      "manifest": {
-        "default": "ops",
-        "views": {
-          "ops": { "title": "Ops", "view": "./views/ops.tsx" },
-          "work": { "layout": "omfp:chat" }
-        }
-      },
-      "error": null
-    },
-    {
-      "name": "a JSX view file",
-      "manifest": { "views": { "ops": { "view": "./views/ops-2.v1.jsx" } } },
-      "error": null
-    },
-    {
-      "name": "a view with a layout and a view file",
-      "manifest": { "views": { "ops": { "view": "./views/ops.tsx", "layout": "omfp:chat" } } },
-      "error": "views.ops: a layout or a view file, not both"
-    },
-    {
-      "name": "a view file outside ./views/",
-      "manifest": { "views": { "ops": { "view": "views/ops.tsx" } } },
-      "error": "views.ops.view: expected \"./views/<name>.tsx\""
-    },
-    {
-      "name": "a view file leaving the views folder",
-      "manifest": { "views": { "ops": { "view": "./views/../x.tsx" } } },
-      "error": "views.ops.view: expected \"./views/<name>.tsx\""
-    },
-    {
-      "name": "a view file in a subfolder",
-      "manifest": { "views": { "ops": { "view": "./views/lib/ops.tsx" } } },
-      "error": "views.ops.view: expected \"./views/<name>.tsx\""
-    },
-    {
-      "name": "a view file that is not a module",
-      "manifest": { "views": { "ops": { "view": "./views/ops.css" } } },
-      "error": "views.ops.view: expected \"./views/<name>.tsx\""
-    },
-    {
-      "name": "a view file that is not a string",
-      "manifest": { "views": { "ops": { "view": 3 } } },
-      "error": "views.ops.view: expected \"./views/<name>.tsx\""
-    },
-    {
-      "name": "a TSX view is checked in id order with the layouts",
-      "manifest": { "views": { "zeta": { "layout": [] }, "alpha": { "view": "./views/.hidden.tsx" } } },
-      "error": "views.alpha.view: expected \"./views/<name>.tsx\""
+      "name": "a view file is not a layout",
+      "manifest": { "views": { "ops": { "view": "./views/ops.tsx" } } },
+      "error": "views.ops.layout: expected a widget name, [widget, props] or [container, props, ...children]"
     }
   ]
 }

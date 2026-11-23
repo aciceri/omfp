@@ -12,7 +12,7 @@ struct Restarted {
 
 fn restart(h: &Harness) -> Restarted {
     let root = h.dir.path().join("workspaces");
-    let store = Arc::new(Store::open(&h.data.db(), &root).unwrap());
+    let store = Arc::new(Store::open(&h.data.db()).unwrap());
     let threads = Arc::new(Threads::new(Arc::clone(&store), h.data.clone()));
     let workspaces = Arc::new(Workspaces::new(
         Arc::clone(&store),

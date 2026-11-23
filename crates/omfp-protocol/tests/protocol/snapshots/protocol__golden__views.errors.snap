@@ -21,13 +21,11 @@ expression: golden
           "errors": [
             {
               "file": "user",
-              "kind": "init",
               "message": "TypeError: x is undefined"
             },
             {
-              "file": ".omfp/views/ops.tsx",
-              "kind": "view",
-              "message": "Row: unknown widget ./widgets/nope"
+              "file": ".omfp/init.ts",
+              "message": ".omfp/init.ts:3:7: Unexpected token"
             }
           ]
         },

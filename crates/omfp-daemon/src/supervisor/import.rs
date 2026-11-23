@@ -3,24 +3,21 @@
 //! The pinned omp's `omp auth export` opens its credential store read-write — it creates a missing one, migrates an
 //! older schema and adds what its own schema lacks — so omfp never runs it on standalone omp's store. omfp finds that
 //! store the way omp 19.1.0 does ([`credential_store`], from the user's environment: the daemon's with
-//! [`SupervisorConfig::user_omp_env`](super::SupervisorConfig::user_omp_env)), copies its files under a SHARED lock
-//! taken as SQLite takes it into a private snapshot directory under `<data-dir>/login/` ([`Snapshot`]) without SQLite ever opening
-//! them there, and runs the export on that copy with omfp's profile environment; the snapshot is removed right
-//! after. omfp's omp then stores the logins with `omp auth import -`, the
-//! document going through a pipe only. omfp never reads a credential itself, and MCP server credentials
-//! (`mcp:<server>`) stay behind: only model-provider logins are copied.
+//! [`SupervisorConfig::user_omp_env`](super::SupervisorConfig::user_omp_env)), has SQLite write a copy of it into a
+//! private snapshot directory under `<data-dir>/login/` with `VACUUM INTO` ([`Snapshot`]), and runs the export on
+//! that copy with omfp's profile environment; the snapshot is removed right after. omfp's omp then stores the logins
+//! with `omp auth import -`, the document going through a pipe only. omfp never reads a credential itself, and MCP
+//! server credentials (`mcp:<server>`) stay behind: only model-provider logins are copied.
 
 use std::ffi::{OsStr, OsString};
-use std::fs::File;
 use std::future::Future;
-use std::io::{Read as _, Seek as _};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use omfp_protocol::{OmpLogin, OmpLogins};
-use rusqlite::Connection;
+use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use tracing::{info, warn};
@@ -31,15 +28,8 @@ use crate::omp::{LaunchSpec, StartError};
 /// The export document version omfp reads (omp 19.1.0's `omp auth export`).
 const EXPORT_VERSION: u64 = 1;
 
-/// How long copying the store waits for standalone omp's writers: its lock, or a write-ahead log that moved.
+/// How long copying the store waits for standalone omp's writers.
 const STORE_BUSY_TIMEOUT: Duration = Duration::from_secs(2);
-
-/// The pause between two tries of the store's lock or of a copy whose write-ahead log moved meanwhile.
-const STORE_RETRY: Duration = Duration::from_millis(5);
-
-/// The bytes of a write-ahead log's header: SQLite rewrites them (new salts) whenever it restarts or truncates the
-/// log, and only then (`wal.c`, "WAL Header Format").
-const WAL_HEADER: u64 = 32;
 
 /// The provider prefix of an MCP server's credential, which is no model-provider login.
 const MCP_PREFIX: &str = "mcp:";
@@ -159,7 +149,7 @@ async fn detached<T: Send + 'static>(
 }
 
 /// The value `key` has in the environment `overrides` make of `inherited` (the last override wins; `None` unsets).
-pub(super) fn variable(
+fn variable(
     overrides: &[(OsString, Option<OsString>)],
     key: &str,
     inherited: impl FnOnce(&str) -> Option<OsString>,
@@ -171,7 +161,7 @@ pub(super) fn variable(
 }
 
 /// `path` with `.` and `..` resolved lexically, as node's `path.normalize` does.
-pub(super) fn normalized(path: &Path) -> PathBuf {
+fn normalized(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for component in path.components() {
         match component {
@@ -224,9 +214,9 @@ fn profile_name(value: &OsStr) -> Option<String> {
     (valid && !reserved).then(|| name.to_owned())
 }
 
-/// The directory of the data files (`agent.db`, `blobs/`, `sessions/`, …) of the omp whose environment `var` gives,
+/// The directory of the data files (`agent.db`, `sessions/`, …) of the omp whose environment `var` gives,
 /// `cwd` being its working directory, mirroring omp 19.1.0's `DirResolver` and its `agentSubdir(…, "data")`
-/// (`getAgentDbPath`, `getBlobsDir`; `packages/utils/src/dirs.ts`; re-check on an omp upgrade, ENV-020):
+/// (`getAgentDbPath`; `packages/utils/src/dirs.ts`; re-check on an omp upgrade, ENV-020):
 /// - the base root is `path.join(HOME, PI_CONFIG_DIR || ".omp")`;
 /// - the profile is `OMP_PROFILE` when set (empty: the default), else `PI_PROFILE`; a refused name is the default;
 /// - a named profile's root is `<base>/profiles/<name>`, its agent directory `<root>/agent`; the default profile's
@@ -236,7 +226,7 @@ fn profile_name(value: &OsStr) -> Option<String> {
 ///   `$XDG_DATA_HOME/omp/profiles/<name>`) holds the data instead.
 ///
 /// omp's `.env` files, which may set these variables too, are not read. `None` without a `HOME`.
-pub(super) fn data_dir(
+fn data_dir(
     var: impl Fn(&str) -> Option<OsString>,
     cwd: &Path,
     exists: impl Fn(&Path) -> bool,
@@ -294,220 +284,23 @@ fn credential_store(
 /// Why the store could not be copied: never its content.
 #[derive(Debug)]
 enum CopyError {
-    Io(std::io::Error),
     Sqlite(rusqlite::Error),
-    /// Standalone omp kept writing for [`STORE_BUSY_TIMEOUT`].
-    Busy,
     /// The store went away since it was found.
     Gone,
-    /// Standalone omp left a multi-database transaction to roll back ([`names_super_journal`]).
-    SuperJournal,
 }
 
 impl std::fmt::Display for CopyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Io(error) => error.fmt(f),
             Self::Sqlite(error) => error.fmt(f),
-            Self::Busy => f.write_str("standalone omp kept writing it; try again"),
             Self::Gone => f.write_str("it went away"),
-            Self::SuperJournal => f.write_str(
-                "standalone omp left an unfinished multi-database transaction; run omp once, then try again",
-            ),
         }
-    }
-}
-
-impl From<std::io::Error> for CopyError {
-    fn from(error: std::io::Error) -> Self {
-        Self::Io(error)
     }
 }
 
 impl From<rusqlite::Error> for CopyError {
     fn from(error: rusqlite::Error) -> Self {
         Self::Sqlite(error)
-    }
-}
-
-/// `path` with `suffix` appended to its name (`agent.db` → `agent.db-wal`).
-fn suffixed(path: &Path, suffix: &str) -> PathBuf {
-    let mut name = path.as_os_str().to_owned();
-    name.push(suffix);
-    PathBuf::from(name)
-}
-
-/// SQLite's lock bytes in a database file (`os_unix.c`): `PENDING_BYTE`, then `RESERVED_BYTE`, then the
-/// `SHARED_SIZE` bytes from `SHARED_FIRST` that readers lock shared and a writer locks exclusively to write the file.
-const PENDING_BYTE: i64 = 0x4000_0000;
-const SHARED_FIRST: i64 = PENDING_BYTE + 2;
-const SHARED_SIZE: i64 = 510;
-
-/// A POSIX record lock's kind: `libc`'s `F_RDLCK` and `F_UNLCK` are `c_int` on Linux and `c_short` on macOS.
-#[derive(Clone, Copy)]
-enum RecordLock {
-    Read,
-    Unlock,
-}
-
-/// Sets (`kind`) a POSIX record lock on `len` bytes of `file` from `start`, without waiting.
-fn record_lock(file: &File, kind: RecordLock, start: i64, len: i64) -> nix::Result<()> {
-    use nix::fcntl::{FcntlArg, fcntl};
-    use nix::libc;
-    use std::os::fd::AsRawFd as _;
-    let kind = match kind {
-        RecordLock::Read => libc::F_RDLCK,
-        RecordLock::Unlock => libc::F_UNLCK,
-    };
-    let lock = libc::flock {
-        l_type: libc::c_short::try_from(kind).map_err(|_| nix::errno::Errno::EINVAL)?,
-        l_whence: libc::c_short::try_from(libc::SEEK_SET).map_err(|_| nix::errno::Errno::EINVAL)?,
-        l_start: start,
-        l_len: len,
-        l_pid: 0,
-    };
-    fcntl(file.as_raw_fd(), FcntlArg::F_SETLK(&lock)).map(drop)
-}
-
-/// Takes SQLite's own SHARED lock on `file`, the database file of standalone omp's store, as `unixLock` does: a read
-/// lock on `PENDING_BYTE` (refused while a writer waits for EXCLUSIVE), then a read lock on the shared range, then
-/// `PENDING_BYTE` released; it waits until `deadline` while a writer holds PENDING or EXCLUSIVE. Held, it lets
-/// readers and a writer's RESERVED lock be, but no writer gets EXCLUSIVE: in rollback-journal mode the database file
-/// holds a committed state and nobody rolls a hot journal back meanwhile, and the last connection of a write-ahead-log
-/// store cannot checkpoint and delete its log. `RESERVED_BYTE` stays free, so another process's check for a hot
-/// journal (`unixCheckReservedLock`) is not misled. Like SQLite's, it is a POSIX record lock (`F_SETLK`): it
-/// conflicts with other processes' locks only, and a process loses it when it closes any descriptor of the file, so
-/// the daemon copies one store at a time ([`COPIES`]) and reads the database file through `file` only. It goes
-/// with `file`.
-fn lock_shared(file: &File, deadline: Instant) -> Result<(), CopyError> {
-    use nix::errno::Errno;
-    loop {
-        let taken = record_lock(file, RecordLock::Read, PENDING_BYTE, 1).and_then(|()| {
-            let shared = record_lock(file, RecordLock::Read, SHARED_FIRST, SHARED_SIZE);
-            record_lock(file, RecordLock::Unlock, PENDING_BYTE, 1)?;
-            shared
-        });
-        match taken {
-            Ok(()) => return Ok(()),
-            Err(Errno::EAGAIN | Errno::EACCES) => {}
-            Err(errno) => return Err(CopyError::Io(errno.into())),
-        }
-        if Instant::now() >= deadline {
-            return Err(CopyError::Busy);
-        }
-        std::thread::sleep(STORE_RETRY);
-    }
-}
-
-/// The byte of a write-ahead log's index (`-shm`) a checkpoint locks exclusively (`os_unix.c` `UNIX_SHM_BASE`,
-/// `(22 + SQLITE_SHM_NLOCK) * 4`, plus `wal.c` `WAL_CKPT_LOCK`, 1).
-const SHM_CHECKPOINT_BYTE: i64 = (22 + 8) * 4 + 1;
-
-/// Keeps standalone omp from checkpointing its write-ahead log, while the returned file is held: a read lock on the
-/// checkpoint byte of `shm` (opened read-only: nothing is created or written), which every checkpoint of another
-/// process needs exclusively (`sqlite3WalCheckpoint`: `walLockExclusive(pWal, WAL_CKPT_LOCK, 1)`; an automatic
-/// checkpoint that cannot take it is skipped, writers go on). Waits until `deadline` while a checkpoint runs. `None`
-/// when there is no `shm`: no connection has the log open (each maps its index there), and none can delete it while
-/// [`lock_shared`] is held, so one that opens meanwhile leaves it behind for [`Snapshot::copy_with`] to see.
-fn hold_checkpoints(shm: &Path, deadline: Instant) -> Result<Option<File>, CopyError> {
-    use nix::errno::Errno;
-    let file = match File::open(shm) {
-        Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(CopyError::Io(error)),
-    };
-    loop {
-        match record_lock(&file, RecordLock::Read, SHM_CHECKPOINT_BYTE, 1) {
-            Ok(()) => return Ok(Some(file)),
-            Err(Errno::EAGAIN | Errno::EACCES) => {}
-            Err(errno) => return Err(CopyError::Io(errno.into())),
-        }
-        if Instant::now() >= deadline {
-            return Err(CopyError::Busy);
-        }
-        std::thread::sleep(STORE_RETRY);
-    }
-}
-
-/// Serializes the copies of the daemon: a second copy of the same store closing its descriptor would drop the first
-/// one's lock ([`lock_shared`]).
-static COPIES: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-/// The header of the write-ahead log at `path` (its first [`WAL_HEADER`] bytes, fewer when shorter), `None` when
-/// there is none.
-fn wal_header(path: &Path) -> std::io::Result<Option<Vec<u8>>> {
-    match File::open(path) {
-        Ok(file) => {
-            let mut header = Vec::new();
-            file.take(WAL_HEADER).read_to_end(&mut header)?;
-            Ok(Some(header))
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(error) => Err(error),
-    }
-}
-
-/// Copies the file at `from`, opened read-only, to `to` when it exists, else removes `to`; answers the bytes copied,
-/// `None` without a file.
-fn copy_file(from: &Path, to: &Path) -> std::io::Result<Option<Vec<u8>>> {
-    let bytes = match File::open(from) {
-        Ok(mut file) => {
-            let mut bytes = Vec::new();
-            file.read_to_end(&mut bytes)?;
-            bytes
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            return match std::fs::remove_file(to) {
-                Err(error) if error.kind() != std::io::ErrorKind::NotFound => Err(error),
-                _ => Ok(None),
-            };
-        }
-        Err(error) => return Err(error),
-    };
-    std::fs::write(to, &bytes)?;
-    Ok(Some(bytes))
-}
-
-/// The first [`WAL_HEADER`] bytes of `bytes`.
-fn header_of(bytes: &[u8]) -> Vec<u8> {
-    let header = usize::try_from(WAL_HEADER).map_or(bytes.len(), |header| header.min(bytes.len()));
-    bytes[..header].to_vec()
-}
-
-/// The 8 bytes every rollback journal header starts with, and a journal ends with when it names a super-journal
-/// (`pager.c`, `aJournalMagic`, "Super-journal name").
-const JOURNAL_MAGIC: [u8; 8] = [0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7];
-
-/// Whether the rollback journal `journal`, one SQLite would play back, ends with a super-journal's name: a multi-database transaction, whose
-/// rollback reads, and may delete, the super-journal beside standalone omp's store.
-fn names_super_journal(journal: &[u8]) -> bool {
-    // A journal SQLite plays back starts with the magic; a persisted one whose header was zeroed is not hot, whatever
-    // an older transaction left at its end.
-    journal.len() > 2 * JOURNAL_MAGIC.len()
-        && journal.starts_with(&JOURNAL_MAGIC)
-        && journal.ends_with(&JOURNAL_MAGIC)
-}
-
-/// The directory a [`Snapshot`] stages standalone omp's files in, removed with this value.
-struct Stage(PathBuf);
-
-impl Stage {
-    /// A new, empty `dir`; what an earlier copy left there goes first.
-    fn create(dir: PathBuf) -> std::io::Result<Self> {
-        match std::fs::remove_dir_all(&dir) {
-            Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(error),
-            _ => {}
-        }
-        std::fs::create_dir(&dir)?;
-        Ok(Self(dir))
-    }
-}
-
-impl Drop for Stage {
-    fn drop(&mut self) {
-        if let Err(error) = std::fs::remove_dir_all(&self.0) {
-            warn!(%error, dir = %self.0.display(), "cannot remove the staged copy of omp's logins");
-        }
     }
 }
 
@@ -538,104 +331,30 @@ impl Snapshot {
         }
     }
 
-    /// Copies the store at `store` into this snapshot: its state at a commit, with nothing written, created or locked
-    /// for writing in standalone omp's directory ([`Snapshot::copy_with`]).
+    /// Copies the store at `store` into this snapshot's `agent.db` with `VACUUM INTO`, one read transaction of
+    /// SQLite's own: it takes standalone omp's locks, replays its write-ahead log or rolls a hot journal back, and
+    /// waits up to [`STORE_BUSY_TIMEOUT`] for its writers. The store is opened read-only when its directory is not
+    /// writable, else read-write, never created; SQLite may leave `-wal`/`-shm` files beside it. Never reads a
+    /// credential row; an error names the reason only.
     fn copy(&self, store: &Path) -> Result<(), CopyError> {
-        self.copy_with(store, STORE_BUSY_TIMEOUT, || {})
-    }
-
-    /// [`Snapshot::copy`], waiting up to `timeout` for standalone omp's writers; `between` runs after each copy of
-    /// the database file, before its journal and log are copied (tests race a writer there).
-    ///
-    /// SQLite never opens standalone omp's files: they are read as bytes, never with `immutable=1` and never through
-    /// a connection that would create or update `agent.db-shm` beside them (a read-only connection still does).
-    /// Under [`lock_shared`] the database file, then `agent.db-journal` and `agent.db-wal` when they exist, are
-    /// staged in this snapshot's own `stage/`:
-    /// - rollback journal: no writer gets EXCLUSIVE while the lock is held, so the database file holds the last
-    ///   committed transaction; a journal beside it is a live writer's (RESERVED: its pages are not in the database
-    ///   file yet) or the hot journal of a writer that died mid-transaction, and either is staged with it and rolled
-    ///   back in `stage/` when SQLite opens the copy there, giving that committed state. A journal naming a
-    ///   super-journal (a multi-database transaction) is not copied: its rollback would read, and may delete, the
-    ///   super-journal beside the store, and under the lock it is a dead writer's (a live one names its super-journal
-    ///   only once it holds EXCLUSIVE) that nobody can roll back meanwhile, so the copy fails at once;
-    /// - write-ahead log: writers append to the log, and only a checkpoint writes the database file (or the last
-    ///   connection closing, which needs the EXCLUSIVE lock [`lock_shared`] excludes). Each try holds
-    ///   [`hold_checkpoints`]: no other process checkpoints meanwhile, so the database file is the one state the
-    ///   log's frames apply to, and SQLite replays the copied frames over it up to the last commit. Without an index
-    ///   (`-shm`) no connection has the log open; the try counts only if none appeared by its end. A log restarted
-    ///   meanwhile (a writer may restart it once everything is checkpointed, which leaves the database file alone)
-    ///   gets a new header, with a checkpoint sequence and a first salt that grow, so the header read before, the
-    ///   one copied and the one read after must be equal.
-    ///
-    /// SQLite then opens the staged copy in `stage/`, with its own `-shm` there, and `VACUUM INTO` writes the
-    /// snapshot's `agent.db`; `stage/` goes. Never reads a credential row; an error names the reason only.
-    fn copy_with(
-        &self,
-        store: &Path,
-        timeout: Duration,
-        mut between: impl FnMut(),
-    ) -> Result<(), CopyError> {
-        let copies = COPIES
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let deadline = Instant::now() + timeout;
-        let (journal, wal, shm) = (
-            suffixed(store, "-journal"),
-            suffixed(store, "-wal"),
-            suffixed(store, "-shm"),
-        );
-        let stage = Stage::create(self.dir.join("stage"))?;
-        let staged = stage.0.join(STORE);
-        let mut database = match File::open(store) {
-            Ok(file) => file,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                return Err(CopyError::Gone);
-            }
-            Err(error) => return Err(CopyError::Io(error)),
-        };
-        lock_shared(&database, deadline)?;
-        let read = |database: &mut File| -> std::io::Result<Vec<u8>> {
-            let mut bytes = Vec::new();
-            database.rewind()?;
-            database.read_to_end(&mut bytes)?;
-            Ok(bytes)
-        };
-        loop {
-            let checkpoints = hold_checkpoints(&shm, deadline)?;
-            let before = wal_header(&wal)?;
-            let bytes = read(&mut database)?;
-            std::fs::write(&staged, &bytes)?;
-            between();
-            // Under the SHARED lock such a journal is a dead writer's (a live one names its super-journal only
-            // once it holds EXCLUSIVE), and nobody can roll it back before the lock goes: no use waiting.
-            if copy_file(&journal, &suffixed(&staged, "-journal"))?
-                .as_deref()
-                .is_some_and(names_super_journal)
-            {
-                return Err(CopyError::SuperJournal);
-            }
-            let copied = copy_file(&wal, &suffixed(&staged, "-wal"))?.map(|wal| header_of(&wal));
-            let after = wal_header(&wal)?;
-            // Without an index at first, a connection that opened the log meanwhile may have checkpointed it.
-            let quiet = checkpoints.is_some() || !shm.exists();
-            drop(checkpoints);
-            if quiet && before == copied && copied == after {
-                break;
-            }
-            if Instant::now() >= deadline {
-                return Err(CopyError::Busy);
-            }
-            std::thread::sleep(STORE_RETRY);
+        if !store.is_file() {
+            return Err(CopyError::Gone);
         }
-        // The lock goes with the file: everything below happens in omfp's own directory.
-        drop(database);
-        drop(copies);
+        let writable = store
+            .parent()
+            .is_some_and(|dir| nix::unistd::access(dir, nix::unistd::AccessFlags::W_OK).is_ok());
+        let mode = if writable {
+            OpenFlags::SQLITE_OPEN_READ_WRITE
+        } else {
+            OpenFlags::SQLITE_OPEN_READ_ONLY
+        };
+        let db = Connection::open_with_flags(store, mode | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
+        db.busy_timeout(STORE_BUSY_TIMEOUT)?;
         let into = self.store();
         let into = into
             .to_str()
             .ok_or_else(|| rusqlite::Error::InvalidPath(into.clone()))?;
-        Connection::open(&staged)?.execute("VACUUM INTO ?1", [into])?;
-        drop(stage);
+        db.execute("VACUUM INTO ?1", [into])?;
         Ok(())
     }
 
@@ -1009,14 +728,11 @@ mod tests {
         );
     }
 
-    /// A directory's entries and their bytes.
-    fn listing(dir: &Path) -> Vec<(OsString, Vec<u8>)> {
+    /// A directory's entry names.
+    fn listing(dir: &Path) -> Vec<OsString> {
         let mut entries: Vec<_> = std::fs::read_dir(dir)
             .unwrap()
-            .map(|entry| {
-                let entry = entry.unwrap();
-                (entry.file_name(), std::fs::read(entry.path()).unwrap())
-            })
+            .map(|entry| entry.unwrap().file_name())
             .collect();
         entries.sort();
         entries
@@ -1042,463 +758,98 @@ mod tests {
             .unwrap()
     }
 
+    /// `<dir>/standalone`, created.
+    fn standalone(dir: &Path) -> PathBuf {
+        let standalone = dir.join("standalone");
+        std::fs::create_dir(&standalone).unwrap();
+        standalone
+    }
+
     // spec: DMN-229
     #[test]
-    fn a_store_with_a_live_write_ahead_log_is_copied_with_its_rows_without_writing_beside_it() {
+    fn a_store_with_an_open_writer_and_a_live_write_ahead_log_is_copied_with_its_rows() {
         let dir = tempfile::tempdir().unwrap();
-        let standalone = dir.path().join("standalone");
-        std::fs::create_dir(&standalone).unwrap();
-        let store = standalone.join(STORE);
+        let store = standalone(dir.path()).join(STORE);
         let writer = wal_store(&store, 3);
         assert!(
-            standalone.join("agent.db-wal").exists(),
+            store.with_file_name("agent.db-wal").exists(),
             "the rows are in the log only"
         );
-        let before = listing(&standalone);
 
         let snapshot = Snapshot::create(&dir.path().join("login")).unwrap();
         snapshot.copy(&store).unwrap();
 
         assert_eq!(rows(&snapshot.store()), 3);
-        assert_eq!(listing(&standalone), before);
-        assert_eq!(listing(snapshot.dir()).len(), 1, "only agent.db is left");
-        drop(writer);
+        assert_eq!(listing(snapshot.dir()), [OsString::from(STORE)]);
+        writer.execute("INSERT INTO t (n) VALUES (3)", []).unwrap();
+        assert_eq!(rows(&store), 4, "the writer goes on");
     }
 
     // spec: DMN-229
     #[test]
-    fn a_store_without_a_write_ahead_log_is_copied_without_writing_beside_it() {
-        let dir = tempfile::tempdir().unwrap();
-        let standalone = dir.path().join("standalone");
-        std::fs::create_dir(&standalone).unwrap();
-        let store = standalone.join(STORE);
-        drop(wal_store(&store, 2));
-        let before = listing(&standalone);
-        assert_eq!(before.len(), 1, "a closed WAL store has no log");
-
-        let snapshot = Snapshot::create(&dir.path().join("login")).unwrap();
-        snapshot.copy(&store).unwrap();
-
-        assert_eq!(listing(&standalone), before);
-        assert_eq!(rows(&snapshot.store()), 2);
-    }
-
-    /// A WAL-mode store at `<dir>/standalone/agent.db` whose `rows` rows are in its log only, with no `-shm` and no
-    /// connection: what a crashed omp leaves.
-    fn wal_without_shm(dir: &Path, rows: i64) -> PathBuf {
-        let live = dir.join("live");
-        std::fs::create_dir(&live).unwrap();
-        let writer = wal_store(&live.join(STORE), rows);
-        let standalone = dir.join("standalone");
-        std::fs::create_dir(&standalone).unwrap();
-        for name in [STORE.to_owned(), format!("{STORE}-wal")] {
-            std::fs::copy(live.join(&name), standalone.join(&name)).unwrap();
-        }
-        drop(writer);
-        standalone.join(STORE)
-    }
-
-    // spec: DMN-229
-    #[test]
-    fn a_write_ahead_log_without_its_shm_is_copied_and_the_standalone_tree_stays_byte_identical() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = wal_without_shm(dir.path(), 4);
-        let standalone = store.parent().unwrap().to_owned();
-        let before = listing(&standalone);
-        assert_eq!(before.len(), 2, "agent.db and agent.db-wal, no -shm");
-
-        let snapshot = Snapshot::create(&dir.path().join("login")).unwrap();
-        snapshot.copy(&store).unwrap();
-
-        assert_eq!(
-            listing(&standalone),
-            before,
-            "no -shm, nothing replayed there"
-        );
-        assert_eq!(rows(&snapshot.store()), 4, "the log's rows are in the copy");
-    }
-
-    // spec: DMN-229
-    #[test]
-    fn a_store_with_a_write_ahead_log_in_a_directory_omfp_cannot_write_is_copied() {
+    fn a_store_in_a_directory_omfp_cannot_write_is_copied() {
         use std::os::unix::fs::PermissionsExt;
         if rustix::process::geteuid().is_root() {
             // root writes whatever the mode says: nothing to check.
             return;
         }
         let dir = tempfile::tempdir().unwrap();
-        let store = wal_without_shm(dir.path(), 2);
-        let standalone = store.parent().unwrap().to_owned();
+        let standalone = standalone(dir.path());
+        let store = standalone.join(STORE);
+        let writer = wal_store(&store, 2);
         let before = listing(&standalone);
         std::fs::set_permissions(&standalone, std::fs::Permissions::from_mode(0o555)).unwrap();
 
         let snapshot = Snapshot::create(&dir.path().join("login")).unwrap();
         let copied = snapshot.copy(&store);
+        let after = listing(&standalone);
         std::fs::set_permissions(&standalone, std::fs::Permissions::from_mode(0o755)).unwrap();
+        drop(writer);
 
         copied.unwrap();
-        assert_eq!(listing(&standalone), before);
+        assert_eq!(after, before);
         assert_eq!(rows(&snapshot.store()), 2);
     }
 
-    /// A rollback-journal store at `path` of `rows` rows of 0, each about a kilobyte, so a transaction touching them
-    /// all spills pages into the database file before it commits.
-    fn journal_store(path: &Path, rows: i64) -> Connection {
-        let db = Connection::open(path).unwrap();
-        db.execute_batch(
-            "PRAGMA journal_mode=DELETE; PRAGMA cache_size=5; CREATE TABLE t (n INTEGER, pad BLOB);",
-        )
-        .unwrap();
-        for _ in 0..rows {
-            db.execute("INSERT INTO t (n, pad) VALUES (0, zeroblob(1000))", [])
+    // spec: DMN-229
+    #[test]
+    fn a_writer_that_died_mid_transaction_leaves_its_last_committed_state_in_the_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let live = dir.path().join("live");
+        std::fs::create_dir(&live).unwrap();
+        let writer = Connection::open(live.join(STORE)).unwrap();
+        writer
+            .execute_batch(
+                "PRAGMA journal_mode=DELETE; PRAGMA cache_size=5; CREATE TABLE t (n INTEGER, pad BLOB);",
+            )
+            .unwrap();
+        for _ in 0..200 {
+            writer
+                .execute("INSERT INTO t (n, pad) VALUES (0, zeroblob(1000))", [])
                 .unwrap();
         }
-        db
-    }
-
-    /// The distinct values of `t.n` in the store at `store`: one at every transaction boundary.
-    fn values(store: &Path) -> Vec<i64> {
-        let db = Connection::open(store).unwrap();
-        let mut statement = db.prepare("SELECT DISTINCT n FROM t ORDER BY n").unwrap();
-        statement
-            .query_map([], |row| row.get(0))
-            .unwrap()
-            .map(Result::unwrap)
-            .collect()
-    }
-
-    // spec: DMN-229
-    #[test]
-    fn a_writer_that_died_mid_transaction_leaves_a_hot_journal_rolled_back_in_the_copy_only() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = hot_journal_store(dir.path());
-        let standalone = store.parent().unwrap().to_owned();
-        let before = listing(&standalone);
-        assert_eq!(before.len(), 2, "agent.db and its hot journal");
-        let torn = Connection::open_with_flags(
-            format!("file:{}?immutable=1", store.display()),
-            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
-        )
-        .unwrap()
-        .query_row("SELECT count(DISTINCT n) FROM t", [], |row| {
-            row.get::<_, i64>(0)
-        })
-        .unwrap();
-        assert_eq!(
-            torn, 2,
-            "the database file alone holds half the transaction"
-        );
-
-        let snapshot = Snapshot::create(&dir.path().join("login")).unwrap();
-        snapshot.copy(&store).unwrap();
-
-        assert_eq!(values(&snapshot.store()), [0], "the last committed state");
-        assert_eq!(
-            listing(&standalone),
-            before,
-            "the hot journal stays where it is"
-        );
-    }
-
-    /// Names the store [`journal_writer_process`] writes, in a child of this test binary: SQLite's POSIX locks
-    /// conflict only across processes.
-    const WRITER_STORE: &str = "OMFP_TEST_JOURNAL_WRITER_STORE";
-
-    /// No test of its own: the body of the writer process
-    /// [`a_rollback_journal_writer_mid_transaction_is_waited_for_never_copied_halfway`] starts. It sets every row of
-    /// `t` to 1 in one transaction, spilling pages into the database file, says `in-transaction`, waits for a line on
-    /// stdin, commits and says `committed`.
-    #[test]
-    fn journal_writer_process() {
-        let Some(store) = std::env::var_os(WRITER_STORE) else {
-            return;
-        };
-        let db = Connection::open(store).unwrap();
-        db.execute_batch("PRAGMA cache_size=5; BEGIN; UPDATE t SET n = 1;")
-            .unwrap();
-        println!("in-transaction");
-        let mut line = String::new();
-        std::io::stdin().read_line(&mut line).unwrap();
-        db.execute_batch("COMMIT;").unwrap();
-        println!("committed");
-    }
-
-    /// Reads `lines` until one is `expected`.
-    fn wait_for(lines: &mut impl Iterator<Item = std::io::Result<String>>, expected: &str) {
-        for line in lines.by_ref() {
-            if line.unwrap().trim_end().ends_with(expected) {
-                return;
-            }
-        }
-        panic!("the writer process ended before saying {expected}");
-    }
-
-    // spec: DMN-229
-    #[test]
-    fn a_rollback_journal_writer_mid_transaction_is_waited_for_never_copied_halfway() {
-        use std::io::{BufRead as _, Write as _};
-        let dir = tempfile::tempdir().unwrap();
-        let standalone = dir.path().join("standalone");
-        std::fs::create_dir(&standalone).unwrap();
-        let store = standalone.join(STORE);
-        drop(journal_store(&store, 200));
-        let mut writer = std::process::Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "supervisor::import::tests::journal_writer_process",
-                "--nocapture",
-                "--test-threads=1",
-            ])
-            .env(WRITER_STORE, &store)
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .spawn()
-            .unwrap();
-        let mut lines = std::io::BufReader::new(writer.stdout.take().unwrap()).lines();
-        wait_for(&mut lines, "in-transaction");
-        assert!(
-            standalone.join("agent.db-journal").exists(),
-            "the writer is mid-transaction"
-        );
-
-        let snapshot = Snapshot::create(&dir.path().join("login")).unwrap();
-        let error = snapshot
-            .copy_with(&store, Duration::from_millis(50), || {})
-            .unwrap_err();
-        assert!(matches!(error, CopyError::Busy), "{error}");
-        assert!(!snapshot.store().exists(), "no half-written copy");
-
-        writeln!(writer.stdin.take().unwrap()).unwrap();
-        wait_for(&mut lines, "committed");
-        assert!(writer.wait().unwrap().success());
-        snapshot.copy(&store).unwrap();
-        assert_eq!(values(&snapshot.store()), [1], "the committed transaction");
-    }
-
-    /// Names the store [`checkpoint_process`] checkpoints, in a child of this test binary.
-    const CHECKPOINT_STORE: &str = "OMFP_TEST_CHECKPOINT_STORE";
-
-    /// No test of its own: the body of the process
-    /// [`another_process_cannot_checkpoint_the_log_while_the_store_is_copied`] starts. It checkpoints the log and
-    /// empties it (`TRUNCATE`) without waiting, and says whether that was refused: `checkpoint busy=<0|1>`.
-    #[test]
-    fn checkpoint_process() {
-        let Some(store) = std::env::var_os(CHECKPOINT_STORE) else {
-            return;
-        };
-        let db = Connection::open(store).unwrap();
-        db.busy_timeout(Duration::ZERO).unwrap();
-        let busy: i64 = db
-            .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| row.get(0))
-            .unwrap();
-        println!("checkpoint busy={busy}");
-    }
-
-    /// Runs the test `name` of this binary in a child process with `key` naming `store`, and answers its stdout.
-    fn child(name: &str, key: &str, store: &Path) -> String {
-        let output = std::process::Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                &format!("supervisor::import::tests::{name}"),
-                "--nocapture",
-                "--test-threads=1",
-            ])
-            .env(key, store)
-            .output()
-            .unwrap();
-        assert!(output.status.success(), "{output:?}");
-        String::from_utf8(output.stdout).unwrap()
-    }
-
-    // spec: DMN-229
-    #[test]
-    fn another_process_cannot_checkpoint_the_log_while_the_store_is_copied() {
-        let dir = tempfile::tempdir().unwrap();
-        let standalone = dir.path().join("standalone");
-        std::fs::create_dir(&standalone).unwrap();
-        let store = standalone.join(STORE);
-        // A live omp: its rows in the log, the log's index beside it.
-        let writer = wal_store(&store, 3);
-        assert!(standalone.join("agent.db-shm").exists());
-
-        let snapshot = Snapshot::create(&dir.path().join("login")).unwrap();
-        let mut during = None;
-        snapshot
-            .copy_with(&store, STORE_BUSY_TIMEOUT, || {
-                if during.is_none() {
-                    // A checkpoint now would write the database file while it is being copied: in two reads of an
-                    // empty log nothing would show it.
-                    during = Some(child("checkpoint_process", CHECKPOINT_STORE, &store));
-                }
-            })
-            .unwrap();
-
-        let during = during.unwrap();
-        assert!(
-            during
-                .lines()
-                .any(|line| line.trim_end().ends_with("checkpoint busy=1")),
-            "the checkpoint must wait for the copy: {during}"
-        );
-        assert_eq!(rows(&snapshot.store()), 3);
-        let after = child("checkpoint_process", CHECKPOINT_STORE, &store);
-        assert!(
-            after
-                .lines()
-                .any(|line| line.trim_end().ends_with("checkpoint busy=0")),
-            "the copy left nothing behind: {after}"
-        );
-        drop(writer);
-    }
-
-    /// Names the store [`hot_journal_reader_process`] reads, in a child of this test binary.
-    const READER_STORE: &str = "OMFP_TEST_HOT_JOURNAL_READER_STORE";
-
-    /// No test of its own: the body of the reader process
-    /// [`a_reader_of_standalone_omp_still_sees_a_hot_journal_while_the_store_is_copied`] starts. It reads the
-    /// distinct values of `t` without waiting and says them, or `busy`.
-    #[test]
-    fn hot_journal_reader_process() {
-        let Some(store) = std::env::var_os(READER_STORE) else {
-            return;
-        };
-        let db = Connection::open(store).unwrap();
-        db.busy_timeout(Duration::ZERO).unwrap();
-        match db.query_row("SELECT count(DISTINCT n) FROM t", [], |row| {
-            row.get::<_, i64>(0)
-        }) {
-            Ok(values) => println!("values {values}"),
-            Err(rusqlite::Error::SqliteFailure(error, _))
-                if error.code == rusqlite::ErrorCode::DatabaseBusy =>
-            {
-                println!("busy");
-            }
-            Err(error) => panic!("{error}"),
-        }
-    }
-
-    /// The files a writer that died mid-transaction leaves at `<dir>/standalone`: `agent.db`, half updated, and its
-    /// hot journal.
-    fn hot_journal_store(dir: &Path) -> PathBuf {
-        let live = dir.join("live");
-        std::fs::create_dir(&live).unwrap();
-        let writer = journal_store(&live.join(STORE), 200);
-        // A transaction setting every row to 1 spills pages into the database file before it commits; the files as
-        // they are now are what a writer that dies here leaves.
+        // A transaction touching every row spills pages into the database file before it commits; the files as they
+        // are now are what a writer that dies here leaves.
         writer.execute_batch("BEGIN; UPDATE t SET n = 1;").unwrap();
-        let standalone = dir.join("standalone");
-        std::fs::create_dir(&standalone).unwrap();
+        let standalone = standalone(dir.path());
         for name in [STORE.to_owned(), format!("{STORE}-journal")] {
             std::fs::copy(live.join(&name), standalone.join(&name)).unwrap();
         }
         writer.execute_batch("ROLLBACK;").unwrap();
         drop(writer);
-        standalone.join(STORE)
-    }
-
-    // spec: DMN-229
-    #[test]
-    fn a_reader_of_standalone_omp_still_sees_a_hot_journal_while_the_store_is_copied() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = hot_journal_store(dir.path());
-        let standalone = store.parent().unwrap().to_owned();
-        let before = listing(&standalone);
 
         let snapshot = Snapshot::create(&dir.path().join("login")).unwrap();
-        let mut read = None;
-        snapshot
-            .copy_with(&store, STORE_BUSY_TIMEOUT, || {
-                if read.is_none() {
-                    // Another process of standalone omp reads while the copy holds its lock.
-                    read = Some(child("hot_journal_reader_process", READER_STORE, &store));
-                }
-            })
-            .unwrap();
+        snapshot.copy(&standalone.join(STORE)).unwrap();
 
-        let read = read.unwrap();
-        assert!(
-            read.lines().any(|line| line.trim_end().ends_with("busy")),
-            "the reader must not take the hot journal for a live writer's and read half a transaction: {read}"
-        );
-        assert_eq!(values(&snapshot.store()), [0]);
-        assert_eq!(listing(&standalone), before);
-    }
-
-    // spec: DMN-229
-    #[test]
-    fn a_hot_journal_naming_a_super_journal_is_not_rolled_back() {
-        let dir = tempfile::tempdir().unwrap();
-        let store = hot_journal_store(dir.path());
-        let standalone = store.parent().unwrap().to_owned();
-        // What a multi-database transaction appends to its journal: the super-journal's name, its length and checksum,
-        // and the journal magic (`pager.c`, `writeSuperJournal`).
-        // A name SQLite takes for a super-journal (`pagerIsSuperJrnlName`: `-mj`, nine hex digits, the seventh `9`).
-        let name = standalone.join("agent.db-mj000000900");
-        std::fs::write(&name, b"").unwrap();
-        let mut record = Vec::new();
-        record.extend_from_slice(&(u32::try_from(PENDING_BYTE / 4096).unwrap() + 1).to_be_bytes());
-        record.extend_from_slice(name.as_os_str().as_encoded_bytes());
-        let length = u32::try_from(name.as_os_str().len()).unwrap();
-        record.extend_from_slice(&length.to_be_bytes());
-        let checksum = name
-            .as_os_str()
-            .as_encoded_bytes()
-            .iter()
-            .fold(0_u32, |sum, byte| sum.wrapping_add(u32::from(*byte)));
-        record.extend_from_slice(&checksum.to_be_bytes());
-        record.extend_from_slice(&JOURNAL_MAGIC);
-        let journal = standalone.join("agent.db-journal");
-        let mut bytes = std::fs::read(&journal).unwrap();
-        bytes.extend_from_slice(&record);
-        std::fs::write(&journal, bytes).unwrap();
-        let before = listing(&standalone);
-
-        let snapshot = Snapshot::create(&dir.path().join("login")).unwrap();
-        let error = snapshot
-            .copy_with(&store, STORE_BUSY_TIMEOUT, || {})
-            .unwrap_err();
-
-        assert!(matches!(error, CopyError::SuperJournal), "{error}");
-        // The same journal persisted with its header zeroed is no hot journal: nothing to refuse.
-        let mut persisted = std::fs::read(&journal).unwrap();
-        persisted[..JOURNAL_MAGIC.len()].fill(0);
-        assert!(!names_super_journal(&persisted));
-        assert_eq!(listing(&standalone), before, "the super-journal stays");
-        assert!(!snapshot.store().exists());
-    }
-
-    /// The header check alone: the writer runs in this process, whose locks never conflict with the copy's, so the
-    /// checkpoint before its restart is not excluded here as it is for another process
-    /// ([`another_process_cannot_checkpoint_the_log_while_the_store_is_copied`]).
-    // spec: DMN-229
-    #[test]
-    fn a_write_ahead_log_restarted_while_the_database_file_is_copied_is_copied_again() {
-        let dir = tempfile::tempdir().unwrap();
-        let standalone = dir.path().join("standalone");
-        std::fs::create_dir(&standalone).unwrap();
-        let store = standalone.join(STORE);
-        let writer = wal_store(&store, 3);
-
-        let snapshot = Snapshot::create(&dir.path().join("login")).unwrap();
-        let mut copies = 0;
-        snapshot
-            .copy_with(&store, STORE_BUSY_TIMEOUT, || {
-                copies += 1;
-                if copies == 1 {
-                    // omp checkpoints everything, truncates the log and writes again: its new frames replace
-                    // the ones the database file copied before lacked.
-                    writer
-                        .execute_batch(
-                            "PRAGMA wal_checkpoint(TRUNCATE); INSERT INTO t (n) VALUES (3);",
-                        )
-                        .unwrap();
-                }
-            })
-            .unwrap();
-
-        assert_eq!(copies, 2, "the first copy was dropped");
-        assert_eq!(rows(&snapshot.store()), 4);
-        drop(writer);
+        let values: Vec<i64> = Connection::open(snapshot.store())
+            .unwrap()
+            .prepare("SELECT DISTINCT n FROM t")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(values, [0], "the last committed state");
     }
 
     // spec: DMN-229
@@ -1525,7 +876,7 @@ mod tests {
         assert_eq!(mode & 0o777, 0o700);
         snapshot.copy(&store).unwrap();
         drop(snapshot);
-        assert_eq!(listing(&login), []);
+        assert_eq!(listing(&login), Vec::<OsString>::new());
 
         let garbage = dir.path().join("garbage.db");
         std::fs::write(&garbage, "not a database, long enough to have a header").unwrap();
@@ -1535,9 +886,12 @@ mod tests {
             !error.to_string().contains("not a database, long"),
             "{error}"
         );
-        assert!(snapshot.copy(&dir.path().join("missing.db")).is_err());
+        assert!(matches!(
+            snapshot.copy(&dir.path().join("missing.db")),
+            Err(CopyError::Gone)
+        ));
         assert!(!dir.path().join("missing.db").exists(), "nothing created");
         drop(snapshot);
-        assert_eq!(listing(&login), []);
+        assert_eq!(listing(&login), Vec::<OsString>::new());
     }
 }

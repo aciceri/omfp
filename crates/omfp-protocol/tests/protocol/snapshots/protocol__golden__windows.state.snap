@@ -39,16 +39,14 @@ expression: golden
       "defaultView": "default",
       "fileErrors": [
         {
-          "file": ".omfp/views/ops.tsx",
-          "kind": "view",
-          "message": "Row: unknown widget ./widgets/nope"
+          "file": "user",
+          "message": "TypeError: x is undefined"
         }
       ],
       "focused": true,
       "threadId": "01JD8X3Q4T9V2W6Y5Z7A1B3C4D",
       "views": [
         {
-          "file": null,
           "id": "default",
           "source": "views_json",
           "title": "Default",
@@ -59,11 +57,12 @@ expression: golden
           ]
         },
         {
-          "file": "./views/ops.tsx",
           "id": "ops",
           "source": "workspace_init",
           "title": "Ops",
-          "widgets": null
+          "widgets": [
+            "./widgets/tests"
+          ]
         }
       ],
       "widgets": [

@@ -23,10 +23,11 @@ use tokio::runtime::Handle;
 use tokio::task::JoinHandle;
 use tracing::warn;
 
-use super::super::convert::{bad_request, internal, supervisor_error};
+use super::super::convert::{bad_request, blocking, internal};
 use super::windows::Windows;
-use super::{IndexLog, Services, blocking, lock};
+use super::{IndexLog, Services, lock};
 use crate::agent::{AgentProcess, OmpCall};
+use crate::supervisor::SupervisorError;
 
 /// How long the window may take to answer a `login_input`: omp's own wait for the pasted code.
 const INPUT_TIMEOUT: Duration = Duration::from_mins(10);
@@ -43,7 +44,7 @@ async fn run<T: DeserializeOwned + Send + 'static>(
     blocking(move || {
         let value = process
             .call(call)
-            .map_err(|error| supervisor_error(error.into()))?;
+            .map_err(|error| ErrorBody::from(SupervisorError::from(error)))?;
         serde_json::from_value(value).map_err(internal)
     })
     .await
@@ -265,17 +266,13 @@ fn cancel(id: String) -> ExtensionUiResponse {
 impl Services {
     /// `auth.status` (PRT-140, DMN-235): how many models omp can use, checked by a login omp the first time.
     pub async fn auth_status(&self) -> Result<AuthStatus, ErrorBody> {
-        let models = self
-            .supervisor
-            .usable_models()
-            .await
-            .map_err(supervisor_error)?;
+        let models = self.supervisor.usable_models().await?;
         Ok(AuthStatus { models })
     }
 
     /// Lists usable models without creating or starting a thread (UI-023, UI-030).
     pub async fn auth_models(&self) -> Result<omp_rpc::GetAvailableModelsResult, ErrorBody> {
-        let omp = self.supervisor.auth_omp().await.map_err(supervisor_error)?;
+        let omp = self.supervisor.auth_omp().await?;
         let listed = run(&omp.process, OmpCall::AvailableModels).await;
         close(omp.process).await;
         listed
@@ -283,7 +280,7 @@ impl Services {
 
     /// `auth.providers` (PRT-129, DMN-219): omp's OAuth providers, from a login omp started for the question.
     pub async fn auth_providers(&self) -> Result<AuthProviders, ErrorBody> {
-        let omp = self.supervisor.auth_omp().await.map_err(supervisor_error)?;
+        let omp = self.supervisor.auth_omp().await?;
         let listed = providers(&omp.process).await;
         close(omp.process).await;
         Ok(AuthProviders { providers: listed? })
@@ -303,7 +300,7 @@ impl Services {
                 "no omfp window is open to show the login: open omfp and log in there",
             )
         })?;
-        let omp = self.supervisor.auth_omp().await.map_err(supervisor_error)?;
+        let omp = self.supervisor.auth_omp().await?;
         let process = omp.process;
         let provider = match providers(&process)
             .await
@@ -362,7 +359,7 @@ impl Services {
                 ErrorCode::Conflict,
                 format!("the login to {} was cancelled", provider.name),
             )),
-            Err(error) => Err(supervisor_error(error.into())),
+            Err(error) => Err(SupervisorError::from(error).into()),
         }
     }
 
@@ -374,7 +371,7 @@ impl Services {
         let supervisor = self.supervisor.clone();
         tokio::spawn(async move {
             let _writes = supervisor.credential_writes().await;
-            let omp = supervisor.auth_omp().await.map_err(supervisor_error)?;
+            let omp = supervisor.auth_omp().await?;
             let result = logout(&omp.process, provider_id).await;
             close(omp.process).await;
             if result.is_ok() {
@@ -388,7 +385,7 @@ impl Services {
 
     /// `auth.importable` (PRT-136, DMN-229): the provider logins standalone omp holds that omfp could copy.
     pub async fn auth_importable(&self) -> Result<OmpLogins, ErrorBody> {
-        self.supervisor.omp_logins().await.map_err(supervisor_error)
+        self.supervisor.omp_logins().await.map_err(ErrorBody::from)
     }
 
     /// `auth.import` (PRT-137, DMN-230): copies standalone omp's provider logins into omfp's profile.
@@ -396,7 +393,7 @@ impl Services {
         self.supervisor
             .import_omp_logins()
             .await
-            .map_err(supervisor_error)
+            .map_err(ErrorBody::from)
     }
 }
 
@@ -510,14 +507,14 @@ mod tests {
         let data = DataDir::new(dir.join("data"));
         std::fs::create_dir_all(data.root()).unwrap();
         let root = dir.join("workspaces");
-        let store = Arc::new(Store::open(&data.db(), &root).unwrap());
+        let store = Arc::new(Store::open(&data.db()).unwrap());
         let threads = Arc::new(Threads::new(Arc::clone(&store), data.clone()));
         let workspaces = Arc::new(Workspaces::new(
             Arc::clone(&store),
             Arc::new(FakeGit::new()) as Arc<dyn Git>,
             root,
         ));
-        let widgets = Arc::new(Widgets::new(data.widgets(), None));
+        let widgets = Arc::new(Widgets::new(None));
         let mut config = SupervisorConfig::new("omp");
         config.user_omp_env = omfp_testkit::standalone_omp_env(&home);
         let supervisor = Supervisor::new(

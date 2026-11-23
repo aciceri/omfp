@@ -5,54 +5,11 @@
 mod client;
 mod common;
 
-use clap::Parser;
 use client::{Client, Follower};
-use common::{Harness, system_prompt};
+use common::{Harness, omp_daemon, system_prompt};
 use fake_llm::{Matcher, Reply, Step, ToolCall};
-use omfp_daemon::config::{Cli, Config};
-use omfp_daemon::{DaemonHandle, Ports, start_with};
-use omfp_testkit::{FAKE_MODEL, FAKE_PROVIDER, omp_bin};
+use omfp_testkit::{FAKE_MODEL, FAKE_PROVIDER};
 use serde_json::{Value, json};
-use tempfile::TempDir;
-
-struct Daemon {
-    handle: DaemonHandle,
-    _data: TempDir,
-}
-
-impl Daemon {
-    /// A daemon on the real ports with omp isolated by `harness`, without title generation (DMN-073).
-    async fn start(harness: &Harness) -> Self {
-        let data = tempfile::tempdir().unwrap();
-        let omp = omp_bin();
-        let workspaces = data.path().join("workspaces");
-        let cli = Cli::try_parse_from([
-            "daemon",
-            "--bind",
-            "127.0.0.1:0",
-            "--data-dir",
-            data.path().to_str().unwrap(),
-            "--workspaces-root",
-            workspaces.to_str().unwrap(),
-            "--omp-bin",
-            &omp,
-            "--no-title-generation",
-        ])
-        .unwrap();
-        let config = Config::from_cli(cli, None, None).unwrap();
-        let mut ports = Ports::resolve(&config).unwrap();
-        ports.omp_env = harness.env.prepare_omfp_profile(data.path()).unwrap();
-        let handle = start_with(config, ports).await.unwrap();
-        Self {
-            handle,
-            _data: data,
-        }
-    }
-
-    async fn client(&self) -> Client {
-        Client::hello(self.handle.addr(), self.handle.token().expose(), "test").await
-    }
-}
 
 /// The orchestrator's prompt and the first message it gives the thread it spawns.
 const ORCHESTRATE: &str = "ORCHESTRATE: spawn a child and wait for it";
@@ -133,8 +90,8 @@ fn tool_result(request: &Value, call_id: &str) -> String {
 #[tokio::test(flavor = "multi_thread")]
 async fn an_orchestrator_lists_and_creates_threads_with_omfp_call_and_waits_for_its_child() {
     let harness = Harness::new(script()).await;
-    let daemon = Daemon::start(&harness).await;
-    let mut client = daemon.client().await;
+    let (daemon, _data) = omp_daemon(&harness, &["--no-title-generation"]).await;
+    let mut client = Client::hello(daemon.addr(), daemon.token().expose(), "test").await;
     let orchestrator = client
         .ok(
             "threads.create",

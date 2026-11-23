@@ -5,8 +5,8 @@ use std::sync::Arc;
 use omfp_protocol::{Call, ReorderThreadParams, ReorderWorkspaceParams};
 
 use super::{Reply, empty, on_threads};
-use crate::server::convert::{bad_request, internal, supervisor_error};
-use crate::server::services::{Services, blocking};
+use crate::server::convert::{bad_request, blocking, internal};
+use crate::server::services::Services;
 
 pub(super) async fn reorder(services: &Services, call: Call) -> Reply {
     match call {
@@ -52,11 +52,7 @@ async fn thread(services: &Services, params: ReorderThreadParams) -> Reply {
         let threads = Arc::clone(&services.threads);
         let id = thread_id.clone();
         let apply = move || threads.reorder(&id, target.as_deref(), before_id.as_deref());
-        services
-            .supervisor
-            .relocate(&thread_id, apply)
-            .await
-            .map_err(supervisor_error)?;
+        services.supervisor.relocate(&thread_id, apply).await?;
     } else {
         on_threads(services, move |all| {
             all.reorder(&thread_id, None, before_id.as_deref())

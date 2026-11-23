@@ -1,19 +1,19 @@
-//! The init files and TSX views as agents see them: the errors windows report for
-//! them (`widgets.report`'s `fileErrors`, DMN-195), `views.errors` (PRT-116), `omfp_views_errors` (DMN-196) and the
-//! `omfp_widget_check` of an init file or a TSX view (DMN-197).
+//! The init files as agents see them: the errors windows report for them (`widgets.report`'s `fileErrors`,
+//! DMN-195), `views.errors` (PRT-116), `omfp_views_errors` (DMN-196) and the `omfp_widget_check` of an init file
+//! (DMN-197).
 
 use std::fmt::Write as _;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use omfp_protocol::{ErrorBody, FileErrorKind, FileErrorReport, ViewErrors, WindowFileErrors};
+use omfp_protocol::{ErrorBody, FileErrorReport, ViewErrors, WindowFileErrors};
 
 use super::widget_tools::{behind, entry, location, window_title};
 use super::windows::Window;
 use super::{Services, blocking};
-use crate::widgets::compile::{self, CompileError};
-use crate::widgets::{Widgets, init, view_files_version, views_folder};
+use crate::widgets::compile::CompileError;
+use crate::widgets::{Widgets, init};
 
 /// The file an `omfp_widget_check` name stands for when it is no widget (DMN-197).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,21 +22,15 @@ pub(super) enum CheckedFile {
     WorkspaceInit,
     /// `user:init`: the user's init file.
     UserInit,
-    /// `views/<path>`, `.omfp/views/<path>` or `./views/<path>`: a file of the workspace's `.omfp/views/`.
-    View(String),
 }
 
 impl CheckedFile {
     /// The file `name` stands for; `None` when it names a widget.
     pub(super) fn parse(name: &str) -> Option<Self> {
-        let name = name.trim();
-        match name {
+        match name.trim() {
             "init" | ".omfp/init.ts" => Some(Self::WorkspaceInit),
             "user:init" => Some(Self::UserInit),
-            _ => ["views/", ".omfp/views/", "./views/"]
-                .iter()
-                .find_map(|prefix| name.strip_prefix(prefix))
-                .map(|path| Self::View(path.to_owned())),
+            _ => None,
         }
     }
 }
@@ -44,8 +38,7 @@ impl CheckedFile {
 /// What the daemon found of a checked file: the text so far, and how windows name it in their reports.
 struct Examined {
     text: String,
-    kind: FileErrorKind,
-    /// The report's `file` (`user`, `.omfp/init.ts`, `.omfp/views/<path>`).
+    /// The report's `file` (`user` or `.omfp/init.ts`).
     file: String,
 }
 
@@ -55,13 +48,6 @@ fn file_name(file: &str) -> String {
         "the user's init file".to_owned()
     } else {
         file.to_owned()
-    }
-}
-
-fn kind_name(kind: FileErrorKind) -> &'static str {
-    match kind {
-        FileErrorKind::Init => "init",
-        FileErrorKind::View => "view",
     }
 }
 
@@ -103,7 +89,6 @@ fn examine(
                         path.display()
                     ),
                 ),
-                kind: FileErrorKind::Init,
                 file: ".omfp/init.ts".to_owned(),
             }
         }
@@ -124,10 +109,8 @@ fn examine(
                     )
                 },
             ),
-            kind: FileErrorKind::Init,
             file: "user".to_owned(),
         },
-        CheckedFile::View(path) => examine_view(widgets, workspace, path),
     }
 }
 
@@ -154,46 +137,6 @@ fn examine_init(
     text
 }
 
-/// The file `path` of the workspace's `.omfp/views/`, resolved as windows request it.
-fn examine_view(widgets: &Widgets, workspace: &Path, path: &str) -> Examined {
-    let mut text = String::new();
-    let folder = views_folder(workspace);
-    let Some((relative, error)) = widgets.check_view(&folder, path) else {
-        let _ = writeln!(
-            text,
-            "No TSX view file .omfp/views/{path} in {} (a view file is `./views/<name>.tsx` in views.json, never \
-             outside .omfp/views/).",
-            folder.display()
-        );
-        return Examined {
-            text,
-            kind: FileErrorKind::View,
-            file: format!(".omfp/views/{path}"),
-        };
-    };
-    let file = format!(".omfp/views/{}", compile::display(&relative));
-    let _ = writeln!(
-        text,
-        "TSX view {file} ({}, .omfp/views/ version {})\n",
-        folder.join(&relative).display(),
-        view_files_version(workspace).unwrap_or_else(|| "none".to_owned())
-    );
-    if compile::is_compiled(&relative) {
-        compiled(&mut text, ".omfp/views/", error.as_ref());
-    } else {
-        text.push_str("Daemon compile: none, windows load it as it is (not TypeScript or JSX).\n");
-    }
-    text.push_str(
-        "The daemon cannot check the layout (a view lays out only when it renders): the windows' reports below \
-         cover render and layout errors.\n",
-    );
-    Examined {
-        text,
-        kind: FileErrorKind::View,
-        file,
-    }
-}
-
 /// The windows' part of the check of `examined` (DMN-197).
 fn describe_windows(
     examined: &Examined,
@@ -217,7 +160,7 @@ fn describe_windows(
             .report
             .file_errors
             .iter()
-            .filter(|error| error.kind == examined.kind && error.file == examined.file)
+            .filter(|error| error.file == examined.file)
             .collect();
         if errors.is_empty() {
             let _ = writeln!(text, "{title}: no error for {name}");
@@ -238,8 +181,8 @@ fn describe_windows(
 /// The answer of `omfp_views_errors` (DMN-196).
 fn describe_errors(windows: &[(Window, Option<String>)], waited: Duration) -> String {
     if windows.is_empty() {
-        return "No omfp window shows this workspace now, so no window runs its init files or TSX views. Check one \
-                file without a window with omfp_widget_check { name } (`init`, `user:init`, `views/<file>`)."
+        return "No omfp window shows this workspace now, so no window runs its init files. Check one without a \
+                window with omfp_widget_check { name } (`init` or `user:init`)."
             .to_owned();
     }
     let clean = windows
@@ -247,14 +190,14 @@ fn describe_errors(windows: &[(Window, Option<String>)], waited: Duration) -> St
         .all(|(window, _)| window.report.file_errors.is_empty());
     let mut text = format!("{} window(s) show this workspace", windows.len());
     text.push_str(if clean {
-        "; none reports an init file or TSX view error.\n"
+        "; none reports an init file error.\n"
     } else {
         ".\n"
     });
     for (window, unsettled) in windows {
         let title = window_title(window, unsettled.as_ref(), waited);
         if window.report.file_errors.is_empty() {
-            let _ = writeln!(text, "{title}: no init file or TSX view errors.");
+            let _ = writeln!(text, "{title}: no init file errors.");
             continue;
         }
         let _ = writeln!(text, "{title}:");
@@ -262,12 +205,7 @@ fn describe_errors(windows: &[(Window, Option<String>)], waited: Duration) -> St
             entry(
                 &mut text,
                 "",
-                &format!(
-                    "{} ({}): {}",
-                    file_name(&error.file),
-                    kind_name(error.kind),
-                    error.message
-                ),
+                &format!("{}: {}", file_name(&error.file), error.message),
             );
         }
     }
@@ -275,7 +213,7 @@ fn describe_errors(windows: &[(Window, Option<String>)], waited: Duration) -> St
 }
 
 impl Services {
-    /// `views.errors` (PRT-116): the latest init file and TSX view errors of every window whose report is about
+    /// `views.errors` (PRT-116): the latest init file errors of every window whose report is about
     /// workspace `workspace_id`, those without errors included.
     pub async fn view_errors(&self, workspace_id: &str) -> Result<ViewErrors, ErrorBody> {
         let store = Arc::clone(&self.store);
@@ -309,7 +247,7 @@ impl Services {
         self.view_errors(workspace_id)
             .await
             .map_err(|error| error.message)?;
-        // Windows get the current init file and view files versions before they are asked.
+        // Windows get the current init file versions before they are asked.
         self.refresh_views(workspace_id).await;
         let windows = self
             .settled_windows(workspace_id, is_cancelled, wait, behind)
@@ -317,7 +255,7 @@ impl Services {
         Ok(describe_errors(&windows, wait))
     }
 
-    /// `omfp_widget_check` of an init file or a TSX view (DMN-197): the daemon's compile of the file as it serves it,
+    /// `omfp_widget_check` of an init file (DMN-197): the daemon's compile of the file as it serves it,
     /// then the errors the windows showing the workspace report for it, waiting at most `wait` for them to catch up
     /// with the workspace's views.
     pub(super) async fn check_file(

@@ -22,20 +22,12 @@
   "$defs": {
     "view": {
       "type": "object",
-      "description": "A layout (`layout`) or a TSX view file (`view`, AGT-074); not both.",
+      "description": "A view: its layout (AGT-010).",
+      "required": ["layout"],
       "properties": {
         "title": { "type": "string", "description": "Shown in the mode line's view tabs; default: the id." },
-        "layout": { "$ref": "#/$defs/node" },
-        "view": {
-          "type": "string",
-          "pattern": "^\\./views/[A-Za-z0-9_-][A-Za-z0-9_.-]*\\.(tsx|ts|jsx|js)$",
-          "description": "`./views/<name>.tsx` (also .ts, .jsx, .js): <workspace>/.omfp/views/<name>.tsx, an ES module whose default export is a React component returning the omfp/sdk layout components (Row, Col, Tabs, Stack, Widget) that lay out the view. It is compiled and imports like a widget file; relative imports reach the other files of .omfp/views/. A TSX view takes no mounts: edit the file instead."
-        }
-      },
-      "oneOf": [
-        { "required": ["layout"] },
-        { "required": ["view"] }
-      ]
+        "layout": { "$ref": "#/$defs/node" }
+      }
     },
     "node": {
       "description": "A widget reference, [reference, props], or [container, props, ...children].",
@@ -68,7 +60,7 @@
     "reference": {
       "type": "string",
       "pattern": "\\S",
-      "description": "`omfp:<name>` (built-in: omfp:header, omfp:chat, omfp:transcript, omfp:interactions, omfp:composer, omfp:workspace, omfp:changes, omfp:background, omfp:todos, omfp:debug, omfp:tree, omfp:activity, omfp:mcp, omfp:file, omfp:terminal, omfp:jobs, omfp:web, omfp:browser; a workspace widget of the same name replaces it; the retired omfp:subagents shows omfp:background), `./widgets/<name>` (<workspace>/.omfp/widgets/<name>/) or `user:<name>` (<data-dir>/widgets/<name>/). An unknown reference shows an error in place of the widget."
+      "description": "`omfp:<name>` (built-in: omfp:header, omfp:chat, omfp:transcript, omfp:interactions, omfp:composer, omfp:workspace, omfp:changes, omfp:background, omfp:todos, omfp:debug, omfp:tree, omfp:activity, omfp:mcp, omfp:file, omfp:terminal, omfp:jobs, omfp:web, omfp:browser; a workspace widget of the same name replaces it) or `./widgets/<name>` (<workspace>/.omfp/widgets/<name>/). An unknown reference shows an error in place of the widget."
     },
     "props": {
       "type": "object",

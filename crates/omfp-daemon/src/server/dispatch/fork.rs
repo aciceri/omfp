@@ -4,15 +4,15 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use omfp_protocol::{ErrorBody, ErrorCode, ForkParams};
+use omfp_protocol::{CreatedBy, ErrorBody, ErrorCode, ForkParams, TitleSource};
 
 use super::threads::discard_thread;
 use super::{Reply, ok};
 use crate::search;
 use crate::server::auth::Principal;
-use crate::server::convert::{bad_request, internal, supervisor_error, thread_error};
-use crate::server::services::{Services, blocking};
-use crate::store::{Provenance, ThreadFork, TitleSource};
+use crate::server::convert::{bad_request, blocking, internal};
+use crate::server::services::Services;
+use crate::store::ThreadFork;
 use crate::threads::{NewThread, Threads, session_file};
 
 /// The title a fork starts with, a placeholder (DMN-300): the source's, marked as a fork.
@@ -30,9 +30,9 @@ fn fork_title(source: &str) -> String {
 fn plan(
     threads: &Threads,
     params: &ForkParams,
-    created_by: Provenance,
+    created_by: CreatedBy,
 ) -> Result<(PathBuf, NewThread, ThreadFork), ErrorBody> {
-    let source = threads.get(&params.thread_id).map_err(thread_error)?;
+    let source = threads.get(&params.thread_id)?;
     let file = source
         .omp_session_id
         .as_deref()
@@ -92,7 +92,7 @@ pub(super) async fn fork_thread(
     let entry_id = params.entry_id.clone();
     let (source, thread) = blocking(move || {
         let (source, new, fork) = plan(&threads, &params, created_by)?;
-        let thread = threads.create_fork(new, &fork).map_err(thread_error)?;
+        let thread = threads.create_fork(new, &fork)?;
         store.set_created_client(&thread.id, &client)?;
         Ok((source, thread))
     })
@@ -104,7 +104,7 @@ pub(super) async fn fork_thread(
     {
         discard_thread(services, &thread.id).await;
         services.refresh_index_quietly().await;
-        return Err(supervisor_error(error));
+        return Err(error.into());
     }
     ok(&services.thread_summary(&thread.id).await?)
 }

@@ -21,11 +21,11 @@ use tokio::task::JoinHandle;
 use tracing::warn;
 
 use super::auth::{Principal, authorize};
-use super::convert::{bad_request, internal, supervisor_error};
+use super::convert::{bad_request, internal};
 use super::dispatch::dispatch;
 use super::{AppState, OUTBOUND_QUEUE, SUPPORTED_PROTOCOLS};
 use crate::event_log::{EventLog, Position, Sequenced, Start, Subscription};
-use crate::supervisor::{WatchGuard, WorkspaceWatchGuard};
+use crate::supervisor::{SupervisorError, WatchGuard, WorkspaceWatchGuard};
 
 /// Close code for a connection that did not authenticate (PRT-001), or not within [`HELLO_TIMEOUT`] (DMN-184).
 pub(crate) const CLOSE_UNAUTHORIZED: u16 = 4401;
@@ -341,8 +341,7 @@ impl Connection {
                 self.respond_later(id, async move {
                     let answer = supervisor
                         .live_connect(&params.thread_id, owner, params.sdp_offer, params.voice)
-                        .await
-                        .map_err(supervisor_error)?;
+                        .await?;
                     to_value(&LiveConnected {
                         sdp_answer: answer.sdp_answer,
                         voice: answer.voice,
@@ -353,10 +352,7 @@ impl Connection {
                 // Owned like a `live_connect` session (DMN-109, DMN-103).
                 let (supervisor, owner) = (services.supervisor.clone(), self.live_owner());
                 self.respond_later(id, async move {
-                    let voice = supervisor
-                        .live_start(&thread_id, owner, voice)
-                        .await
-                        .map_err(supervisor_error)?;
+                    let voice = supervisor.live_start(&thread_id, owner, voice).await?;
                     to_value(&LiveStarted { voice })
                 });
             }
@@ -458,10 +454,9 @@ impl Connection {
                     supervisor.read_history(thread_id).await?;
                     let log = supervisor.thread_log(thread_id).await?;
                     let levels = supervisor.live_levels(thread_id).await?;
-                    Ok((log, levels, guard))
+                    Ok::<_, SupervisorError>((log, levels, guard))
                 }
-                .await
-                .map_err(supervisor_error)?;
+                .await?;
                 let task = self.start(id, topic, since, &log, TopicEvent::Thread).await;
                 transient = Some(tokio::spawn(forward_levels(
                     topic.clone(),

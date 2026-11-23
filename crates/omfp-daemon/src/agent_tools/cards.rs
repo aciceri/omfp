@@ -4,11 +4,10 @@
 
 use std::time::Duration;
 
-use omfp_protocol::CardAnswer;
+use omfp_protocol::{CardAnswer, ErrorBody};
 use serde_json::{Map, Value, json};
 
 use super::{AgentTool, ToolContext, ToolFuture, error_text};
-use crate::server::convert::supervisor_error;
 
 /// Name of the card tool (AGT-096).
 pub const CARD: &str = "omfp_card";
@@ -21,7 +20,7 @@ pub(super) fn tool() -> AgentTool {
                       moment of the conversation: a terminal showing something (useTerminal), a chart of a result, a \
                       question with its own controls. Nothing is written; content that should stay goes in a mount \
                       (omfp_ui_mount). Give exactly one of widget, a reference (a bare name means ./widgets/<name>; \
-                      user:<name>, omfp:<name>), and code, the source of a one-file component (default export) \
+                      omfp:<name>), and code, the source of a one-file component (default export) \
                       compiled now as card.tsx: it imports only react, react/jsx-runtime, react-dom, omfp/sdk and \
                       omfp/kit, no relative file, and a compile error is this tool's error \
                       (card.tsx:line:column: message). props are the component's props, title the card's title. \
@@ -39,7 +38,7 @@ pub(super) fn tool() -> AgentTool {
                 "widget": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "A widget reference: a bare name means ./widgets/<name>; user:<name>, omfp:<name>."
+                    "description": "A widget reference: a bare name means ./widgets/<name>; omfp:<name>."
                 },
                 "code": {
                     "type": "string",
@@ -153,7 +152,7 @@ fn run(context: ToolContext, arguments: Map<String, Value>) -> ToolFuture {
             .supervisor
             .wait_card(thread_id, tool_call_id)
             .await
-            .map_err(|error| error_text(&supervisor_error(error)))?;
+            .map_err(|error| error_text(&ErrorBody::from(error)))?;
         let answer = match wait.timeout {
             Some(timeout) => tokio::time::timeout(timeout, card_wait.answer()).await,
             None => Ok(card_wait.answer().await),
@@ -162,7 +161,7 @@ fn run(context: ToolContext, arguments: Map<String, Value>) -> ToolFuture {
             return Ok(status("timeout"));
         };
         Ok(
-            match answer.map_err(|error| error_text(&supervisor_error(error)))? {
+            match answer.map_err(|error| error_text(&ErrorBody::from(error)))? {
                 CardAnswer::Submit { value } => {
                     json!({ "status": "submitted", "value": value }).to_string()
                 }
@@ -299,7 +298,7 @@ mod tests {
         let before = std::fs::read_dir(&views).map(Iterator::count).ok();
         for arguments in [
             json!({ "widget": "tests", "props": { "n": 1 }, "title": "Tests" }),
-            json!({ "widget": "user:chart" }),
+            json!({ "widget": "omfp:chat" }),
             json!({
                 "code": "import { Card } from \"omfp/kit\";\nexport default () => <Card title=\"x\" />;\n",
                 "wait": false

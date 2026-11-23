@@ -4,62 +4,16 @@
 
 mod client;
 
-use std::sync::Arc;
-
-use clap::Parser;
-use client::Client;
-use omfp_daemon::agent::FakeLauncher;
-use omfp_daemon::config::{Cli, Config};
-use omfp_daemon::git::FakeGit;
-use omfp_daemon::{DaemonHandle, Ports, start_with};
+use client::{Client, TestDaemon as Daemon};
 use reqwest::StatusCode;
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use serde_json::{Value, json};
-use tempfile::TempDir;
 
 const CURRENT: &str = "2026-07-28";
 const LEGACY: &str = "2025-11-25";
 
-struct Daemon {
-    handle: DaemonHandle,
-    launcher: FakeLauncher,
-    _dir: TempDir,
-}
-
 async fn daemon() -> Daemon {
-    let dir = tempfile::tempdir().unwrap();
-    let workspaces = dir.path().join("workspaces");
-    let cli = Cli::try_parse_from([
-        "daemon",
-        "--bind",
-        "127.0.0.1:0",
-        "--data-dir",
-        dir.path().to_str().unwrap(),
-        "--workspaces-root",
-        workspaces.to_str().unwrap(),
-        "--allowed-origin",
-        "https://omfp.example.ts.net",
-    ])
-    .unwrap();
-    let launcher = FakeLauncher::new();
-    let ports = Ports {
-        launcher: Arc::new(launcher.clone()),
-        git: Arc::new(FakeGit::new()),
-        omp_program: "omp".into(),
-        omp_version: omfp_core::OMP_VERSION.into(),
-        omp_env: Vec::new(),
-        user_omp_env: omfp_testkit::absent_standalone_omp(&dir),
-        warnings: Vec::new(),
-        clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
-    };
-    let handle = start_with(Config::from_cli(cli, None, None).unwrap(), ports)
-        .await
-        .unwrap();
-    Daemon {
-        handle,
-        launcher,
-        _dir: dir,
-    }
+    Daemon::start(&["--allowed-origin", "https://omfp.example.ts.net"]).await
 }
 
 impl Daemon {
@@ -250,7 +204,7 @@ async fn a_legacy_session_lists_and_calls_the_agent_tools_as_the_mcp_principal()
         .map(|tool| tool["name"].as_str().unwrap())
         .collect();
     assert_eq!(names[..2], ["omfp_call", "omfp_thread_wait"]);
-    for expected in ["omfp_ui_mount", "omfp_component_list"] {
+    for expected in ["omfp_ui_mount", "omfp_ui_remove"] {
         assert!(names.contains(&expected), "{names:?}");
     }
     for absent in ["omfp_notify", "omfp_open_file"] {

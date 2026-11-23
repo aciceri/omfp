@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::num::NonZeroU16;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
@@ -17,6 +17,7 @@ use thiserror::Error;
 use tokio::sync::watch;
 
 use crate::event_log::EventLog;
+use crate::lock;
 use crate::store::{new_id, now_ms};
 
 /// Maximum raw bytes retained in a terminal snapshot.
@@ -122,10 +123,6 @@ impl std::fmt::Debug for Control {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter.write_str("Control(..)")
     }
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]

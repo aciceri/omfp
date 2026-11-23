@@ -3,9 +3,8 @@
 
 use std::sync::Arc;
 
-use clap::Parser as _;
 use omfp_daemon::agent::FakeLauncher;
-use omfp_daemon::config::{Cli, Config};
+use omfp_daemon::config::Config;
 use omfp_daemon::git::FakeGit;
 use omfp_daemon::{Ports, start_with};
 use serde_json::{Value, json};
@@ -14,28 +13,12 @@ use serde_json::{Value, json};
 #[tokio::test(flavor = "multi_thread")]
 async fn mcp_config_prints_the_entry_of_the_local_daemon() {
     let dir = tempfile::tempdir().unwrap();
-    let workspaces = dir.path().join("workspaces");
-    let cli = Cli::try_parse_from([
-        "daemon",
-        "--bind",
-        "127.0.0.1:0",
-        "--data-dir",
-        dir.path().to_str().unwrap(),
-        "--workspaces-root",
-        workspaces.to_str().unwrap(),
-    ])
-    .unwrap();
-    let ports = Ports {
-        launcher: Arc::new(FakeLauncher::new()),
-        git: Arc::new(FakeGit::new()),
-        omp_program: "omp".into(),
-        omp_version: omfp_core::OMP_VERSION.into(),
-        omp_env: Vec::new(),
-        user_omp_env: Vec::new(),
-        warnings: Vec::new(),
-        clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
-    };
-    let daemon = start_with(Config::from_cli(cli, None, None).unwrap(), ports)
+    let ports = Ports::fake(
+        Arc::new(FakeLauncher::new()),
+        Arc::new(FakeGit::new()),
+        Vec::new(),
+    );
+    let daemon = start_with(Config::loopback(dir.path(), &[]), ports)
         .await
         .unwrap();
 

@@ -4,15 +4,16 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use omfp_daemon::store::{
-    ActivityQuery, NewActivity, Provenance, SeenRepository, Store, StoreError, Thread, ThreadFork,
-    TitleSource, Workspace, new_id, now_ms,
+    ActivityQuery, NewActivity, SeenRepository, Store, StoreError, Thread, ThreadFork, Workspace,
+    new_id, now_ms,
 };
+use omfp_protocol::{CreatedBy, TitleSource};
 use serde_json::json;
 use tempfile::TempDir;
 
 fn open() -> (TempDir, Store) {
     let dir = TempDir::new().unwrap();
-    let store = Store::open(&dir.path().join("omfp.db"), &dir.path().join("workspaces")).unwrap();
+    let store = Store::open(&dir.path().join("omfp.db")).unwrap();
     (dir, store)
 }
 
@@ -21,12 +22,19 @@ fn workspace(name: &str, path: &str) -> Workspace {
         id: new_id(),
         name: name.into(),
         path: path.into(),
-        created_by: Provenance::User,
+        created_by: CreatedBy::User,
         created_at: now_ms(),
     }
 }
 
-fn thread(created_by: Provenance, workspace_id: &str) -> Thread {
+/// Created by the agent of thread `thread_id`.
+fn agent_of(thread_id: &str) -> CreatedBy {
+    CreatedBy::Thread {
+        thread_id: thread_id.into(),
+    }
+}
+
+fn thread(created_by: CreatedBy, workspace_id: &str) -> Thread {
     let id = new_id();
     Thread {
         session_dir: format!("/data/threads/{id}/sessions").into(),
@@ -114,7 +122,7 @@ fn unknown_ids_are_not_found() {
 fn workspaces_round_trip_by_id_path_and_name() {
     let (_dir, store, shop) = with_workspace();
     let made = Workspace {
-        created_by: Provenance::Thread("01JAGENT".into()),
+        created_by: agent_of("01JAGENT"),
         ..workspace("Fix login", "/omfp/workspaces/fix-login")
     };
     store.insert_workspace(&made).unwrap();
@@ -162,7 +170,7 @@ fn renaming_a_workspace_keeps_names_unique() {
 #[test]
 fn a_workspace_with_threads_is_not_deleted() {
     let (_dir, store, ws) = with_workspace();
-    let t = thread(Provenance::User, &ws.id);
+    let t = thread(CreatedBy::User, &ws.id);
     store.insert_thread(&t).unwrap();
     store.set_thread_archived_at(&t.id, Some(7)).unwrap();
 
@@ -181,9 +189,9 @@ fn threads_round_trip_with_their_workspace_and_provenance() {
     let (_dir, store, ws) = with_workspace();
     let other = workspace("other", "/work/other");
     store.insert_workspace(&other).unwrap();
-    let parent = thread(Provenance::User, &ws.id);
+    let parent = thread(CreatedBy::User, &ws.id);
     store.insert_thread(&parent).unwrap();
-    let child = thread(Provenance::Thread(parent.id.clone()), &ws.id);
+    let child = thread(agent_of(&parent.id), &ws.id);
     store.insert_thread(&child).unwrap();
 
     assert_eq!(store.thread(&child.id).unwrap(), child);
@@ -201,39 +209,6 @@ fn threads_round_trip_with_their_workspace_and_provenance() {
     );
 }
 
-#[test]
-fn thread_fields_are_updated() {
-    let (_dir, store, ws) = with_workspace();
-    let t = thread(Provenance::User, &ws.id);
-    store.insert_thread(&t).unwrap();
-
-    store
-        .set_thread_title(&t.id, "Renamed", TitleSource::Generated)
-        .unwrap();
-    store.set_thread_approval_mode(&t.id, "yolo").unwrap();
-    store.set_thread_archived_at(&t.id, Some(7)).unwrap();
-    store
-        .set_thread_omp_session_id(&t.id, Some("sess-1"))
-        .unwrap();
-    store.set_thread_model(&t.id, None).unwrap();
-    store.set_thread_thinking_level(&t.id, Some("low")).unwrap();
-
-    let updated = store.thread(&t.id).unwrap();
-    assert_eq!(
-        updated,
-        Thread {
-            title: "Renamed".into(),
-            title_source: TitleSource::Generated,
-            approval_mode: Some("yolo".into()),
-            archived_at: Some(7),
-            omp_session_id: Some("sess-1".into()),
-            model: None,
-            thinking_level: Some("low".into()),
-            ..t
-        }
-    );
-}
-
 // spec: DMN-073
 #[test]
 fn only_a_placeholder_title_is_replaced() {
@@ -241,7 +216,7 @@ fn only_a_placeholder_title_is_replaced() {
     let t = Thread {
         title: String::new(),
         title_source: TitleSource::Placeholder,
-        ..thread(Provenance::User, &ws.id)
+        ..thread(CreatedBy::User, &ws.id)
     };
     store.insert_thread(&t).unwrap();
 
@@ -269,7 +244,7 @@ fn only_a_placeholder_title_is_replaced() {
 #[test]
 fn thread_roots_are_replaced_and_listed_sorted() {
     let (_dir, store, ws) = with_workspace();
-    let t = thread(Provenance::User, &ws.id);
+    let t = thread(CreatedBy::User, &ws.id);
     store.insert_thread(&t).unwrap();
     assert_eq!(store.thread_roots(&t.id).unwrap(), Vec::<PathBuf>::new());
 
@@ -291,9 +266,9 @@ fn thread_roots_are_replaced_and_listed_sorted() {
 #[test]
 fn the_creating_client_is_recorded_for_threads_and_workspaces() {
     let (_dir, store, ws) = with_workspace();
-    let t = thread(Provenance::User, &ws.id);
+    let t = thread(CreatedBy::User, &ws.id);
     store.insert_thread(&t).unwrap();
-    let silent = thread(Provenance::User, &ws.id);
+    let silent = thread(CreatedBy::User, &ws.id);
     store.insert_thread(&silent).unwrap();
     assert_eq!(store.created_clients().unwrap(), HashMap::new());
 
@@ -313,33 +288,13 @@ fn the_creating_client_is_recorded_for_threads_and_workspaces() {
 #[test]
 fn provenance_must_name_an_existing_thread() {
     let (_dir, store, ws) = with_workspace();
-    let t = thread(Provenance::User, &ws.id);
+    let t = thread(CreatedBy::User, &ws.id);
     store.insert_thread(&t).unwrap();
 
-    store.check_provenance(&Provenance::User).unwrap();
-    store.check_provenance(&Provenance::Thread(t.id)).unwrap();
-    let error = store
-        .check_provenance(&Provenance::Thread("01JUNKNOWN".into()))
-        .unwrap_err();
+    store.check_provenance(&CreatedBy::User).unwrap();
+    store.check_provenance(&agent_of(&t.id)).unwrap();
+    let error = store.check_provenance(&agent_of("01JUNKNOWN")).unwrap_err();
     assert!(matches!(error, StoreError::NotFound { .. }), "{error:?}");
-}
-
-#[test]
-fn settings_hold_json_values() {
-    let (_dir, store) = open();
-    assert_eq!(store.setting("idle_timeout").unwrap(), None);
-
-    store
-        .set_setting("idle_timeout", &json!({"minutes": 15}))
-        .unwrap();
-    store
-        .set_setting("idle_timeout", &json!({"minutes": 5}))
-        .unwrap();
-
-    assert_eq!(
-        store.setting("idle_timeout").unwrap(),
-        Some(json!({"minutes": 5}))
-    );
 }
 
 // spec: DMN-075
@@ -363,18 +318,18 @@ fn the_theme_is_a_setting_that_can_be_cleared() {
 #[test]
 fn the_spawned_tree_follows_provenance_transitively_archived_threads_included() {
     let (_dir, store, ws) = with_workspace();
-    let root = thread(Provenance::User, &ws.id);
+    let root = thread(CreatedBy::User, &ws.id);
     store.insert_thread(&root).unwrap();
-    let child = thread(Provenance::Thread(root.id.clone()), &ws.id);
+    let child = thread(agent_of(&root.id), &ws.id);
     store.insert_thread(&child).unwrap();
     let grandchild = Thread {
         archived_at: Some(now_ms()),
-        ..thread(Provenance::Thread(child.id.clone()), &ws.id)
+        ..thread(agent_of(&child.id), &ws.id)
     };
     store.insert_thread(&grandchild).unwrap();
-    let second = thread(Provenance::Thread(root.id.clone()), &ws.id);
+    let second = thread(agent_of(&root.id), &ws.id);
     store.insert_thread(&second).unwrap();
-    let unrelated = thread(Provenance::User, &ws.id);
+    let unrelated = thread(CreatedBy::User, &ws.id);
     store.insert_thread(&unrelated).unwrap();
 
     assert_eq!(
@@ -486,7 +441,7 @@ fn the_activity_log_pages_newest_first_and_filters_by_thread() {
 #[test]
 fn the_activity_log_keeps_the_newest_entries_and_outlives_its_thread() {
     let (_dir, store, ws) = with_workspace();
-    let agent = thread(Provenance::User, &ws.id);
+    let agent = thread(CreatedBy::User, &ws.id);
     store.insert_thread(&agent).unwrap();
     let mut recorded = Vec::new();
     for method in ["a", "b", "c", "d"] {
@@ -539,9 +494,9 @@ fn threads_are_reordered_within_their_workspace_and_moved_to_another() {
     let (_dir, store, shop) = with_workspace();
     let other = workspace("other", "/work/other");
     store.insert_workspace(&other).unwrap();
-    let [t1, t2, t3] = [(); 3].map(|()| thread(Provenance::User, &shop.id));
-    let archived = thread(Provenance::User, &shop.id);
-    let there = thread(Provenance::User, &other.id);
+    let [t1, t2, t3] = [(); 3].map(|()| thread(CreatedBy::User, &shop.id));
+    let archived = thread(CreatedBy::User, &shop.id);
+    let there = thread(CreatedBy::User, &other.id);
     for t in [&t1, &t2, &t3, &archived, &there] {
         store.insert_thread(t).unwrap();
     }
@@ -593,7 +548,7 @@ fn a_reorder_before_something_gone_changes_nothing() {
     let (_dir, store, shop) = with_workspace();
     let other = workspace("other", "/work/other");
     store.insert_workspace(&other).unwrap();
-    let [t1, t2] = [(); 2].map(|()| thread(Provenance::User, &shop.id));
+    let [t1, t2] = [(); 2].map(|()| thread(CreatedBy::User, &shop.id));
     for t in [&t1, &t2] {
         store.insert_thread(t).unwrap();
     }
@@ -619,8 +574,8 @@ fn a_reorder_before_something_gone_changes_nothing() {
 #[test]
 fn a_forks_lineage_outlives_its_source_and_goes_with_the_fork() {
     let (_dir, store, ws) = with_workspace();
-    let source = thread(Provenance::User, &ws.id);
-    let fork = thread(Provenance::User, &ws.id);
+    let source = thread(CreatedBy::User, &ws.id);
+    let fork = thread(CreatedBy::User, &ws.id);
     store.insert_thread(&source).unwrap();
     store.insert_thread(&fork).unwrap();
     let lineage = ThreadFork {

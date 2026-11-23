@@ -1,39 +1,17 @@
 //! The views manifest, `<workspace>/.omfp/views.json` (AGT-010, AGT-011): checked with the rules and messages the app
 //! shares (`fixtures/views/cases.json`), read with its own messages for an unreadable file or invalid JSON, and
-//! written with sorted keys (DMN-083). A view is a layout or a TSX view file, `./views/<name>.tsx`
-//! (AGT-074).
+//! written with sorted keys (DMN-083).
 
 use std::path::Path;
 
 use serde_json::{Map, Value};
 
-use super::folders::is_widget_name;
 use super::read_json;
 
 /// Layout containers (AGT-010).
 pub const CONTAINERS: [&str; 4] = ["row", "col", "tabs", "stack"];
 
-/// The extensions of a TSX view file (AGT-074).
-pub const VIEW_FILE_EXTENSIONS: [&str; 4] = ["tsx", "ts", "jsx", "js"];
-
-/// The view file of the view object `view` (its `view` string, AGT-074); `None` for a layout view.
-#[must_use]
-pub fn view_file(view: &Value) -> Option<&str> {
-    view.get("view")?.as_str()
-}
-
-/// Whether `file` names a TSX view file: `./views/<name>.<ext>`, `<name>` a widget name and `<ext>`
-/// one of [`VIEW_FILE_EXTENSIONS`] (AGT-074).
-#[must_use]
-pub fn is_view_file(file: &str) -> bool {
-    file.strip_prefix("./views/")
-        .and_then(|rest| rest.rsplit_once('.'))
-        .is_some_and(|(name, extension)| {
-            is_widget_name(name) && VIEW_FILE_EXTENSIONS.contains(&extension)
-        })
-}
-
-/// Checks `manifest` against AGT-010, AGT-060 and AGT-074; the error is the first rule it breaks, as
+/// Checks `manifest` against AGT-010 and AGT-060; the error is the first rule it breaks, as
 /// `<JSON path>: <reason>`.
 /// Views are checked in id order, then panels in id order, `default` last.
 pub fn check(manifest: &Value) -> Result<(), String> {
@@ -51,15 +29,6 @@ pub fn check(manifest: &Value) -> Result<(), String> {
         let Some(view) = views.get(id).and_then(Value::as_object) else {
             return Err(format!("{path}: expected {{ title, layout }}"));
         };
-        if let Some(file) = view.get("view") {
-            if view.contains_key("layout") {
-                return Err(format!("{path}: a layout or a view file, not both"));
-            }
-            if !file.as_str().is_some_and(is_view_file) {
-                return Err(format!("{path}.view: expected \"./views/<name>.tsx\""));
-            }
-            continue;
-        }
         check_node(view.get("layout"), &format!("{path}.layout"))?;
     }
     if let Some(panels) = manifest.get("panels") {
@@ -231,7 +200,7 @@ mod tests {
             .collect()
     }
 
-    // spec: AGT-010, AGT-011, AGT-060, AGT-074
+    // spec: AGT-010, AGT-011, AGT-060
     #[test]
     fn every_shared_case_gets_its_error() {
         let cases = cases();

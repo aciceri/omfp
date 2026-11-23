@@ -35,7 +35,8 @@ pub(crate) use raw_files::PREFIX as FILES_PREFIX;
 pub(crate) use services::{CHECK_WAIT, Services};
 
 use crate::token::Token;
-use crate::widgets::{Served, init, views_folder, workspace_widgets};
+use crate::widgets::{Served, init, workspace_widgets};
+use crate::wire_name;
 
 /// Protocol versions the daemon accepts in `system.hello`: the current one and, during a transition, the previous
 /// one (PRT-032). There is no previous version yet.
@@ -100,15 +101,11 @@ async fn theme_css(State(state): State<Arc<AppState>>) -> Response {
 }
 
 /// `GET /widgets/<key>/<source>/<name>/<version>/<path>` (DMN-084, DMN-085): a file of a workspace's widget folder
-/// (`<source>` = its id) or of the user library (`user`), compiled when it is TypeScript or JSX. A wrong key, an
-/// unknown source, folder or file, or a path leaving the folder is `404`; nothing is cached.
+/// (`<source>` = its id), compiled when it is TypeScript or JSX. A wrong key, an unknown source, folder or file, or a
+/// path leaving the folder is `404`; nothing is cached.
 ///
 /// `GET /widgets/<key>/init/<scope>/<version>/init.ts` (DMN-185, PRT-095): the user's init file
 /// (`<scope>` = `user`) or a workspace's `.omfp/init.ts` (`<scope>` = its id), compiled; the version only busts caches.
-///
-/// `GET /widgets/<key>/views/<workspaceId>/<version>/<path>` (DMN-186, PRT-096): the file `<path>` of
-/// the workspace's `.omfp/views/` (subfolders too, so relative imports resolve to siblings by URL), compiled when it is
-/// TypeScript or JSX, the stand-in module when it does not compile; `<version>` (`viewFiles`) only busts caches.
 async fn widget_file(
     State(state): State<Arc<AppState>>,
     extract::Path(rest): extract::Path<String>,
@@ -146,17 +143,7 @@ async fn widget_file(
             };
             return services.widgets.serve_init(&file).map(Served::Module);
         }
-        if source == "views" {
-            let workspace = services.store.workspace(&name).ok()?.path;
-            return services
-                .widgets
-                .serve_view(&views_folder(&workspace), &path);
-        }
-        let library = if source == "user" {
-            services.widgets.user_library().to_path_buf()
-        } else {
-            workspace_widgets(&services.store.workspace(&source).ok()?.path)
-        };
+        let library = workspace_widgets(&services.store.workspace(&source).ok()?.path);
         services.widgets.serve(&library, &name, &path)
     })
     .await;
@@ -265,10 +252,10 @@ fn html_with_appearance(html: Vec<u8>, ui: &UiSettings) -> Vec<u8> {
         .filter(|theme| !matches!(theme, BuiltinTheme::Matugen | BuiltinTheme::Accent));
     let mut attributes = String::new();
     for (name, value) in [
-        ("data-theme", theme.and_then(setting_name)),
-        ("data-skin", ui.skin.and_then(setting_name)),
-        ("data-density", ui.density.and_then(setting_name)),
-        ("data-motion", ui.motion.and_then(setting_name)),
+        ("data-theme", theme.map(wire_name)),
+        ("data-skin", ui.skin.map(wire_name)),
+        ("data-density", ui.density.map(wire_name)),
+        ("data-motion", ui.motion.map(wire_name)),
     ] {
         if let Some(value) = value {
             let _ = write!(attributes, " {name}=\"{value}\"");
@@ -296,14 +283,6 @@ fn html_with_appearance(html: Vec<u8>, ui: &UiSettings) -> Vec<u8> {
     with.extend_from_slice(attributes.as_bytes());
     with.extend_from_slice(&html[at..]);
     with
-}
-
-/// The protocol's name of a setting's value (`tokyo-night`, `boring`, …): a string for every `[ui]` enum.
-fn setting_name(value: impl serde::Serialize) -> Option<String> {
-    match serde_json::to_value(value) {
-        Ok(serde_json::Value::String(name)) => Some(name),
-        _ => None,
-    }
 }
 
 /// The request path as a relative path without `..`; `None` when it tries to leave the root.

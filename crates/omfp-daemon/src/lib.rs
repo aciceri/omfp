@@ -30,6 +30,8 @@ pub mod session_file;
 pub mod store;
 pub mod supervisor;
 pub mod terminals;
+#[cfg(test)]
+mod test_support;
 pub mod theme;
 pub mod threads;
 pub mod titles;
@@ -44,6 +46,27 @@ pub use daemon::{
     discover_through_restart, lock_held, restart, restarting, run, run_with, start, start_with,
 };
 
+/// Locks `mutex`, recovering the guard of a poisoned one.
+pub(crate) fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// The serde name of a unit variant (`tokyo-night`, `running`, …): the protocol's, the config file's and the store's
+/// text of an enum; empty for a value that does not serialize to a string.
+pub(crate) fn wire_name(value: impl serde::Serialize) -> String {
+    match serde_json::to_value(value) {
+        Ok(serde_json::Value::String(name)) => name,
+        _ => String::new(),
+    }
+}
+
+/// The unit variant serde names `name`; `None` for an unknown name.
+pub(crate) fn from_wire_name<T: serde::de::DeserializeOwned>(name: &str) -> Option<T> {
+    T::deserialize(serde::de::value::StrDeserializer::<serde::de::value::Error>::new(name)).ok()
+}
+
 /// Version string reported by `omfp --version`: daemon version plus the omp release it speaks to.
 #[must_use]
 pub fn version_string() -> String {
@@ -53,14 +76,4 @@ pub fn version_string() -> String {
         omfp_core::OMP_VERSION,
         omfp_protocol::PROTOCOL_VERSION
     )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn version_string_names_daemon_omp_and_protocol_versions() {
-        assert_eq!(version_string(), "0.4.2 (omp 19.1.0, protocol 1)");
-    }
 }

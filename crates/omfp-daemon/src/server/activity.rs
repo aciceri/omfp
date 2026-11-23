@@ -3,14 +3,16 @@
 
 use std::sync::Arc;
 
-use omfp_protocol::{ActivityEntry, ActivityPage, Call, ErrorBody, ListActivityParams, Request};
+use omfp_protocol::{
+    ActivityEntry, ActivityPage, Call, CreatedBy, ErrorBody, ListActivityParams, Request,
+};
 use serde_json::{Value, json};
 use tracing::warn;
 
 use super::auth::{Permission, Principal, permission};
 use super::convert::internal;
 use super::services::Services;
-use crate::store::{Activity, ActivityQuery, NewActivity, Provenance, now_ms};
+use crate::store::{Activity, ActivityQuery, NewActivity, now_ms};
 
 /// The newest entries the log keeps (DMN-160).
 pub(crate) const KEPT: u32 = 10_000;
@@ -24,9 +26,9 @@ const MAX_LIMIT: u32 = 500;
 /// MCP principal (AGT-053) and the method needs more than `Connect` or `Read` (DMN-161).
 pub(crate) fn pending(principal: &Principal, call: &Call) -> Option<NewActivity> {
     let thread_id = match principal.created_by() {
-        Provenance::Thread(thread_id) => Some(thread_id),
-        Provenance::Mcp => None,
-        Provenance::User | Provenance::Job(_) => return None,
+        CreatedBy::Thread { thread_id } => Some(thread_id),
+        CreatedBy::Mcp => None,
+        CreatedBy::User | CreatedBy::Job { .. } => return None,
     };
     if matches!(
         permission(call.method()),
@@ -149,14 +151,14 @@ mod tests {
         let data = DataDir::new(dir.path().join("data"));
         std::fs::create_dir_all(data.root()).unwrap();
         let root = dir.path().join("workspaces");
-        let store = Arc::new(Store::open(&data.db(), &root).unwrap());
+        let store = Arc::new(Store::open(&data.db()).unwrap());
         let threads = Arc::new(Threads::new(Arc::clone(&store), data.clone()));
         let workspaces = Arc::new(Workspaces::new(
             Arc::clone(&store),
             Arc::new(FakeGit::new()) as Arc<dyn Git>,
             root,
         ));
-        let widgets = Arc::new(Widgets::new(data.widgets(), None));
+        let widgets = Arc::new(Widgets::new(None));
         let supervisor = Supervisor::new(
             Arc::new(FakeLauncher::new()),
             Arc::clone(&threads),
@@ -331,7 +333,9 @@ mod tests {
         let child = services
             .threads
             .create(NewThread {
-                created_by: Provenance::Thread(root.clone()),
+                created_by: CreatedBy::Thread {
+                    thread_id: root.clone(),
+                },
                 ..NewThread::new("child", &ws)
             })
             .unwrap()

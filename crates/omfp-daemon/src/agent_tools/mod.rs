@@ -126,20 +126,14 @@ pub(crate) fn error_text(error: &ErrorBody) -> String {
 
 #[cfg(test)]
 pub(super) mod tests {
-    use std::sync::Arc;
-
     use serde_json::{Map, Value};
     use tempfile::TempDir;
 
     use super::*;
     use crate::agent::FakeLauncher;
-    use crate::git::{FakeGit, Git};
-    use crate::paths::DataDir;
-    use crate::store::Store;
-    use crate::supervisor::{Supervisor, SupervisorConfig};
-    use crate::threads::{NewThread, Threads};
-    use crate::widgets::Widgets;
-    use crate::workspaces::{NewWorkspace, Workspaces};
+    use crate::test_support::Stack;
+    use crate::threads::NewThread;
+    use crate::workspaces::NewWorkspace;
 
     /// The tool call id of [`Harness::context`].
     pub const TOOL_CALL_ID: &str = "toolu_01";
@@ -156,35 +150,10 @@ pub(super) mod tests {
     impl Harness {
         pub async fn new() -> Self {
             let dir = tempfile::tempdir().unwrap();
-            let data = DataDir::new(dir.path().join("data"));
-            std::fs::create_dir_all(data.root()).unwrap();
-            let root = dir.path().join("workspaces");
-            let store = Arc::new(Store::open(&data.db(), &root).unwrap());
-            let threads = Arc::new(Threads::new(Arc::clone(&store), data.clone()));
-            let workspaces = Arc::new(Workspaces::new(
-                Arc::clone(&store),
-                Arc::new(FakeGit::new()) as Arc<dyn Git>,
-                root,
-            ));
-            let widgets = Arc::new(Widgets::new(data.widgets(), None));
             let launcher = FakeLauncher::new();
-            let supervisor = Supervisor::new(
-                Arc::new(launcher.clone()),
-                Arc::clone(&threads),
-                Arc::clone(&workspaces),
-                data,
-                SupervisorConfig::new("omp"),
-            );
-            let services = Services::new(
-                store,
-                threads,
-                workspaces,
-                supervisor,
-                widgets,
-                Arc::new(crate::jobs::declared::SystemClock),
-            )
-            .await
-            .unwrap();
+            let services = Stack::with_launcher(dir.path(), &launcher)
+                .services(None)
+                .await;
             let workspace = services
                 .workspaces
                 .create(NewWorkspace::new())
@@ -261,17 +230,10 @@ pub(super) mod tests {
             .into_iter()
             .chain(mentions::THREAD_URIS)
             .collect();
-        let library = std::path::Path::new("/data/widgets");
         let mut texts = mentions::static_texts();
         texts.push((
             "the appended prompt".to_owned(),
-            conventions::daemon_text(
-                "w",
-                "01WORKSPACE",
-                std::path::Path::new("/ws"),
-                library,
-                "01THREAD",
-            ),
+            conventions::daemon_text("w", "01WORKSPACE", std::path::Path::new("/ws"), "01THREAD"),
         ));
         for tool in &host {
             let definition = tool.definition();
@@ -302,7 +264,7 @@ pub(super) mod tests {
         assert_eq!(missing, Vec::<String>::new());
 
         // The widget builder, a subagent, gets no omfp tool, only the URIs (S-14).
-        let builder = conventions::widget_builder_definition(library);
+        let builder = conventions::widget_builder_definition();
         let uris: Vec<&str> = mentions::STATIC_URIS
             .into_iter()
             .chain([crate::widgets::CHECK_URL])

@@ -3,60 +3,9 @@
 
 mod client;
 
-use std::path::Path;
-use std::sync::Arc;
-
 use base64::Engine;
-use clap::Parser;
-use client::Client;
-use omfp_daemon::agent::FakeLauncher;
-use omfp_daemon::config::{Cli, Config};
-use omfp_daemon::git::FakeGit;
-use omfp_daemon::{DaemonHandle, Ports, start_with};
+use client::{Client, TestDaemon};
 use serde_json::{Value, json};
-use tempfile::TempDir;
-
-struct TestDaemon {
-    handle: DaemonHandle,
-    _dir: TempDir,
-}
-
-fn config(dir: &Path) -> Config {
-    let workspaces = dir.join("workspaces");
-    let cli = Cli::try_parse_from([
-        "daemon",
-        "--bind",
-        "127.0.0.1:0",
-        "--data-dir",
-        dir.to_str().unwrap(),
-        "--workspaces-root",
-        workspaces.to_str().unwrap(),
-    ])
-    .unwrap();
-    Config::from_cli(cli, None, None).unwrap()
-}
-
-async fn daemon() -> TestDaemon {
-    let dir = tempfile::tempdir().unwrap();
-    let ports = Ports {
-        launcher: Arc::new(FakeLauncher::new()),
-        git: Arc::new(FakeGit::new()),
-        omp_program: "omp".into(),
-        omp_version: omfp_core::OMP_VERSION.into(),
-        omp_env: Vec::new(),
-        user_omp_env: omfp_testkit::absent_standalone_omp(&dir),
-        warnings: Vec::new(),
-        clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
-    };
-    let handle = start_with(config(dir.path()), ports).await.unwrap();
-    TestDaemon { handle, _dir: dir }
-}
-
-impl TestDaemon {
-    async fn client(&self, name: &str) -> Client {
-        Client::hello(self.handle.addr(), self.handle.token().expose(), name).await
-    }
-}
 
 async fn workspace(client: &mut Client) -> String {
     client.ok("workspaces.create", json!({})).await["id"]
@@ -81,7 +30,7 @@ async fn screen(client: &mut Client, terminal_id: &str, after_revision: u64) -> 
 // spec: TRM-106
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_reads_and_waits_for_a_full_screen_terminal_without_echoed_input() {
-    let daemon = daemon().await;
+    let daemon = TestDaemon::start(&[]).await;
     let mut controller = daemon.client("controller").await;
     let workspace_id = workspace(&mut controller).await;
     let command = concat!(

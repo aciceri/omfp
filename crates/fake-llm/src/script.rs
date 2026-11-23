@@ -176,35 +176,3 @@ impl ToolCall {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use serde_json::json;
-
-    #[test]
-    fn last_user_text_reads_string_and_part_list_content() {
-        let plain = json!({ "messages": [
-            { "role": "user", "content": "first" },
-            { "role": "assistant", "content": "x" },
-            { "role": "user", "content": "second" }
-        ]});
-        assert_eq!(last_user_text(&plain).as_deref(), Some("second"));
-
-        let parts = json!({ "messages": [
-            { "role": "user", "content": [ { "type": "text", "text": "a" }, { "type": "image_url" }, { "type": "text", "text": "b" } ] }
-        ]});
-        assert_eq!(last_user_text(&parts).as_deref(), Some("ab"));
-
-        assert_eq!(last_user_text(&json!({ "messages": [] })), None);
-    }
-
-    #[test]
-    fn finish_reason_depends_on_tool_calls() {
-        assert_eq!(Reply::text("x").finish_reason(), "stop");
-        assert_eq!(
-            Reply::tool_calls(vec![ToolCall::new("c", "t", json!({}))]).finish_reason(),
-            "tool_calls"
-        );
-    }
-}

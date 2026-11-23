@@ -843,7 +843,7 @@ fn present<'de, D: serde::Deserializer<'de>>(
 #[serde(rename_all = "camelCase")]
 pub struct CopyWidgetParams {
     pub workspace_id: String,
-    /// `omfp:<name>` (a built-in) or `user:<name>` (the user library).
+    /// `omfp:<name>`, a built-in.
     pub widget: String,
     /// Folder name in `.omfp/widgets/`; default: the widget's own name.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -879,7 +879,7 @@ pub struct ReportWidgetsParams {
     pub views: Option<Position>,
     /// Every workspace and user widget instance of the view the window shows (built-ins are not reported).
     pub widgets: Vec<WidgetReport>,
-    /// The runtime errors the window shows of init files and TSX views (PRT-115); absent means none.
+    /// The runtime errors the window shows of init files (PRT-115); absent means none.
     #[serde(default)]
     pub file_errors: Vec<FileErrorReport>,
     /// What else the window shows (PRT-122): its thread, views, commands; absent from clients that do not report it.
@@ -887,28 +887,17 @@ pub struct ReportWidgetsParams {
     pub window: Option<crate::windows::WindowReport>,
 }
 
-/// What kind of file a [`FileErrorReport`] is about (PRT-115).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum FileErrorKind {
-    /// An init file: the user's or the workspace's `.omfp/init.ts`.
-    Init,
-    /// A TSX view file of the workspace's `.omfp/views/`.
-    View,
-}
-
-/// One runtime error a window shows of an init file or a TSX view (PRT-115).
+/// One runtime error a window shows of an init file (PRT-115).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct FileErrorReport {
-    pub kind: FileErrorKind,
-    /// `user` for the user's init file, else the workspace-relative path (`.omfp/init.ts`, `.omfp/views/ops.tsx`).
+    /// `user` for the user's init file, else `.omfp/init.ts`.
     pub file: String,
     /// The error as the window shows it: a compile error with `file:line:column`, a throw, a render or layout error.
     pub message: String,
 }
 
-/// `views.errors` result (PRT-116): the latest init file and TSX view errors of every window whose
+/// `views.errors` result (PRT-116): the latest init file errors of every window whose
 /// report is about the workspace, by connection.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -917,7 +906,7 @@ pub struct ViewErrors {
     pub windows: Vec<WindowFileErrors>,
 }
 
-/// The init file and TSX view errors one window reports (PRT-116).
+/// The init file errors one window reports (PRT-116).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WindowFileErrors {
@@ -930,7 +919,7 @@ pub struct WindowFileErrors {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct WidgetReport {
-    /// The view node's reference (`./widgets/tests`, `user:clock`, or `omfp:<name>` overridden by the workspace).
+    /// The view node's reference (`./widgets/tests`, or `omfp:<name>` overridden by the workspace).
     pub reference: String,
     /// The node's `instance` prop when it is a string, else its reference.
     pub instance: String,
@@ -1142,7 +1131,7 @@ pub struct MountParams {
     /// The mount id, a widget name (letters, digits, `_`, `-`, `.` not first): the node's `instance` prop, the panel
     /// id, and the folder `code` is written to.
     pub id: String,
-    /// A widget reference (`./widgets/<name>`, `user:<name>`, `omfp:<name>`); a bare name means `./widgets/<name>`.
+    /// A widget reference (`./widgets/<name>`, `omfp:<name>`); a bare name means `./widgets/<name>`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub widget: Option<String>,
     /// The source of a component (TSX), written to `.omfp/widgets/<id>/index.tsx`.
@@ -1209,56 +1198,4 @@ pub struct Unmounted {
     pub removed_views: Vec<String>,
     /// Whether it removed the floating panel `id`.
     pub panel: bool,
-}
-
-/// `widgets.save` params (PRT-083, AGT-064): exactly one of `widget` (with `workspaceId`) and `code`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct SaveWidgetParams {
-    /// The component's name in the user library (a widget name).
-    pub name: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub workspace_id: Option<String>,
-    /// A widget of that workspace: `./widgets/<name>` or a bare name.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub widget: Option<String>,
-    /// The component's source (TSX), saved as its `index.tsx`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub code: Option<String>,
-    /// Replace an existing component of that name.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub replace: bool,
-}
-
-/// `widgets.save` result (PRT-083).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct WidgetSaved {
-    pub name: String,
-    /// `user:<name>`.
-    pub reference: String,
-}
-
-/// `widgets.library` result (PRT-084): the user library by name.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct WidgetLibrary {
-    pub components: Vec<LibraryComponent>,
-}
-
-/// A component of the user library (PRT-084, AGT-065).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct LibraryComponent {
-    pub name: String,
-    /// `user:<name>`.
-    pub reference: String,
-    /// The entry file; `null` when the folder has none.
-    pub entry: Option<String>,
-    /// The folder's files, relative, in path order.
-    pub files: Vec<String>,
-    /// The folder's version (DMN-084).
-    pub version: String,
-    /// The entry's leading comment, whitespace collapsed; empty without one.
-    pub description: String,
 }

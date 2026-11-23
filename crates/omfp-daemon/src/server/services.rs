@@ -14,7 +14,7 @@ mod windows;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 
 use omfp_protocol::{
     ErrorBody, GitStatus, IndexEvent, IndexSnapshot, JobCounts, RepoStatus, SetSettingsParams,
@@ -24,11 +24,12 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
-use super::convert::{self, bad_request, internal, workspace_error};
+use super::convert::{self, bad_request, blocking, internal};
 use crate::config_file::{ConfigFile, DaemonOptions, write_back};
 use crate::event_log::EventLog;
 use crate::jobs::Jobs;
 use crate::jobs::declared::{Clock, Declared};
+use crate::lock;
 use crate::paths::replace_file;
 use crate::store::{Store, StoreError, new_id, now_ms};
 use crate::supervisor::Supervisor;
@@ -149,10 +150,6 @@ pub(crate) struct Services {
     login_board: Arc<logins::LoginBoard>,
 }
 
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
 /// `not_found` for `entity` `id`, which the index does not show.
 fn not_found(entity: &'static str, id: &str) -> ErrorBody {
     StoreError::NotFound {
@@ -160,13 +157,6 @@ fn not_found(entity: &'static str, id: &str) -> ErrorBody {
         id: id.to_owned(),
     }
     .into()
-}
-
-/// Runs blocking work (the store, the file system) off the async workers; a panicked task is an internal error.
-pub(super) async fn blocking<T: Send + 'static>(
-    work: impl FnOnce() -> Result<T, ErrorBody> + Send + 'static,
-) -> Result<T, ErrorBody> {
-    tokio::task::spawn_blocking(work).await.map_err(internal)?
 }
 
 impl Services {
@@ -232,7 +222,7 @@ impl Services {
         let declared = services.declared.clone();
         let scanned = blocking(move || {
             declared.recover()?;
-            let list = workspaces.list().map_err(workspace_error)?;
+            let list = workspaces.list()?;
             for ws in &list {
                 match workspaces.rescan(&ws.id) {
                     Ok((view, _)) if view.repos.iter().any(|repo| repo.is_root) => {}
@@ -290,7 +280,7 @@ impl Services {
                         threads
                             .get(&thread_id)
                             .map(|thread| thread.workspace_id)
-                            .map_err(convert::thread_error)
+                            .map_err(ErrorBody::from)
                     })
                     .await?;
                     services.full_scan(&workspace_id).await
@@ -309,7 +299,7 @@ impl Services {
         let workspaces = Arc::clone(&self.workspaces);
         let workspace_id = id.to_owned();
         let (view, changed) =
-            blocking(move || workspaces.rescan(&workspace_id).map_err(workspace_error)).await?;
+            blocking(move || workspaces.rescan(&workspace_id).map_err(ErrorBody::from)).await?;
         if changed {
             self.refresh_index_quietly().await;
         }
@@ -675,9 +665,7 @@ impl Services {
         let workspaces = Arc::clone(&self.workspaces);
         let workspace_id = id.to_owned();
         let repos = blocking(move || {
-            let repos = workspaces
-                .discovered(&workspace_id)
-                .map_err(workspace_error)?;
+            let repos = workspaces.discovered(&workspace_id)?;
             Ok(repos
                 .iter()
                 .map(|repo| {
@@ -688,7 +676,7 @@ impl Services {
                     };
                     let (status, error) = match read() {
                         Ok(status) => (status, None),
-                        Err(error) => (GitStatus::default(), Some(workspace_error(error).message)),
+                        Err(error) => (GitStatus::default(), Some(ErrorBody::from(error).message)),
                     };
                     RepoStatus {
                         name: repo.name.clone(),
@@ -745,8 +733,8 @@ fn load_index(
     let positions = store.positions()?;
     let position = |id: &str| positions.get(id).copied().unwrap_or_default();
     let mut scanned = Vec::new();
-    for ws in workspaces.list().map_err(workspace_error)? {
-        let repos = workspaces.discovered(&ws.id).map_err(workspace_error)?;
+    for ws in workspaces.list()? {
+        let repos = workspaces.discovered(&ws.id)?;
         scanned.push((ws, repos));
     }
     // Which workspaces hold each checkout (DMN-027).

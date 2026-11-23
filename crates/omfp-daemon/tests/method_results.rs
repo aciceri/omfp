@@ -4,15 +4,10 @@
 mod client;
 
 use std::path::Path;
-use std::sync::Arc;
 
-use clap::Parser;
-use client::{Client, Follower};
+use client::{Client, Follower, TestDaemon};
 use omfp_core::wire::{ExtensionUiRequest, ThinkingLevel};
-use omfp_daemon::agent::{FakeLauncher, FakeRun};
-use omfp_daemon::config::{Cli, Config};
-use omfp_daemon::git::FakeGit;
-use omfp_daemon::{DaemonHandle, Ports, start_with};
+use omfp_daemon::agent::FakeRun;
 use omfp_protocol::method::ActivityList;
 use omfp_protocol::method::{
     FsComplete, InteractionRespond, ReposSuggest, Subscribe, SystemHello, ThemeGet, ThemeSet,
@@ -33,68 +28,11 @@ use omfp_protocol::{
     UpdateWorkspaceParams, WorkspaceDiffParams, WorkspaceRef, WriteFileParams,
 };
 use omfp_protocol::{ListActivityParams, StopThreadParams};
-use tempfile::TempDir;
-
-struct TestDaemon {
-    handle: DaemonHandle,
-    launcher: FakeLauncher,
-    git: Arc<FakeGit>,
-    dir: TempDir,
-}
-
-async fn daemon() -> TestDaemon {
-    daemon_in(tempfile::tempdir().unwrap()).await
-}
-
-/// A daemon over `dir`'s data directory, with a fake launcher and git of its own.
-async fn daemon_in(dir: TempDir) -> TestDaemon {
-    let data_dir = dir.path().join("data");
-    let cli = Cli::try_parse_from([
-        "daemon",
-        "--bind",
-        "127.0.0.1:0",
-        "--data-dir",
-        data_dir.to_str().unwrap(),
-        "--workspaces-root",
-        dir.path().join("workspaces").to_str().unwrap(),
-    ])
-    .unwrap();
-    let config = Config::from_cli(cli, None, None).unwrap();
-    let launcher = FakeLauncher::new();
-    let git = Arc::new(FakeGit::new());
-    let ports = Ports {
-        launcher: Arc::new(launcher.clone()),
-        git: Arc::clone(&git) as _,
-        omp_program: "omp".into(),
-        omp_version: omfp_core::OMP_VERSION.into(),
-        omp_env: Vec::new(),
-        user_omp_env: omfp_testkit::absent_standalone_omp(&dir),
-        warnings: Vec::new(),
-        clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
-    };
-    let handle = start_with(config, ports).await.unwrap();
-    TestDaemon {
-        handle,
-        launcher,
-        git,
-        dir,
-    }
-}
 
 impl TestDaemon {
-    /// Stops the daemon and starts it again over the same data directory (TST-119).
-    async fn restart(self) -> Self {
-        self.handle.shutdown().await.unwrap();
-        daemon_in(self.dir).await
-    }
-
-    async fn client(&self) -> Client {
-        Client::hello(self.handle.addr(), self.handle.token().expose(), "test").await
-    }
-
-    /// A new directory under the test's temporary directory.
+    /// A new directory under the test's temporary directory, outside the data directory's entries.
     fn folder(&self, name: &str) -> String {
-        let path = self.dir.path().join(name);
+        let path = self.dir.path().join("folders").join(name);
         std::fs::create_dir_all(&path).unwrap();
         path.to_str().unwrap().to_owned()
     }
@@ -145,7 +83,7 @@ fn message(thread_id: &str, text: &str) -> MessageParams {
 #[tokio::test(flavor = "multi_thread")]
 #[allow(clippy::too_many_lines)] // One method after the other.
 async fn connection_repository_and_workspace_methods_return_their_declared_results() {
-    let daemon = daemon().await;
+    let daemon = TestDaemon::start(&[]).await;
     let mut client = Client::connect(daemon.handle.addr()).await;
     let hello = client
         .typed::<SystemHello>(HelloParams {
@@ -173,7 +111,7 @@ async fn connection_repository_and_workspace_methods_return_their_declared_resul
     daemon.git.add_repo(Path::new(&root), "main");
     let completed = client
         .typed::<FsComplete>(CompletePathParams {
-            path: format!("{}/re", daemon.dir.path().display()),
+            path: format!("{}/folders/re", daemon.dir.path().display()),
         })
         .await;
     assert_eq!(
@@ -279,8 +217,8 @@ async fn connection_repository_and_workspace_methods_return_their_declared_resul
 // spec: TST-117
 #[tokio::test(flavor = "multi_thread")]
 async fn thread_management_methods_return_their_declared_results() {
-    let daemon = daemon().await;
-    let mut client = daemon.client().await;
+    let daemon = TestDaemon::start(&[]).await;
+    let mut client = daemon.client("test").await;
     let thread = client.typed::<ThreadsCreate>(new_thread("typed")).await;
 
     let updated = client
@@ -340,8 +278,8 @@ async fn thread_management_methods_return_their_declared_results() {
 // spec: TST-117, DMN-075
 #[tokio::test(flavor = "multi_thread")]
 async fn theme_methods_return_their_declared_results() {
-    let daemon = daemon().await;
-    let mut client = daemon.client().await;
+    let daemon = TestDaemon::start(&[]).await;
+    let mut client = daemon.client("test").await;
     assert_eq!(
         client.typed::<ThemeGet>(Empty {}).await,
         Theme { css: None }
@@ -363,8 +301,8 @@ async fn declared_job_methods_return_their_declared_results() {
         JobViewStatus,
     };
 
-    let daemon = daemon().await;
-    let mut client = daemon.client().await;
+    let daemon = TestDaemon::start(&[]).await;
+    let mut client = daemon.client("test").await;
     let ws = client
         .typed::<WorkspacesCreate>(CreateWorkspaceParams {
             name: None,
@@ -430,9 +368,9 @@ async fn declared_job_methods_return_their_declared_results() {
 // spec: TST-117
 #[tokio::test(flavor = "multi_thread")]
 async fn agent_methods_the_daemon_answers_itself_return_their_declared_results() {
-    let daemon = daemon().await;
+    let daemon = TestDaemon::start(&[]).await;
     daemon.launcher.push_run(fixture("approval_granted"));
-    let mut client = daemon.client().await;
+    let mut client = daemon.client("test").await;
     let thread = client.typed::<ThreadsCreate>(new_thread("agent")).await.id;
     let mut view = Follower::snapshot(&mut client, &thread, None).await;
 
@@ -516,9 +454,9 @@ async fn a_turn_a_daemon_restart_interrupted_shows_in_the_summary_and_resume_con
     use omfp_protocol::method::{ThreadResume, ThreadsList};
     use omfp_protocol::{ErrorCode, ListThreadsParams};
 
-    let daemon = daemon().await;
+    let daemon = TestDaemon::start(&[]).await;
     daemon.launcher.push_run(fixture("approval_granted"));
-    let mut client = daemon.client().await;
+    let mut client = daemon.client("test").await;
     let busy = client.typed::<ThreadsCreate>(new_thread("busy")).await.id;
     let idle = client.typed::<ThreadsCreate>(new_thread("idle")).await.id;
     let mut view = Follower::snapshot(&mut client, &busy, None).await;
@@ -536,7 +474,7 @@ async fn a_turn_a_daemon_restart_interrupted_shows_in_the_summary_and_resume_con
     drop(client);
 
     let daemon = daemon.restart().await;
-    let mut client = daemon.client().await;
+    let mut client = daemon.client("test").await;
     let listed = client
         .typed::<ThreadsList>(ListThreadsParams::default())
         .await;

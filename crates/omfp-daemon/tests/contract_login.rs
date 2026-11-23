@@ -7,12 +7,9 @@
 mod client;
 mod common;
 
-use clap::Parser;
 use client::Client;
-use common::Harness;
-use omfp_daemon::config::{Cli, Config};
-use omfp_daemon::{DaemonHandle, Ports, start_with};
-use omfp_testkit::omp_bin;
+use common::{Harness, omp_daemon};
+use omfp_daemon::DaemonHandle;
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -27,31 +24,7 @@ async fn fresh_install(harness: &Harness) -> (DaemonHandle, TempDir) {
          disabledProviders: [local, web, ollama, llama.cpp, lm-studio, apple]\n",
     )
     .unwrap();
-    daemon_on(harness).await
-}
-
-/// A daemon on the real omp of `harness`'s environment.
-async fn daemon_on(harness: &Harness) -> (DaemonHandle, TempDir) {
-    let data = tempfile::tempdir().unwrap();
-    let omp = omp_bin();
-    let workspaces = data.path().join("workspaces");
-    let cli = Cli::try_parse_from([
-        "daemon",
-        "--bind",
-        "127.0.0.1:0",
-        "--data-dir",
-        data.path().to_str().unwrap(),
-        "--workspaces-root",
-        workspaces.to_str().unwrap(),
-        "--omp-bin",
-        &omp,
-        "--no-title-generation",
-    ])
-    .unwrap();
-    let config = Config::from_cli(cli, None, None).unwrap();
-    let mut ports = Ports::resolve(&config).unwrap();
-    ports.omp_env = harness.env.prepare_omfp_profile(data.path()).unwrap();
-    (start_with(config, ports).await.unwrap(), data)
+    omp_daemon(harness, &["--no-title-generation"]).await
 }
 
 /// The next window request `client` receives, skipping other frames.
@@ -116,7 +89,7 @@ async fn on_a_fresh_install_threads_cannot_start_and_the_login_omp_lists_the_pro
 #[tokio::test(flavor = "multi_thread")]
 async fn a_configured_omp_counts_its_usable_models() {
     let harness = Harness::new(Vec::new()).await;
-    let (daemon, _data) = daemon_on(&harness).await;
+    let (daemon, _data) = omp_daemon(&harness, &["--no-title-generation"]).await;
     let mut client = Client::hello(daemon.addr(), daemon.token().expose(), "test").await;
 
     let status = client.ok("auth.status", json!({})).await;

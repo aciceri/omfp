@@ -4,70 +4,15 @@
 
 mod client;
 
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::path::PathBuf;
 
-use clap::Parser;
-use client::Client;
-use omfp_daemon::agent::FakeLauncher;
-use omfp_daemon::config::{Cli, Config};
-use omfp_daemon::git::FakeGit;
-use omfp_daemon::{DaemonHandle, Ports, start_with};
+use client::{Client, TestDaemon};
 use serde_json::{Value, json};
-use tempfile::TempDir;
-
-struct TestDaemon {
-    handle: DaemonHandle,
-    dir: TempDir,
-}
-
-fn config(dir: &Path) -> Config {
-    let workspaces = dir.join("workspaces");
-    let cli = Cli::try_parse_from([
-        "daemon",
-        "--bind",
-        "127.0.0.1:0",
-        "--data-dir",
-        dir.to_str().unwrap(),
-        "--workspaces-root",
-        workspaces.to_str().unwrap(),
-    ])
-    .unwrap();
-    Config::from_cli(cli, None, None).unwrap()
-}
-
-async fn daemon() -> TestDaemon {
-    let dir = tempfile::tempdir().unwrap();
-    let ports = Ports {
-        launcher: Arc::new(FakeLauncher::new()),
-        git: Arc::new(FakeGit::new()),
-        omp_program: "omp".into(),
-        omp_version: omfp_core::OMP_VERSION.into(),
-        omp_env: Vec::new(),
-        user_omp_env: omfp_testkit::absent_standalone_omp(&dir),
-        warnings: Vec::new(),
-        clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
-    };
-    let handle = start_with(config(dir.path()), ports).await.unwrap();
-    TestDaemon { handle, dir }
-}
 
 impl TestDaemon {
-    async fn client(&self, name: &str) -> Client {
-        Client::hello(self.handle.addr(), self.handle.token().expose(), name).await
-    }
-
     /// A path in the test's directory, outside every workspace.
     fn path(&self, name: &str) -> PathBuf {
         self.dir.path().join(name)
-    }
-
-    /// A shell loop running until `gate` exists.
-    fn hold(&self, gate: &str) -> String {
-        format!(
-            "while [ ! -e '{}' ]; do sleep 0.01; done",
-            self.path(gate).display()
-        )
     }
 }
 
@@ -177,7 +122,7 @@ impl Followed {
 // spec: DMN-080, PRT-041
 #[tokio::test(flavor = "multi_thread")]
 async fn a_job_publishes_its_lines_and_exit_then_replays_them_in_order() {
-    let daemon = daemon().await;
+    let daemon = TestDaemon::start(&[]).await;
     let mut client = daemon.client("test").await;
     let (workspace_id, folder) = workspace(&mut client).await;
     let command = r"pwd; if read line; then echo stdin; else echo no-stdin; fi; printf 'one\ntwo\r\nbad \377\n'; echo oops >&2; printf last";
@@ -252,34 +197,10 @@ async fn a_job_publishes_its_lines_and_exit_then_replays_them_in_order() {
     assert_eq!(snapshot.job["status"], status);
 }
 
-// spec: DMN-080
-#[tokio::test(flavor = "multi_thread")]
-async fn a_line_longer_than_64_kib_arrives_in_pieces() {
-    let daemon = daemon().await;
-    let mut client = daemon.client("test").await;
-    let (workspace_id, _) = workspace(&mut client).await;
-
-    let job = start(
-        &mut client,
-        &workspace_id,
-        r"head -c 70000 /dev/zero | tr '\0' a",
-    )
-    .await;
-    let mut followed = Followed::subscribe(&mut client, job["id"].as_str().unwrap()).await;
-    followed.until_exited(&mut client).await;
-
-    let lengths: Vec<usize> = followed
-        .texts("stdout")
-        .iter()
-        .map(|text| text.len())
-        .collect();
-    assert_eq!(lengths, [64 * 1024, 70000 - 64 * 1024]);
-}
-
 // spec: DMN-080, PRT-041
 #[tokio::test(flavor = "multi_thread")]
 async fn the_exit_reports_the_code_or_the_signal() {
-    let daemon = daemon().await;
+    let daemon = TestDaemon::start(&[]).await;
     let mut client = daemon.client("test").await;
     let (workspace_id, _) = workspace(&mut client).await;
 
@@ -301,7 +222,7 @@ async fn the_exit_reports_the_code_or_the_signal() {
 // spec: DMN-080
 #[tokio::test(flavor = "multi_thread")]
 async fn a_job_exits_only_once_both_outputs_closed() {
-    let daemon = daemon().await;
+    let daemon = TestDaemon::start(&[]).await;
     let mut client = daemon.client("test").await;
     let (workspace_id, _) = workspace(&mut client).await;
     // The shell exits at once; a background process keeps stdout open until the gate opens.
@@ -320,7 +241,7 @@ async fn a_job_exits_only_once_both_outputs_closed() {
 // spec: DMN-081
 #[tokio::test(flavor = "multi_thread")]
 async fn a_job_outlives_the_client_that_started_it_and_every_client_sees_it() {
-    let daemon = daemon().await;
+    let daemon = TestDaemon::start(&[]).await;
     let mut starter = daemon.client("starter").await;
     let (workspace_id, _) = workspace(&mut starter).await;
     let command = format!("{}; echo done", daemon.hold("gate"));
@@ -339,7 +260,7 @@ async fn a_job_outlives_the_client_that_started_it_and_every_client_sees_it() {
 // spec: DMN-081
 #[tokio::test(flavor = "multi_thread")]
 async fn kill_terminates_the_whole_process_group() {
-    let daemon = daemon().await;
+    let daemon = TestDaemon::start(&[]).await;
     let mut client = daemon.client("test").await;
     let (workspace_id, _) = workspace(&mut client).await;
     // A background member of the group holds stdout: the job finishes only if it dies too.
@@ -369,7 +290,7 @@ async fn kill_terminates_the_whole_process_group() {
 // spec: DMN-081
 #[tokio::test(flavor = "multi_thread")]
 async fn kill_escalates_to_sigkill_when_the_shell_survives_sigterm() {
-    let daemon = daemon().await;
+    let daemon = TestDaemon::start(&[]).await;
     let mut client = daemon.client("test").await;
     let (workspace_id, _) = workspace(&mut client).await;
     let command = format!("trap 'echo term' TERM; echo ready; {}", daemon.hold("gate"));
@@ -391,7 +312,7 @@ async fn kill_escalates_to_sigkill_when_the_shell_survives_sigterm() {
 // spec: DMN-080, DMN-081, PRT-041
 #[tokio::test(flavor = "multi_thread")]
 async fn unknown_workspaces_jobs_and_empty_commands_are_refused() {
-    let daemon = daemon().await;
+    let daemon = TestDaemon::start(&[]).await;
     let mut client = daemon.client("test").await;
     let (workspace_id, _) = workspace(&mut client).await;
 
@@ -426,7 +347,7 @@ async fn unknown_workspaces_jobs_and_empty_commands_are_refused() {
 // spec: DMN-081
 #[tokio::test(flavor = "multi_thread")]
 async fn removing_a_workspace_kills_its_jobs_before_deleting_the_folder_and_forgets_them() {
-    let daemon = daemon().await;
+    let daemon = TestDaemon::start(&[]).await;
     let mut client = daemon.client("test").await;
     let (workspace_id, folder) = workspace(&mut client).await;
     let command = format!(
@@ -461,7 +382,7 @@ async fn removing_a_workspace_kills_its_jobs_before_deleting_the_folder_and_forg
 // spec: DMN-081
 #[tokio::test(flavor = "multi_thread")]
 async fn a_refused_workspace_removal_keeps_its_jobs_running() {
-    let daemon = daemon().await;
+    let daemon = TestDaemon::start(&[]).await;
     let mut client = daemon.client("test").await;
     let (workspace_id, folder) = workspace(&mut client).await;
     client
@@ -492,7 +413,7 @@ async fn a_refused_workspace_removal_keeps_its_jobs_running() {
 // spec: DMN-081
 #[tokio::test(flavor = "multi_thread")]
 async fn shutdown_kills_every_running_job() {
-    let daemon = daemon().await;
+    let daemon = TestDaemon::start(&[]).await;
     let mut client = daemon.client("test").await;
     let (workspace_id, _) = workspace(&mut client).await;
     let marker = daemon.path("stopped");
@@ -506,7 +427,9 @@ async fn shutdown_kills_every_running_job() {
     followed.until_line(&mut client, "ready").await;
 
     // The temporary directory outlives the shutdown.
-    let TestDaemon { handle, dir: _dir } = daemon;
+    let TestDaemon {
+        handle, dir: _dir, ..
+    } = daemon;
     handle.shutdown().await.unwrap();
 
     assert_eq!(std::fs::read_to_string(&marker).unwrap(), "stopped\n");

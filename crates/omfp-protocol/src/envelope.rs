@@ -450,12 +450,6 @@ pub enum ViewsEvent {
     },
     /// The workspace's `.omfp/init.ts` appeared, changed or went away (PRT-095): replaces `init`.
     ViewsInit { init: Option<String> },
-    /// A file of the workspace's `.omfp/views/` (TSX views) appeared, changed or went away, or the
-    /// folder did (PRT-096): replaces `viewFiles`.
-    ViewsFiles {
-        #[serde(rename = "viewFiles")]
-        view_files: Option<String>,
-    },
     /// A widget stored a value (`null`: removed the key, DMN-086).
     WidgetStored {
         instance: String,

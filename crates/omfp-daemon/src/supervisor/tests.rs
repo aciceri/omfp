@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use omfp_core::replay;
-use omfp_protocol::InteractionResponse;
+use omfp_protocol::{CreatedBy, InteractionResponse};
 use omp_rpc::{AgentStartEvent, RpcAgentEvent, RpcNotification};
 use serde_json::json;
 use tempfile::TempDir;
@@ -41,7 +41,7 @@ fn harness(configure: impl FnOnce(&mut SupervisorConfig)) -> Harness {
     let data = DataDir::new(dir.path().join("data"));
     std::fs::create_dir_all(data.root()).unwrap();
     let root = dir.path().join("workspaces");
-    let store = Arc::new(Store::open(&data.db(), &root).unwrap());
+    let store = Arc::new(Store::open(&data.db()).unwrap());
     let threads = Arc::new(Threads::new(Arc::clone(&store), data.clone()));
     let git = Arc::new(FakeGit::new());
     let workspaces = Arc::new(Workspaces::new(
@@ -221,11 +221,11 @@ async fn omp_starts_in_its_workspace_folder_with_one_add_dir_per_repository() {
         Some(
             format!(
                 "{}\n\nAnswer in haiku.",
-                conventions::daemon_text("workspace", &ws, &folder, &h.data.widgets(), &id)
+                conventions::daemon_text("workspace", &ws, &folder, &id)
             )
             .as_str()
         ),
-        "the conventions, the widgets note (user library), the control note (thread id), then the user's file"
+        "the conventions, the widgets note, the control note (thread id), then the user's file"
     );
     assert_eq!(
         launch.spec.session_dir,
@@ -2862,7 +2862,11 @@ async fn live_levels_reach_the_levels_stream_and_never_the_log() {
 async fn a_cascade_stop_stops_the_whole_spawned_tree_and_nothing_else() {
     let h = harness(|_| {});
     let (ws, _) = h.workspace();
-    let spawn = |title: &str, created_by: crate::store::Provenance| {
+    // `parent`: the thread whose agent spawned it; `None` for the user's.
+    let spawn = |title: &str, parent: Option<&str>| {
+        let created_by = parent.map_or(CreatedBy::User, |parent| CreatedBy::Thread {
+            thread_id: parent.to_owned(),
+        });
         h.threads
             .create(NewThread {
                 created_by,
@@ -2871,14 +2875,11 @@ async fn a_cascade_stop_stops_the_whole_spawned_tree_and_nothing_else() {
             .unwrap()
             .id
     };
-    let root = spawn("root", crate::store::Provenance::User);
-    let child = spawn("child", crate::store::Provenance::Thread(root.clone()));
-    let grandchild = spawn(
-        "grandchild",
-        crate::store::Provenance::Thread(child.clone()),
-    );
-    let idle = spawn("idle", crate::store::Provenance::Thread(root.clone()));
-    let unrelated = spawn("unrelated", crate::store::Provenance::User);
+    let root = spawn("root", None);
+    let child = spawn("child", Some(&root));
+    let grandchild = spawn("grandchild", Some(&child));
+    let idle = spawn("idle", Some(&root));
+    let unrelated = spawn("unrelated", None);
     for id in [&root, &child, &grandchild, &unrelated] {
         h.supervisor.start(id).await.unwrap();
     }

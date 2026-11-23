@@ -9,9 +9,9 @@ use omp_rpc::{LiveRole, RpcNotification, SetSessionNameCommand};
 use tokio::time::Instant;
 use tracing::warn;
 
-use super::{Actor, Result, Supervisor, SupervisorError, blocking, lock};
+use super::{Actor, Result, Supervisor, SupervisorError, TitleSource, blocking, lock};
 use crate::agent::OmpCall;
-use crate::store::{Thread, TitleSource};
+use crate::store::Thread;
 use crate::titles::{self, TitleRequest};
 
 impl Supervisor {

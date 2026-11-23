@@ -1,4 +1,4 @@
-//! Widget folders (AGT-012, AGT-013, AGT-023, DMN-082): which folders are widgets, their entry file, and a version
+//! Widget folders (AGT-012, AGT-013, DMN-082): which folders are widgets, their entry file, and a version
 //! that changes whenever a file of the folder is saved, read from file metadata only.
 
 use std::fs::Metadata;
@@ -174,7 +174,7 @@ mod tests {
         write(&library.join("bad name/index.ts"), "");
         write(&library.join("file.ts"), "");
 
-        let widgets = scan(library, WidgetSource::User);
+        let widgets = scan(library, WidgetSource::Workspace);
 
         let listed: Vec<(&str, Option<&str>)> = widgets
             .iter()
@@ -188,8 +188,8 @@ mod tests {
                 ("c", None)
             ]
         );
-        assert!(widgets.iter().all(|w| w.source == WidgetSource::User));
-        assert_eq!(scan(&library.join("missing"), WidgetSource::User), []);
+        assert!(widgets.iter().all(|w| w.source == WidgetSource::Workspace));
+        assert_eq!(scan(&library.join("missing"), WidgetSource::Workspace), []);
     }
 
     // spec: AGT-013, DMN-082

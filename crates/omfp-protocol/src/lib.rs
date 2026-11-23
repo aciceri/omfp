@@ -70,11 +70,8 @@ pub use params::{
     WorkspaceRef, WriteFileParams,
 };
 pub use params::{CardAnswer, CardAnswerParams, CompileWidgetParams, CompiledWidget, ViewsFile};
-pub use params::{FileErrorKind, FileErrorReport, ViewErrors, WatchParams, WindowFileErrors};
-pub use params::{
-    LibraryComponent, MountParams, MountPlace, MountUpdateParams, Mounted, SaveWidgetParams,
-    UnmountParams, Unmounted, WidgetLibrary, WidgetSaved,
-};
+pub use params::{FileErrorReport, ViewErrors, WatchParams, WindowFileErrors};
+pub use params::{MountParams, MountPlace, MountUpdateParams, Mounted, UnmountParams, Unmounted};
 pub use schema::type_schemas;
 pub use session::{ContextUsage, SessionTokens, SessionUsage, ThreadSession};
 pub use topic::{Topic, TopicParseError};

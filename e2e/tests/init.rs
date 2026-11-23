@@ -1,8 +1,8 @@
 //! The init file journeys (06-testing.md). E2E-22: a workspace's `.omfp/init.ts` adds
 //! a command, a key binding and a view to the window, a syntax error in it shows a banner while the window keeps
-//! working, and `:describe-key` says where the binding comes from. E2E-23: an init file adds a view computed from the
-//! workspace's repositories and a TSX view, whose splitters resize for the window and whose syntax error shows the
-//! default view until the next save. Run with `just test-e2e`.
+//! working, and `:describe-key` says where the binding comes from. E2E-23: an init file adds views computed from the
+//! workspace's repositories, picked with `Space v`, whose splitters resize for the window and keep their sizes across
+//! view switches. Run with `just test-e2e`.
 
 use std::path::Path;
 
@@ -119,7 +119,7 @@ async fn a_workspace_init_file_adds_a_bound_command_and_a_view_and_survives_a_sy
     journey.finish("E2E-22").await
 }
 
-/// The workspace's init file of E2E-23: `views.json`'s views, one computed from the repositories, one TSX file.
+/// The workspace's init file of E2E-23: `views.json`'s views, one computed from the repositories, one fixed layout.
 const VIEWS_INIT: &str = r#"export default function init(omfp) {
   const views = omfp.views.load("views.json");
   const repos = omfp.workspace.repos;
@@ -127,32 +127,15 @@ const VIEWS_INIT: &str = r#"export default function init(omfp) {
     title: "Review",
     layout: ["row", {}, "omfp:chat", ...repos.map((r) => ["omfp:changes", { repo: r.name, title: r.name }])],
   });
-  views.add("ops", { title: "Ops", view: "./views/ops.tsx" });
+  views.add("ops", {
+    title: "Ops",
+    layout: ["row", { sizes: [3, 2] },
+      ["tabs", { id: "main" }, "omfp:chat"],
+      ["col", { sizes: [1, 1] }, "omfp:changes", ["tabs", {}, "omfp:background", "omfp:mcp"]]],
+  });
   omfp.views.use(views);
 }
 "#;
-
-/// The TSX view of E2E-23.
-const OPS: &str = r#"import { Col, Row, Tabs, Widget } from "omfp/sdk";
-
-export default function Ops() {
-  return (
-    <Row sizes={[3, 2]}>
-      <Tabs id="main"><Widget use="omfp:chat" /></Tabs>
-      <Col sizes={[1, 1]}>
-        <Widget use="omfp:changes" />
-        <Tabs><Widget use="omfp:background" /><Widget use="omfp:mcp" /></Tabs>
-      </Col>
-    </Row>
-  );
-}
-"#;
-
-fn write_ops(folder: &Path, text: &str) -> anyhow::Result<()> {
-    std::fs::create_dir_all(folder.join(".omfp/views"))?;
-    std::fs::write(folder.join(".omfp/views/ops.tsx"), text)?;
-    Ok(())
-}
 
 /// The share of the first cell the root row's splitter of the shown view gives (`aria-valuenow`).
 async fn root_share(journey: &Journey) -> anyhow::Result<String> {
@@ -231,16 +214,14 @@ async fn pick_ops(journey: &Journey) -> anyhow::Result<()> {
     Ok(())
 }
 
-// spec: E2E-23, UI-063, UI-267, UI-268, UI-300, UI-301, UI-302, DMN-186, AGT-074
+// spec: E2E-23, UI-063, UI-267, UI-300, UI-301, UI-302
 #[tokio::test(flavor = "multi_thread")]
-async fn an_init_file_adds_a_computed_view_and_a_tsx_view_that_resizes_and_survives_a_syntax_error()
--> anyhow::Result<()> {
+async fn an_init_file_adds_computed_views_that_resize_and_keep_their_sizes() -> anyhow::Result<()> {
     let journey = Journey::start(Vec::new()).await?;
     journey.connected().await?;
     let thread = journey.create_thread("init views journey").await?;
     let folder = journey.workspace_folder(&thread).await?;
 
-    write_ops(&folder, OPS)?;
     write_init(&folder, VIEWS_INIT)?;
     // The computed view, a tab of the mode line: the chat beside the changes of each repository.
     journey
@@ -267,7 +248,7 @@ async fn an_init_file_adds_a_computed_view_and_a_tsx_view_that_resizes_and_survi
         .await?;
     journey.gone("[data-testid=error]").await?;
 
-    // The TSX view, picked with fuzzy filtering, a numeric hint and arrows/Enter.
+    // The second view, picked with fuzzy filtering, a numeric hint and arrows/Enter.
     recover_cleared_draft(&journey).await?;
     pick_ops(&journey).await?;
     assert_eq!(root_share(&journey).await?, "60");
@@ -280,25 +261,18 @@ async fn an_init_file_adds_a_computed_view_and_a_tsx_view_that_resizes_and_survi
     journey.keys(Key::Right).await?;
     let resized = root_share(&journey).await?;
     assert_ne!(resized, "60", "the splitter moved");
-    journey.screenshot("init-tsx-view").await?;
+    journey.screenshot("init-ops-view").await?;
 
-    // A syntax error: a banner names the file, the default view stands in, the window works.
-    write_ops(
-        &folder,
-        "export default function Ops() {\n  return <Row>;\n}\n",
-    )?;
-    journey.element("[data-testid=view-file-error]").await?;
-    let banner = journey.text("[data-testid=view-file-error]").await?;
-    assert!(banner.contains(".omfp/views/ops.tsx"), "{banner}");
-    assert!(banner.contains("ops.tsx:"), "{banner}");
+    // Away and back: the view keeps this window's sizes.
+    journey.keys(" v").await?;
+    journey.until_focused("view-picker-input").await?;
+    journey.keys("1").await?;
     journey
         .element("[data-testid=view][data-view=default]")
         .await?;
-    journey.screenshot("init-tsx-view-error").await?;
-
-    // Fixed: the view is back with this window's sizes.
-    write_ops(&folder, OPS)?;
-    journey.gone("[data-testid=view-file-error]").await?;
+    journey
+        .click("[data-testid=mode-view][data-view=ops]")
+        .await?;
     journey
         .element("[data-testid=view][data-view=ops] [data-slot=main]")
         .await?;

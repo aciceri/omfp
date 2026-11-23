@@ -1,15 +1,23 @@
-//! A native protocol client (`tokio-tungstenite`) for the daemon's integration (L2) and contract (L3) tests.
+//! A native protocol client (`tokio-tungstenite`) for the daemon's integration (L2) and contract (L3) tests, and the
+//! fake-launcher daemon of the L2 tests ([`TestDaemon`]).
 
 #![allow(dead_code)] // Each test binary uses a different subset.
 
 use std::collections::VecDeque;
 use std::net::SocketAddr;
+use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures::{SinkExt, StreamExt};
 use omfp_core::{ThreadEvent, ThreadState};
+use omfp_daemon::agent::FakeLauncher;
+use omfp_daemon::config::Config;
+use omfp_daemon::git::FakeGit;
+use omfp_daemon::{DaemonHandle, Ports, start_with};
 use omfp_protocol::Method;
 use serde_json::{Value, json};
+use tempfile::TempDir;
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest;
 use tokio_tungstenite::tungstenite::{self, Message};
@@ -17,6 +25,71 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async};
 
 /// How long a test waits for a frame before failing.
 pub const WAIT: Duration = Duration::from_secs(60);
+
+/// A daemon on port 0 over a temporary data directory, with the fake launcher and fake git (ARC-012); the user's own
+/// omp is absent ([`omfp_testkit::absent_standalone_omp`]).
+pub struct TestDaemon {
+    pub handle: DaemonHandle,
+    pub launcher: FakeLauncher,
+    pub git: Arc<FakeGit>,
+    pub dir: TempDir,
+}
+
+impl TestDaemon {
+    /// [`Config::loopback`] with `extra` arguments, over a new directory.
+    pub async fn start(extra: &[&str]) -> Self {
+        Self::start_in(tempfile::tempdir().unwrap(), extra).await
+    }
+
+    /// [`Config::loopback`] with `extra` arguments, over `dir` (e.g. a stopped daemon's).
+    pub async fn start_in(dir: TempDir, extra: &[&str]) -> Self {
+        let config = Config::loopback(dir.path(), extra);
+        Self::launch(dir, config, |_| {}).await
+    }
+
+    /// A daemon over `dir` with `config`, its ports changed by `adjust` first.
+    pub async fn launch(dir: TempDir, config: Config, adjust: impl FnOnce(&mut Ports)) -> Self {
+        let launcher = FakeLauncher::new();
+        let git = Arc::new(FakeGit::new());
+        let mut ports = fake_ports(dir.path(), &launcher, &git);
+        adjust(&mut ports);
+        let handle = start_with(config, ports).await.unwrap();
+        Self {
+            handle,
+            launcher,
+            git,
+            dir,
+        }
+    }
+
+    /// A client said hello as `name`.
+    pub async fn client(&self, name: &str) -> Client {
+        Client::hello(self.handle.addr(), self.handle.token().expose(), name).await
+    }
+
+    /// Stops the daemon and starts another one over the same directory.
+    pub async fn restart(self) -> Self {
+        self.handle.shutdown().await.unwrap();
+        Self::start_in(self.dir, &[]).await
+    }
+
+    /// A shell loop running until the file `gate` of the test's directory exists.
+    pub fn hold(&self, gate: &str) -> String {
+        format!(
+            "while [ ! -e '{}' ]; do sleep 0.01; done",
+            self.dir.path().join(gate).display()
+        )
+    }
+}
+
+/// The fake ports of a daemon over `dir`, sharing `launcher` and `git`.
+pub fn fake_ports(dir: &Path, launcher: &FakeLauncher, git: &Arc<FakeGit>) -> Ports {
+    Ports::fake(
+        Arc::new(launcher.clone()),
+        Arc::clone(git) as _,
+        omfp_testkit::absent_standalone_omp(dir),
+    )
+}
 
 pub struct Client {
     ws: WebSocketStream<MaybeTlsStream<TcpStream>>,

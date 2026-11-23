@@ -49,7 +49,7 @@ pub type SetTitle = Arc<dyn Fn(&str) -> Result<(), String> + Send + Sync>;
 /// What the `omfp://` URIs of a thread's workspace need from the daemon (DMN-108, DMN-199, AGT-081); the server
 /// implements it. They run on an `omp-rpc` handler thread and may block it.
 pub trait WidgetHost: Send + Sync {
-    /// The `omfp_widget_check` answer for `name` of workspace `workspace_id`: a widget, an init file or a TSX view.
+    /// The `omfp_widget_check` answer for `name` of workspace `workspace_id`: a widget or an init file.
     fn check_widget(
         &self,
         workspace_id: &str,
@@ -117,11 +117,11 @@ pub fn host_uris(
     .description(format!(
         "omfp, the window the user works in: {} indexes these docs; {} lists the protocol methods omfp_call accepts \
          and {}/<name> gives one's params and result schemas; {DOCS_URL} documents widgets (SDK, kit, views, init \
-         files, TSX views); {} describes the window and {} its keys and commands; {SCHEMA_URL} is the JSON Schema of \
+         files); {} describes the window and {} its keys and commands; {SCHEMA_URL} is the JSON Schema of \
          .omfp/views.json, {} of .omfp/keymap.json and {} of .omfp/jobs.json; {BUILTIN_URL} lists the built-in \
          widgets and \
-         {BUILTIN_URL}/<name> shows one's source; {CHECK_URL}/<name> checks a widget, an init file (`init`, \
-         `user:init`) or a TSX view (`views/<file>`): compile errors, what open windows report, a widget no window \
+         {BUILTIN_URL}/<name> shows one's source; {CHECK_URL}/<name> checks a widget or an init file (`init`, \
+         `user:init`): compile errors, what open windows report, a widget no window \
          shows rendered out of sight; {} describes the open windows showing this workspace (views and where each \
          comes from, added commands, errors)",
         shell::INDEX_URL,
@@ -625,7 +625,7 @@ mod tests {
         for part in [
             "omfp://docs indexes these docs",
             "omfp://docs/shell describes the window and omfp://keymap its keys and commands",
-            "an init file (`init`, `user:init`) or a TSX view (`views/<file>`)",
+            "checks a widget or an init file (`init`, `user:init`): compile errors",
         ] {
             assert!(description.contains(part), "{part:?}: {description}");
         }

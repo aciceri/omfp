@@ -1,6 +1,6 @@
 //! A subagent in Background (E2E-42), with the pinned omp and the fake LLM: the agent delegates with `task`; the
 //! subagent's row of `omfp:background` opens its transcript and steer field under it while it runs (UI-490, UI-491),
-//! and once it ends the transcript reads its answer and the steer field goes. No other widget or tab opens (UI-493).
+//! and once it ends the transcript reads its answer and the steer field goes. No other widget or tab opens.
 
 use e2e::Journey;
 use fake_llm::{Matcher, Reply, Step, ToolCall};
@@ -21,7 +21,7 @@ async fn line_with(journey: &Journey, needle: &str) -> anyhow::Result<()> {
         .await
 }
 
-// spec: E2E-42, UI-490, UI-491, UI-493
+// spec: E2E-42, UI-490, UI-491
 #[tokio::test(flavor = "multi_thread")]
 async fn a_subagent_opens_under_its_background_row_with_its_transcript_and_steer_field()
 -> anyhow::Result<()> {

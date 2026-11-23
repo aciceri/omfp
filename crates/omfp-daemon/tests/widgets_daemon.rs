@@ -1,49 +1,26 @@
 //! L2: views and widgets over the real daemon (`start_with`, real router, fake launcher and git) — the `views/<id>`
-//! topic, `views.set`, `widgets.copy`, `widgets.state_set`, the mounts and the component library (`views.mount`,
-//! `views.mount_update`, `views.unmount`, `widgets.save`, `widgets.library`), and widget files served under
-//! `widgetBase`.
+//! topic, `views.set`, `widgets.copy`, `widgets.state_set`, the mounts (`views.mount`, `views.mount_update`,
+//! `views.unmount`), and widget files served under `widgetBase`.
 
 mod client;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use clap::Parser;
-use client::Client;
+use client::{Client, fake_ports};
 use omfp_daemon::agent::FakeLauncher;
-use omfp_daemon::config::{Cli, Config};
+use omfp_daemon::config::Config;
 use omfp_daemon::git::FakeGit;
-use omfp_daemon::{DaemonHandle, Ports, start_with};
+use omfp_daemon::{DaemonHandle, start_with};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
 /// A daemon on port 0 over `data`; `static_dir` is its web bundle; it follows the user init file `<data>/init.ts`.
 async fn start(data: &Path, static_dir: Option<&Path>) -> DaemonHandle {
-    let workspaces = data.join("workspaces");
-    let mut args = vec![
-        "daemon".to_owned(),
-        "--bind".into(),
-        "127.0.0.1:0".into(),
-        "--data-dir".into(),
-        data.display().to_string(),
-        "--workspaces-root".into(),
-        workspaces.display().to_string(),
-    ];
-    if let Some(dir) = static_dir {
-        args.extend(["--static-dir".into(), dir.display().to_string()]);
-    }
-    let mut config = Config::from_cli(Cli::try_parse_from(args).unwrap(), None, None).unwrap();
+    let mut config = Config::loopback(data, &[]);
+    config.static_dir = static_dir.map(Path::to_path_buf);
     config.init_file = Some(data.join("init.ts"));
-    let ports = Ports {
-        launcher: Arc::new(FakeLauncher::new()),
-        git: Arc::new(FakeGit::new()),
-        omp_program: "omp".into(),
-        omp_version: omfp_core::OMP_VERSION.into(),
-        omp_env: Vec::new(),
-        user_omp_env: omfp_testkit::absent_standalone_omp(data),
-        warnings: Vec::new(),
-        clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
-    };
+    let ports = fake_ports(data, &FakeLauncher::new(), &Arc::new(FakeGit::new()));
     start_with(config, ports).await.unwrap()
 }
 
@@ -112,10 +89,6 @@ impl Daemon {
     /// The user init file the daemon follows (DMN-185).
     fn user_init(&self) -> PathBuf {
         self.data.path().join("init.ts")
-    }
-
-    fn user_library(&self) -> PathBuf {
-        self.data.path().join("widgets")
     }
 
     /// Restarts the daemon on the same data directory.
@@ -208,9 +181,9 @@ fn names(widgets: &Value) -> Vec<(String, String)> {
         .collect()
 }
 
-// spec: DMN-082, PRT-040, AGT-011, AGT-012, AGT-023
+// spec: DMN-082, PRT-040, AGT-011, AGT-012
 #[tokio::test(flavor = "multi_thread")]
-async fn the_views_topic_carries_the_manifest_or_its_error_and_the_workspace_then_user_widgets() {
+async fn the_views_topic_carries_the_manifest_or_its_error_and_the_workspace_widgets() {
     let daemon = Daemon::new().await;
     let mut client = daemon.client().await;
     let error = client
@@ -229,10 +202,6 @@ async fn the_views_topic_carries_the_manifest_or_its_error_and_the_workspace_the
         "export default 1;",
     );
     write(&folder.join(".omfp/widgets/notes/readme.md"), "no entry");
-    write(
-        &daemon.user_library().join("charts/index.js"),
-        "export default 1;",
-    );
 
     let state = views(&mut client, &id).await;
 
@@ -243,12 +212,10 @@ async fn the_views_topic_carries_the_manifest_or_its_error_and_the_workspace_the
         [
             ("workspace".to_owned(), "notes".to_owned()),
             ("workspace".to_owned(), "tests".to_owned()),
-            ("user".to_owned(), "charts".to_owned()),
         ]
     );
     assert_eq!(state["widgets"][0]["entry"], Value::Null);
     assert_eq!(state["widgets"][1]["entry"], "index.tsx");
-    assert_eq!(state["widgets"][2]["entry"], "index.js");
     assert_eq!(state["stored"], json!({}));
 
     // A fixed file and a saved widget reach the topic on the next rescan (DMN-023), each change once.
@@ -330,8 +297,7 @@ async fn a_windows_file_errors_are_kept_and_views_errors_lists_them() {
             .await,
         json!({ "windows": [] })
     );
-    let error =
-        json!({ "kind": "view", "file": ".omfp/views/ops.tsx", "message": "ops.tsx:2:3: boom" });
+    let error = json!({ "file": ".omfp/init.ts", "message": "SyntaxError: boom" });
     let report = json!({ "workspaceId": id, "views": null, "widgets": [], "fileErrors": [error] });
     assert_eq!(client.ok("widgets.report", report).await, json!({}));
     let listed = reader
@@ -551,20 +517,12 @@ async fn widget_state_is_published_kept_across_restarts_and_bounded() {
     assert_eq!(error["code"], "not_found");
 }
 
-// spec: DMN-087, AGT-021, AGT-023
+// spec: DMN-087, AGT-021
 #[tokio::test(flavor = "multi_thread")]
-async fn widgets_copy_copies_built_ins_and_user_widgets_into_the_workspace() {
+async fn widgets_copy_copies_built_ins_into_the_workspace() {
     let daemon = Daemon::with_bundle().await;
     let mut client = daemon.client().await;
     let (id, folder) = workspace(&mut client).await;
-    write(
-        &daemon.user_library().join("charts/index.ts"),
-        "export default 1;\n",
-    );
-    write(
-        &daemon.user_library().join("charts/lib/axis.ts"),
-        "export const axis = 1;\n",
-    );
     views(&mut client, &id).await;
 
     let copied = client
@@ -591,27 +549,6 @@ async fn widgets_copy_copies_built_ins_and_user_widgets_into_the_workspace() {
         );
     }
 
-    let copied = client
-        .ok(
-            "widgets.copy",
-            json!({ "workspaceId": id, "widget": "user:charts", "name": "charts2" }),
-        )
-        .await;
-    assert_eq!(copied, json!({ "name": "charts2" }));
-    assert_eq!(
-        std::fs::read_to_string(folder.join(".omfp/widgets/charts2/lib/axis.ts")).unwrap(),
-        "export const axis = 1;\n"
-    );
-    let state = views(&mut client, &id).await;
-    assert_eq!(
-        names(&state["widgets"]),
-        [
-            ("workspace".to_owned(), "charts2".to_owned()),
-            ("workspace".to_owned(), "workspace".to_owned()),
-            ("user".to_owned(), "charts".to_owned()),
-        ]
-    );
-
     for (params, code) in [
         (
             json!({ "workspaceId": id, "widget": "omfp:workspace" }),
@@ -619,10 +556,6 @@ async fn widgets_copy_copies_built_ins_and_user_widgets_into_the_workspace() {
         ),
         (
             json!({ "workspaceId": id, "widget": "omfp:nothing" }),
-            "not_found",
-        ),
-        (
-            json!({ "workspaceId": id, "widget": "user:nothing" }),
             "not_found",
         ),
         (
@@ -638,7 +571,7 @@ async fn widgets_copy_copies_built_ins_and_user_widgets_into_the_workspace() {
             "bad_request",
         ),
         (
-            json!({ "workspaceId": id, "widget": "./widgets/charts2" }),
+            json!({ "workspaceId": id, "widget": "./widgets/workspace" }),
             "bad_request",
         ),
     ] {
@@ -847,32 +780,9 @@ async fn a_widget_that_does_not_compile_is_replaced_by_a_stand_in_until_fixed() 
     assert!(body.contains("from \"./lib/b\""), "{body}");
 }
 
-// spec: AGT-023, DMN-084
+// spec: PRT-080, PRT-081, PRT-082, AGT-060, AGT-061
 #[tokio::test(flavor = "multi_thread")]
-async fn user_library_widgets_are_served_under_the_user_source() {
-    let daemon = Daemon::new().await;
-    write(
-        &daemon.user_library().join("charts/index.jsx"),
-        "export default function Charts() { return <svg />; }\n",
-    );
-    let base = daemon.widget_base().await;
-
-    let (status, _, body) = daemon.get(&format!("{base}/user/charts/v/index.jsx")).await;
-
-    assert_eq!(status, 200);
-    assert!(body.contains("from \"react/jsx-runtime\""), "{body}");
-    assert_eq!(
-        daemon
-            .get(&format!("{base}/user/nothing/v/index.jsx"))
-            .await
-            .0,
-        404
-    );
-}
-
-// spec: PRT-080, PRT-081, PRT-082, PRT-083, PRT-084, AGT-060, AGT-061, AGT-064
-#[tokio::test(flavor = "multi_thread")]
-async fn mounts_publish_the_manifest_before_answering_and_saved_components_reach_every_window() {
+async fn mounts_publish_the_manifest_before_answering() {
     let daemon = Daemon::new().await;
     let mut client = daemon.client().await;
     let (id, folder) = workspace(&mut client).await;
@@ -922,8 +832,6 @@ async fn mounts_publish_the_manifest_before_answering_and_saved_components_reach
     let event = views_event(&mut client, &id).await;
     assert_eq!(event["manifest"]["panels"]["note"][1]["title"], "Notes");
 
-    saves_the_mounted_widget_to_the_user_library(&daemon, &mut client, &id).await;
-
     let removed = client
         .ok("views.unmount", json!({ "workspaceId": id, "id": "note" }))
         .await;
@@ -943,7 +851,7 @@ async fn mounts_publish_the_manifest_before_answering_and_saved_components_reach
     let error = client
         .call(
             "views.mount",
-            json!({ "workspaceId": id, "id": "x", "widget": "user:note" }),
+            json!({ "workspaceId": id, "id": "x", "widget": "./widgets/note" }),
         )
         .await
         .unwrap_err();
@@ -955,41 +863,6 @@ async fn mounts_publish_the_manifest_before_answering_and_saved_components_reach
             .starts_with(".omfp/views.json is invalid ("),
         "{error}"
     );
-}
-
-/// Saves `./widgets/note` to the user library: every followed views topic lists it, and the library describes it.
-async fn saves_the_mounted_widget_to_the_user_library(
-    daemon: &Daemon,
-    client: &mut Client,
-    id: &str,
-) {
-    let saved = client
-        .ok(
-            "widgets.save",
-            json!({ "name": "note", "workspaceId": id, "widget": "./widgets/note" }),
-        )
-        .await;
-    assert_eq!(saved, json!({ "name": "note", "reference": "user:note" }));
-    let event = views_event(client, id).await;
-    assert_eq!(
-        names(&event["widgets"]),
-        vec![
-            ("workspace".to_owned(), "note".to_owned()),
-            ("user".to_owned(), "note".to_owned())
-        ]
-    );
-    let library = client.ok("widgets.library", json!({})).await;
-    assert_eq!(library["components"][0]["reference"], "user:note");
-    assert_eq!(library["components"][0]["description"], "A note.");
-    assert!(daemon.user_library().join("note/index.tsx").is_file());
-    let error = client
-        .call(
-            "widgets.save",
-            json!({ "name": "note", "code": "export default () => null;\n" }),
-        )
-        .await
-        .unwrap_err();
-    assert_eq!(error["code"], "conflict");
 }
 
 fn is_version(value: &Value) -> bool {
@@ -1122,127 +995,5 @@ async fn the_user_init_file_is_followed_on_the_index_topic_and_served_compiled()
     assert_eq!(
         daemon.get(&format!("{base}/init/user/x/init.ts")).await.0,
         404
-    );
-}
-
-/// The next `views_files` event of `views/<id>`.
-async fn views_files(client: &mut Client, id: &str) -> Value {
-    loop {
-        let event = views_event(client, id).await;
-        if event["kind"] == "views_files" {
-            return event;
-        }
-    }
-}
-
-// spec: DMN-186, PRT-096, AGT-074
-#[tokio::test(flavor = "multi_thread")]
-async fn tsx_view_files_are_versioned_on_the_views_topic_and_served_compiled() {
-    let daemon = Daemon::with_bundle().await;
-    let mut client = daemon.client().await;
-    let (id, folder) = workspace(&mut client).await;
-    let base = daemon.widget_base().await;
-    assert_eq!(views(&mut client, &id).await["viewFiles"], Value::Null);
-    assert_eq!(
-        daemon.get(&format!("{base}/views/{id}/v/ops.tsx")).await.0,
-        404,
-        "no views folder"
-    );
-
-    let manifest = json!({
-        "default": "ops",
-        "views": {
-            "ops": { "title": "Ops", "view": "./views/ops.tsx" },
-            "work": { "layout": "omfp:chat" }
-        }
-    });
-    client
-        .ok(
-            "views.set",
-            json!({ "workspaceId": id, "manifest": manifest }),
-        )
-        .await;
-    let views_dir = folder.join(".omfp/views");
-    write(
-        &views_dir.join("ops.tsx"),
-        "import { Card } from \"omfp/kit\";\nimport { label } from \"./lib/label\";\n\
-         const n: number = 2;\nexport default function Ops() { return <Card>{label(n)}</Card>; }\n",
-    );
-    write(
-        &views_dir.join("lib/label.ts"),
-        "export const label = (n: number): string => `#${n}`;\n",
-    );
-    client
-        .ok("workspaces.rescan", json!({ "workspaceId": id }))
-        .await;
-    let event = views_files(&mut client, &id).await;
-    assert!(is_version(&event["viewFiles"]), "{event}");
-    let first = event["viewFiles"].clone();
-    let mut other = daemon.client().await;
-    let state = views(&mut other, &id).await;
-    assert_eq!(state["viewFiles"], first);
-    assert_eq!(state["manifest"], manifest);
-    assert_eq!(state["error"], Value::Null);
-
-    let version = first.as_str().unwrap();
-    let (status, headers, body) = daemon
-        .get(&format!("{base}/views/{id}/{version}/ops.tsx"))
-        .await;
-    assert_eq!(status, 200, "{body}");
-    assert_eq!(
-        header(&headers, "content-type"),
-        Some("text/javascript; charset=utf-8")
-    );
-    assert_eq!(header(&headers, "cache-control"), Some("no-store"));
-    assert!(body.contains("./lib/label"), "{body}");
-    assert!(!body.contains(": number"), "types stripped: {body}");
-    assert!(!body.contains("compileError"), "{body}");
-    // The relative import resolves by URL to its sibling in the folder.
-    let (status, _, body) = daemon
-        .get(&format!("{base}/views/{id}/{version}/lib/label.ts"))
-        .await;
-    assert_eq!(status, 200, "{body}");
-    assert!(body.contains("export const label"), "{body}");
-    assert!(!body.contains(": string"), "{body}");
-
-    // A save is a new version; a file that does not compile is served as the stand-in.
-    write(
-        &views_dir.join("ops.tsx"),
-        "export default function Ops() {\n  return <Card>;\n}\n",
-    );
-    client
-        .ok("workspaces.rescan", json!({ "workspaceId": id }))
-        .await;
-    let event = views_files(&mut client, &id).await;
-    assert!(
-        is_version(&event["viewFiles"]) && event["viewFiles"] != first,
-        "{event}"
-    );
-    let (status, _, body) = daemon.get(&format!("{base}/views/{id}/old/ops.tsx")).await;
-    assert_eq!(status, 200);
-    assert!(body.contains("export const compileError"), "{body}");
-    assert!(body.contains("\"file\":\"ops.tsx\""), "{body}");
-
-    let other_key = format!("/widgets/{}", "0".repeat(32));
-    for path in [
-        format!("{other_key}/views/{id}/v/ops.tsx"),
-        format!("{base}/views/NOPE/v/ops.tsx"),
-        format!("{base}/views/{id}/v/missing.tsx"),
-        format!("{base}/views/{id}/v/../views.json"),
-        format!("{base}/views/{id}/v/lib/../../views.json"),
-        format!("{base}/views/{id}/v/"),
-    ] {
-        let (status, headers, _) = daemon.get(&path).await;
-        assert_eq!(status, 404, "{path}");
-        assert_eq!(header(&headers, "cache-control"), Some("no-store"));
-    }
-
-    std::fs::remove_dir_all(&views_dir).unwrap();
-    client
-        .ok("workspaces.rescan", json!({ "workspaceId": id }))
-        .await;
-    assert_eq!(
-        views_files(&mut client, &id).await,
-        json!({ "kind": "views_files", "viewFiles": null })
     );
 }

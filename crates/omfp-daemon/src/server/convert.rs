@@ -5,8 +5,7 @@ use std::path::PathBuf;
 
 use omfp_protocol::{
     CreatedBy, DiffPage, ErrorBody, ErrorCode, FileChange, FileDiff, FileStatus, ForkOrigin,
-    GitStatus, JobCounts, Provenance, RepoKind, ThreadSummary, TitleSource, Workspace,
-    WorkspaceRepo,
+    GitStatus, JobCounts, Provenance, RepoKind, ThreadSummary, Workspace, WorkspaceRepo,
 };
 use serde_json::json;
 
@@ -22,6 +21,21 @@ pub(crate) fn bad_request(message: impl Into<String>) -> ErrorBody {
 
 pub(crate) fn internal(error: impl std::fmt::Display) -> ErrorBody {
     ErrorBody::new(ErrorCode::Internal, error.to_string())
+}
+
+pub(crate) fn not_found(message: impl Into<String>) -> ErrorBody {
+    ErrorBody::new(ErrorCode::NotFound, message)
+}
+
+pub(crate) fn conflict(message: impl Into<String>) -> ErrorBody {
+    ErrorBody::new(ErrorCode::Conflict, message)
+}
+
+/// Runs blocking work (the store, the file system) off the async workers; a panicked task is an internal error.
+pub(crate) async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, ErrorBody> + Send + 'static,
+) -> Result<T, ErrorBody> {
+    tokio::task::spawn_blocking(work).await.map_err(internal)?
 }
 
 impl From<StoreError> for ErrorBody {
@@ -67,109 +81,108 @@ impl From<crate::mcp_client::McpError> for ErrorBody {
     }
 }
 
-pub(crate) fn thread_error(error: ThreadError) -> ErrorBody {
-    match error {
-        ThreadError::Store(error) => ErrorBody::from(error),
-        ThreadError::Io(_) => internal(error),
+impl From<ThreadError> for ErrorBody {
+    fn from(error: ThreadError) -> Self {
+        match error {
+            ThreadError::Store(error) => error.into(),
+            ThreadError::Io(_) => internal(error),
+        }
     }
 }
 
-pub(crate) fn workspace_error(error: WorkspaceError) -> ErrorBody {
-    let error = match error {
-        WorkspaceError::Store(error) => return ErrorBody::from(error),
-        other => other,
-    };
-    let code = match &error {
-        WorkspaceError::NotADirectory(_)
-        | WorkspaceError::NotARepository(_)
-        | WorkspaceError::NotARepositoryRoot(_)
-        | WorkspaceError::DetachedHead(_)
-        | WorkspaceError::InvalidName(_)
-        | WorkspaceError::IsRoot(_)
-        | WorkspaceError::OutsideFolder(_)
-        | WorkspaceError::ReadOnly(_)
-        | WorkspaceError::Unreadable(_)
-        | WorkspaceError::IsADirectory(_)
-        | WorkspaceError::Git(GitError::NotARepository(_)) => ErrorCode::BadRequest,
-        WorkspaceError::NoSuchRepo { .. }
-        | WorkspaceError::NoSuchFile(_)
-        | WorkspaceError::NoSuchFolder(_) => ErrorCode::NotFound,
-        WorkspaceError::Dirty(_)
-        | WorkspaceError::EntryExists(_)
-        | WorkspaceError::HasThreads(_)
-        | WorkspaceError::FileChanged(_) => ErrorCode::Conflict,
-        WorkspaceError::Git(_) => ErrorCode::GitError,
-        WorkspaceError::Store(_) | WorkspaceError::Io(_) => ErrorCode::Internal,
-    };
-    ErrorBody::new(code, error.to_string())
+impl From<WorkspaceError> for ErrorBody {
+    fn from(error: WorkspaceError) -> Self {
+        let error = match error {
+            WorkspaceError::Store(error) => return error.into(),
+            other => other,
+        };
+        let code = match &error {
+            WorkspaceError::NotADirectory(_)
+            | WorkspaceError::NotARepository(_)
+            | WorkspaceError::NotARepositoryRoot(_)
+            | WorkspaceError::DetachedHead(_)
+            | WorkspaceError::InvalidName(_)
+            | WorkspaceError::IsRoot(_)
+            | WorkspaceError::OutsideFolder(_)
+            | WorkspaceError::ReadOnly(_)
+            | WorkspaceError::Unreadable(_)
+            | WorkspaceError::IsADirectory(_)
+            | WorkspaceError::Git(GitError::NotARepository(_)) => ErrorCode::BadRequest,
+            WorkspaceError::NoSuchRepo { .. }
+            | WorkspaceError::NoSuchFile(_)
+            | WorkspaceError::NoSuchFolder(_) => ErrorCode::NotFound,
+            WorkspaceError::Dirty(_)
+            | WorkspaceError::EntryExists(_)
+            | WorkspaceError::HasThreads(_)
+            | WorkspaceError::FileChanged(_) => ErrorCode::Conflict,
+            WorkspaceError::Git(_) => ErrorCode::GitError,
+            WorkspaceError::Store(_) | WorkspaceError::Io(_) => ErrorCode::Internal,
+        };
+        ErrorBody::new(code, error.to_string())
+    }
 }
 
-pub(crate) fn supervisor_error(error: SupervisorError) -> ErrorBody {
-    let error = match error {
-        SupervisorError::Thread(error) => return thread_error(error),
-        SupervisorError::Workspace(error) => return workspace_error(error),
-        other => other,
-    };
-    let code = match &error {
-        SupervisorError::Thread(_)
-        | SupervisorError::Workspace(_)
-        | SupervisorError::ShuttingDown
-        | SupervisorError::Internal(_) => ErrorCode::Internal,
-        SupervisorError::LimitReached(_) => ErrorCode::LimitReached,
-        SupervisorError::SessionLeased { .. } | SupervisorError::ProcessGone(_) => {
-            ErrorCode::ThreadFailed
-        }
-        // omp's own words on why it would not start (DMN-212).
-        SupervisorError::Start { stderr_tail, .. } => {
-            let details = serde_json::json!({ "stderrTail": stderr_tail });
-            return ErrorBody::new(ErrorCode::ThreadFailed, error.to_string())
-                .with_details(details);
-        }
-        SupervisorError::Omp { code, .. } => {
-            let mut body = ErrorBody::new(ErrorCode::OmpError, error.to_string());
-            if let Some(code) = code {
-                body = body.with_omp_code(code.clone());
+impl From<SupervisorError> for ErrorBody {
+    fn from(error: SupervisorError) -> Self {
+        let error = match error {
+            SupervisorError::Thread(error) => return error.into(),
+            SupervisorError::Workspace(error) => return error.into(),
+            other => other,
+        };
+        let code = match &error {
+            SupervisorError::Thread(_)
+            | SupervisorError::Workspace(_)
+            | SupervisorError::ShuttingDown
+            | SupervisorError::Internal(_) => ErrorCode::Internal,
+            SupervisorError::LimitReached(_) => ErrorCode::LimitReached,
+            SupervisorError::SessionLeased { .. } | SupervisorError::ProcessGone(_) => {
+                ErrorCode::ThreadFailed
             }
-            return body;
-        }
-        SupervisorError::AlreadyResolved(_) | SupervisorError::CardNotWaiting(_) => {
-            ErrorCode::AlreadyResolved
-        }
-        SupervisorError::StandaloneStore(_) => ErrorCode::OmpError,
-        SupervisorError::InvalidResponse(_)
-        | SupervisorError::EmptyOffer
-        | SupervisorError::UserMcpConfig => ErrorCode::BadRequest,
-        SupervisorError::LiveActive { .. }
-        | SupervisorError::NoLiveSession
-        | SupervisorError::Busy
-        | SupervisorError::BusyMove
-        | SupervisorError::NotInterrupted
-        | SupervisorError::LoginRunning => ErrorCode::Conflict,
-        SupervisorError::Live { omp, .. } => {
-            // omp's own refusal of a second session (DMN-104): the same conflict the daemon reports itself.
-            let code = if omp.contains("A live session is already active") {
-                ErrorCode::Conflict
-            } else {
-                ErrorCode::OmpError
-            };
-            let mut body = ErrorBody::new(code, error.to_string());
-            body.details = Some(serde_json::json!({ "ompError": omp }));
-            return body;
-        }
-    };
-    ErrorBody::new(code, error.to_string())
+            // omp's own words on why it would not start (DMN-212).
+            SupervisorError::Start { stderr_tail, .. } => {
+                let details = serde_json::json!({ "stderrTail": stderr_tail });
+                return ErrorBody::new(ErrorCode::ThreadFailed, error.to_string())
+                    .with_details(details);
+            }
+            SupervisorError::Omp { code, .. } => {
+                let mut body = ErrorBody::new(ErrorCode::OmpError, error.to_string());
+                if let Some(code) = code {
+                    body = body.with_omp_code(code.clone());
+                }
+                return body;
+            }
+            SupervisorError::AlreadyResolved(_) | SupervisorError::CardNotWaiting(_) => {
+                ErrorCode::AlreadyResolved
+            }
+            SupervisorError::StandaloneStore(_) => ErrorCode::OmpError,
+            SupervisorError::InvalidResponse(_)
+            | SupervisorError::EmptyOffer
+            | SupervisorError::UserMcpConfig => ErrorCode::BadRequest,
+            SupervisorError::LiveActive { .. }
+            | SupervisorError::NoLiveSession
+            | SupervisorError::Busy
+            | SupervisorError::BusyMove
+            | SupervisorError::NotInterrupted
+            | SupervisorError::LoginRunning => ErrorCode::Conflict,
+            SupervisorError::Live { omp, .. } => {
+                // omp's own refusal of a second session (DMN-104): the same conflict the daemon reports itself.
+                let code = if omp.contains("A live session is already active") {
+                    ErrorCode::Conflict
+                } else {
+                    ErrorCode::OmpError
+                };
+                let mut body = ErrorBody::new(code, error.to_string());
+                body.details = Some(serde_json::json!({ "ompError": omp }));
+                return body;
+            }
+        };
+        ErrorBody::new(code, error.to_string())
+    }
 }
 
-fn provenance(created_by: &store::Provenance, client: Option<&String>) -> Provenance {
+fn provenance(created_by: &CreatedBy, client: Option<&String>) -> Provenance {
     Provenance {
-        created_by: match created_by {
-            store::Provenance::User => CreatedBy::User,
-            store::Provenance::Mcp => CreatedBy::Mcp,
-            store::Provenance::Thread(thread_id) => CreatedBy::Thread {
-                thread_id: thread_id.clone(),
-            },
-            store::Provenance::Job(job) => CreatedBy::Job { job: job.clone() },
-        },
+        created_by: created_by.clone(),
         client: client.cloned(),
     }
 }
@@ -240,11 +253,7 @@ pub(crate) fn thread_summary(
     ThreadSummary {
         id: thread.id.clone(),
         title: thread.title.clone(),
-        title_source: match thread.title_source {
-            store::TitleSource::Placeholder => TitleSource::Placeholder,
-            store::TitleSource::Generated => TitleSource::Generated,
-            store::TitleSource::Set => TitleSource::Set,
-        },
+        title_source: thread.title_source,
         workspace_id: thread.workspace_id.clone(),
         process: status.process,
         settled: status.settled,
@@ -514,7 +523,7 @@ rename to new name.md
     // spec: DMN-071
     #[test]
     fn omp_errors_keep_omps_code() {
-        let body = supervisor_error(SupervisorError::Omp {
+        let body = ErrorBody::from(SupervisorError::Omp {
             command: "navigate_tree".into(),
             message: "no such entry".into(),
             code: Some("entry_not_found".into()),

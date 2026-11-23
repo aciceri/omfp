@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use jiff::Timestamp;
@@ -32,9 +32,10 @@ use super::cron::Schedule;
 use super::{JobLog, Jobs, RunExit, file, stored_log};
 use crate::agent::OmpCall;
 use crate::event_log::EventLog;
+use crate::lock;
 use crate::paths::replace_file;
-use crate::server::convert::{bad_request, internal, supervisor_error};
-use crate::store::{self, JobRun, Provenance, RunEnd, Store, new_id};
+use crate::server::convert::{bad_request, blocking, conflict, internal, not_found};
+use crate::store::{self, RunEnd, Store, new_id};
 use crate::supervisor::Supervisor;
 use crate::threads::{NewThread, Threads};
 
@@ -123,10 +124,6 @@ impl Clock for TokioClock {
     }
 }
 
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
 /// Where tests hold a step: told on arrival, released by the receiver.
 #[cfg(test)]
 type Gate = Mutex<Option<(oneshot::Sender<()>, oneshot::Receiver<()>)>>;
@@ -139,20 +136,6 @@ async fn pass(gate: &Gate) {
         let _ = arrived.send(());
         let _ = release.await;
     }
-}
-
-async fn blocking<T: Send + 'static>(
-    work: impl FnOnce() -> Result<T, ErrorBody> + Send + 'static,
-) -> Result<T, ErrorBody> {
-    tokio::task::spawn_blocking(work).await.map_err(internal)?
-}
-
-fn conflict(message: impl Into<String>) -> ErrorBody {
-    ErrorBody::new(ErrorCode::Conflict, message)
-}
-
-fn not_found(message: impl Into<String>) -> ErrorBody {
-    ErrorBody::new(ErrorCode::NotFound, message)
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // `EventLog` takes `fn(&mut S, &E)`.
@@ -169,106 +152,6 @@ fn apply_jobs(state: &mut JobsState, event: &JobsEvent) {
             }
         }
         JobsEvent::RunStarted { .. } | JobsEvent::RunEnded { .. } => {}
-    }
-}
-
-// Conversions between the store's rows and the protocol's runs.
-
-fn trigger_name(trigger: RunTrigger) -> &'static str {
-    match trigger {
-        RunTrigger::Manual => "manual",
-        RunTrigger::Schedule => "schedule",
-        RunTrigger::Missed => "missed",
-        RunTrigger::Service => "service",
-        RunTrigger::Start => "start",
-    }
-}
-
-fn parse_trigger(name: &str) -> RunTrigger {
-    match name {
-        "schedule" => RunTrigger::Schedule,
-        "missed" => RunTrigger::Missed,
-        "service" => RunTrigger::Service,
-        "start" => RunTrigger::Start,
-        _ => RunTrigger::Manual,
-    }
-}
-
-fn status_name(status: JobRunStatus) -> &'static str {
-    match status {
-        JobRunStatus::Running => "running",
-        JobRunStatus::Succeeded => "succeeded",
-        JobRunStatus::Failed => "failed",
-        JobRunStatus::Killed => "killed",
-        JobRunStatus::Skipped => "skipped",
-        JobRunStatus::Interrupted => "interrupted",
-    }
-}
-
-fn parse_status(name: &str) -> JobRunStatus {
-    match name {
-        "running" => JobRunStatus::Running,
-        "succeeded" => JobRunStatus::Succeeded,
-        "killed" => JobRunStatus::Killed,
-        "skipped" => JobRunStatus::Skipped,
-        "interrupted" => JobRunStatus::Interrupted,
-        _ => JobRunStatus::Failed,
-    }
-}
-
-fn created_by(provenance: &Provenance) -> CreatedBy {
-    match provenance {
-        Provenance::User => CreatedBy::User,
-        Provenance::Mcp => CreatedBy::Mcp,
-        Provenance::Thread(thread_id) => CreatedBy::Thread {
-            thread_id: thread_id.clone(),
-        },
-        Provenance::Job(job) => CreatedBy::Job { job: job.clone() },
-    }
-}
-
-fn provenance(created_by: &CreatedBy) -> Provenance {
-    match created_by {
-        CreatedBy::User => Provenance::User,
-        CreatedBy::Mcp => Provenance::Mcp,
-        CreatedBy::Thread { thread_id } => Provenance::Thread(thread_id.clone()),
-        CreatedBy::Job { job } => Provenance::Job(job.clone()),
-    }
-}
-
-fn run_info(run: &JobRun) -> RunInfo {
-    RunInfo {
-        id: run.id.clone(),
-        workspace_id: run.workspace_id.clone(),
-        job: Some(run.job.clone()),
-        trigger: parse_trigger(&run.trigger),
-        started_by: run.started_by.as_ref().map(created_by),
-        thread_id: run.thread_id.clone(),
-        command: run.command.clone(),
-        started_at: run.started_at,
-        ended_at: run.ended_at,
-        status: parse_status(&run.status),
-        reason: run.reason.clone(),
-        exit_code: run.exit_code,
-        signal: run.signal,
-    }
-}
-
-fn job_run(run: &RunInfo) -> JobRun {
-    JobRun {
-        id: run.id.clone(),
-        workspace_id: run.workspace_id.clone(),
-        job: run.job.clone().unwrap_or_default(),
-        trigger: trigger_name(run.trigger).to_owned(),
-        started_by: run.started_by.as_ref().map(provenance),
-        thread_id: run.thread_id.clone(),
-        started_at: run.started_at,
-        ended_at: run.ended_at,
-        status: status_name(run.status).to_owned(),
-        reason: run.reason.clone(),
-        exit_code: run.exit_code,
-        signal: run.signal,
-        command: run.command.clone(),
     }
 }
 
@@ -790,7 +673,7 @@ impl Declared {
                             store.set_job_last_due(&workspace_id, &name, now)?;
                             now
                         };
-                        Ok((name, (last.as_ref().map(run_info), last_due_at)))
+                        Ok((name, (last, last_due_at)))
                     })
                     .collect::<Result<HashMap<_, _>, ErrorBody>>()
             })
@@ -1089,7 +972,7 @@ impl Declared {
         space: &Arc<Space>,
         name: String,
         trigger: RunTrigger,
-        started_by: Option<Provenance>,
+        started_by: Option<CreatedBy>,
     ) -> tokio::task::JoinHandle<Result<RunInfo, ErrorBody>> {
         let (declared, space) = (self.clone(), Arc::clone(space));
         let manual = trigger == RunTrigger::Manual;
@@ -1113,7 +996,7 @@ impl Declared {
         space: &Arc<Space>,
         name: &str,
         trigger: RunTrigger,
-        started_by: Option<Provenance>,
+        started_by: Option<CreatedBy>,
         manual: bool,
     ) -> Result<RunInfo, ErrorBody> {
         let (run, reserved) = {
@@ -1217,7 +1100,7 @@ impl Declared {
 
     /// Stores a run's row (DMN-330).
     async fn insert_run(&self, name: &str, run: &RunInfo) {
-        let row = job_run(run);
+        let row = run.clone();
         if let Err(error) = self
             .with_store(move |store| store.insert_job_run(&row))
             .await
@@ -1398,7 +1281,7 @@ impl Declared {
                     &id,
                     &RunEnd {
                         ended_at,
-                        status: status_name(status),
+                        status,
                         reason: reason.as_deref(),
                         exit_code,
                         signal,
@@ -1592,7 +1475,7 @@ impl Declared {
             Ok(admission) => admission,
             Err(error) => {
                 let start_failure = error.is_start_failure();
-                let body = supervisor_error(error);
+                let body = ErrorBody::from(error);
                 if start_failure && created {
                     // A thread that cannot start is not created (DMN-211).
                     self.discard_thread(&thread_id).await;
@@ -1668,7 +1551,9 @@ impl Declared {
             model: prompt.model.clone(),
             thinking_level: prompt.thinking_level.clone(),
             approval_mode: prompt.approval_mode.clone(),
-            created_by: Provenance::Job(name.to_owned()),
+            created_by: CreatedBy::Job {
+                job: name.to_owned(),
+            },
             ..NewThread::new(title, &space.id)
         };
         let threads = Arc::clone(&self.inner.threads);
@@ -1676,7 +1561,7 @@ impl Declared {
             threads
                 .create(new)
                 .map(|thread| thread.id)
-                .map_err(crate::server::convert::thread_error)
+                .map_err(ErrorBody::from)
         })
         .await
     }
@@ -1769,10 +1654,7 @@ impl Declared {
         let (runs, more) = self
             .with_store(move |store| store.job_runs(&workspace_id, &job, before.as_deref(), limit))
             .await?;
-        Ok(JobRuns {
-            runs: runs.iter().map(run_info).collect(),
-            more,
-        })
+        Ok(JobRuns { runs, more })
     }
 
     /// `jobs.run` (PRT-204): a run by hand, answered once it started.
@@ -1780,7 +1662,7 @@ impl Declared {
         &self,
         workspace_id: &str,
         job: &str,
-        started_by: Provenance,
+        started_by: CreatedBy,
     ) -> Result<RunInfo, ErrorBody> {
         let space = self.ensure(workspace_id).await?;
         self.spawn_start(&space, job.to_owned(), RunTrigger::Manual, Some(started_by))
@@ -1809,7 +1691,7 @@ impl Declared {
                     .call(&thread_id, OmpCall::AbortAndRestoreQueue)
                     .await
                     .map(|_| ())
-                    .map_err(supervisor_error),
+                    .map_err(ErrorBody::from),
             });
         }
         None
@@ -2031,7 +1913,7 @@ mod tests {
         let data = DataDir::new(dir.path().join("data"));
         std::fs::create_dir_all(data.root()).unwrap();
         let root = dir.path().join("workspaces");
-        let store = Arc::new(Store::open(&data.db(), &root).unwrap());
+        let store = Arc::new(Store::open(&data.db()).unwrap());
         let threads = Arc::new(Threads::new(Arc::clone(&store), data.clone()));
         let workspaces = Arc::new(Workspaces::new(
             Arc::clone(&store),
@@ -2094,7 +1976,7 @@ mod tests {
         fn runs(&self, job: &str) -> Vec<RunInfo> {
             let (mut runs, _) = self.store.job_runs(&self.workspace, job, None, 50).unwrap();
             runs.reverse();
-            runs.iter().map(run_info).collect()
+            runs
         }
 
         /// Lets the runtime's tasks run until `done`, Tokio's paused time advancing when they all wait.
@@ -2418,7 +2300,7 @@ mod tests {
         let workspace = h.workspace.clone();
         let asked = tokio::spawn(async move {
             declared
-                .run(&workspace, "build", Provenance::User)
+                .run(&workspace, "build", CreatedBy::User)
                 .await
                 .unwrap()
         });
@@ -2540,7 +2422,7 @@ mod tests {
         let workspace = h.workspace.clone();
         let asked = tokio::spawn(async move {
             declared
-                .run(&workspace, "build", Provenance::User)
+                .run(&workspace, "build", CreatedBy::User)
                 .await
                 .unwrap()
         });
@@ -2553,7 +2435,7 @@ mod tests {
 
         let error = h
             .declared
-            .run(&h.workspace, "build", Provenance::User)
+            .run(&h.workspace, "build", CreatedBy::User)
             .await
             .unwrap_err();
         assert_eq!(error.code, ErrorCode::Conflict);
@@ -2600,7 +2482,7 @@ mod tests {
         h.write(&job("manual", true)).await;
         let run = h
             .declared
-            .run(&h.workspace, "watch", Provenance::User)
+            .run(&h.workspace, "watch", CreatedBy::User)
             .await
             .unwrap();
         // The trap is set once the shell printed `ready`.
@@ -2663,7 +2545,7 @@ mod tests {
         let declared = h.declared.clone();
         let workspace = h.workspace.clone();
         let second =
-            tokio::spawn(async move { declared.run(&workspace, "build", Provenance::User).await });
+            tokio::spawn(async move { declared.run(&workspace, "build", CreatedBy::User).await });
         // On this single-threaded runtime, a few yields let the second caller run as far as it can before the load
         // ends: without waiting for it, it would already have answered `not_found`.
         for _ in 0..16 {
@@ -2725,7 +2607,7 @@ mod tests {
         let declared = h.declared.clone();
         let workspace = h.workspace.clone();
         let asked =
-            tokio::spawn(async move { declared.run(&workspace, "flex", Provenance::User).await });
+            tokio::spawn(async move { declared.run(&workspace, "flex", CreatedBy::User).await });
         tokio::time::timeout(Duration::from_secs(30), launches.arrived(1))
             .await
             .expect("omp never launched");
@@ -2911,13 +2793,13 @@ mod tests {
 
         let error = h
             .declared
-            .run(&h.workspace, "nope", Provenance::User)
+            .run(&h.workspace, "nope", CreatedBy::User)
             .await
             .unwrap_err();
         assert_eq!(error.code, ErrorCode::NotFound);
         let error = h
             .declared
-            .run(&h.workspace, "off", Provenance::User)
+            .run(&h.workspace, "off", CreatedBy::User)
             .await
             .unwrap_err();
         assert_eq!(error.code, ErrorCode::Conflict);
@@ -2936,7 +2818,7 @@ mod tests {
 
         let run = h
             .declared
-            .run(&h.workspace, "ask", Provenance::User)
+            .run(&h.workspace, "ask", CreatedBy::User)
             .await
             .unwrap();
 
@@ -2947,8 +2829,8 @@ mod tests {
         assert_eq!(run.started_by, Some(CreatedBy::User));
         let thread = h.threads.get(run.thread_id.as_deref().unwrap()).unwrap();
         assert_eq!(thread.title, "ask · 2026-11-16 08:00");
-        assert_eq!(thread.title_source, store::TitleSource::Set);
-        assert_eq!(thread.created_by, Provenance::Job("ask".into()));
+        assert_eq!(thread.title_source, omfp_protocol::TitleSource::Set);
+        assert_eq!(thread.created_by, CreatedBy::Job { job: "ask".into() });
         assert_eq!(thread.model.as_deref(), Some("anthropic/claude"));
         assert_eq!(thread.approval_mode.as_deref(), Some("write"));
         assert!(!h.store.created_clients().unwrap().contains_key(&thread.id));
@@ -2982,7 +2864,7 @@ mod tests {
 
         let first = h
             .declared
-            .run(&h.workspace, "daily", Provenance::User)
+            .run(&h.workspace, "daily", CreatedBy::User)
             .await
             .unwrap();
         let thread_id = first.thread_id.clone().unwrap();
@@ -2999,7 +2881,7 @@ mod tests {
 
         let second = h
             .declared
-            .run(&h.workspace, "daily", Provenance::User)
+            .run(&h.workspace, "daily", CreatedBy::User)
             .await
             .unwrap();
         assert_eq!(second.thread_id.as_deref(), Some(thread_id.as_str()));
@@ -3034,7 +2916,7 @@ mod tests {
 
         let error = h
             .declared
-            .run(&h.workspace, "daily", Provenance::User)
+            .run(&h.workspace, "daily", CreatedBy::User)
             .await
             .unwrap_err();
         assert_eq!(error.code, ErrorCode::Conflict);
@@ -3058,7 +2940,7 @@ mod tests {
         h.launcher.push_run(fixture("text_reply"));
         let fresh = h
             .declared
-            .run(&h.workspace, "daily", Provenance::User)
+            .run(&h.workspace, "daily", CreatedBy::User)
             .await
             .unwrap();
         assert_ne!(fresh.thread_id.as_deref(), Some(busy.id.as_str()));
@@ -3073,7 +2955,7 @@ mod tests {
         // The fake omp never answers: the prompt run keeps running.
         let run = h
             .declared
-            .run(&h.workspace, "ask", Provenance::User)
+            .run(&h.workspace, "ask", CreatedBy::User)
             .await
             .unwrap();
         h.declared.remove(&h.workspace, "ask".into()).await.unwrap();
@@ -3093,7 +2975,7 @@ mod tests {
         assert_eq!(view.run.map(|running| running.id), Some(run.id.clone()));
         let error = h
             .declared
-            .run(&h.workspace, "ask", Provenance::User)
+            .run(&h.workspace, "ask", CreatedBy::User)
             .await
             .unwrap_err();
         assert_eq!(error.code, ErrorCode::Conflict);
@@ -3119,7 +3001,7 @@ mod tests {
         h.launcher.push_run(fixture("text_reply"));
         let first = h
             .declared
-            .run(&h.workspace, "daily", Provenance::User)
+            .run(&h.workspace, "daily", CreatedBy::User)
             .await
             .unwrap();
         let moved = first.thread_id.unwrap();
@@ -3128,7 +3010,7 @@ mod tests {
             id: new_id(),
             name: "other".into(),
             path: h.folder.with_file_name("other"),
-            created_by: Provenance::User,
+            created_by: CreatedBy::User,
             created_at: 0,
         };
         h.store.insert_workspace(&other).unwrap();
@@ -3139,7 +3021,7 @@ mod tests {
 
         let second = h
             .declared
-            .run(&h.workspace, "daily", Provenance::User)
+            .run(&h.workspace, "daily", CreatedBy::User)
             .await
             .unwrap();
 
@@ -3170,7 +3052,7 @@ mod tests {
 
         let error = h
             .declared
-            .run(&h.workspace, "ask", Provenance::User)
+            .run(&h.workspace, "ask", CreatedBy::User)
             .await
             .unwrap_err();
 
@@ -3199,7 +3081,7 @@ mod tests {
             .await;
         let run = h
             .declared
-            .run(&h.workspace, "ask", Provenance::User)
+            .run(&h.workspace, "ask", CreatedBy::User)
             .await
             .unwrap();
 
@@ -3223,16 +3105,16 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_stored_command_run_serves_its_kept_lines() {
         let h = harness();
-        let run = JobRun {
+        let run = RunInfo {
             id: new_id(),
             workspace_id: h.workspace.clone(),
-            job: "test".into(),
-            trigger: "manual".into(),
+            job: Some("test".into()),
+            trigger: RunTrigger::Manual,
             started_by: None,
             thread_id: None,
             started_at: 10,
             ended_at: None,
-            status: "running".into(),
+            status: JobRunStatus::Running,
             reason: None,
             exit_code: None,
             signal: None,
@@ -3245,7 +3127,7 @@ mod tests {
                 &run.id,
                 &RunEnd {
                     ended_at: 20,
-                    status: "failed",
+                    status: JobRunStatus::Failed,
                     reason: None,
                     exit_code: Some(2),
                     signal: None,

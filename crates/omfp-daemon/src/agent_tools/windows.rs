@@ -5,13 +5,14 @@
 use std::fmt::Write as _;
 
 use omfp_protocol::{
-    Call, CommandSource, KeymapMode, ListWindowsParams, RanInWindow, RunInWindowParams, ViewSource,
+    Call, CommandSource, ListWindowsParams, RanInWindow, RunInWindowParams, ViewSource,
     WidgetReportState, WindowCommand, WindowList, WindowRef, WindowState, WindowView,
 };
 use serde_json::{Map, Value, json};
 
 use super::mounts::{required, run_call, text};
 use super::{AgentTool, ToolContext, ToolFuture};
+use crate::wire_name;
 
 /// Name of the tool that describes the open windows (AGT-081).
 pub const WINDOWS: &str = "omfp_windows";
@@ -43,10 +44,10 @@ fn windows() -> AgentTool {
         label: "Windows",
         description: "Describes the open omfp windows showing the workspace, the most recently focused first, as the \
                       user sees them: each window's id, focus and thread; its views after views.json, the init files \
-                      and their transforms (where each comes from, which TSX file, which widgets, the active one); \
-                      the commands init files and widgets added, with their keys; and the errors it shows (init \
-                      files, TSX views, widgets). Read it after changing views, an init file or a widget (with \
-                      omfp_widget_check), and to find the command or view to pass omfp_window_run.",
+                      and their transforms (where each comes from, which widgets, the active one); the commands init \
+                      files and widgets added, with their keys; and the errors it shows (init files, widgets). Read \
+                      it after changing views, an init file or a widget (with omfp_widget_check), and to find \
+                      the command or view to pass omfp_window_run.",
         parameters: json!({
             "type": "object",
             "properties": {
@@ -211,26 +212,15 @@ pub(crate) fn describe_windows(
     text
 }
 
-fn mode_name(mode: KeymapMode) -> &'static str {
-    match mode {
-        KeymapMode::Normal => "normal",
-        KeymapMode::Insert => "insert",
-        KeymapMode::Cmdline => "cmdline",
-    }
-}
-
 fn describe_view(text: &mut String, view: &WindowView, active: bool, default: bool) {
     let mut from = view_source_name(view.source).to_owned();
-    if let Some(file) = &view.file {
-        let _ = write!(from, ", TSX view {file}");
-    }
     if default {
         from.push_str(", the default view");
     }
-    let widgets = match &view.widgets {
-        Some(widgets) if widgets.is_empty() => "no widgets".to_owned(),
-        Some(widgets) => widgets.join(", "),
-        None => "not rendered in this window".to_owned(),
+    let widgets = if view.widgets.is_empty() {
+        "no widgets".to_owned()
+    } else {
+        view.widgets.join(", ")
     };
     let _ = writeln!(
         text,
@@ -261,7 +251,7 @@ fn describe_command(text: &mut String, command: &WindowCommand) {
             .bindings
             .iter()
             .map(|binding| {
-                let mut key = format!("{} ({})", binding.keys, mode_name(binding.mode));
+                let mut key = format!("{} ({})", binding.keys, wire_name(binding.mode));
                 if !binding.args.is_empty() {
                     let _ = write!(key, " with {:?}", binding.args);
                 }
@@ -361,7 +351,8 @@ fn describe_window(text: &mut String, state: &WindowState) {
     }
 }
 
-fn state_name(state: WidgetReportState) -> &'static str {
+/// A widget's state as agents read it (`compile error`, …).
+pub(crate) fn state_name(state: WidgetReportState) -> &'static str {
     match state {
         WidgetReportState::Loading => "loading",
         WidgetReportState::Rendered => "rendered",
@@ -374,9 +365,8 @@ fn state_name(state: WidgetReportState) -> &'static str {
 #[cfg(test)]
 mod tests {
     use omfp_protocol::{
-        AnswerWindowParams, FileErrorKind, FileErrorReport, ReportWidgetsParams, ServerFrame,
-        ViewSource, WidgetReport, WidgetSource, WindowAnswer, WindowBinding, WindowReport,
-        WindowRequest,
+        AnswerWindowParams, FileErrorReport, ReportWidgetsParams, ServerFrame, ViewSource,
+        WidgetReport, WidgetSource, WindowAnswer, WindowBinding, WindowReport, WindowRequest,
     };
 
     use super::super::tests::{Harness, args};
@@ -406,22 +396,19 @@ mod tests {
                         id: "default".to_owned(),
                         title: "Default".to_owned(),
                         source: ViewSource::ViewsJson,
-                        file: None,
-                        widgets: Some(vec!["omfp:chat".to_owned()]),
+                        widgets: vec!["omfp:chat".to_owned()],
                     },
                     WindowView {
                         id: "ops".to_owned(),
                         title: "Ops".to_owned(),
                         source: ViewSource::WorkspaceInit,
-                        file: Some("./views/ops.tsx".to_owned()),
-                        widgets: Some(vec!["omfp:chat".to_owned(), "./widgets/tests".to_owned()]),
+                        widgets: vec!["omfp:chat".to_owned(), "./widgets/tests".to_owned()],
                     },
                     WindowView {
                         id: "review".to_owned(),
                         title: "Review".to_owned(),
                         source: ViewSource::UserInit,
-                        file: Some("./views/review.tsx".to_owned()),
-                        widgets: None,
+                        widgets: Vec::new(),
                     },
                 ],
                 commands: vec![WindowCommand {
@@ -432,7 +419,7 @@ mod tests {
                     widget: None,
                     enabled: true,
                     bindings: vec![WindowBinding {
-                        mode: KeymapMode::Normal,
+                        mode: omfp_protocol::KeymapMode::Normal,
                         keys: "g h".to_owned(),
                         args: Vec::new(),
                     }],
@@ -452,7 +439,6 @@ mod tests {
             jobs: Vec::new(),
         }];
         shown.file_errors = vec![FileErrorReport {
-            kind: FileErrorKind::Init,
             file: ".omfp/init.ts".to_owned(),
             message: "TypeError: boom".to_owned(),
         }];
@@ -494,8 +480,8 @@ mod tests {
              Window 3 (desktop), focused: workspace {}, thread {}\n\
              Views (switcher order; * the one it shows):\n\
              \x20 - default \"Default\" (views.json, the default view): omfp:chat\n\
-             \x20 * ops \"Ops\" (the workspace's init file, TSX view ./views/ops.tsx): omfp:chat, ./widgets/tests\n\
-             \x20 - review \"Review\" (the user's init file, TSX view ./views/review.tsx): not rendered in this window\n\
+             \x20 * ops \"Ops\" (the workspace's init file): omfp:chat, ./widgets/tests\n\
+             \x20 - review \"Review\" (the user's init file): no widgets\n\
              Commands added by init files and widgets:\n\
              \x20 - demo.solo \"Show the init view\" (the workspace's init file; aliases solo; keys g h (normal))\n\
              Workspace and user widgets in the view it shows: ./widgets/tests (render error)\n\

@@ -1,7 +1,7 @@
 # The omfp window
 
 What the user sees around the widgets, so an agent can point at it ("press `Space v`", "pick Review in the mode line").
-`omfp://docs/widgets` covers views, widgets, init files and TSX views; `omfp://keymap` lists every default key and
+`omfp://docs/widgets` covers views, widgets and init files; `omfp://keymap` lists every default key and
 built-in command with its title and `:` names.
 
 ## Left column
@@ -81,16 +81,14 @@ reloads, per workspace, in this window only, and their titles show in italics.
 
 The view's own tabs, those of `views.json` (`:widget add`, an agent's mount), close the same way, unless a tab is
 alone in its container or holds the chat: closing one writes `views.json` without it, so every window loses it, and
-the toast `Closed <title>` offers Undo while nobody changed the file since. Views in code (a TSX view, an init file's)
-keep their tabs.
+the toast `Closed <title>` offers Undo while nobody changed the file since. The views of init files keep their tabs.
 
 ## The `:` line
 
 `:` (or `Space :`) opens it; it doubles as the command palette: typing filters the commands by name, Tab completes,
 the arrows move, Enter runs, Escape closes. After a space it completes the command's arguments. Commands run where the
 focus was before the line opened. Every built-in command id is a dotted `<area>.<verb>` (`window.theme`,
-`widget.manage`); the short names below are its aliases, and the former ids `theme.set` and `widget` still run and
-bind. The built-in ones (`omfp://keymap` has them all):
+`widget.manage`); the short names below are its aliases. The built-in ones (`omfp://keymap` has them all):
 
 | Command | What it does |
 | --- | --- |
@@ -108,9 +106,8 @@ bind. The built-in ones (`omfp://keymap` has them all):
 | `:model` | Open the selected thread's model list in its header (Log in when omp offers no model). |
 | `:view <id>` | Switch view. |
 | `:view-reset` | Write the default `views.json` again (replacing the file, every view and mount), after a confirmation. |
-| `:widget add <reference>` | Add a widget to the current view (last side tab, else the end) and write `views.json`; refused on views that exist only in an init file or a TSX file. |
-| `:widget copy <reference> [<name>]` | Copy a built-in or user widget into `.omfp/widgets/<name>/`. |
-| `:widget save[!] <widget> [<name>]` | Save a workspace widget to the user library (`!` replaces). |
+| `:widget add <reference>` | Add a widget to the current view (last side tab, else the end) and write `views.json`; refused on views that exist only in an init file. |
+| `:widget copy <reference> [<name>]` | Copy a built-in widget into `.omfp/widgets/<name>/`. |
 | `:theme [light\|dark\|system] [<theme>]`, `:density compact\|normal`, `:set <key>=<value>` | Appearance and the daemon's settings: the scheme is the window's, the theme (`synth`, `catppuccin`, `gruvbox`, `tokyo-night`, `nord`, `solarized`, `rose-pine`; the calm ones that suit the boring skin: `graphite`, `paper`, `clay`, `primer`; `accent`: the macOS window's system accent, Synth elsewhere; `matugen`: the user theme file `theme.css`, Synth without one) every window's (`[ui] theme`); the user theme shows only with `matugen`. |
 | `:set skin=crush\|boring` | The look of every window (`[ui] skin`), live: Crush (the default: monospace chrome, box-drawing glyphs, gradients, motion) or the opt-in `boring` skin (system sans-serif, neutral gray chrome with the accent only for focus, links and progress, light borders, a gray bubble for your messages, plain chevrons, no decorative motion). Independent of the theme: any palette works with either. Widgets built on the kit follow it; a widget's own styles do not. |
 | `:set show_xdev_notices=true\|false` | Show/hide informational MCP tool command mount/unmount notices in new and retained transcripts, live (default `false`). Only presentation changes; other notices, startup inventory records, tools and omp configuration stay intact. The API field is `ui.showXdevNotices` in `settings.set`. |

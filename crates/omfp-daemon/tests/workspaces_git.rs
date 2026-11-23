@@ -27,7 +27,7 @@ fn env() -> Env {
     let dir = TempDir::new().unwrap();
     let base = dir.path().canonicalize().unwrap();
     let workspaces_root = base.join("workspaces");
-    let store = Arc::new(Store::open(&base.join("omfp.db"), &workspaces_root).unwrap());
+    let store = Arc::new(Store::open(&base.join("omfp.db")).unwrap());
     let repo = TempRepo::new().unwrap();
     let root = repo.path().canonicalize().unwrap();
     Env {

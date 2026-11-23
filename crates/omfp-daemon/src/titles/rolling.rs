@@ -44,6 +44,8 @@ impl RollingTitle {
             .push_back(message.chars().take(EXCERPT).collect());
     }
 
+    /// Due for the first title, then only once [`MESSAGES`] new messages of [`CHARACTERS`] characters arrived and
+    /// [`COOLDOWN`] passed since the last attempt: idle time alone never triggers a run.
     pub(crate) fn ready(&self, initial: bool, now: Instant) -> bool {
         ((initial && self.last_attempt.is_none())
             || (self.messages >= MESSAGES && self.characters >= CHARACTERS))
@@ -63,6 +65,8 @@ impl RollingTitle {
         self.candidate = None;
     }
 
+    /// Whether `title` replaces `current`: the first title always; a near-identical one never; a materially different
+    /// one only once the next successful reconsideration yields a similar candidate.
     pub(crate) fn publish(&mut self, current: &str, title: &str, initial: bool) -> bool {
         if initial {
             self.candidate = None;

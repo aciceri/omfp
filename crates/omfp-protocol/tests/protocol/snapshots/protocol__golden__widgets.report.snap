@@ -10,7 +10,6 @@ expression: golden
       "fileErrors": [
         {
           "file": ".omfp/init.ts",
-          "kind": "init",
           "message": ".omfp/init.ts:3:7: Unexpected token"
         }
       ],
@@ -72,7 +71,6 @@ expression: golden
         "threadId": "01JD8X3Q4T9V2W6Y5Z7A1B3C4D",
         "views": [
           {
-            "file": null,
             "id": "default",
             "source": "views_json",
             "title": "Default",
@@ -83,11 +81,12 @@ expression: golden
             ]
           },
           {
-            "file": "./views/ops.tsx",
             "id": "ops",
             "source": "workspace_init",
             "title": "Ops",
-            "widgets": null
+            "widgets": [
+              "./widgets/tests"
+            ]
           }
         ]
       },

@@ -5,9 +5,7 @@
 //! DMN-140, DMN-141).
 
 use axum::http::Uri;
-use omfp_protocol::{ErrorBody, ErrorCode};
-
-use crate::store::Provenance;
+use omfp_protocol::{CreatedBy, ErrorBody, ErrorCode};
 
 /// Who makes a request: the other end of a connection, a thread's agent calling through the agent tool registry, or
 /// an MCP client outside omfp calling through the MCP server.
@@ -34,11 +32,13 @@ impl Principal {
 
     /// Who created what this principal creates (ARC-009).
     #[must_use]
-    pub fn created_by(&self) -> Provenance {
+    pub fn created_by(&self) -> CreatedBy {
         match self {
-            Self::Owner { .. } => Provenance::User,
-            Self::Agent { thread_id, .. } => Provenance::Thread(thread_id.clone()),
-            Self::Mcp { .. } => Provenance::Mcp,
+            Self::Owner { .. } => CreatedBy::User,
+            Self::Agent { thread_id, .. } => CreatedBy::Thread {
+                thread_id: thread_id.clone(),
+            },
+            Self::Mcp { .. } => CreatedBy::Mcp,
         }
     }
 }
@@ -87,7 +87,6 @@ pub fn permission(method: &str) -> Option<Permission> {
         | "thread.session"
         | "theme.get"
         | "settings.get"
-        | "widgets.library"
         | "widgets.compile"
         | "terminals.screen"
         | "jobs.list"
@@ -125,7 +124,6 @@ pub fn permission(method: &str) -> Option<Permission> {
         | "views.mount"
         | "views.mount_update"
         | "views.unmount"
-        | "widgets.save"
         | "jobs.define"
         | "jobs.remove"
         | "jobs.enable"
@@ -407,7 +405,7 @@ mod tests {
             client: "script/ci".into(),
         };
 
-        assert_eq!(owner.created_by(), Provenance::User);
+        assert_eq!(owner.created_by(), CreatedBy::User);
         assert_eq!(owner.client(), "script/ci");
     }
 
@@ -449,7 +447,7 @@ mod tests {
             client: "claude-code".into(),
         };
 
-        assert_eq!(mcp.created_by(), Provenance::Mcp);
+        assert_eq!(mcp.created_by(), CreatedBy::Mcp);
         assert_eq!(mcp.client(), "claude-code");
     }
 
@@ -461,7 +459,12 @@ mod tests {
             client: "omp".into(),
         };
 
-        assert_eq!(agent.created_by(), Provenance::Thread("01J".into()));
+        assert_eq!(
+            agent.created_by(),
+            CreatedBy::Thread {
+                thread_id: "01J".into(),
+            }
+        );
         assert_eq!(agent.client(), "omp");
     }
 

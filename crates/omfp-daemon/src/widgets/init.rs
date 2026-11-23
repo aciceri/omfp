@@ -113,7 +113,7 @@ mod tests {
             r#"{ "omfp/sdk": ["registerCommand"] }"#,
         )
         .unwrap();
-        let widgets = Widgets::new(dir.path().join("library"), Some(&bundle));
+        let widgets = Widgets::new(Some(&bundle));
         let path = dir.path().join(FILE);
         assert_eq!(widgets.serve_init(&path), None, "no file");
 
@@ -146,7 +146,7 @@ mod tests {
             r#"{ "omfp/sdk": ["registerCommand"] }"#,
         )
         .unwrap();
-        let widgets = Widgets::new(dir.path().join("library"), Some(&bundle));
+        let widgets = Widgets::new(Some(&bundle));
         let path = dir.path().join(FILE);
         assert_eq!(widgets.check_init(&path), None, "no file");
         std::fs::write(

@@ -13,9 +13,9 @@ use serde_json::Value;
 
 use super::activity;
 use super::auth::Principal;
-use super::convert::{bad_request, internal, supervisor_error, thread_error, workspace_error};
+use super::convert::{bad_request, blocking, internal};
 use super::prompts;
-use super::services::{Services, blocking};
+use super::services::Services;
 use crate::terminals::StartTerminal;
 use crate::threads::Threads;
 use crate::workspaces::Workspaces;
@@ -43,7 +43,7 @@ async fn on_workspaces<T: Send + 'static>(
     work: impl FnOnce(&Workspaces) -> crate::workspaces::Result<T> + Send + 'static,
 ) -> Result<T, ErrorBody> {
     let workspaces = Arc::clone(&services.workspaces);
-    blocking(move || work(&workspaces).map_err(workspace_error)).await
+    blocking(move || work(&workspaces).map_err(ErrorBody::from)).await
 }
 
 /// Runs `work` on the thread records on a blocking task.
@@ -52,7 +52,7 @@ async fn on_threads<T: Send + 'static>(
     work: impl FnOnce(&Threads) -> crate::threads::Result<T> + Send + 'static,
 ) -> Result<T, ErrorBody> {
     let threads = Arc::clone(&services.threads);
-    blocking(move || work(&threads).map_err(thread_error)).await
+    blocking(move || work(&threads).map_err(ErrorBody::from)).await
 }
 
 /// The thread whose agent calls, which a run or terminal it starts records (DMN-162, TRM-104).
@@ -185,8 +185,7 @@ async fn run(services: &Services, principal: &Principal, call: Call) -> Reply {
         Call::WorkspacesMcpServers(params) => ok(&services
             .supervisor
             .workspace_mcp_servers(&params.workspace_id)
-            .await
-            .map_err(supervisor_error)?),
+            .await?),
         Call::McpTools(params) => {
             let id = params.workspace_id.clone();
             let workspace = on_workspaces(services, move |all| all.get(&id)).await?;
@@ -230,7 +229,6 @@ async fn run(services: &Services, principal: &Principal, call: Call) -> Reply {
         Call::ViewsMount(params) => ok(&services.mount(params).await?),
         Call::ViewsMountUpdate(params) => ok(&services.mount_update(params).await?),
         Call::ViewsUnmount(params) => ok(&services.unmount(params).await?),
-        Call::WidgetsSave(params) => ok(&services.save_widget(params).await?),
         Call::WidgetsCompile(params) => {
             let widgets = Arc::clone(&services.widgets);
             let module = blocking(move || {
@@ -241,9 +239,6 @@ async fn run(services: &Services, principal: &Principal, call: Call) -> Reply {
             .await?;
             ok(&omfp_protocol::CompiledWidget { module })
         }
-        Call::WidgetsLibrary(_) => ok(&omfp_protocol::WidgetLibrary {
-            components: services.widget_library().await?,
-        }),
         Call::WidgetsStateSet(params) => {
             services.set_widget_state(params).await?;
             empty()
@@ -267,8 +262,7 @@ async fn run(services: &Services, principal: &Principal, call: Call) -> Reply {
             suffix: services
                 .supervisor
                 .predict_word(params.text, params.cursor)
-                .await
-                .map_err(supervisor_error)?,
+                .await?,
         }),
         Call::PromptsPredictWordFeedback(params) => {
             services
@@ -279,8 +273,7 @@ async fn run(services: &Services, principal: &Principal, call: Call) -> Reply {
                     params.suggestion,
                     params.accepted,
                 )
-                .await
-                .map_err(supervisor_error)?;
+                .await?;
             empty()
         }
         Call::AuthStatus(_) => ok(&services.auth_status().await?),

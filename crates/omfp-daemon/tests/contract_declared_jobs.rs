@@ -8,16 +8,13 @@ mod common;
 
 use std::sync::Arc;
 
-use clap::Parser;
 use client::{Client, Follower};
-use common::Harness;
+use common::{Harness, omp_daemon_with};
 use fake_llm::{Reply, Step};
-use omfp_daemon::config::{Cli, Config};
+use omfp_daemon::DaemonHandle;
 use omfp_daemon::jobs::declared::{Clock, Sleep};
-use omfp_daemon::{DaemonHandle, Ports, start_with};
-use omfp_testkit::{FAKE_MODEL, FAKE_PROVIDER, omp_bin};
+use omfp_testkit::{FAKE_MODEL, FAKE_PROVIDER};
 use serde_json::{Value, json};
-use tempfile::TempDir;
 use tokio::sync::watch;
 
 /// A clock that moves only when the test sets it.
@@ -50,31 +47,6 @@ impl Clock for TestClock {
             let _ = now.wait_for(|now| *now >= at_ms).await;
         })
     }
-}
-
-async fn start(harness: &Harness, clock: &TestClock) -> (DaemonHandle, TempDir) {
-    let data = tempfile::tempdir().unwrap();
-    let omp = omp_bin();
-    let workspaces = data.path().join("workspaces");
-    let cli = Cli::try_parse_from([
-        "daemon",
-        "--bind",
-        "127.0.0.1:0",
-        "--data-dir",
-        data.path().to_str().unwrap(),
-        "--workspaces-root",
-        workspaces.to_str().unwrap(),
-        "--omp-bin",
-        &omp,
-        // The fake LLM scripts every model call; a title run would take a step (DMN-073).
-        "--no-title-generation",
-    ])
-    .unwrap();
-    let config = Config::from_cli(cli, None, None).unwrap();
-    let mut ports = Ports::resolve(&config).unwrap();
-    ports.omp_env = harness.env.prepare_omfp_profile(data.path()).unwrap();
-    ports.clock = Arc::new(clock.clone());
-    (start_with(config, ports).await.unwrap(), data)
 }
 
 /// `jobs/<id>` on a connection of its own (a client skips the frames of topics it does not wait on): its snapshot,
@@ -184,7 +156,10 @@ async fn prompt_jobs_make_or_reuse_a_thread_and_skip_a_due_time_while_it_works()
     .await;
     let origin = jiff::Timestamp::now().as_millisecond();
     let clock = TestClock::new(origin);
-    let (daemon, _data) = start(&harness, &clock).await;
+    let (daemon, _data) = omp_daemon_with(&harness, &["--no-title-generation"], |ports| {
+        ports.clock = Arc::new(clock.clone());
+    })
+    .await;
     let mut client = Client::hello(daemon.addr(), daemon.token().expose(), "test").await;
     let workspace = client.ok("workspaces.create", json!({})).await["id"]
         .as_str()

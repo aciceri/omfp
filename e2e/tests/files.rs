@@ -388,7 +388,7 @@ async fn bare_names_open_their_file_or_a_picker_and_files_float_as_tabs_without_
     journey.until_focused("file-picker-input").await?;
     assert_eq!(
         journey
-            .attrs("[data-testid=file-picker-option]", "data-path")
+            .attrs("[data-testid=file-picker-option]", "data-id")
             .await?,
         vec![
             Some("app/api/config.ts".to_owned()),

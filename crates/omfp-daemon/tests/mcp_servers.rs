@@ -5,64 +5,25 @@
 mod client;
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
-use clap::Parser;
-use client::Client;
-use omfp_daemon::agent::{FakeCall, FakeLauncher};
-use omfp_daemon::config::{Cli, Config};
-use omfp_daemon::git::FakeGit;
-use omfp_daemon::{DaemonHandle, Ports, start_with};
+use client::{Client, TestDaemon};
+use omfp_daemon::agent::FakeCall;
+use omfp_daemon::config::Config;
 use omp_rpc::{AgentStartEvent, RpcAgentEvent, RpcNotification};
 use serde_json::{Value, json};
-use tempfile::TempDir;
 
-struct TestDaemon {
-    handle: DaemonHandle,
-    launcher: FakeLauncher,
-    dir: TempDir,
+/// A daemon whose omp runs with `HOME` at `<dir>/home`.
+async fn daemon() -> TestDaemon {
+    let dir = tempfile::tempdir().unwrap();
+    let config = Config::loopback(dir.path(), &[]);
+    let home = dir.path().join("home");
+    TestDaemon::launch(dir, config, |ports| {
+        ports.omp_env = vec![("HOME".into(), Some(home.into()))];
+    })
+    .await
 }
 
 impl TestDaemon {
-    async fn start() -> Self {
-        let dir = tempfile::tempdir().unwrap();
-        let workspaces = dir.path().join("workspaces");
-        let cli = Cli::try_parse_from([
-            "daemon",
-            "--bind",
-            "127.0.0.1:0",
-            "--data-dir",
-            dir.path().to_str().unwrap(),
-            "--workspaces-root",
-            workspaces.to_str().unwrap(),
-        ])
-        .unwrap();
-        let launcher = FakeLauncher::new();
-        let home = dir.path().join("home");
-        let ports = Ports {
-            launcher: Arc::new(launcher.clone()),
-            git: Arc::new(FakeGit::new()),
-            omp_program: "omp".into(),
-            omp_version: omfp_core::OMP_VERSION.into(),
-            omp_env: vec![("HOME".into(), Some(home.into()))],
-            user_omp_env: omfp_testkit::absent_standalone_omp(&dir),
-            warnings: Vec::new(),
-            clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
-        };
-        let handle = start_with(Config::from_cli(cli, None, None).unwrap(), ports)
-            .await
-            .unwrap();
-        Self {
-            handle,
-            launcher,
-            dir,
-        }
-    }
-
-    async fn client(&self) -> Client {
-        Client::hello(self.handle.addr(), self.handle.token().expose(), "test").await
-    }
-
     fn profile_agent(&self) -> PathBuf {
         self.dir.path().join("omp-profile/agent")
     }
@@ -145,8 +106,8 @@ fn pairs(list: &[(&str, &str)]) -> Vec<(String, String)> {
 // spec: PRT-110, PRT-113, DMN-190
 #[tokio::test(flavor = "multi_thread")]
 async fn a_workspace_lists_its_configured_servers_without_starting_omp() {
-    let daemon = TestDaemon::start().await;
-    let mut client = daemon.client().await;
+    let daemon = daemon().await;
+    let mut client = daemon.client("test").await;
     let (_, workspace_id, folder) = thread_with_servers(&daemon, &mut client).await;
 
     let listing = client
@@ -200,8 +161,8 @@ async fn a_workspace_lists_its_configured_servers_without_starting_omp() {
 // spec: PRT-111, PRT-114, DMN-191
 #[tokio::test(flavor = "multi_thread")]
 async fn a_running_thread_checks_its_servers_with_omp() {
-    let daemon = TestDaemon::start().await;
-    let mut client = daemon.client().await;
+    let daemon = daemon().await;
+    let mut client = daemon.client("test").await;
     let (thread, _, _) = thread_with_servers(&daemon, &mut client).await;
 
     let stopped = client
@@ -256,8 +217,8 @@ async fn a_running_thread_checks_its_servers_with_omp() {
 // spec: PRT-112, DMN-192
 #[tokio::test(flavor = "multi_thread")]
 async fn reconnecting_restarts_an_idle_thread_and_checks_the_server_again() {
-    let daemon = TestDaemon::start().await;
-    let mut client = daemon.client().await;
+    let daemon = daemon().await;
+    let mut client = daemon.client("test").await;
     let (thread, _, _) = thread_with_servers(&daemon, &mut client).await;
     daemon
         .launcher
@@ -284,8 +245,8 @@ async fn reconnecting_restarts_an_idle_thread_and_checks_the_server_again() {
 // spec: PRT-112, DMN-192
 #[tokio::test(flavor = "multi_thread")]
 async fn a_working_thread_is_not_restarted_to_reconnect() {
-    let daemon = TestDaemon::start().await;
-    let mut client = daemon.client().await;
+    let daemon = daemon().await;
+    let mut client = daemon.client("test").await;
     let (thread, _, _) = thread_with_servers(&daemon, &mut client).await;
     let topic = format!("thread/{thread}");
     client
@@ -318,8 +279,8 @@ async fn a_working_thread_is_not_restarted_to_reconnect() {
 // spec: DMN-350
 #[tokio::test(flavor = "multi_thread")]
 async fn mcp_commands_that_would_write_the_user_config_are_refused_before_omp() {
-    let daemon = TestDaemon::start().await;
-    let mut client = daemon.client().await;
+    let daemon = daemon().await;
+    let mut client = daemon.client("test").await;
     let (thread, _, _) = thread_with_servers(&daemon, &mut client).await;
 
     let refused = client
@@ -385,8 +346,8 @@ async fn echo_server() -> String {
 // spec: PRT-220, PRT-221
 #[tokio::test(flavor = "multi_thread")]
 async fn a_widget_lists_and_calls_a_workspace_server_without_starting_omp() {
-    let daemon = TestDaemon::start().await;
-    let mut client = daemon.client().await;
+    let daemon = daemon().await;
+    let mut client = daemon.client("test").await;
     let (_, workspace_id, folder) = thread_with_servers(&daemon, &mut client).await;
     let url = echo_server().await;
     write(

@@ -10,7 +10,7 @@ mod transport;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use omfp_protocol::{McpCallResult, McpTool, McpTransport};
@@ -19,6 +19,7 @@ use tracing::warn;
 
 use self::credentials::{CredentialError, Credentials, Token};
 use self::transport::{Failure, Http, Session};
+use crate::lock;
 use crate::omp_mcp::{self, Remote, Unavailable};
 
 /// How long one operation may take when the server's entry sets no `timeout`.
@@ -67,10 +68,6 @@ fn unavailable(reason: Unavailable, server: &str) -> McpError {
         Unavailable::Stdio => McpError::Stdio(server),
         Unavailable::NoUrl => McpError::NoUrl(server),
     }
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// A Streamable HTTP session kept per workspace and server, for the URL it was opened on.

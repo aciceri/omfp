@@ -54,12 +54,8 @@ pub struct WindowView {
     pub id: String,
     pub title: String,
     pub source: ViewSource,
-    /// The TSX file (`./views/<name>.tsx`) the view renders; `null` for a written layout.
-    #[serde(default)]
-    pub file: Option<String>,
-    /// The widget references of its layout; `null` for a TSX view this window has not rendered.
-    #[serde(default)]
-    pub widgets: Option<Vec<String>>,
+    /// The widget references of its layout.
+    pub widgets: Vec<String>,
 }
 
 /// Who registered a command of a window (PRT-122).
@@ -132,7 +128,7 @@ pub struct WindowSummary {
     pub thread_id: Option<String>,
     pub focused: bool,
     pub active_view: Option<String>,
-    /// How many errors it shows: init files and TSX views (`fileErrors`) and widgets in an error state.
+    /// How many errors it shows: init files (`fileErrors`) and widgets in an error state.
     pub errors: u32,
 }
 
@@ -156,7 +152,7 @@ pub struct WindowState {
     pub default_view: Option<String>,
     pub views: Vec<WindowView>,
     pub commands: Vec<WindowCommand>,
-    /// The errors it shows of init files and TSX views (PRT-115).
+    /// The errors it shows of init files (PRT-115).
     pub file_errors: Vec<FileErrorReport>,
     /// The workspace and user widgets of its current view (PRT-043).
     pub widgets: Vec<WidgetReport>,
@@ -195,7 +191,7 @@ pub struct CheckWidgetParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window_id: Option<u64>,
     pub workspace_id: String,
-    /// The widget reference: `./widgets/<name>` or `user:<name>`.
+    /// The widget reference: `./widgets/<name>`.
     pub widget: String,
 }
 

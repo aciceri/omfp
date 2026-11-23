@@ -6,6 +6,7 @@ use omfp_core::wire::{ConfiguredThinkingLevel, ImageContent, ThinkingLevel};
 use omfp_protocol::{
     Call, CloseJobs, CreatedBy, ErrorBody, ErrorCode, JobRunStatus, LiveMuted, MessageParams,
     PromptBehavior, PromptResult, RunInfo, RunTrigger, ThreadGit, ThreadWorkspace, ThreadsStopped,
+    TitleSource,
 };
 use omp_rpc::{
     BashCommand, BtwCommand, CancelSubagentCommand, CompactCommand, FollowUpCommand, ForkCommand,
@@ -20,24 +21,15 @@ use super::workspaces::create_workspace;
 use super::{Reply, empty, ok, on_threads, on_workspaces};
 use crate::agent::OmpCall;
 use crate::server::auth::Principal;
-use crate::server::convert::{internal, supervisor_error, thread_error};
+use crate::server::convert::{blocking, internal};
 use crate::server::prompts;
-use crate::server::services::{Services, blocking};
-use crate::store::TitleSource;
+use crate::server::services::Services;
 use crate::supervisor::{QueuedMessage, Restart};
 use crate::threads::NewThread;
-use crate::titles;
+use crate::{titles, wire_name};
 
 fn images(images: Vec<ImageContent>) -> Option<Vec<ImageContent>> {
     (!images.is_empty()).then_some(images)
-}
-
-/// omp's name of a thinking level (`high`, …), as stored on the thread.
-fn thinking_name(level: ThinkingLevel) -> Result<String, ErrorBody> {
-    match serde_json::to_value(level).map_err(internal)? {
-        Value::String(name) => Ok(name),
-        other => Err(internal(format!("unexpected thinking level {other}"))),
-    }
 }
 
 /// omp's selector for a thinking level: omp 19.1's `set_thinking_level` takes `ConfiguredThinkingLevel`, the levels
@@ -94,14 +86,14 @@ async fn create_thread(
         title: title.unwrap_or_default(),
         workspace_id: workspace_id.clone(),
         model: params.model,
-        thinking_level: params.thinking_level.map(thinking_name).transpose()?,
+        thinking_level: params.thinking_level.map(wire_name),
         approval_mode: params.approval_mode.map(|mode| mode.as_str().to_owned()),
         created_by: principal.created_by(),
     };
     let threads = Arc::clone(&services.threads);
     let store = Arc::clone(&services.store);
     let created_thread = blocking(move || {
-        let thread = threads.create(new).map_err(thread_error)?;
+        let thread = threads.create(new)?;
         store.set_created_client(&thread.id, &client)?;
         Ok(thread)
     })
@@ -132,11 +124,11 @@ async fn create_thread(
                 } else {
                     services.refresh_index_quietly().await;
                 }
-                return Err(supervisor_error(error));
+                return Err(error.into());
             }
             services.refresh_index_quietly().await;
             // The thread exists; say which one so the client can retry the prompt.
-            let mut body = supervisor_error(error);
+            let mut body = ErrorBody::from(error);
             let mut details = match body.details.take() {
                 Some(Value::Object(details)) => details,
                 _ => serde_json::Map::new(),
@@ -231,8 +223,7 @@ pub(super) async fn threads(services: &Services, principal: &Principal, call: Ca
             if let Some(title) = params.title {
                 supervisor
                     .set_title(&id, title.trim().to_owned(), TitleSource::Set)
-                    .await
-                    .map_err(supervisor_error)?;
+                    .await?;
             }
             if let Some(mode) = params.approval_mode {
                 on_threads(services, move |all| {
@@ -246,10 +237,7 @@ pub(super) async fn threads(services: &Services, principal: &Principal, call: Ca
         }
         Call::ThreadsArchive(params) => {
             close_jobs(services, &params.thread_id, params.jobs)?;
-            supervisor
-                .stop(&params.thread_id)
-                .await
-                .map_err(supervisor_error)?;
+            supervisor.stop(&params.thread_id).await?;
             on_threads(services, move |all| all.archive(&params.thread_id)).await?;
             services.refresh_index_quietly().await;
             empty()
@@ -263,10 +251,7 @@ pub(super) async fn threads(services: &Services, principal: &Principal, call: Ca
             let id = params.thread_id.clone();
             on_threads(services, move |all| all.get(&id)).await?;
             close_jobs(services, &params.thread_id, params.jobs)?;
-            supervisor
-                .delete(&params.thread_id)
-                .await
-                .map_err(supervisor_error)?;
+            supervisor.delete(&params.thread_id).await?;
             services.refresh_index_quietly().await;
             empty()
         }
@@ -299,8 +284,7 @@ async fn queue(
     services
         .supervisor
         .queue(&thread_id, message(text.clone(), images(attached)))
-        .await
-        .map_err(supervisor_error)?;
+        .await?;
     prompts::record(services, principal, &thread_id, None, &text).await;
     empty()
 }
@@ -311,7 +295,7 @@ async fn queue(
 pub(super) async fn thread(services: &Services, principal: &Principal, call: Call) -> Reply {
     let supervisor = &services.supervisor;
     let forward = |id: String, call: OmpCall| async move {
-        supervisor.call(&id, call).await.map_err(supervisor_error)
+        supervisor.call(&id, call).await.map_err(ErrorBody::from)
     };
     match call {
         Call::ThreadPrompt(params) => {
@@ -332,10 +316,7 @@ pub(super) async fn thread(services: &Services, principal: &Principal, call: Cal
                     PromptBehavior::FollowUp => StreamingBehavior::FollowUp,
                 }),
             };
-            let admission = supervisor
-                .prompt(&params.thread_id, command)
-                .await
-                .map_err(supervisor_error)?;
+            let admission = supervisor.prompt(&params.thread_id, command).await?;
             prompts::record(services, principal, &params.thread_id, None, &text).await;
             ok(&PromptResult {
                 prompt_id: admission.prompt_id,
@@ -375,14 +356,11 @@ pub(super) async fn thread(services: &Services, principal: &Principal, call: Cal
                 thinking_level: None,
                 role: None,
             };
-            supervisor
-                .set_model(&params.thread_id, command)
-                .await
-                .map_err(supervisor_error)?;
+            supervisor.set_model(&params.thread_id, command).await?;
             empty()
         }
         Call::ThreadSetThinking(params) => {
-            let name = thinking_name(params.level)?;
+            let name = wire_name(params.level);
             let command = SetThinkingLevelCommand {
                 level: configured(params.level),
             };
@@ -400,7 +378,7 @@ pub(super) async fn thread(services: &Services, principal: &Principal, call: Cal
         Call::ThreadCommands(params) => supervisor
             .commands(&params.thread_id)
             .await
-            .map_err(supervisor_error),
+            .map_err(ErrorBody::from),
         Call::ThreadCompact(params) => {
             let command = CompactCommand {
                 custom_instructions: params.instructions,
@@ -481,59 +459,43 @@ pub(super) async fn thread(services: &Services, principal: &Principal, call: Cal
             ok(&super::session::thread_session(services, &params.thread_id).await?)
         }
         Call::ThreadRestart(params) => {
-            supervisor
-                .restart(&params.thread_id, Restart::User)
-                .await
-                .map_err(supervisor_error)?;
+            supervisor.restart(&params.thread_id, Restart::User).await?;
             empty()
         }
         Call::ThreadResume(params) => {
-            let admission = supervisor
-                .resume(&params.thread_id)
-                .await
-                .map_err(supervisor_error)?;
+            let admission = supervisor.resume(&params.thread_id).await?;
             ok(&PromptResult {
                 prompt_id: admission.prompt_id,
                 agent_invoked: admission.agent_invoked,
             })
         }
-        Call::ThreadMcpServers(params) => ok(&supervisor
-            .thread_mcp_servers(&params.thread_id)
-            .await
-            .map_err(supervisor_error)?),
+        Call::ThreadMcpServers(params) => {
+            ok(&supervisor.thread_mcp_servers(&params.thread_id).await?)
+        }
         Call::ThreadMcpReconnect(params) => ok(&supervisor
             .mcp_reconnect(&params.thread_id, params.name.as_deref())
-            .await
-            .map_err(supervisor_error)?),
+            .await?),
         Call::ThreadStop(params) => {
             // The cascade also kills jobs and PTYs started by those threads' agents (AGT-071, DMN-162, TRM-104).
             let thread_ids = if params.cascade {
-                let stopped = supervisor.stop_tree(&params.thread_id).await;
-                let stopped = stopped.map_err(supervisor_error)?;
+                let stopped = supervisor.stop_tree(&params.thread_id).await?;
                 services.jobs.kill_started_by(&stopped);
                 services.terminals.kill_started_by(&stopped);
                 stopped
             } else {
-                supervisor
-                    .stop(&params.thread_id)
-                    .await
-                    .map_err(supervisor_error)?;
+                supervisor.stop(&params.thread_id).await?;
                 vec![params.thread_id]
             };
             ok(&ThreadsStopped { thread_ids })
         }
         Call::ThreadLiveStop(params) => {
-            supervisor
-                .live_stop(&params.thread_id)
-                .await
-                .map_err(supervisor_error)?;
+            supervisor.live_stop(&params.thread_id).await?;
             empty()
         }
         Call::ThreadLiveMute(params) => {
             let muted = supervisor
                 .live_mute(&params.thread_id, params.muted)
-                .await
-                .map_err(supervisor_error)?;
+                .await?;
             ok(&LiveMuted { muted })
         }
         Call::InteractionRespond(params) => {
@@ -544,15 +506,13 @@ pub(super) async fn thread(services: &Services, principal: &Principal, call: Cal
                     params.response,
                     principal.client(),
                 )
-                .await
-                .map_err(supervisor_error)?;
+                .await?;
             empty()
         }
         Call::CardAnswer(params) => {
             supervisor
                 .answer_card(&params.thread_id, &params.tool_call_id, params.answer)
-                .await
-                .map_err(supervisor_error)?;
+                .await?;
             empty()
         }
         other => Err(internal(format!(
@@ -574,7 +534,7 @@ mod tests {
     use crate::git::{FakeGit, Git};
     use crate::paths::DataDir;
     use crate::server::dispatch::dispatch;
-    use crate::store::{Provenance, Store};
+    use crate::store::Store;
     use crate::supervisor::{Supervisor, SupervisorConfig};
     use crate::threads::Threads;
     use crate::widgets::Widgets;
@@ -584,14 +544,14 @@ mod tests {
         let data = DataDir::new(dir.path().join("data"));
         std::fs::create_dir_all(data.root()).unwrap();
         let root = dir.path().join("workspaces");
-        let store = Arc::new(Store::open(&data.db(), &root).unwrap());
+        let store = Arc::new(Store::open(&data.db()).unwrap());
         let threads = Arc::new(Threads::new(Arc::clone(&store), data.clone()));
         let workspaces = Arc::new(Workspaces::new(
             Arc::clone(&store),
             Arc::new(FakeGit::new()) as Arc<dyn Git>,
             root,
         ));
-        let widgets = Arc::new(Widgets::new(data.widgets(), None));
+        let widgets = Arc::new(Widgets::new(None));
         let supervisor = Supervisor::new(
             Arc::new(FakeLauncher::new()),
             Arc::clone(&threads),
@@ -852,14 +812,21 @@ mod tests {
         let by_job = services
             .threads
             .create(NewThread {
-                created_by: Provenance::Job("nightly".into()),
+                created_by: CreatedBy::Job {
+                    job: "nightly".into(),
+                },
                 ..NewThread::new("nightly", &ws)
             })
             .unwrap()
             .id;
 
         let thread = services.threads.get(&by_job).unwrap();
-        assert_eq!(thread.created_by, Provenance::Job("nightly".into()));
+        assert_eq!(
+            thread.created_by,
+            CreatedBy::Job {
+                job: "nightly".into(),
+            }
+        );
         let summary = services.thread_summary(&by_job).await.unwrap();
         assert_eq!(
             serde_json::to_value(&summary.provenance).unwrap()["createdBy"],

@@ -88,7 +88,6 @@ impl Supervisor {
                 &ws.id,
                 &ws.path,
                 self.inner.config.agent_dir.as_deref(),
-                &data.widgets(),
                 &actor.id,
             )),
             extension: Some(data.omp_extension()),

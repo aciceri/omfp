@@ -5,43 +5,15 @@
 mod client;
 mod common;
 
-use clap::Parser;
 use client::{Client, Follower};
-use common::Harness;
+use common::{Harness, omp_daemon};
 use fake_llm::{Matcher, Reply, Step, ToolCall};
 use omfp_core::ThreadState;
 use omfp_core::wire::{AgentMessage, SubagentLifecycleStatus};
-use omfp_daemon::config::{Cli, Config};
-use omfp_daemon::{DaemonHandle, Ports, start_with};
 use omfp_protocol::method::ThreadsCreate;
 use omfp_protocol::{CreateThreadParams, CreateWorkspaceParams, ThreadWorkspace};
-use omfp_testkit::{FAKE_MODEL, FAKE_PROVIDER, omp_bin};
+use omfp_testkit::{FAKE_MODEL, FAKE_PROVIDER};
 use serde_json::{Value, json};
-use tempfile::TempDir;
-
-async fn start(harness: &Harness) -> (DaemonHandle, TempDir) {
-    let data = tempfile::tempdir().unwrap();
-    let omp = omp_bin();
-    let workspaces = data.path().join("workspaces");
-    let cli = Cli::try_parse_from([
-        "daemon",
-        "--bind",
-        "127.0.0.1:0",
-        "--data-dir",
-        data.path().to_str().unwrap(),
-        "--workspaces-root",
-        workspaces.to_str().unwrap(),
-        "--omp-bin",
-        &omp,
-        // The fake LLM scripts every model call; a title run would take a step (DMN-073).
-        "--no-title-generation",
-    ])
-    .unwrap();
-    let config = Config::from_cli(cli, None, None).unwrap();
-    let mut ports = Ports::resolve(&config).unwrap();
-    ports.omp_env = harness.env.prepare_omfp_profile(data.path()).unwrap();
-    (start_with(config, ports).await.unwrap(), data)
-}
 
 /// A thread on the fake model, followed from its snapshot.
 async fn thread(client: &mut Client) -> (String, Follower) {
@@ -176,7 +148,7 @@ async fn a_task_subagent_is_listed_and_its_transcript_reads_incrementally() {
         .env
         .configure(&[], "async:\n  enabled: false\n")
         .unwrap();
-    let (daemon, _data) = start(&harness).await;
+    let (daemon, _data) = omp_daemon(&harness, &["--no-title-generation"]).await;
     let mut client = Client::hello(daemon.addr(), daemon.token().expose(), "test").await;
     let (thread, mut view) = thread(&mut client).await;
 
@@ -264,7 +236,7 @@ async fn navigate_restores_the_editor_text_label_marks_an_entry_and_fork_starts_
         Step::reply(Reply::text("second answer")),
     ])
     .await;
-    let (daemon, _data) = start(&harness).await;
+    let (daemon, _data) = omp_daemon(&harness, &["--no-title-generation"]).await;
     let mut client = Client::hello(daemon.addr(), daemon.token().expose(), "test").await;
     let (thread, mut view) = thread(&mut client).await;
     turn(&mut client, &mut view, &thread, "first question", 2).await;
@@ -356,7 +328,7 @@ async fn navigate_restores_the_editor_text_label_marks_an_entry_and_fork_starts_
 #[tokio::test(flavor = "multi_thread")]
 async fn a_goal_reaches_the_thread_state() {
     let harness = Harness::new(vec![Step::reply(Reply::text("ok"))]).await;
-    let (daemon, _data) = start(&harness).await;
+    let (daemon, _data) = omp_daemon(&harness, &["--no-title-generation"]).await;
     let mut client = Client::hello(daemon.addr(), daemon.token().expose(), "test").await;
     let (thread, mut view) = thread(&mut client).await;
     turn(&mut client, &mut view, &thread, "hello", 2).await;

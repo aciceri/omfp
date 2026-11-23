@@ -11,14 +11,18 @@ mod jobs;
 mod migrate;
 
 pub use history::{Activity, ActivityQuery, NewActivity, PromptQuery, SentPrompt};
-pub use jobs::{FINISHED_RUNS_KEPT, JobRun, JobState, RunEnd, RunOutput};
+pub use jobs::{FINISHED_RUNS_KEPT, JobState, RunEnd, RunOutput};
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use omfp_protocol::{CreatedBy, TitleSource};
 use rusqlite::{Connection, OptionalExtension, Row, params};
+
+use crate::{from_wire_name, wire_name};
 
 #[derive(Debug, thiserror::Error)]
 pub enum StoreError {
@@ -42,41 +46,32 @@ pub enum StoreError {
 
 pub type Result<T, E = StoreError> = std::result::Result<T, E>;
 
-/// Who created an entity (ARC-009): the user, the agent of a thread, or an MCP client outside omfp (AGT-051).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Provenance {
-    User,
-    Thread(String),
-    Mcp,
-    /// A declared job's prompt run (DMN-334).
-    Job(String),
-}
-
 /// The stored prefix of a job provenance; thread ids are ULIDs and never start with it.
 const JOB_PREFIX: &str = "job:";
 
-impl Provenance {
-    /// Stored form: `user`, `mcp`, `job:<name>` or the thread id (a ULID, never one of the others).
-    #[must_use]
-    pub fn as_str(&self) -> std::borrow::Cow<'_, str> {
-        match self {
-            Self::User => "user".into(),
-            Self::Mcp => "mcp".into(),
-            Self::Thread(id) => id.as_str().into(),
-            Self::Job(job) => format!("{JOB_PREFIX}{job}").into(),
-        }
+/// The stored form of who created an entity (ARC-009, AGT-051): `user`, `mcp`, `job:<name>` (DMN-334) or the thread
+/// id (a ULID, never one of the others).
+fn provenance_text(created_by: &CreatedBy) -> Cow<'_, str> {
+    match created_by {
+        CreatedBy::User => "user".into(),
+        CreatedBy::Mcp => "mcp".into(),
+        CreatedBy::Thread { thread_id } => thread_id.as_str().into(),
+        CreatedBy::Job { job } => format!("{JOB_PREFIX}{job}").into(),
     }
+}
 
-    #[must_use]
-    pub fn parse(value: &str) -> Self {
-        match value {
-            "user" => Self::User,
-            "mcp" => Self::Mcp,
-            _ => match value.strip_prefix(JOB_PREFIX) {
-                Some(job) => Self::Job(job.to_owned()),
-                None => Self::Thread(value.to_owned()),
+fn parse_provenance(value: &str) -> CreatedBy {
+    match value {
+        "user" => CreatedBy::User,
+        "mcp" => CreatedBy::Mcp,
+        _ => match value.strip_prefix(JOB_PREFIX) {
+            Some(job) => CreatedBy::Job {
+                job: job.to_owned(),
             },
-        }
+            None => CreatedBy::Thread {
+                thread_id: value.to_owned(),
+            },
+        },
     }
 }
 
@@ -97,42 +92,9 @@ pub struct Workspace {
     pub name: String,
     /// Absolute, canonical path of the folder: one the daemon made under the workspaces root (DMN-020); unique.
     pub path: PathBuf,
-    pub created_by: Provenance,
+    pub created_by: CreatedBy,
     /// Unix milliseconds.
     pub created_at: i64,
-}
-
-/// Where a thread's title comes from (DMN-073).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TitleSource {
-    /// The first words of the first message, or empty before it; replaced by a generated title.
-    Placeholder,
-    /// Generated from the conversation by the daemon.
-    Generated,
-    /// Set by the user or an agent; never replaced by a generated title.
-    Set,
-}
-
-impl TitleSource {
-    /// Stored form: `placeholder`, `generated` or `set`.
-    #[must_use]
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Placeholder => "placeholder",
-            Self::Generated => "generated",
-            Self::Set => "set",
-        }
-    }
-
-    /// The stored form back; anything unknown counts as `set`, the source that is never overwritten.
-    #[must_use]
-    pub fn parse(value: &str) -> Self {
-        match value {
-            "placeholder" => Self::Placeholder,
-            "generated" => Self::Generated,
-            _ => Self::Set,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -148,7 +110,7 @@ pub struct Thread {
     /// `provider/id`.
     pub model: Option<String>,
     pub thinking_level: Option<String>,
-    pub created_by: Provenance,
+    pub created_by: CreatedBy,
     /// Unix milliseconds.
     pub created_at: i64,
     pub archived_at: Option<i64>,
@@ -201,12 +163,12 @@ const THEME_SETTING: &str = "theme";
 
 impl Store {
     /// Opens (creating if needed) the database at `path`, enables WAL and foreign keys (DMN-011) and applies pending
-    /// migrations (DMN-010). Migrations 3 and 6 create workspace folders under `workspaces_root`.
-    pub fn open(path: &Path, workspaces_root: &Path) -> Result<Self> {
+    /// migrations (DMN-010).
+    pub fn open(path: &Path) -> Result<Self> {
         let mut conn = Connection::open(path)?;
         conn.busy_timeout(Duration::from_secs(5))?;
         conn.pragma_update_and_check(None, "journal_mode", "WAL", |row| row.get::<_, String>(0))?;
-        migrate::run(&mut conn, workspaces_root)?;
+        migrate::run(&mut conn)?;
         conn.pragma_update(None, "foreign_keys", true)?;
         Ok(Self {
             conn: Mutex::new(conn),
@@ -267,7 +229,7 @@ impl Store {
                     ws.id,
                     ws.name,
                     path_str(&ws.path)?,
-                    ws.created_by.as_str(),
+                    provenance_text(&ws.created_by),
                     ws.created_at
                 ],
             )
@@ -472,10 +434,10 @@ impl Store {
                     thread.approval_mode,
                     thread.model,
                     thread.thinking_level,
-                    thread.created_by.as_str(),
+                    provenance_text(&thread.created_by),
                     thread.created_at,
                     thread.archived_at,
-                    thread.title_source.as_str()
+                    wire_name(thread.title_source)
                 ],
             )
             .map_err(|error| unique_conflict(error, &format!("thread {} exists", thread.id)))?;
@@ -506,7 +468,7 @@ impl Store {
     pub fn set_thread_title(&self, id: &str, title: &str, source: TitleSource) -> Result<()> {
         let updated = self.conn().execute(
             "UPDATE threads SET title = ?2, title_source = ?3 WHERE id = ?1",
-            params![id, title, source.as_str()],
+            params![id, title, wire_name(source)],
         )?;
         found(updated, "thread", id)
     }
@@ -521,7 +483,7 @@ impl Store {
     ) -> Result<bool> {
         let changed = self.conn().execute(
             "UPDATE threads SET title = ?2, title_source = ?3 WHERE id = ?1 AND title_source = 'placeholder'",
-            params![id, title, source.as_str()],
+            params![id, title, wire_name(source)],
         )?;
         Ok(changed > 0)
     }
@@ -629,10 +591,10 @@ impl Store {
     }
 
     /// Checks that a provenance names an existing thread, if it names one (ARC-009).
-    pub fn check_provenance(&self, created_by: &Provenance) -> Result<()> {
+    pub fn check_provenance(&self, created_by: &CreatedBy) -> Result<()> {
         match created_by {
-            Provenance::User | Provenance::Mcp | Provenance::Job(_) => Ok(()),
-            Provenance::Thread(id) => ensure(&self.conn(), "threads", "thread", id),
+            CreatedBy::User | CreatedBy::Mcp | CreatedBy::Job { .. } => Ok(()),
+            CreatedBy::Thread { thread_id } => ensure(&self.conn(), "threads", "thread", thread_id),
         }
     }
 
@@ -927,7 +889,7 @@ fn workspace_from_row(row: &Row<'_>) -> rusqlite::Result<Workspace> {
         id: row.get(0)?,
         name: row.get(1)?,
         path: PathBuf::from(row.get::<_, String>(2)?),
-        created_by: Provenance::parse(&row.get::<_, String>(3)?),
+        created_by: parse_provenance(&row.get::<_, String>(3)?),
         created_at: row.get(4)?,
     })
 }
@@ -942,10 +904,11 @@ fn thread_from_row(row: &Row<'_>) -> rusqlite::Result<Thread> {
         approval_mode: row.get(5)?,
         model: row.get(6)?,
         thinking_level: row.get(7)?,
-        created_by: Provenance::parse(&row.get::<_, String>(8)?),
+        created_by: parse_provenance(&row.get::<_, String>(8)?),
         created_at: row.get(9)?,
         archived_at: row.get(10)?,
-        title_source: TitleSource::parse(&row.get::<_, String>(11)?),
+        // Anything unknown counts as `set`, the source that is never overwritten.
+        title_source: from_wire_name(&row.get::<_, String>(11)?).unwrap_or(TitleSource::Set),
     })
 }
 
@@ -956,23 +919,30 @@ mod tests {
     // spec: ARC-009, AGT-051
     #[test]
     fn provenance_is_stored_as_user_mcp_or_a_thread_id() {
-        assert_eq!(Provenance::User.as_str(), "user");
-        assert_eq!(Provenance::Mcp.as_str(), "mcp");
-        assert_eq!(Provenance::Thread("01J".into()).as_str(), "01J");
-        assert_eq!(Provenance::parse("user"), Provenance::User);
-        assert_eq!(Provenance::parse("mcp"), Provenance::Mcp);
-        assert_eq!(Provenance::parse("01J"), Provenance::Thread("01J".into()));
+        let thread = CreatedBy::Thread {
+            thread_id: "01J".into(),
+        };
+        assert_eq!(provenance_text(&CreatedBy::User), "user");
+        assert_eq!(provenance_text(&CreatedBy::Mcp), "mcp");
+        assert_eq!(provenance_text(&thread), "01J");
+        assert_eq!(parse_provenance("user"), CreatedBy::User);
+        assert_eq!(parse_provenance("mcp"), CreatedBy::Mcp);
+        assert_eq!(parse_provenance("01J"), thread);
     }
 
     // spec: PRT-209, DMN-334
     #[test]
     fn a_job_provenance_is_stored_as_job_and_its_name() {
-        let job = Provenance::Job("nightly".into());
-        assert_eq!(job.as_str(), "job:nightly");
-        assert_eq!(Provenance::parse("job:nightly"), job);
+        let job = CreatedBy::Job {
+            job: "nightly".into(),
+        };
+        assert_eq!(provenance_text(&job), "job:nightly");
+        assert_eq!(parse_provenance("job:nightly"), job);
         assert_eq!(
-            Provenance::parse("01JABCDEF"),
-            Provenance::Thread("01JABCDEF".into())
+            parse_provenance("01JABCDEF"),
+            CreatedBy::Thread {
+                thread_id: "01JABCDEF".into(),
+            }
         );
     }
 
@@ -1003,7 +973,7 @@ mod tests {
     #[test]
     fn prompts_are_kept_once_per_text_bounded_and_ranked_thread_then_workspace_then_newest() {
         let dir = tempfile::tempdir().unwrap();
-        let store = Store::open(&dir.path().join("omfp.db"), &dir.path().join("ws")).unwrap();
+        let store = Store::open(&dir.path().join("omfp.db")).unwrap();
         store.record_prompt(&sent("a1", "t1", "w1", 1), 3).unwrap();
         store.record_prompt(&sent("b", "t2", "w1", 2), 3).unwrap();
         store.record_prompt(&sent("c", "t3", "w2", 3), 3).unwrap();

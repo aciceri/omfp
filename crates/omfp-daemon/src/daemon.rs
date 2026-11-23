@@ -114,6 +114,27 @@ impl Ports {
             clock: Arc::new(SystemClock),
         })
     }
+
+    /// The ports of a test daemon: `launcher` and `git` (fakes), omp named `omp` at the pinned version without
+    /// environment overrides, `user_omp_env` as the user's own omp, no warnings, the host's clock.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn fake(
+        launcher: Arc<dyn AgentLauncher>,
+        git: Arc<dyn Git>,
+        user_omp_env: Vec<(OsString, Option<OsString>)>,
+    ) -> Self {
+        Self {
+            launcher,
+            git,
+            omp_program: "omp".into(),
+            omp_version: omfp_core::OMP_VERSION.into(),
+            omp_env: Vec::new(),
+            user_omp_env,
+            warnings: Vec::new(),
+            clock: Arc::new(SystemClock),
+        }
+    }
 }
 
 /// What `<data-dir>/daemon.json` says about the running daemon (DMN-007, D-16).
@@ -477,8 +498,7 @@ pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHa
         .open(data.db())
         .and_then(|_| make_private_file(&data.db()))
         .with_context(|| format!("cannot create {}", data.db().display()))?;
-    let store =
-        Arc::new(Store::open(&data.db(), &workspaces_root).context("cannot open the database")?);
+    let store = Arc::new(Store::open(&data.db()).context("cannot open the database")?);
     let threads = Arc::new(Threads::new(Arc::clone(&store), data.clone()));
     let workspaces = Arc::new(Workspaces::new(
         Arc::clone(&store),
@@ -489,7 +509,7 @@ pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHa
     let agent_dir = data.omp_profile().join("agent");
     create_private_dir(&data.omp_profile())?;
     create_private_dir(&agent_dir)?;
-    let widgets = Arc::new(Widgets::new(data.widgets(), config.static_dir.as_deref()));
+    let widgets = Arc::new(Widgets::new(config.static_dir.as_deref()));
     let supervisor = Supervisor::new(
         ports.launcher,
         Arc::clone(&threads),
@@ -507,7 +527,6 @@ pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHa
             ..SupervisorConfig::new(ports.omp_program)
         },
     );
-    let blobs = supervisor.spawn_blob_migration(Arc::clone(&store));
     let services = Services::new(
         store,
         threads,
@@ -529,7 +548,6 @@ pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHa
         services.spawn_job_counts(),
         services.spawn_polls(),
         follow_threads,
-        blobs,
     ];
     if let Some(path) = config.theme_file.clone() {
         info!(theme = %path.display(), "following the theme file");

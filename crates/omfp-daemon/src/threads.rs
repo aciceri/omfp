@@ -7,10 +7,10 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use omfp_protocol::{CreatedBy, TitleSource};
+
 use crate::paths::DataDir;
-use crate::store::{
-    Provenance, Store, StoreError, Thread, ThreadFork, TitleSource, new_id, now_ms,
-};
+use crate::store::{Store, StoreError, Thread, ThreadFork, new_id, now_ms};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ThreadError {
@@ -35,7 +35,7 @@ pub struct NewThread {
     pub model: Option<String>,
     pub thinking_level: Option<String>,
     pub approval_mode: Option<String>,
-    pub created_by: Provenance,
+    pub created_by: CreatedBy,
 }
 
 impl NewThread {
@@ -49,7 +49,7 @@ impl NewThread {
             model: None,
             thinking_level: None,
             approval_mode: None,
-            created_by: Provenance::User,
+            created_by: CreatedBy::User,
         }
     }
 }

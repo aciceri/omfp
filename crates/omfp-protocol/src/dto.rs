@@ -655,16 +655,13 @@ pub struct FileCandidates {
     pub truncated: bool,
 }
 
-/// Where a widget folder lives (AGT-012, AGT-023).
+/// Where a widget folder lives: `<workspace>/.omfp/widgets/<name>/`, referenced as `./widgets/<name>` (AGT-012).
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum WidgetSource {
-    /// `<workspace>/.omfp/widgets/<name>/`, referenced as `./widgets/<name>`.
     Workspace,
-    /// `<data-dir>/widgets/<name>/`, referenced as `user:<name>`.
-    User,
 }
 
 /// A widget folder the daemon serves (DMN-082).
@@ -688,7 +685,7 @@ pub struct ViewsState {
     pub manifest: Option<Value>,
     /// Why the file is refused (`<JSON path>: <reason>`, or why it cannot be read); `null` when valid or absent.
     pub error: Option<String>,
-    /// Widget folders of the workspace, then of the user library, each by name.
+    /// Widget folders of the workspace, by name.
     pub widgets: Vec<WidgetInfo>,
     /// What widgets stored with `useStored` (DMN-086): instance → key → value.
     pub stored: BTreeMap<String, BTreeMap<String, Value>>,
@@ -704,10 +701,6 @@ pub struct ViewsState {
     /// one.
     #[serde(default)]
     pub init: Option<String>,
-    /// The version of `.omfp/views/` (TSX views, PRT-096): a hash of its files' paths, sizes and
-    /// modification times (`folders::version`); `null` without the folder.
-    #[serde(default)]
-    pub view_files: Option<String>,
 }
 
 /// A job's process state (DMN-080).

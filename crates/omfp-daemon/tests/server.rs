@@ -6,74 +6,24 @@ mod client;
 use std::path::Path;
 use std::sync::Arc;
 
-use clap::Parser;
-use client::{Client, Follower};
+use client::{Client, Follower, TestDaemon, fake_ports};
 use omfp_core::ThreadEvent;
 use omfp_core::wire::{RpcAgentEvent, RpcNotification};
 use omfp_daemon::agent::{FakeLauncher, FakeReply, FakeRun};
-use omfp_daemon::config::{Cli, Config};
+use omfp_daemon::config::Config;
 use omfp_daemon::git::FakeGit;
-use omfp_daemon::{
-    DaemonHandle, Ports, discover, discover_through_restart, restart, restarting, start_with,
-};
+use omfp_daemon::{discover, discover_through_restart, restart, restarting, start_with};
 use omfp_protocol::{ServerFrame, TopicEvent};
 use serde_json::{Value, json};
-use tempfile::TempDir;
 
-struct TestDaemon {
-    handle: DaemonHandle,
-    launcher: FakeLauncher,
-    git: Arc<FakeGit>,
-    dir: TempDir,
-}
-
-fn config(dir: &Path, args: &[&str]) -> Config {
-    let data_dir = dir.to_str().unwrap();
-    let workspaces = dir.join("workspaces");
-    let cli = Cli::try_parse_from(
-        [
-            "daemon",
-            "--bind",
-            "127.0.0.1:0",
-            "--data-dir",
-            data_dir,
-            "--workspaces-root",
-            workspaces.to_str().unwrap(),
-        ]
-        .into_iter()
-        .chain(args.iter().copied()),
-    )
-    .unwrap();
-    Config::from_cli(cli, None, None).unwrap()
-}
-
-/// The ports of a test daemon over `dir`, its standalone omp at `<dir>/standalone-home` ([`standalone_home`]).
-fn ports(dir: &Path, launcher: &FakeLauncher, git: &Arc<FakeGit>) -> Ports {
-    Ports {
-        launcher: Arc::new(launcher.clone()),
-        git: Arc::clone(git) as _,
-        omp_program: "omp".into(),
-        omp_version: omfp_core::OMP_VERSION.into(),
-        omp_env: Vec::new(),
-        user_omp_env: omfp_testkit::absent_standalone_omp(dir),
-        warnings: vec!["running anyway (--allow-omp-mismatch)".into()],
-        clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
-    }
-}
-
+/// A daemon with `args` that warns it runs a mismatched omp (PRT-005).
 async fn daemon(args: &[&str]) -> TestDaemon {
     let dir = tempfile::tempdir().unwrap();
-    let launcher = FakeLauncher::new();
-    let git = Arc::new(FakeGit::new());
-    let handle = start_with(config(dir.path(), args), ports(dir.path(), &launcher, &git))
-        .await
-        .unwrap();
-    TestDaemon {
-        handle,
-        launcher,
-        git,
-        dir,
-    }
+    let config = Config::loopback(dir.path(), args);
+    TestDaemon::launch(dir, config, |ports| {
+        ports.warnings = vec!["running anyway (--allow-omp-mismatch)".into()];
+    })
+    .await
 }
 
 /// The home of the synthetic standalone omp `auth.importable`/`auth.import` read (DMN-229,
@@ -81,12 +31,6 @@ async fn daemon(args: &[&str]) -> TestDaemon {
 /// own home.
 fn standalone_home(dir: &Path) -> std::path::PathBuf {
     dir.join("standalone-home")
-}
-
-impl TestDaemon {
-    async fn client(&self, name: &str) -> Client {
-        Client::hello(self.handle.addr(), self.handle.token().expose(), name).await
-    }
 }
 
 fn fixture(name: &str) -> FakeRun {
@@ -417,9 +361,12 @@ async fn the_data_directory_and_the_daemons_files_are_private() {
     std::fs::set_permissions(&data, std::fs::Permissions::from_mode(0o755)).unwrap();
     let launcher = FakeLauncher::new();
     let git = Arc::new(FakeGit::new());
-    let handle = start_with(config(&data, &[]), ports(&data, &launcher, &git))
-        .await
-        .unwrap();
+    let handle = start_with(
+        Config::loopback(&data, &[]),
+        fake_ports(&data, &launcher, &git),
+    )
+    .await
+    .unwrap();
 
     let mode = |name: &str| {
         std::fs::metadata(data.join(name))
@@ -449,8 +396,8 @@ async fn one_daemon_per_data_directory_published_in_daemon_json() {
             .unwrap();
     assert_eq!(written["addr"], first.handle.addr().to_string());
 
-    let fresh = || ports(&data_dir, &FakeLauncher::new(), &Arc::new(FakeGit::new()));
-    let second = start_with(config(&data_dir, &[]), fresh()).await;
+    let fresh = || fake_ports(&data_dir, &FakeLauncher::new(), &Arc::new(FakeGit::new()));
+    let second = start_with(Config::loopback(&data_dir, &[]), fresh()).await;
     let error = second.unwrap_err().to_string();
     assert!(error.contains("already running"), "{error}");
     assert!(error.contains(&first.handle.addr().to_string()), "{error}");
@@ -458,7 +405,9 @@ async fn one_daemon_per_data_directory_published_in_daemon_json() {
     first.handle.shutdown().await.unwrap();
     assert_eq!(discover(&data_dir).unwrap(), None);
     // The directory is free again.
-    let again = start_with(config(&data_dir, &[]), fresh()).await.unwrap();
+    let again = start_with(Config::loopback(&data_dir, &[]), fresh())
+        .await
+        .unwrap();
     again.shutdown().await.unwrap();
 }
 
@@ -495,8 +444,10 @@ async fn a_daemon_restarting_in_place_is_waited_for_not_replaced() {
             discover_through_restart(&data_dir, std::time::Duration::from_secs(60))
         })
     };
-    let fresh = ports(&data_dir, &FakeLauncher::new(), &Arc::new(FakeGit::new()));
-    let restarted = start_with(config(&data_dir, &[]), fresh).await.unwrap();
+    let fresh = fake_ports(&data_dir, &FakeLauncher::new(), &Arc::new(FakeGit::new()));
+    let restarted = start_with(Config::loopback(&data_dir, &[]), fresh)
+        .await
+        .unwrap();
     let found = tokio::task::spawn_blocking(move || waiting.join().unwrap())
         .await
         .unwrap()
@@ -2622,67 +2573,6 @@ async fn a_live_start_session_is_the_threads_one_and_stops_with_its_connection()
     assert!(!daemon.launcher.process(0).live_active());
 }
 
-// spec: DMN-060
-#[tokio::test(flavor = "multi_thread")]
-async fn open_file_reaches_the_window_last_used_on_the_thread_and_fails_without_one() {
-    let daemon = daemon(&[]).await;
-    daemon.launcher.push_run(fixture("text_reply"));
-    let (mut web, web_number) = numbered(&daemon, "omfp/web").await;
-    let (mut desktop, desktop_number) = numbered(&daemon, "omfp/desktop").await;
-    let thread = create_thread(&mut web).await;
-    let supervisor = daemon.handle.supervisor();
-    assert_eq!(
-        supervisor.open_file(&thread, "notes.md", Some(3)),
-        Err(omfp_daemon::supervisor::NO_WINDOW.to_owned()),
-        "no window watches the thread yet"
-    );
-    let opened = |path: &'static str| {
-        move |state: &omfp_core::ThreadState| {
-            state
-                .open_file
-                .as_ref()
-                .is_some_and(|request| request.path == path)
-        }
-    };
-
-    let mut web_view = Follower::snapshot(&mut web, &thread, None).await;
-    let mut desktop_view = Follower::snapshot(&mut desktop, &thread, None).await;
-    supervisor.open_file(&thread, "notes.md", Some(3)).unwrap();
-    web_view.until(&mut web, opened("notes.md")).await;
-    let request = web_view.state.open_file.clone().unwrap();
-    assert_eq!(
-        (request.connection, request.line),
-        (desktop_number, Some(3)),
-        "the window that subscribed last"
-    );
-
-    web.ok(
-        "thread.prompt",
-        json!({ "threadId": thread, "text": "say hi" }),
-    )
-    .await;
-    supervisor.open_file(&thread, "src/lib.rs", None).unwrap();
-    desktop_view.until(&mut desktop, opened("src/lib.rs")).await;
-    assert_eq!(
-        desktop_view.state.open_file.clone().unwrap().connection,
-        web_number,
-        "the window that prompted last"
-    );
-
-    for client in [&mut web, &mut desktop] {
-        client
-            .ok(
-                "unsubscribe",
-                json!({ "topic": format!("thread/{thread}") }),
-            )
-            .await;
-    }
-    assert_eq!(
-        supervisor.open_file(&thread, "notes.md", None),
-        Err(omfp_daemon::supervisor::NO_WINDOW.to_owned())
-    );
-}
-
 // spec: DMN-101, DMN-102, DMN-104
 #[tokio::test(flavor = "multi_thread")]
 async fn live_errors_have_their_codes_and_readable_messages() {
@@ -3758,23 +3648,17 @@ async fn an_unreadable_store_is_never_exported() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_daemon_started_from_an_omfp_shell_sees_no_standalone_omp_even_through_a_symlink() {
     let dir = tempfile::tempdir().unwrap();
-    let launcher = FakeLauncher::new();
-    let git = Arc::new(FakeGit::new());
-    let mut ports = ports(dir.path(), &launcher, &git);
     // omfp's own profile, named through a symlink to the data directory.
     let alias = dir.path().join("alias");
     std::os::unix::fs::symlink(dir.path(), &alias).unwrap();
-    ports.user_omp_env.push((
-        "PI_CODING_AGENT_DIR".into(),
-        Some(alias.join("omp-profile").join("agent").into()),
-    ));
-    let handle = start_with(config(dir.path(), &[]), ports).await.unwrap();
-    let daemon = TestDaemon {
-        handle,
-        launcher,
-        git,
-        dir,
-    };
+    let config = Config::loopback(dir.path(), &[]);
+    let daemon = TestDaemon::launch(dir, config, |ports| {
+        ports.user_omp_env.push((
+            "PI_CODING_AGENT_DIR".into(),
+            Some(alias.join("omp-profile").join("agent").into()),
+        ));
+    })
+    .await;
     let agent = daemon.dir.path().join("omp-profile").join("agent");
     std::fs::create_dir_all(&agent).unwrap();
     rusqlite::Connection::open(agent.join("agent.db"))

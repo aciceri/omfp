@@ -299,7 +299,7 @@ methods! {
     JobsRemove = "jobs.remove" (params::JobRemoveParams) -> params::Empty;
     /// Enables or disables a job in `.omfp/jobs.json` (PRT-207).
     JobsEnable = "jobs.enable" (params::EnableJobParams) -> JobView;
-    /// The init file and TSX view errors every window showing the workspace reports (PRT-116).
+    /// The init file errors every window showing the workspace reports (PRT-116).
     ViewsErrors = "views.errors" (params::WorkspaceRef) -> params::ViewErrors;
     /// The windows that reported to the daemon, the most recently focused first: workspace, thread, view, errors
     /// (PRT-123).
@@ -321,10 +321,6 @@ methods! {
     ViewsMountUpdate = "views.mount_update" (params::MountUpdateParams) -> params::Mounted;
     /// Removes a mounted widget or floating panel from the views (PRT-082, AGT-063).
     ViewsUnmount = "views.unmount" (params::UnmountParams) -> params::Unmounted;
-    /// Saves a workspace widget or inline code as a component of the user library (PRT-083, AGT-064).
-    WidgetsSave = "widgets.save" (params::SaveWidgetParams) -> params::WidgetSaved;
-    /// Lists the user library's components (PRT-084, AGT-065).
-    WidgetsLibrary = "widgets.library" (params::Empty) -> params::WidgetLibrary;
     /// The activity log of agent-originated actions, newest first (PRT-086, AGT-072).
     ActivityList = "activity.list" (activity::ListActivityParams) -> activity::ActivityPage;
     /// The prompts the user sent from omfp: the thread's first, then its workspace's, then the rest, newest first

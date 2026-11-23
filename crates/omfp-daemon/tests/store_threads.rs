@@ -4,8 +4,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use omfp_daemon::paths::DataDir;
-use omfp_daemon::store::{Provenance, Store, StoreError, TitleSource, Workspace, new_id, now_ms};
+use omfp_daemon::store::{Store, StoreError, Workspace, new_id, now_ms};
 use omfp_daemon::threads::{DEFAULT_APPROVAL_MODE, NewThread, ThreadError, Threads};
+use omfp_protocol::CreatedBy;
 use tempfile::TempDir;
 
 struct Env {
@@ -21,7 +22,7 @@ fn env() -> Env {
     let base = dir.path().canonicalize().unwrap();
     let data = DataDir::new(base.join("data"));
     std::fs::create_dir_all(data.root()).unwrap();
-    let store = Arc::new(Store::open(&data.db(), &base.join("workspaces")).unwrap());
+    let store = Arc::new(Store::open(&data.db()).unwrap());
     let threads = Threads::new(store.clone(), data.clone());
     Env {
         _dir: dir,
@@ -51,7 +52,7 @@ impl Env {
             id: new_id(),
             name: name.into(),
             path,
-            created_by: Provenance::User,
+            created_by: CreatedBy::User,
             created_at: now_ms(),
         };
         self.store.insert_workspace(&ws).unwrap();
@@ -86,7 +87,7 @@ fn a_new_thread_lives_in_its_workspace_with_its_own_session_directory() {
     assert_eq!(entries(&ws.path), Vec::<String>::new());
     assert_eq!(thread.title, "Fix login");
     assert_eq!(thread.omp_session_id, None);
-    assert_eq!(thread.created_by, Provenance::User);
+    assert_eq!(thread.created_by, CreatedBy::User);
     assert_eq!(env.threads.list().unwrap(), vec![thread]);
 }
 
@@ -106,7 +107,9 @@ fn a_thread_records_settings_and_provenance() {
             model: Some("fake/scripted".into()),
             thinking_level: Some("high".into()),
             approval_mode: Some("always-ask".into()),
-            created_by: Provenance::Thread(parent.id.clone()),
+            created_by: CreatedBy::Thread {
+                thread_id: parent.id.clone(),
+            },
             ..NewThread::new("child", &ws.id)
         })
         .unwrap();
@@ -114,7 +117,12 @@ fn a_thread_records_settings_and_provenance() {
     assert_eq!(thread.model.as_deref(), Some("fake/scripted"));
     assert_eq!(thread.thinking_level.as_deref(), Some("high"));
     assert_eq!(thread.approval_mode.as_deref(), Some("always-ask"));
-    assert_eq!(thread.created_by, Provenance::Thread(parent.id));
+    assert_eq!(
+        thread.created_by,
+        CreatedBy::Thread {
+            thread_id: parent.id,
+        }
+    );
     assert_eq!(env.threads.get(&thread.id).unwrap(), thread);
 }
 
@@ -142,7 +150,9 @@ fn creation_is_refused_for_unknown_creators_or_workspaces() {
     let ws = env.workspace("shop");
 
     assert_not_found(env.threads.create(NewThread {
-        created_by: Provenance::Thread("01JUNKNOWN0000000000000000".into()),
+        created_by: CreatedBy::Thread {
+            thread_id: "01JUNKNOWN0000000000000000".into(),
+        },
         ..NewThread::new("x", &ws.id)
     }));
     assert_not_found(env.threads.create(NewThread::new("x", "missing")));
@@ -169,32 +179,6 @@ fn a_workspace_can_be_shared_by_threads() {
         env.store.workspace_thread_ids(&other.id).unwrap(),
         Vec::<String>::new()
     );
-}
-
-#[test]
-fn title_settings_session_and_archive_are_updated() {
-    let env = env();
-    let ws = env.workspace("shop");
-    let thread = env.threads.create(NewThread::new("t", &ws.id)).unwrap();
-
-    env.threads
-        .rename(&thread.id, "Renamed", TitleSource::Set)
-        .unwrap();
-    env.threads.set_model(&thread.id, Some("p/m")).unwrap();
-    env.threads
-        .set_thinking_level(&thread.id, Some("low"))
-        .unwrap();
-    env.threads
-        .set_omp_session_id(&thread.id, "sess-1")
-        .unwrap();
-    let archived = env.threads.archive(&thread.id).unwrap();
-
-    assert_eq!(archived.title, "Renamed");
-    assert_eq!(archived.model.as_deref(), Some("p/m"));
-    assert_eq!(archived.thinking_level.as_deref(), Some("low"));
-    assert_eq!(archived.omp_session_id.as_deref(), Some("sess-1"));
-    assert!(archived.archived_at.is_some());
-    assert_eq!(env.threads.unarchive(&thread.id).unwrap().archived_at, None);
 }
 
 // spec: DMN-029

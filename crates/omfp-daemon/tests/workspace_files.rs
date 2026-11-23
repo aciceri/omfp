@@ -30,7 +30,7 @@ fn env() -> Env {
     let dir = TempDir::new().unwrap();
     let base = dir.path().canonicalize().unwrap();
     let workspaces_root = base.join("workspaces");
-    let store = Arc::new(Store::open(&base.join("omfp.db"), &workspaces_root).unwrap());
+    let store = Arc::new(Store::open(&base.join("omfp.db")).unwrap());
     let workspaces = Workspaces::new(store, Arc::new(GitCli::default()), workspaces_root);
     let app = TempRepo::new().unwrap();
     app.commit_file("src/lib.rs", "fn a() {}\n", "lib").unwrap();

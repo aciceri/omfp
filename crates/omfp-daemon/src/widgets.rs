@@ -1,7 +1,6 @@
 //! Views and widgets (02-daemon "Views and widgets (M4)", 08 AGT-010..026): the views manifest of a workspace and its
-//! default, the widget folders of the workspace and of the user library with their versions, serving widget files
-//! (TypeScript and JSX transpiled with oxc), copying and checking widgets, and the read-only `omfp://` host URIs agents
-//! learn widgets from.
+//! default, the workspace's widget folders with their versions, serving widget files (TypeScript and JSX transpiled
+//! with oxc), copying and checking widgets, and the read-only `omfp://` host URIs agents learn widgets from.
 //!
 //! Everything here is blocking file work; the server runs it on blocking tasks.
 
@@ -10,7 +9,6 @@ pub mod folders;
 pub mod init;
 pub mod keymap;
 pub mod layout;
-pub mod library;
 pub mod manifest;
 pub mod mounts;
 pub mod native;
@@ -63,20 +61,6 @@ pub fn manifest_path(workspace: &Path) -> PathBuf {
 #[must_use]
 pub fn workspace_widgets(workspace: &Path) -> PathBuf {
     workspace.join(OMFP_DIR).join("widgets")
-}
-
-/// `<workspace>/.omfp/views/`, the files of the TSX views (`"view": "./views/<name>.tsx"`, AGT-074).
-#[must_use]
-pub fn views_folder(workspace: &Path) -> PathBuf {
-    workspace.join(OMFP_DIR).join("views")
-}
-
-/// The version of the workspace's [`views_folder`] (DMN-186, PRT-096): [`folders::version`] of it;
-/// `None` when it is not a folder.
-#[must_use]
-pub fn view_files_version(workspace: &Path) -> Option<String> {
-    let folder = views_folder(workspace);
-    folder.is_dir().then(|| folders::version(&folder))
 }
 
 /// [`DEFAULT_MANIFEST`] as JSON (AGT-010).
@@ -330,8 +314,7 @@ pub fn read_check(
         .strip_prefix('/')?;
     let Some(host) = host else {
         return Some(Err(
-            "this omfp daemon cannot check widgets, init files (`init`, `user:init`) or TSX views (`views/<file>`) \
-             for this thread"
+            "this omfp daemon cannot check widgets or init files (`init`, `user:init`) for this thread"
                 .to_owned(),
         ));
     };
@@ -378,20 +361,19 @@ struct Compiled {
     result: Result<String, CompileError>,
 }
 
-/// The widget libraries the daemon serves: the user library, the built-ins of the web bundle, and the compile cache.
+/// The widgets the daemon serves: the built-ins of the web bundle and the compile cache.
 #[derive(Debug)]
 pub struct Widgets {
-    user_library: PathBuf,
     builtin: Option<PathBuf>,
     exports: Option<Exports>,
     compiled: Mutex<HashMap<PathBuf, Compiled>>,
 }
 
 impl Widgets {
-    /// The user library is `<data-dir>/widgets/` (AGT-023); with a web bundle (`static_dir`), the built-ins are its
-    /// `builtin-widgets/` and the names the bundle exports are its `widget-exports.json` (DMN-085, DMN-087).
+    /// With a web bundle (`static_dir`), the built-ins are its `builtin-widgets/` and the names the bundle exports
+    /// are its `widget-exports.json` (DMN-085, DMN-087).
     #[must_use]
-    pub fn new(user_library: PathBuf, static_dir: Option<&Path>) -> Self {
+    pub fn new(static_dir: Option<&Path>) -> Self {
         let exports = static_dir.and_then(|dir| {
             let path = dir.join("widget-exports.json");
             match std::fs::read_to_string(&path) {
@@ -408,17 +390,10 @@ impl Widgets {
             }
         });
         Self {
-            user_library,
             builtin: static_dir.map(|dir| dir.join("builtin-widgets")),
             exports,
             compiled: Mutex::new(HashMap::new()),
         }
-    }
-
-    /// `<data-dir>/widgets/` (AGT-023).
-    #[must_use]
-    pub fn user_library(&self) -> &Path {
-        &self.user_library
     }
 
     /// `<static-dir>/builtin-widgets/` when the daemon serves a bundle that has it (AGT-021).
@@ -439,12 +414,10 @@ impl Widgets {
         manifest::read(&manifest_path(workspace))
     }
 
-    /// The workspace's widget folders, then the user library's, each by name (DMN-082).
+    /// The workspace's widget folders, by name (DMN-082).
     #[must_use]
-    pub fn widgets(&self, workspace: &Path) -> Vec<WidgetInfo> {
-        let mut widgets = folders::scan(&workspace_widgets(workspace), WidgetSource::Workspace);
-        widgets.extend(folders::scan(&self.user_library, WidgetSource::User));
-        widgets
+    pub fn widgets(workspace: &Path) -> Vec<WidgetInfo> {
+        folders::scan(&workspace_widgets(workspace), WidgetSource::Workspace)
     }
 
     /// The file at `path` of widget folder `name` in `library` (DMN-084, DMN-085); `None` (404) when the folder or
@@ -465,28 +438,6 @@ impl Widgets {
         self.served(&folder, file)
     }
 
-    /// The file at `path` of a workspace's views folder `folder` ([`views_folder`], DMN-186), compiled
-    /// when it is TypeScript or JSX, else as it is; a file that does not compile is the stand-in module naming it
-    /// relative to `folder`. `None` (404) when the folder or the file does not exist or `path` leaves the folder.
-    #[must_use]
-    pub fn serve_view(&self, folder: &Path, path: &str) -> Option<Served> {
-        let (folder, file) = locate_file(folder, path)?;
-        self.served(&folder, file)
-    }
-
-    /// The file at `path` of a workspace's views folder `folder` resolved as [`Self::serve_view`]
-    /// resolves it (DMN-197): its path relative to `folder` and, when it is TypeScript or JSX, its compile error;
-    /// `None` when the folder or the file does not exist or `path` leaves the folder.
-    #[must_use]
-    pub fn check_view(&self, folder: &Path, path: &str) -> Option<(PathBuf, Option<CompileError>)> {
-        let (folder, file) = locate_file(folder, path)?;
-        let relative = file.strip_prefix(&folder).ok()?.to_owned();
-        let error = compile::is_compiled(&relative)
-            .then(|| self.compile(&folder, &relative).err())
-            .flatten();
-        Some((relative, error))
-    }
-
     /// The resolved `file` of the canonical `folder`: compiled (or its stand-in) when it is TypeScript or JSX, else
     /// its bytes.
     fn served(&self, folder: &Path, file: PathBuf) -> Option<Served> {
@@ -501,47 +452,24 @@ impl Widgets {
         Some(Served::File { path: file, bytes })
     }
 
-    /// The widget `name` of `workspace` (DMN-063): `./widgets/<name>`, `user:<name>`, or a bare name (the workspace's
-    /// folder, else the user library's); its source, folder name and folder, or why there is none.
-    pub fn locate(
-        &self,
-        workspace: &Path,
-        name: &str,
-    ) -> Result<(WidgetSource, String, PathBuf), String> {
+    /// The widget `name` of `workspace` (DMN-063): `./widgets/<name>` or a bare name; its source, folder name and
+    /// folder, or why there is none.
+    pub fn locate(workspace: &Path, name: &str) -> Result<(WidgetSource, String, PathBuf), String> {
         let name = name.trim();
-        let workspace_widgets = workspace_widgets(workspace);
-        let candidates: Vec<(WidgetSource, &str, &Path)> = if let Some(folder) =
-            name.strip_prefix("./widgets/")
-        {
-            vec![(WidgetSource::Workspace, folder, &workspace_widgets)]
-        } else if let Some(folder) = name.strip_prefix("user:") {
-            vec![(WidgetSource::User, folder, &self.user_library)]
-        } else if name.starts_with("omfp:") {
+        if name.starts_with("omfp:") {
             return Err(format!(
                 "{name} is a built-in widget; check the workspace's copy (`./widgets/<name>`) instead, or read \
                      its source at {BUILTIN_URL}/<name>"
             ));
-        } else {
-            vec![
-                (WidgetSource::Workspace, name, &workspace_widgets),
-                (WidgetSource::User, name, &self.user_library),
-            ]
-        };
-        for (source, folder_name, library) in &candidates {
-            checked_name("widget name", folder_name)?;
-            let folder = library.join(folder_name);
-            if folder.is_dir() {
-                return Ok((*source, (*folder_name).to_owned(), folder));
-            }
         }
-        let places: Vec<String> = candidates
-            .iter()
-            .map(|(_, folder_name, library)| library.join(folder_name).display().to_string())
-            .collect();
-        Err(format!(
-            "no widget {name}: no folder {}",
-            places.join(" nor ")
-        ))
+        let folder_name = name.strip_prefix("./widgets/").unwrap_or(name);
+        checked_name("widget name", folder_name)?;
+        let folder = workspace_widgets(workspace).join(folder_name);
+        if folder.is_dir() {
+            Ok((WidgetSource::Workspace, folder_name.to_owned(), folder))
+        } else {
+            Err(format!("no widget {name}: no folder {}", folder.display()))
+        }
     }
 
     /// Every compile error of the compiled files of `folder` (DMN-063, DMN-085), in path order.
@@ -600,27 +528,23 @@ impl Widgets {
         result
     }
 
-    /// Copies `omfp:<name>` (a built-in) or `user:<name>` into `<workspace>/.omfp/widgets/<new name>/`, the new name
-    /// being `name` else the widget's own (DMN-087); returns the new name.
+    /// Copies `omfp:<name>` (a built-in) into `<workspace>/.omfp/widgets/<new name>/`, the new name being `name`
+    /// else the widget's own (DMN-087); returns the new name.
     pub fn copy(
         &self,
         workspace: &Path,
         widget: &str,
         name: Option<&str>,
     ) -> Result<String, CopyError> {
-        let (library, source) = if let Some(source) = widget.strip_prefix("omfp:") {
-            let Some(builtin) = self.builtin.as_deref() else {
-                return Err(CopyError::NotFound(
-                    "no built-in widgets: the daemon serves no web bundle".to_owned(),
-                ));
-            };
-            (builtin, source)
-        } else if let Some(source) = widget.strip_prefix("user:") {
-            (self.user_library.as_path(), source)
-        } else {
+        let Some(source) = widget.strip_prefix("omfp:") else {
             return Err(CopyError::BadRequest(format!(
-                "cannot copy {widget:?}: expected omfp:<name> or user:<name>"
+                "cannot copy {widget:?}: expected omfp:<name>"
             )));
+        };
+        let Some(library) = self.builtin.as_deref() else {
+            return Err(CopyError::NotFound(
+                "no built-in widgets: the daemon serves no web bundle".to_owned(),
+            ));
         };
         let target = name.unwrap_or(source);
         for name in [source, target] {
@@ -960,11 +884,11 @@ mod tests {
             "never cached: the report changes"
         );
         assert_eq!(
-            check("omfp://widgets/check/user:clock/", false, Some(&Checks))
+            check("omfp://widgets/check/user:init/", false, Some(&Checks))
                 .unwrap()
                 .unwrap()
                 .content,
-            "report 01WS user:clock"
+            "report 01WS user:init"
         );
         assert_eq!(
             check("omfp://widgets/check/broken", false, Some(&Checks)).unwrap(),
@@ -1034,8 +958,7 @@ mod tests {
     #[test]
     fn a_widget_is_located_by_reference_or_bare_name_and_checked_file_by_file() {
         let ws = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let widgets = Widgets::new(library.path().to_owned(), None);
+        let widgets = Widgets::new(None);
         let tests = workspace_widgets(ws.path()).join("tests");
         std::fs::create_dir_all(&tests).unwrap();
         std::fs::write(
@@ -1043,25 +966,20 @@ mod tests {
             "export default function T() { return <p>ok</p>; }\n",
         )
         .unwrap();
-        std::fs::create_dir_all(library.path().join("clock")).unwrap();
 
-        let (source, name, folder) = widgets.locate(ws.path(), "tests").unwrap();
+        let (source, name, folder) = Widgets::locate(ws.path(), "tests").unwrap();
         assert_eq!((source, name.as_str()), (WidgetSource::Workspace, "tests"));
         assert_eq!(folder, tests);
         assert_eq!(
-            widgets.locate(ws.path(), "./widgets/tests").unwrap().2,
+            Widgets::locate(ws.path(), "./widgets/tests").unwrap().2,
             tests
         );
-        let (source, _, _) = widgets.locate(ws.path(), "clock").unwrap();
-        assert_eq!(source, WidgetSource::User);
-        assert_eq!(widgets.locate(ws.path(), "user:clock").unwrap().1, "clock");
         for (name, needle) in [
             ("nothing", "no widget nothing"),
             ("../x", "invalid widget name"),
             ("omfp:chat", "built-in"),
-            ("user:tests", "no widget user:tests"),
         ] {
-            let error = widgets.locate(ws.path(), name).unwrap_err();
+            let error = Widgets::locate(ws.path(), name).unwrap_err();
             assert!(error.contains(needle), "{name}: {error}");
         }
 
@@ -1077,124 +995,6 @@ mod tests {
         assert_eq!(files, ["lib.ts", "other.tsx"]);
         assert_eq!(errors[0].line, Some(1));
         assert!(errors[1].message.contains("lodash"), "{:?}", errors[1]);
-    }
-
-    // spec: DMN-186
-    #[test]
-    fn view_files_are_served_compiled_from_the_views_folder_and_never_outside_it() {
-        let ws = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let widgets = Widgets::new(library.path().to_owned(), None);
-        let folder = views_folder(ws.path());
-        assert_eq!(folder, ws.path().join(".omfp/views"));
-        assert_eq!(view_files_version(ws.path()), None, "no folder");
-        assert_eq!(widgets.serve_view(&folder, "ops.tsx"), None, "no folder");
-
-        std::fs::create_dir_all(folder.join("lib")).unwrap();
-        std::fs::write(
-            folder.join("ops.tsx"),
-            "import { label } from \"./lib/label\";\nconst n: number = 1;\nexport default function Ops() {\n  return <p>{label(n)}</p>;\n}\n",
-        )
-        .unwrap();
-        std::fs::write(
-            folder.join("lib/label.ts"),
-            "export const label = (n: number): string => `#${n}`;\n",
-        )
-        .unwrap();
-        std::fs::write(folder.join("notes.txt"), "plain").unwrap();
-        std::fs::write(ws.path().join(".omfp/secret.ts"), "export {};\n").unwrap();
-        let version = view_files_version(ws.path()).unwrap();
-        assert_eq!(version, folders::version(&folder));
-
-        let Some(Served::Module(code)) = widgets.serve_view(&folder, "ops.tsx") else {
-            panic!("ops.tsx is a module");
-        };
-        assert!(code.contains("./lib/label"), "{code}");
-        assert!(!code.contains(": number"), "types are stripped: {code}");
-        assert!(!code.contains("compileError"), "{code}");
-        // A relative import resolves to its sibling by URL, extension or not.
-        for path in ["lib/label", "lib/label.ts", "./lib/label.ts"] {
-            let Some(Served::Module(code)) = widgets.serve_view(&folder, path) else {
-                panic!("{path} is a module");
-            };
-            assert!(code.contains("export const label"), "{code}");
-            assert!(!code.contains(": string"), "{code}");
-        }
-        assert_eq!(
-            widgets.serve_view(&folder, "notes.txt"),
-            Some(Served::File {
-                path: std::fs::canonicalize(folder.join("notes.txt")).unwrap(),
-                bytes: b"plain".to_vec(),
-            })
-        );
-        for missing in [
-            "nope.tsx",
-            "../secret.ts",
-            "lib/../../secret.ts",
-            "",
-            "/etc/passwd",
-        ] {
-            assert_eq!(widgets.serve_view(&folder, missing), None, "{missing:?}");
-        }
-
-        std::fs::write(
-            folder.join("ops.tsx"),
-            "export default function Ops() {\n  return <p>;\n}\n",
-        )
-        .unwrap();
-        let Some(Served::Module(stand_in)) = widgets.serve_view(&folder, "ops.tsx") else {
-            panic!("the stand-in is a module");
-        };
-        assert!(
-            stand_in.contains("export const compileError = {\"file\":\"ops.tsx\",\"line\":3,"),
-            "{stand_in}"
-        );
-        assert_ne!(view_files_version(ws.path()), Some(version), "a save");
-    }
-
-    // spec: DMN-197
-    #[test]
-    fn a_view_file_is_checked_as_it_is_served() {
-        let ws = tempfile::tempdir().unwrap();
-        let library = tempfile::tempdir().unwrap();
-        let widgets = Widgets::new(library.path().to_owned(), None);
-        let folder = views_folder(ws.path());
-        assert_eq!(widgets.check_view(&folder, "ops.tsx"), None, "no folder");
-        std::fs::create_dir_all(folder.join("lib")).unwrap();
-        std::fs::write(
-            folder.join("ops.tsx"),
-            "import { label } from \"./lib/label\";\nexport default function Ops() {\n  return <p>{label}</p>;\n}\n",
-        )
-        .unwrap();
-        std::fs::write(folder.join("lib/label.js"), "export const label = 1;\n").unwrap();
-        std::fs::write(ws.path().join(".omfp/secret.ts"), "export {};\n").unwrap();
-
-        assert_eq!(
-            widgets.check_view(&folder, "ops.tsx"),
-            Some((PathBuf::from("ops.tsx"), None))
-        );
-        assert_eq!(
-            widgets.check_view(&folder, "ops"),
-            Some((PathBuf::from("ops.tsx"), None)),
-            "resolved like a request"
-        );
-        assert_eq!(
-            widgets.check_view(&folder, "lib/label.js"),
-            Some((PathBuf::from("lib/label.js"), None)),
-            "served as it is"
-        );
-        for missing in ["nope.tsx", "../secret.ts", ""] {
-            assert_eq!(widgets.check_view(&folder, missing), None, "{missing:?}");
-        }
-        std::fs::write(
-            folder.join("ops.tsx"),
-            "export default function Ops() {\n  return <p>;\n}\n",
-        )
-        .unwrap();
-        let (relative, error) = widgets.check_view(&folder, "ops.tsx").unwrap();
-        assert_eq!(relative, PathBuf::from("ops.tsx"));
-        let error = error.unwrap();
-        assert_eq!((error.file.as_str(), error.line), ("ops.tsx", Some(3)));
     }
 
     #[test]

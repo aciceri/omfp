@@ -150,7 +150,7 @@ mod tests {
         let data = DataDir::new(dir.path().join("data"));
         std::fs::create_dir_all(data.root()).unwrap();
         let root = dir.path().join("workspaces");
-        let store = Arc::new(Store::open(&data.db(), &root).unwrap());
+        let store = Arc::new(Store::open(&data.db()).unwrap());
         let threads = Arc::new(Threads::new(Arc::clone(&store), data.clone()));
         let git = Arc::new(FakeGit::new());
         let workspaces = Arc::new(Workspaces::new(
@@ -166,7 +166,7 @@ mod tests {
         let statuses = Arc::new(Mutex::new(Vec::new()));
         let seen = Arc::clone(&statuses);
         git.on_status(move |dir| seen.lock().unwrap().push(dir.to_owned()));
-        let widgets = Arc::new(crate::widgets::Widgets::new(data.widgets(), None));
+        let widgets = Arc::new(crate::widgets::Widgets::new(None));
         let launcher = FakeLauncher::new();
         let supervisor = Supervisor::new(
             Arc::new(launcher.clone()),

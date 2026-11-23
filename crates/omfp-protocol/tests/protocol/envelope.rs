@@ -355,41 +355,6 @@ fn models_events_replace_the_usable_model_count_and_older_states_have_none() {
     assert_eq!(checked.models, Some(3));
 }
 
-// spec: PRT-096
-#[test]
-fn views_files_events_replace_the_view_files_version_and_older_states_have_none() {
-    let changed = event(
-        Topic::Views(WORKSPACE_ID.to_owned()),
-        TopicEvent::Views(ViewsEvent::ViewsFiles {
-            view_files: Some("0123456789abcdef".to_owned()),
-        }),
-    );
-    assert_eq!(
-        round_trip(&changed)["event"],
-        json!({ "kind": "views_files", "viewFiles": "0123456789abcdef" })
-    );
-    let gone = event(
-        Topic::Views(WORKSPACE_ID.to_owned()),
-        TopicEvent::Views(ViewsEvent::ViewsFiles { view_files: None }),
-    );
-    assert_eq!(
-        round_trip(&gone)["event"],
-        json!({ "kind": "views_files", "viewFiles": null })
-    );
-
-    // States without the field (an older daemon) read as no `.omfp/views/` folder.
-    let mut state: ViewsState = serde_json::from_value(
-        json!({ "manifest": null, "error": null, "widgets": [], "stored": {} }),
-    )
-    .unwrap();
-    assert_eq!(state.view_files, None);
-    state.view_files = Some("0123456789abcdef".to_owned());
-    assert_eq!(
-        serde_json::to_value(&state).unwrap()["viewFiles"],
-        json!("0123456789abcdef")
-    );
-}
-
 // spec: PRT-041
 #[test]
 fn job_event_frames() {

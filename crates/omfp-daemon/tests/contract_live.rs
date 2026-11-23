@@ -10,13 +10,11 @@ mod common;
 use std::ffi::OsString;
 use std::path::Path;
 
-use clap::Parser;
 use client::{Client, Follower};
-use common::{Harness, Recorder, TIMEOUT, frame_type, start};
+use common::{Harness, Recorder, TIMEOUT, frame_type, omp_daemon_with, start};
 use omfp_core::{LiveOwner, ThreadEvent};
-use omfp_daemon::config::{Cli, Config};
-use omfp_daemon::{DaemonHandle, Ports, start_with};
-use omfp_testkit::{FAKE_MODEL, FAKE_PROVIDER, omp_bin};
+use omfp_daemon::DaemonHandle;
+use omfp_testkit::{FAKE_MODEL, FAKE_PROVIDER};
 use omp_rpc::{LiveConnectCommand, LiveMuteCommand, LiveStartCommand, LiveStopCommand};
 use serde_json::json;
 use tempfile::TempDir;
@@ -297,52 +295,20 @@ async fn omfps_extension_keeps_a_voice_conversation_without_a_turn() {
     harness.assert_no_stray_network();
 }
 
-struct Daemon {
-    handle: DaemonHandle,
-    _data: TempDir,
-}
-
-impl Daemon {
-    async fn start(harness: &Harness) -> Self {
-        let data = tempfile::tempdir().unwrap();
-        let omp = omp_bin();
-        let workspaces = data.path().join("workspaces");
-        let cli = Cli::try_parse_from([
-            "daemon",
-            "--bind",
-            "127.0.0.1:0",
-            "--data-dir",
-            data.path().to_str().unwrap(),
-            "--workspaces-root",
-            workspaces.to_str().unwrap(),
-            "--omp-bin",
-            &omp,
-            "--no-title-generation",
-        ])
-        .unwrap();
-        let config = Config::from_cli(cli, None, None).unwrap();
-        let mut ports = Ports::resolve(&config).unwrap();
-        let mut env = harness.env.prepare_omfp_profile(data.path()).unwrap();
-        without_audio(&mut env, harness.env.root());
-        ports.omp_env = env;
-        let handle = start_with(config, ports).await.unwrap();
-        Self {
-            handle,
-            _data: data,
-        }
-    }
-
-    async fn client(&self, name: &str) -> Client {
-        Client::hello(self.handle.addr(), self.handle.token().expose(), name).await
-    }
+/// The real daemon, its omp without a sound device.
+async fn live_daemon(harness: &Harness) -> (DaemonHandle, TempDir) {
+    omp_daemon_with(harness, &["--no-title-generation"], |ports| {
+        without_audio(&mut ports.omp_env, harness.env.root());
+    })
+    .await
 }
 
 // spec: DMN-100, DMN-101, DMN-104
 #[tokio::test(flavor = "multi_thread")]
 async fn the_daemon_names_the_missing_codex_login() {
     let harness = Harness::new(Vec::new()).await;
-    let daemon = Daemon::start(&harness).await;
-    let mut web = daemon.client("omfp/web").await;
+    let (daemon, _data) = live_daemon(&harness).await;
+    let mut web = Client::hello(daemon.addr(), daemon.token().expose(), "omfp/web").await;
     let thread = web
         .ok(
             "threads.create",
@@ -390,8 +356,8 @@ async fn the_daemon_names_the_missing_codex_login() {
 #[tokio::test(flavor = "multi_thread")]
 async fn the_daemon_relays_a_failed_live_start() {
     let harness = Harness::new(Vec::new()).await;
-    let daemon = Daemon::start(&harness).await;
-    let mut desktop = daemon.client("omfp/desktop").await;
+    let (daemon, _data) = live_daemon(&harness).await;
+    let mut desktop = Client::hello(daemon.addr(), daemon.token().expose(), "omfp/desktop").await;
     let thread = desktop
         .ok(
             "threads.create",

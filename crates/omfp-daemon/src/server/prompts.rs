@@ -3,13 +3,13 @@
 
 use std::sync::Arc;
 
-use omfp_protocol::{ErrorBody, PromptHistory, PromptHistoryEntry, PromptHistoryParams};
+use omfp_protocol::{CreatedBy, ErrorBody, PromptHistory, PromptHistoryEntry, PromptHistoryParams};
 use tracing::warn;
 
 use super::auth::Principal;
 use super::convert::internal;
 use super::services::Services;
-use crate::store::{PromptQuery, Provenance, SentPrompt, now_ms};
+use crate::store::{PromptQuery, SentPrompt, now_ms};
 
 /// The newest prompts the history keeps (DMN-216).
 pub(crate) const KEPT: u32 = 1000;
@@ -27,7 +27,7 @@ pub(crate) async fn record(
     workspace_id: Option<String>,
     text: &str,
 ) {
-    if principal.created_by() != Provenance::User || text.trim().is_empty() {
+    if principal.created_by() != CreatedBy::User || text.trim().is_empty() {
         return;
     }
     let store = Arc::clone(&services.store);
@@ -106,14 +106,14 @@ mod tests {
         let data = DataDir::new(dir.path().join("data"));
         std::fs::create_dir_all(data.root()).unwrap();
         let root = dir.path().join("workspaces");
-        let store = Arc::new(Store::open(&data.db(), &root).unwrap());
+        let store = Arc::new(Store::open(&data.db()).unwrap());
         let threads = Arc::new(Threads::new(Arc::clone(&store), data.clone()));
         let workspaces = Arc::new(Workspaces::new(
             Arc::clone(&store),
             Arc::new(FakeGit::new()) as Arc<dyn Git>,
             root,
         ));
-        let widgets = Arc::new(Widgets::new(data.widgets(), None));
+        let widgets = Arc::new(Widgets::new(None));
         let supervisor = Supervisor::new(
             Arc::new(FakeLauncher::new()),
             Arc::clone(&threads),

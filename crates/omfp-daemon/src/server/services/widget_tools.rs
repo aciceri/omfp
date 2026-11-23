@@ -1,6 +1,6 @@
 //! What the widget check does with the windows' reports (`widgets.report`, PRT-043, AGT-026, kept by `windows`) and
 //! with the views manifest: `omfp_widget_check` (DMN-063, with the out-of-sight render of DMN-207 and the views that
-//! use the widget, DMN-209). The init file and TSX view checks and errors (DMN-196, DMN-197) are in `file_checks`.
+//! use the widget, DMN-209). The init file checks and errors (DMN-196, DMN-197) are in `file_checks`.
 
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
@@ -12,13 +12,13 @@ use omfp_protocol::{Position, WidgetChecked, WidgetReport, WidgetReportState, Wi
 use super::file_checks::CheckedFile;
 use super::windows::Window;
 use super::{Services, blocking};
-use crate::agent_tools::windows::view_source_name;
+use crate::agent_tools::windows::{state_name, view_source_name};
 use crate::host_tools::WidgetHost;
 use crate::server::convert::internal;
 use crate::widgets::compile::{CompileError, IMPORT_MAP};
 use crate::widgets::layout;
 use crate::widgets::native::{self, NativeControl};
-use crate::widgets::{Widgets, folders, keymap, shell, views_folder};
+use crate::widgets::{Widgets, folders, keymap, shell};
 
 /// How long `omfp_widget_check` waits for the windows to report the current version (DMN-063).
 pub(crate) const CHECK_WAIT: Duration = Duration::from_secs(5);
@@ -45,10 +45,7 @@ struct Target {
 
 impl Target {
     fn reference(&self) -> String {
-        match self.source {
-            WidgetSource::Workspace => format!("./widgets/{}", self.name),
-            WidgetSource::User => format!("user:{}", self.name),
-        }
+        format!("./widgets/{}", self.name)
     }
 
     fn instances<'a>(&self, window: &'a Window) -> Vec<&'a WidgetReport> {
@@ -97,16 +94,6 @@ pub(super) fn behind(window: &Window, views: Option<&Position>) -> Option<String
     };
     (!caught_up)
         .then(|| "has not caught up with the latest change of the workspace's views".to_owned())
-}
-
-fn state_name(state: WidgetReportState) -> &'static str {
-    match state {
-        WidgetReportState::Loading => "loading",
-        WidgetReportState::Rendered => "rendered",
-        WidgetReportState::CompileError => "compile error",
-        WidgetReportState::LoadError => "load error",
-        WidgetReportState::RenderError => "render error",
-    }
 }
 
 pub(super) fn list(text: &mut String, title: &str, entries: &[String]) {
@@ -380,7 +367,7 @@ fn describe_instance(text: &mut String, instance: &WidgetReport) {
 impl Services {
     /// `omfp_widget_check` (DMN-063): the daemon's compile of the widget `name` of workspace `workspace_id`, then
     /// what the windows showing the workspace report, waiting at most `wait` for them to settle on the current version.
-    /// An init file or a TSX view `name` is checked as DMN-197 says.
+    /// An init file `name` is checked as DMN-197 says.
     pub async fn check_widget(
         &self,
         workspace_id: &str,
@@ -393,13 +380,13 @@ impl Services {
                 .check_file(workspace_id, file, is_cancelled, wait)
                 .await;
         }
-        let (store, widgets) = (Arc::clone(&self.store), Arc::clone(&self.widgets));
+        let store = Arc::clone(&self.store);
         let (id, name) = (workspace_id.to_owned(), name.to_owned());
         let (source, name, folder) = blocking(move || {
             let path = store.workspace(&id)?.path;
-            widgets.locate(&path, &name).map_err(|error| {
+            Widgets::locate(&path, &name).map_err(|error| {
                 internal(format!(
-                    "{error}; check an init file with `init` or `user:init` and a TSX view with `views/<file>`"
+                    "{error}; check an init file with `init` or `user:init`"
                 ))
             })
         })
@@ -453,8 +440,8 @@ impl Services {
         Ok(describe(&target, &windows, wait, &uses, Some(&offscreen)))
     }
 
-    /// The views that hold widget `reference` (DMN-209): those the windows report (a TSX view none rendered when its
-    /// file names the widget), then those of `views.json`, each once.
+    /// The views that hold widget `reference` (DMN-209): those the windows report, then those of `views.json` no
+    /// window reported.
     async fn views_using(
         &self,
         workspace_id: &str,
@@ -462,22 +449,13 @@ impl Services {
         windows: &[(Window, Option<String>)],
     ) -> Vec<Use> {
         let mut uses: Vec<Use> = Vec::new();
-        let mut unrendered: Vec<(String, String, String)> = Vec::new();
         for (window, _) in windows {
             for view in window.report.window.iter().flat_map(|state| &state.views) {
-                let from = match &view.file {
-                    Some(file) => format!("{}, TSX view {file}", view_source_name(view.source)),
-                    None => view_source_name(view.source).to_owned(),
-                };
-                match (&view.widgets, &view.file) {
-                    (Some(widgets), _) if widgets.iter().any(|widget| widget == reference) => {
-                        uses.push(Use {
-                            view: view.id.clone(),
-                            from,
-                        });
-                    }
-                    (None, Some(file)) => unrendered.push((view.id.clone(), from, file.clone())),
-                    _ => {}
+                if view.widgets.iter().any(|widget| widget == reference) {
+                    uses.push(Use {
+                        view: view.id.clone(),
+                        from: view_source_name(view.source).to_owned(),
+                    });
                 }
             }
         }
@@ -485,7 +463,7 @@ impl Services {
         let (id, wanted) = (workspace_id.to_owned(), reference.to_owned());
         let found = blocking(move || {
             let workspace = store.workspace(&id)?.path;
-            Ok(placed_in_files(&workspace, &wanted, unrendered))
+            Ok(placed_in_manifest(&workspace, &wanted))
         })
         .await
         .unwrap_or_default();
@@ -498,29 +476,18 @@ impl Services {
     }
 }
 
-/// The views of `unrendered` (id, source in words, `./views/<file>`) whose TSX file names `reference`, then the views
-/// of the workspace's `views.json` whose layout holds it (DMN-209).
-fn placed_in_files(
-    workspace: &Path,
-    reference: &str,
-    unrendered: Vec<(String, String, String)>,
-) -> Vec<Use> {
-    let mut uses = Vec::new();
-    for (view, from, file) in unrendered {
-        let path = views_folder(workspace).join(file.trim_start_matches("./views/"));
-        if std::fs::read_to_string(path).is_ok_and(|source| source.contains(reference)) {
-            uses.push(Use { view, from });
-        }
-    }
-    if let (Some(manifest), None) = Widgets::manifest(workspace) {
-        for view in layout::views_using(&manifest, reference) {
-            uses.push(Use {
-                view,
-                from: "views.json".to_owned(),
-            });
-        }
-    }
-    uses
+/// The views of the workspace's `views.json` whose layout holds `reference` (DMN-209).
+fn placed_in_manifest(workspace: &Path, reference: &str) -> Vec<Use> {
+    let (Some(manifest), None) = Widgets::manifest(workspace) else {
+        return Vec::new();
+    };
+    layout::views_using(&manifest, reference)
+        .into_iter()
+        .map(|view| Use {
+            view,
+            from: "views.json".to_owned(),
+        })
+        .collect()
 }
 
 /// Runs `work` until it ends or `is_cancelled` says so, looking every [`CANCEL_POLL`].
@@ -652,9 +619,9 @@ mod tests {
     use std::path::Path;
 
     use omfp_protocol::{
-        AnswerWindowParams, FileErrorKind, FileErrorReport, ReportWidgetsParams, ServerFrame,
-        ViewErrors, ViewSource, WidgetJobReport, WindowAnswer, WindowFileErrors, WindowReport,
-        WindowRequest, WindowView,
+        AnswerWindowParams, FileErrorReport, ReportWidgetsParams, ServerFrame, ViewErrors,
+        ViewSource, WidgetJobReport, WindowAnswer, WindowFileErrors, WindowReport, WindowRequest,
+        WindowView,
     };
     use tempfile::TempDir;
 
@@ -679,14 +646,14 @@ mod tests {
         let data = DataDir::new(dir.path().join("data"));
         std::fs::create_dir_all(data.root()).unwrap();
         let root = dir.path().join("workspaces");
-        let store = Arc::new(Store::open(&data.db(), &root).unwrap());
+        let store = Arc::new(Store::open(&data.db()).unwrap());
         let threads = Arc::new(Threads::new(Arc::clone(&store), data.clone()));
         let workspaces = Arc::new(Workspaces::new(
             Arc::clone(&store),
             git as Arc<dyn Git>,
             root,
         ));
-        let widgets = Arc::new(Widgets::new(data.widgets(), None));
+        let widgets = Arc::new(Widgets::new(None));
         let supervisor = Supervisor::new(
             Arc::new(FakeLauncher::new()),
             Arc::clone(&threads),
@@ -994,19 +961,12 @@ mod tests {
         );
     }
 
-    fn view(
-        id: &str,
-        source: ViewSource,
-        file: Option<&str>,
-        widgets: Option<&[&str]>,
-    ) -> WindowView {
+    fn view(id: &str, source: ViewSource, widgets: &[&str]) -> WindowView {
         WindowView {
             id: id.to_owned(),
             title: id.to_owned(),
             source,
-            file: file.map(str::to_owned),
-            widgets: widgets
-                .map(|widgets| widgets.iter().map(|&widget| widget.to_owned()).collect()),
+            widgets: widgets.iter().map(|&widget| widget.to_owned()).collect(),
         }
     }
 
@@ -1014,42 +974,24 @@ mod tests {
     #[tokio::test]
     async fn the_check_names_the_views_that_hold_the_widget_instead_of_mounting_it_again() {
         let h = harness().await;
-        // An init file's view holds it, a TSX view no window rendered names it, views.json holds it too.
-        write(
-            &h.folder,
-            ".omfp/views/ops.tsx",
-            "export default () => <Row><Widget use=\"./widgets/tests\" /></Row>;\n",
-        );
-        write(
-            &h.folder,
-            ".omfp/views/other.tsx",
-            "export default () => <Row><Widget use=\"omfp:chat\" /></Row>;\n",
-        );
+        // The init files' views hold it, views.json holds it too.
         h.report_views(
             7,
             vec![
-                view("default", ViewSource::ViewsJson, None, Some(&["omfp:chat"])),
+                view("default", ViewSource::ViewsJson, &["omfp:chat"]),
+                view("solo", ViewSource::WorkspaceInit, &["./widgets/tests"]),
                 view(
-                    "solo",
-                    ViewSource::WorkspaceInit,
-                    None,
-                    Some(&["./widgets/tests"]),
-                ),
-                view("ops", ViewSource::UserInit, Some("./views/ops.tsx"), None),
-                view(
-                    "other",
-                    ViewSource::ViewsJson,
-                    Some("./views/other.tsx"),
-                    None,
+                    "ops",
+                    ViewSource::UserInit,
+                    &["omfp:chat", "./widgets/tests"],
                 ),
             ],
         );
         let text = h.check(Duration::ZERO).await;
         assert!(
             text.contains(
-                " It is in view \"solo\" (the workspace's init file), \"ops\" (the user's init file, TSX view \
-                 ./views/ops.tsx): show it with omfp_window_run { \"command\": \"view.switch\", \"args\": [\"solo\"] } \
-                 instead of mounting it again."
+                " It is in view \"solo\" (the workspace's init file), \"ops\" (the user's init file): show it with \
+                 omfp_window_run { \"command\": \"view.switch\", \"args\": [\"solo\"] } instead of mounting it again."
             ),
             "{text}"
         );
@@ -1224,9 +1166,8 @@ mod tests {
         assert_eq!(cancelled, Err("cancelled".to_owned()));
     }
 
-    fn file_error(kind: FileErrorKind, file: &str, message: &str) -> FileErrorReport {
+    fn file_error(file: &str, message: &str) -> FileErrorReport {
         FileErrorReport {
-            kind,
             file: file.to_owned(),
             message: message.to_owned(),
         }
@@ -1242,7 +1183,7 @@ mod tests {
                 windows: Vec::new()
             }
         );
-        let broken = file_error(FileErrorKind::Init, ".omfp/init.ts", "boom");
+        let broken = file_error(".omfp/init.ts", "boom");
         h.report_files(1, None, Vec::new(), vec![broken.clone()]);
         h.report(2, None, Vec::new());
         // A window showing another workspace is not listed.
@@ -1289,7 +1230,7 @@ mod tests {
 
     // spec: DMN-196
     #[tokio::test]
-    async fn omfp_views_errors_describes_each_windows_init_and_view_errors() {
+    async fn omfp_views_errors_describes_each_windows_init_file_errors() {
         let h = harness().await;
         let describe = || async {
             h.services
@@ -1305,24 +1246,16 @@ mod tests {
         h.report(1, None, Vec::new());
         assert_eq!(
             describe().await,
-            "1 window(s) show this workspace; none reports an init file or TSX view error.\n\
-             Window 1 (web): no init file or TSX view errors.\n"
+            "1 window(s) show this workspace; none reports an init file error.\n\
+             Window 1 (web): no init file errors.\n"
         );
         h.report_files(
             1,
             None,
             Vec::new(),
             vec![
-                file_error(
-                    FileErrorKind::Init,
-                    "user",
-                    "TypeError: x\n    at init.ts:2:1",
-                ),
-                file_error(
-                    FileErrorKind::View,
-                    ".omfp/views/ops.tsx",
-                    "Row: bad layout",
-                ),
+                file_error("user", "TypeError: x\n    at init.ts:2:1"),
+                file_error(".omfp/init.ts", "SyntaxError: boom"),
             ],
         );
         h.report(2, None, Vec::new());
@@ -1330,10 +1263,10 @@ mod tests {
             describe().await,
             "2 window(s) show this workspace.\n\
              Window 1 (web):\n\
-             - the user's init file (init): TypeError: x\n\
+             - the user's init file: TypeError: x\n\
              \x20     at init.ts:2:1\n\
-             - .omfp/views/ops.tsx (view): Row: bad layout\n\
-             Window 2 (web): no init file or TSX view errors.\n"
+             - .omfp/init.ts: SyntaxError: boom\n\
+             Window 2 (web): no init file errors.\n"
         );
         // Windows behind the views topic are waited for, then named.
         h.services.views_log(&h.workspace).await.unwrap();
@@ -1379,8 +1312,8 @@ mod tests {
             None,
             Vec::new(),
             vec![
-                file_error(FileErrorKind::Init, ".omfp/init.ts", "SyntaxError: boom"),
-                file_error(FileErrorKind::Init, "user", "not this one"),
+                file_error(".omfp/init.ts", "SyntaxError: boom"),
+                file_error("user", "not this one"),
             ],
         );
         h.report(2, None, Vec::new());
@@ -1400,6 +1333,15 @@ mod tests {
         assert!(
             text.ends_with("No window reports an error for it.\n"),
             "{text}"
+        );
+        let error = h
+            .services
+            .check_widget(&h.workspace, "nothing", &|| false, Duration::ZERO)
+            .await
+            .unwrap_err();
+        assert!(
+            error.contains("check an init file with `init` or `user:init`"),
+            "the widget error names the init files: {error}"
         );
     }
 
@@ -1424,7 +1366,7 @@ mod tests {
             1,
             None,
             Vec::new(),
-            vec![file_error(FileErrorKind::Init, "user", "TypeError: x")],
+            vec![file_error("user", "TypeError: x")],
         );
         let text = h.check_named("user:init", Duration::ZERO).await;
         assert!(
@@ -1439,59 +1381,6 @@ mod tests {
             "the error names the file: {text}"
         );
         assert!(text.contains("Window 1 (web):\n- TypeError: x\n"), "{text}");
-    }
-
-    // spec: DMN-197
-    #[tokio::test]
-    async fn the_check_of_a_tsx_view_compiles_it_and_leaves_the_layout_to_the_windows() {
-        let h = harness().await;
-        let text = h.check_named("views/ops.tsx", Duration::ZERO).await;
-        assert!(
-            text.starts_with("No TSX view file .omfp/views/ops.tsx in "),
-            "{text}"
-        );
-        write(
-            &h.folder,
-            ".omfp/views/ops.tsx",
-            "export default function Ops() {\n  return <p>;\n}\n",
-        );
-        h.report_files(
-            1,
-            None,
-            Vec::new(),
-            vec![file_error(
-                FileErrorKind::View,
-                ".omfp/views/ops.tsx",
-                "ops.tsx:2:10: Unexpected token",
-            )],
-        );
-        for name in [
-            "views/ops.tsx",
-            ".omfp/views/ops.tsx",
-            "./views/ops",
-            " views/ops.tsx ",
-        ] {
-            let text = h.check_named(name, Duration::ZERO).await;
-            for needle in [
-                "TSX view .omfp/views/ops.tsx (",
-                ".omfp/views/ version ",
-                "Daemon compile: it fails; windows load a stand-in that shows this error instead:\n- \
-                 .omfp/views/ops.tsx:",
-                "The daemon cannot check the layout",
-                "Window 1 (web):\n- ops.tsx:2:10: Unexpected token\n",
-            ] {
-                assert!(text.contains(needle), "{name}: {needle:?} missing: {text}");
-            }
-        }
-        let error = h
-            .services
-            .check_widget(&h.workspace, "nothing", &|| false, Duration::ZERO)
-            .await
-            .unwrap_err();
-        assert!(
-            error.contains("`init` or `user:init`") && error.contains("`views/<file>`"),
-            "the widget error names the other forms: {error}"
-        );
     }
 
     // spec: DMN-199
@@ -1577,7 +1466,7 @@ mod tests {
         let git = Arc::new(FakeGit::new());
         let root = dir.path().join("workspaces");
         std::fs::create_dir_all(dir.path().join("data")).unwrap();
-        let store = Store::open(&dir.path().join("data/omfp.db"), &root).unwrap();
+        let store = Store::open(&dir.path().join("data/omfp.db")).unwrap();
         let mut folders = Vec::new();
         for name in ["old", "kept", "repo"] {
             let path = root.join(name);
@@ -1587,7 +1476,7 @@ mod tests {
                     id: format!("01{name}"),
                     name: name.to_owned(),
                     path: path.clone(),
-                    created_by: crate::store::Provenance::User,
+                    created_by: omfp_protocol::CreatedBy::User,
                     created_at: 0,
                 })
                 .unwrap();

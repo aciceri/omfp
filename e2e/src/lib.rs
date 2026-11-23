@@ -15,11 +15,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, bail};
-use clap::Parser;
 use fake_llm::{FakeLlm, Script, Step};
 use omfp::remote::{Connection, Target};
 use omfp_daemon::agent::{FakeLauncher, FakeProcess};
-use omfp_daemon::config::{Cli, Config};
+use omfp_daemon::config::Config;
 use omfp_daemon::git::FakeGit;
 use omfp_daemon::{DaemonHandle, Ports, start_with};
 use omfp_protocol::method::ThreadsCreate;
@@ -1095,34 +1094,29 @@ async fn start_daemon(
 ) -> anyhow::Result<DaemonHandle> {
     let omp = omp_bin();
     let path = |path: &Path| path.to_string_lossy().into_owned();
-    let cli = Cli::try_parse_from([
-        "daemon".to_owned(),
-        "--bind".to_owned(),
-        bind.to_owned(),
-        "--data-dir".to_owned(),
-        path(data),
-        "--workspaces-root".to_owned(),
-        path(&data.join("workspaces")),
-        "--omp-bin".to_owned(),
-        omp,
-        "--static-dir".to_owned(),
-        path(bundle),
-        "--no-title-generation".to_owned(),
-        "--config".to_owned(),
-        path(&config_file(data)),
-    ])?;
-    let config = Config::from_cli(cli, None, None).map_err(anyhow::Error::msg)?;
+    let (bundle, config_path) = (path(bundle), path(&config_file(data)));
+    let mut config = Config::loopback(
+        data,
+        &[
+            "--omp-bin",
+            &omp,
+            "--static-dir",
+            &bundle,
+            "--no-title-generation",
+            "--config",
+            &config_path,
+        ],
+    );
+    config.bind = bind.parse()?;
     let mut ports = if let Some(launcher) = launcher {
-        Ports {
-            launcher: Arc::new(launcher),
-            git: git.unwrap_or_else(|| Arc::new(FakeGit::new())),
-            omp_program: config.omp_bin.clone().unwrap_or_default(),
-            omp_version: omfp_core::OMP_VERSION.to_owned(),
-            omp_env: Vec::new(),
-            user_omp_env: omfp_testkit::absent_standalone_omp(data),
-            warnings: Vec::new(),
-            clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
-        }
+        let git = git.unwrap_or_else(|| Arc::new(FakeGit::new()));
+        let mut ports = Ports::fake(
+            Arc::new(launcher),
+            git,
+            omfp_testkit::absent_standalone_omp(data),
+        );
+        ports.omp_program = omp.into();
+        ports
     } else {
         let mut ports = Ports::resolve(&config)?;
         ports.omp_env = env.prepare_omfp_profile(data)?;

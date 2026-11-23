@@ -43,12 +43,10 @@ pub fn user_append(workspace: &Path, agent_dir: Option<&Path>) -> Option<String>
 /// Where widgets live and what they may import, shared by the widgets note and the `widget-builder` agent so the two
 /// never drift: `root` prefixes the workspace paths (`<workspace>/` for the main agent, empty for the subagent, whose
 /// cwd is the workspace folder).
-fn widget_facts(root: &str, user_library: &Path) -> String {
-    let library = user_library.display();
+fn widget_facts(root: &str) -> String {
     format!(
         "- Workspace widgets: {root}.omfp/widgets/<name>/index.tsx, used as `./widgets/<name>`; a folder named like a \
          built-in (`chat` for `omfp:chat`) replaces it here.\n\
-         - User library: {library}/<name>/, used as `user:<name>` in every workspace.\n\
          - Built-in widgets' sources: omfp://widgets/builtin and omfp://widgets/builtin/<name> (never search the disk).\n\
          - Imports: only react, react/jsx-runtime, react-dom, omfp/sdk, omfp/kit and files of the widget's folder. A \
          saved widget reloads at once; errors show in its place. Controls come from omfp/kit (Select, Checkbox, \
@@ -93,25 +91,23 @@ pub const VERIFY_LOOP: &str = "Verify in the user's window: write → omfp_widge
     errors) → omfp_window_run { command: \"view.switch\", args: [\"<view>\"] } to show a view → omfp_windows again \
     for its errors.";
 
-/// The widgets note (AGT-024): where the views manifest, the workspace's widgets and the user library (`user_library`)
-/// live, the host URIs of the built-in sources, what a widget may import, the rules for the `main` slot, placing a
-/// widget and checking it, where declared jobs live (DMN-331, AGT-091), how to delegate building one to the
-/// `widget-builder` agent (AGT-029), when to notify the user (AGT-032), an example, and where to read more.
+/// The widgets note (AGT-024): where the views manifest and the workspace's widgets live, the host URIs of the
+/// built-in sources, what a widget may import, the rules for the `main` slot, placing a widget and checking it, where
+/// declared jobs live (DMN-331, AGT-091), how to delegate building one to the `widget-builder` agent (AGT-029), when
+/// to notify the user (AGT-032), an example, and where to read more.
 #[must_use]
-pub fn widgets_note(path: &Path, user_library: &Path) -> String {
+pub fn widgets_note(path: &Path) -> String {
     let display = path.display();
     format!(
         "# omfp widgets\n\
          \n\
          The user's omfp window shows this workspace through React widgets that you can write and arrange too.\n\
          - Views: {display}/.omfp/views.json (schema omfp://schemas/views.json), the user's and yours to change. \
-         {MAIN_SLOT_RULE} A view may instead be a TSX file, `{{ \"view\": \"./views/<name>.tsx\" }}` for \
-         {display}/.omfp/views/<name>.tsx (see omfp://docs/widgets); it takes no mounts: edit the file.\n\
+         {MAIN_SLOT_RULE}\n\
          {facts}\n\
-         - {PLACEMENT_RULE} omfp_component_save / omfp_component_list keep widgets for every workspace \
-         (`user:<name>`). {VERIFY_LOOP} omfp_widget_check also checks init files (`init`, `user:init`) and TSX views \
-         (`views/<file>`); omfp_views_errors lists the runtime errors windows show for them. omfp_window_run runs \
-         only registered commands, never code.\n\
+         - {PLACEMENT_RULE} {VERIFY_LOOP} omfp_widget_check also checks init files (`init`, `user:init`); \
+         omfp_views_errors lists the runtime errors windows show for them. omfp_window_run runs only registered \
+         commands, never code.\n\
          - Cards: content of one moment of the conversation (a terminal to show something, a chart, a question with \
          its own controls) goes in a card, omfp_card {{ widget | code, props?, title?, wait? }}, drawn in your tool \
          call in the chat (with wait: true the user's answer is its result); content that stays goes in a mount \
@@ -133,7 +129,7 @@ pub fn widgets_note(path: &Path, user_library: &Path) -> String {
          \n\
          Before writing widgets read omfp://docs/widgets; schema omfp://schemas/views.json. omfp://docs indexes the \
          docs: omfp://docs/shell (the window and its `:` commands), omfp://keymap (its keys and commands).",
-        facts = widget_facts(&format!("{display}/"), user_library),
+        facts = widget_facts(&format!("{display}/")),
     )
 }
 
@@ -141,7 +137,7 @@ pub fn widgets_note(path: &Path, user_library: &Path) -> String {
 /// role, not blocking so the main agent keeps talking) and a body carrying the widgets knowledge, since a subagent gets
 /// neither the main agent's appended prompt nor its host tools (S-14).
 #[must_use]
-pub fn widget_builder_definition(user_library: &Path) -> String {
+pub fn widget_builder_definition() -> String {
     format!(
         "---\n\
          name: {WIDGET_BUILDER}\n\
@@ -157,13 +153,13 @@ pub fn widget_builder_definition(user_library: &Path) -> String {
          {facts}\n\
          - First read omfp://docs/widgets (the SDK and kit reference) and, for how views use widgets, \
          omfp://schemas/views.json; a built-in close to what you need is a good start (omfp://widgets/builtin/<name>).\n\
-         - After every write or edit, read omfp://widgets/check/<name> (`user:<name>` for the user library): it \
-         compiles the widget and says what open windows render. Fix what it reports and read it again until it is clean.\n\
+         - After every write or edit, read omfp://widgets/check/<name>: it compiles the widget and says what open \
+         windows render. Fix what it reports and read it again until it is clean.\n\
          - Never edit .omfp/views.json: the main agent places the widget.\n\
-         - Finish with a short summary naming the widget (`./widgets/<name>` or `user:<name>`) and its props.\n\
+         - Finish with a short summary naming the widget (`./widgets/<name>`) and its props.\n\
          \n\
          {EXAMPLE}\n",
-        facts = widget_facts("", user_library),
+        facts = widget_facts(""),
     )
 }
 
@@ -171,7 +167,7 @@ pub fn widget_builder_definition(user_library: &Path) -> String {
 /// passes with `--extension` (DMN-107), unless the file already holds this content: returns whether it wrote.
 pub fn write_widget_builder(data: &DataDir) -> std::io::Result<bool> {
     let path = data.widget_builder();
-    let content = widget_builder_definition(&data.widgets());
+    let content = widget_builder_definition();
     if std::fs::read_to_string(&path).is_ok_and(|current| current == content) {
         return Ok(false);
     }
@@ -205,17 +201,11 @@ pub fn control_note(thread_id: &str) -> String {
 /// What the daemon itself appends to the system prompt of thread `thread_id`: the workspace conventions, the widgets
 /// note, then the control note.
 #[must_use]
-pub fn daemon_text(
-    name: &str,
-    id: &str,
-    path: &Path,
-    user_library: &Path,
-    thread_id: &str,
-) -> String {
+pub fn daemon_text(name: &str, id: &str, path: &Path, thread_id: &str) -> String {
     format!(
         "{}\n\n{}\n\n{}",
         workspace_conventions(name, id, path),
-        widgets_note(path, user_library),
+        widgets_note(path),
         control_note(thread_id)
     )
 }
@@ -228,10 +218,9 @@ pub fn append_system_prompt(
     id: &str,
     path: &Path,
     agent_dir: Option<&Path>,
-    user_library: &Path,
     thread_id: &str,
 ) -> String {
-    let text = daemon_text(name, id, path, user_library, thread_id);
+    let text = daemon_text(name, id, path, thread_id);
     match user_append(path, agent_dir) {
         Some(user) => format!("{text}\n\n{user}"),
         None => text,
@@ -277,25 +266,21 @@ mod tests {
         assert!(!text.ends_with('\n'));
     }
 
-    // spec: AGT-024, AGT-028, AGT-029, AGT-031, AGT-032, AGT-074, AGT-075, AGT-076, AGT-084
+    // spec: AGT-024, AGT-028, AGT-029, AGT-031, AGT-032, AGT-075, AGT-076, AGT-084
     #[test]
     fn the_widgets_note_says_where_widgets_live_what_they_import_and_how_to_check_and_place_them() {
-        let library = Path::new("/data/omfp/widgets");
-        let text = widgets_note(Path::new("/ws/checkout"), library);
+        let text = widgets_note(Path::new("/ws/checkout"));
         assert!(text.starts_with("# omfp widgets\n"), "{text}");
         for rule in [
             "/ws/checkout/.omfp/views.json",
             "/ws/checkout/.omfp/widgets/<name>/index.tsx",
             "`./widgets/<name>`",
-            "/data/omfp/widgets/<name>/",
-            "`user:<name>`",
             "omfp://widgets/builtin/<name>",
             "react, react/jsx-runtime, react-dom, omfp/sdk, omfp/kit",
             "omfp_widget_check { name }",
             PLACEMENT_RULE,
             MAIN_SLOT_RULE,
             VERIFY_LOOP,
-            "omfp_component_save / omfp_component_list",
             "propose a widget in one sentence and build it only after the user agrees",
             "a `task` with `agent: \"widget-builder\"` and a complete brief \
              (what to show, its data sources, where it goes); keep talking, and place the widget with omfp_ui_mount \
@@ -307,8 +292,7 @@ mod tests {
             "- Keys: /ws/checkout/.omfp/keymap.json (schema omfp://schemas/keymap.json) binds keys to commands",
             "- Notify the user with omfp_notify { title, body } when a long task finished or you need them; once per \
              occasion, never for progress.\n",
-            "`{ \"view\": \"./views/<name>.tsx\" }` for /ws/checkout/.omfp/views/<name>.tsx (see omfp://docs/widgets)",
-            "omfp_widget_check also checks init files (`init`, `user:init`) and TSX views (`views/<file>`)",
+            "omfp_widget_check also checks init files (`init`, `user:init`); omfp_views_errors",
             "omfp_views_errors lists the runtime errors windows show for them",
             "omfp_window_run runs only registered commands, never code.",
             "omfp://docs indexes the docs: omfp://docs/shell (the window and its `:` commands), omfp://keymap (its keys \
@@ -334,25 +318,17 @@ mod tests {
     fn the_users_append_file_follows_the_conventions_and_the_notes_and_the_workspace_one_wins() {
         let ws = tempfile::tempdir().unwrap();
         let agent = tempfile::tempdir().unwrap();
-        let library = Path::new("/data/widgets");
         let prompt = |agent: &Path| {
-            append_system_prompt(
-                "w",
-                "01WORKSPACE",
-                ws.path(),
-                Some(agent),
-                library,
-                "01THREAD",
-            )
+            append_system_prompt("w", "01WORKSPACE", ws.path(), Some(agent), "01THREAD")
         };
         let daemon = format!(
             "{}\n\n{}\n\n{}",
             workspace_conventions("w", "01WORKSPACE", ws.path()),
-            widgets_note(ws.path(), library),
+            widgets_note(ws.path()),
             control_note("01THREAD")
         );
         assert_eq!(
-            daemon_text("w", "01WORKSPACE", ws.path(), library, "01THREAD"),
+            daemon_text("w", "01WORKSPACE", ws.path(), "01THREAD"),
             daemon
         );
         assert_eq!(prompt(agent.path()), daemon);
@@ -394,7 +370,7 @@ mod tests {
     // spec: AGT-024, AGT-028, AGT-084, AGT-061
     #[test]
     fn the_note_the_docs_and_the_mount_tool_state_the_rules_word_for_word() {
-        let note = widgets_note(Path::new("/ws"), Path::new("/data/widgets"));
+        let note = widgets_note(Path::new("/ws"));
         // Markdown wraps lines and sets code in backticks: compare single spaces, without backticks.
         let plain = |text: &str| {
             text.replace('`', "")
@@ -452,8 +428,7 @@ mod tests {
     // spec: AGT-029
     #[test]
     fn the_widget_builder_is_a_background_smol_agent_carrying_the_widgets_facts() {
-        let library = Path::new("/data/omfp/widgets");
-        let text = widget_builder_definition(library);
+        let text = widget_builder_definition();
         let (frontmatter, body) = text
             .strip_prefix("---\n")
             .and_then(|rest| rest.split_once("\n---\n"))
@@ -475,10 +450,10 @@ mod tests {
         }
         assert!(!frontmatter.contains("blocking"), "runs in the background");
         assert!(
-            body.contains(&widget_facts("", library)),
+            body.contains(&widget_facts("")),
             "the same facts as the widgets note, with relative paths: {body}"
         );
-        assert!(widgets_note(Path::new("/ws"), library).contains(&widget_facts("/ws/", library)));
+        assert!(widgets_note(Path::new("/ws")).contains(&widget_facts("/ws/")));
         for rule in [
             "working directory is the workspace folder: use relative paths",
             "- Workspace widgets: .omfp/widgets/<name>/index.tsx",
@@ -489,7 +464,7 @@ mod tests {
             "After every write or edit, read omfp://widgets/check/<name>",
             "until it is clean",
             "Never edit .omfp/views.json",
-            "short summary naming the widget (`./widgets/<name>` or `user:<name>`) and its props",
+            "short summary naming the widget (`./widgets/<name>`) and its props",
             EXAMPLE,
         ] {
             assert!(body.contains(rule), "{rule:?} missing: {body}");
@@ -503,11 +478,7 @@ mod tests {
     // spec: AGT-087
     #[test]
     fn the_widgets_note_and_the_builder_say_how_jobs_run_and_when_to_key_them() {
-        let library = Path::new("/data/omfp/widgets");
-        for text in [
-            widgets_note(Path::new("/ws"), library),
-            widget_builder_definition(library),
-        ] {
+        for text in [widgets_note(Path::new("/ws")), widget_builder_definition()] {
             for rule in [
                 "useJob(command) runs `sh -c <command>` in the workspace folder (not a repository)",
                 "the daemon's environment: no login shell, no dev shell (write `nix develop -c …` yourself), no timeout",
@@ -522,7 +493,7 @@ mod tests {
     // spec: DMN-331, AGT-091
     #[test]
     fn the_widgets_note_names_the_jobs_file_and_its_schema() {
-        let text = widgets_note(Path::new("/ws/checkout"), Path::new("/data/omfp/widgets"));
+        let text = widgets_note(Path::new("/ws/checkout"));
         assert!(
             text.contains(
                 "- Jobs: a workspace's recurring commands, schedules, watchers and prompts are declared in \
@@ -597,11 +568,7 @@ mod tests {
     // spec: AGT-088
     #[test]
     fn the_widgets_note_and_the_builder_send_controls_to_the_kit() {
-        let library = Path::new("/data/omfp/widgets");
-        for text in [
-            widgets_note(Path::new("/ws"), library),
-            widget_builder_definition(library),
-        ] {
+        for text in [widgets_note(Path::new("/ws")), widget_builder_definition()] {
             for rule in [
                 "Controls come from omfp/kit (Select, Checkbox, RadioGroup, TextField, SearchField)",
                 "never native <select>, <input type=checkbox|radio|range|date|color> or <datalist>",
@@ -615,7 +582,7 @@ mod tests {
     // spec: AGT-098
     #[test]
     fn the_widgets_note_gives_one_line_to_cards_for_content_of_one_moment() {
-        let text = widgets_note(Path::new("/ws"), Path::new("/data/omfp/widgets"));
+        let text = widgets_note(Path::new("/ws"));
         let cards: Vec<&str> = text
             .lines()
             .filter(|line| line.contains("omfp_card"))
@@ -638,7 +605,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let data = DataDir::new(root.path());
         let path = root.path().join("omp/agents/widget-builder.md");
-        let expected = widget_builder_definition(&root.path().join("widgets"));
+        let expected = widget_builder_definition();
 
         assert!(write_widget_builder(&data).unwrap());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), expected);

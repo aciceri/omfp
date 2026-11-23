@@ -1,6 +1,6 @@
 //! The `views/<workspaceId>` topics (DMN-082, PRT-040): each workspace's views manifest, keymap (DMN-121), init file
-//! version (DMN-185), `.omfp/views/` version (DMN-186), widget folders and widget state, refreshed on every rescan and
-//! poll round, plus the methods that change them (DMN-083, DMN-086, DMN-087).
+//! version (DMN-185), widget folders and widget state, refreshed on every rescan and poll round, plus the methods that
+//! change them (DMN-083, DMN-086, DMN-087).
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -17,9 +17,7 @@ use crate::event_log::EventLog;
 use crate::paths::replace_file;
 use crate::server::convert::{bad_request, internal};
 use crate::store::{Store, new_id};
-use crate::widgets::{
-    CopyError, Widgets, init, keymap, manifest, manifest_path, view_files_version,
-};
+use crate::widgets::{CopyError, Widgets, init, keymap, manifest, manifest_path};
 
 /// A `views/<workspaceId>` topic (PRT-040).
 pub(crate) type ViewsLog = EventLog<ViewsEvent, ViewsState>;
@@ -41,7 +39,6 @@ fn apply_views(state: &mut ViewsState, event: &ViewsEvent) {
             state.keymap_error.clone_from(error);
         }
         ViewsEvent::ViewsInit { init } => state.init.clone_from(init),
-        ViewsEvent::ViewsFiles { view_files } => state.view_files.clone_from(view_files),
         ViewsEvent::ViewsWidgets { widgets } => state.widgets.clone_from(widgets),
         ViewsEvent::WidgetStored {
             instance,
@@ -72,8 +69,8 @@ fn workspace_path(store: &Store, id: &str) -> Result<PathBuf, ErrorBody> {
 }
 
 /// The state of `views/<id>` as the workspace's files are now, without the widget state: its manifest, keymap (none
-/// from an invalid file, DMN-121), init file version, `.omfp/views/` version and widget folders.
-fn read_views(store: &Store, widgets: &Widgets, id: &str) -> Result<ViewsState, ErrorBody> {
+/// from an invalid file, DMN-121), init file version and widget folders.
+fn read_views(store: &Store, id: &str) -> Result<ViewsState, ErrorBody> {
     let path = workspace_path(store, id)?;
     let (manifest, error) = Widgets::manifest(&path);
     let (keymap, keymap_error) = match keymap::read(&keymap::path(&path)) {
@@ -83,12 +80,11 @@ fn read_views(store: &Store, widgets: &Widgets, id: &str) -> Result<ViewsState, 
     Ok(ViewsState {
         manifest,
         error,
-        widgets: widgets.widgets(&path),
+        widgets: Widgets::widgets(&path),
         stored: BTreeMap::new(),
         keymap,
         keymap_error,
         init: init::read_version(&init::workspace_init(&path)),
-        view_files: view_files_version(&path),
     })
 }
 
@@ -114,11 +110,6 @@ fn changes(state: &ViewsState, mut fresh: ViewsState) -> Vec<ViewsEvent> {
     if state.init != fresh.init {
         events.push(ViewsEvent::ViewsInit { init: fresh.init });
     }
-    if state.view_files != fresh.view_files {
-        events.push(ViewsEvent::ViewsFiles {
-            view_files: fresh.view_files,
-        });
-    }
     if state.widgets != fresh.widgets {
         events.push(ViewsEvent::ViewsWidgets {
             widgets: fresh.widgets,
@@ -127,7 +118,7 @@ fn changes(state: &ViewsState, mut fresh: ViewsState) -> Vec<ViewsEvent> {
     events
 }
 
-pub(super) fn copy_error(error: CopyError) -> ErrorBody {
+fn copy_error(error: CopyError) -> ErrorBody {
     let (code, message) = match error {
         CopyError::BadRequest(message) => (ErrorCode::BadRequest, message),
         CopyError::NotFound(message) => (ErrorCode::NotFound, message),
@@ -145,13 +136,9 @@ impl Services {
             self.refresh_views_locked(id, &log).await?;
             return Ok(log);
         }
-        let (store, widgets, workspace_id) = (
-            Arc::clone(&self.store),
-            Arc::clone(&self.widgets),
-            id.to_owned(),
-        );
+        let (store, workspace_id) = (Arc::clone(&self.store), id.to_owned());
         let state = blocking(move || {
-            let mut state = read_views(&store, &widgets, &workspace_id)?;
+            let mut state = read_views(&store, &workspace_id)?;
             state.stored = store.widget_state(&workspace_id)?;
             Ok(state)
         })
@@ -176,9 +163,8 @@ impl Services {
         self.views_log_entry(id).map(|log| log.position())
     }
 
-    /// Reads the workspace's manifest, keymap, init file, `.omfp/views/` and widget folders again and publishes what
-    /// changed on `views/<id>`, if the topic exists (DMN-082, DMN-121, DMN-185, DMN-186). A removed workspace's topic
-    /// goes away.
+    /// Reads the workspace's manifest, keymap, init file and widget folders again and publishes what changed on
+    /// `views/<id>`, if the topic exists (DMN-082, DMN-121, DMN-185). A removed workspace's topic goes away.
     pub async fn refresh_views(&self, id: &str) {
         let _serial = self.views_refresh.lock().await;
         let Some(log) = self.views_log_entry(id) else {
@@ -195,12 +181,8 @@ impl Services {
 
     /// The refresh itself; the caller holds `views_refresh`, so events of one topic never interleave.
     async fn refresh_views_locked(&self, id: &str, log: &ViewsLog) -> Result<(), ErrorBody> {
-        let (store, widgets, workspace_id) = (
-            Arc::clone(&self.store),
-            Arc::clone(&self.widgets),
-            id.to_owned(),
-        );
-        let fresh = blocking(move || read_views(&store, &widgets, &workspace_id)).await?;
+        let (store, workspace_id) = (Arc::clone(&self.store), id.to_owned());
+        let fresh = blocking(move || read_views(&store, &workspace_id)).await?;
         for event in log.with_state(|state| changes(state, fresh)) {
             log.push(event);
         }

@@ -30,7 +30,7 @@ pub enum Target<'a> {
 pub struct Mount<'a> {
     /// The mount id: the node's `instance` prop and the panel id.
     pub id: &'a str,
-    /// The widget reference (`./widgets/<name>`, `user:<name>`, `omfp:<name>`).
+    /// The widget reference (`./widgets/<name>`, `omfp:<name>`).
     pub reference: &'a str,
     /// The node's props; `instance` is set to `id`.
     pub props: Map<String, Value>,
@@ -394,12 +394,12 @@ mod tests {
     fn a_new_view_id_makes_a_dashboard_and_mounting_again_replaces_in_place() {
         let first = mount(
             None,
-            &in_view("board", "user:board", Some("dash"), Place::End),
+            &in_view("board", "omfp:board", Some("dash"), Place::End),
         )
         .unwrap();
         assert_eq!(
             first.manifest["views"]["dash"],
-            json!({ "title": "dash", "layout": ["user:board", { "instance": "board" }] })
+            json!({ "title": "dash", "layout": ["omfp:board", { "instance": "board" }] })
         );
         let second = mount(
             Some(&first.manifest),
@@ -425,13 +425,13 @@ mod tests {
     // spec: AGT-060, AGT-061
     #[test]
     fn a_panel_mount_moves_the_id_out_of_the_views_and_back() {
-        let in_side = mount(None, &in_view("clock", "user:clock", None, Place::SideTab)).unwrap();
-        let floating = mount(Some(&in_side.manifest), &panel("clock", "user:clock")).unwrap();
+        let in_side = mount(None, &in_view("clock", "omfp:clock", None, Place::SideTab)).unwrap();
+        let floating = mount(Some(&in_side.manifest), &panel("clock", "omfp:clock")).unwrap();
         assert!(floating.replaced);
         assert_eq!(floating.view, None);
         assert_eq!(
             floating.manifest["panels"],
-            json!({ "clock": ["user:clock", { "instance": "clock", "title": "Clock" }] })
+            json!({ "clock": ["omfp:clock", { "instance": "clock", "title": "Clock" }] })
         );
         assert_eq!(
             floating.manifest["views"],
@@ -441,7 +441,7 @@ mod tests {
 
         let back = mount(
             Some(&floating.manifest),
-            &in_view("clock", "user:clock", None, Place::MainTab),
+            &in_view("clock", "omfp:clock", None, Place::MainTab),
         )
         .unwrap();
         assert_eq!(back.manifest.get("panels"), None, "no empty panels object");
@@ -457,7 +457,7 @@ mod tests {
     // spec: AGT-062
     #[test]
     fn an_update_merges_props_deletes_nulls_and_keeps_the_instance() {
-        let floating = mount(None, &panel("clock", "user:clock")).unwrap();
+        let floating = mount(None, &panel("clock", "omfp:clock")).unwrap();
         let updated = update(
             Some(&floating.manifest),
             "clock",
@@ -466,11 +466,11 @@ mod tests {
         .unwrap();
         assert_eq!(
             updated.manifest["panels"]["clock"],
-            json!(["user:clock", { "instance": "clock", "zone": "UTC" }])
+            json!(["omfp:clock", { "instance": "clock", "zone": "UTC" }])
         );
         assert_eq!(
             (updated.reference.as_str(), updated.view),
-            ("user:clock", None)
+            ("omfp:clock", None)
         );
         assert!(updated.replaced);
 
@@ -490,9 +490,9 @@ mod tests {
     fn an_unmount_prunes_empty_containers_and_views_and_their_weights() {
         let manifest = json!({
             "default": "dash",
-            "panels": { "clock": "user:clock" },
+            "panels": { "clock": "omfp:clock" },
             "views": {
-                "dash": { "layout": ["user:board", { "instance": "board" }] },
+                "dash": { "layout": ["omfp:board", { "instance": "board" }] },
                 "work": { "layout": ["row", { "sizes": [3, 1, 2] },
                     "omfp:chat",
                     ["tabs", {}, ["./widgets/board", { "instance": "board" }]],
@@ -506,7 +506,7 @@ mod tests {
         assert_eq!(
             removed.manifest,
             json!({
-                "panels": { "clock": "user:clock" },
+                "panels": { "clock": "omfp:clock" },
                 "views": { "work": { "layout": ["row", { "sizes": [3, 2] }, "omfp:chat", "omfp:changes"] } }
             }),
             "the default named the removed view"
@@ -525,46 +525,13 @@ mod tests {
     #[test]
     fn the_last_view_is_never_emptied() {
         let manifest =
-            json!({ "views": { "dash": { "layout": ["user:board", { "instance": "board" }] } } });
+            json!({ "views": { "dash": { "layout": ["omfp:board", { "instance": "board" }] } } });
         let error = unmount(Some(&manifest), "board").unwrap_err();
         assert!(
             matches!(&error, MountError::Invalid(text) if text.contains("would leave no view")),
             "{error}"
         );
-        let error = mount(Some(&manifest), &panel("board", "user:board")).unwrap_err();
+        let error = mount(Some(&manifest), &panel("board", "omfp:board")).unwrap_err();
         assert!(matches!(error, MountError::Invalid(_)), "{error}");
-    }
-
-    // spec: AGT-074
-    #[test]
-    fn a_tsx_view_takes_no_mount_and_its_neighbours_still_do() {
-        let manifest = json!({ "default": "ops", "views": {
-            "ops": { "title": "Ops", "view": "./views/ops.tsx" },
-            "work": { "layout": ["row", {}, "omfp:chat", ["user:clock", { "instance": "clock" }]] },
-        } });
-        let error = mount(
-            Some(&manifest),
-            &in_view("board", "user:board", None, Place::End),
-        )
-        .unwrap_err();
-        assert_eq!(
-            error,
-            MountError::Invalid(
-                "view \"ops\" is a TSX view (./views/ops.tsx): edit that file, or mount into another view"
-                    .to_owned()
-            )
-        );
-        let placed = mount(
-            Some(&manifest),
-            &in_view("board", "user:board", Some("work"), Place::End),
-        )
-        .unwrap();
-        assert_eq!(placed.manifest["views"]["ops"], manifest["views"]["ops"]);
-
-        let updated = update(Some(&manifest), "clock", &props(json!({ "tz": "UTC" }))).unwrap();
-        assert_eq!(updated.view.as_deref(), Some("work"));
-        let removed = unmount(Some(&manifest), "clock").unwrap();
-        assert_eq!(removed.views, ["work"]);
-        assert_eq!(removed.manifest["views"]["ops"], manifest["views"]["ops"]);
     }
 }

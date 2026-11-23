@@ -6,52 +6,14 @@
 mod client;
 mod common;
 
-use std::sync::Arc;
-
-use clap::Parser;
-use client::Client;
+use client::{Client, TestDaemon};
 use common::{Harness, Recorder, TIMEOUT, prompt, start};
 use fake_llm::{Reply, Step, ToolCall};
-use omfp_daemon::agent::FakeLauncher;
-use omfp_daemon::config::{Cli, Config};
-use omfp_daemon::git::FakeGit;
-use omfp_daemon::{DaemonHandle, Ports, start_with};
 use omp_rpc::PromptStatus;
 use serde_json::{Value, json};
-use tempfile::TempDir;
 
 /// omp 19.1.0's MCP `clientInfo.name`.
 const OMP_CLIENT: &str = "omp-coding-agent";
-
-/// A daemon on the fake launcher: the omp under test is the only real one.
-async fn daemon() -> (DaemonHandle, TempDir) {
-    let dir = tempfile::tempdir().unwrap();
-    let workspaces = dir.path().join("workspaces");
-    let cli = Cli::try_parse_from([
-        "daemon",
-        "--bind",
-        "127.0.0.1:0",
-        "--data-dir",
-        dir.path().to_str().unwrap(),
-        "--workspaces-root",
-        workspaces.to_str().unwrap(),
-    ])
-    .unwrap();
-    let ports = Ports {
-        launcher: Arc::new(FakeLauncher::new()),
-        git: Arc::new(FakeGit::new()),
-        omp_program: "omp".into(),
-        omp_version: omfp_core::OMP_VERSION.into(),
-        omp_env: Vec::new(),
-        user_omp_env: omfp_testkit::absent_standalone_omp(&dir),
-        warnings: Vec::new(),
-        clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
-    };
-    let handle = start_with(Config::from_cli(cli, None, None).unwrap(), ports)
-        .await
-        .unwrap();
-    (handle, dir)
-}
 
 /// The text content of the tool result answering `call_id` in a chat-completions request.
 fn tool_result(request: &Value, call_id: &str) -> String {
@@ -96,7 +58,12 @@ async fn an_omp_outside_omfp_calls_omfp_call_through_mcp() {
         Step::reply(Reply::text("MCP-DONE")),
     ])
     .await;
-    let (daemon, _data) = daemon().await;
+    // A daemon on the fake launcher: the omp under test is the only real one.
+    let TestDaemon {
+        handle: daemon,
+        dir: _data,
+        ..
+    } = TestDaemon::start(&[]).await;
     // What `omfp mcp config` prints (DMN-159), in the isolated omp's user-level mcp.json: the token comes from
     // `$OMFP_TOKEN`, which omp expands in `mcp.json` (AGT-054).
     let mcp_json = json!({

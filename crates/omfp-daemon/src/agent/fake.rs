@@ -7,7 +7,7 @@ mod live;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Sender, channel};
-use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Condvar, Mutex, PoisonError};
 
 use omfp_core::ThreadEvent;
 use omp_rpc::{
@@ -23,13 +23,10 @@ pub use live::{
 };
 
 use super::{AgentLauncher, AgentProcess, Launched, Lease, OmpCall, PromptAdmission};
+use crate::lock;
 use crate::omp::{LaunchSpec, StartError, Startup};
 use crate::store::new_id;
 use crate::titles::{TitleError, TitleRequest};
-
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
-}
 
 /// What one fake process plays: its startup and the frames it sends, in segments.
 #[derive(Debug, Clone, PartialEq)]

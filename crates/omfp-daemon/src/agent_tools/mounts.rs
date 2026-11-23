@@ -1,12 +1,10 @@
-//! The mount and library tools (AGT-061..066): `omfp_ui_mount`, `omfp_ui_update`, `omfp_ui_remove`,
-//! `omfp_component_save` and `omfp_component_list`, adapters over `views.mount`, `views.mount_update`,
-//! `views.unmount`, `widgets.save` and `widgets.library` (PRT-080..084) that answer in sentences.
+//! The mount tools (AGT-061..063, AGT-066): `omfp_ui_mount`, `omfp_ui_update` and `omfp_ui_remove`, adapters over
+//! `views.mount`, `views.mount_update` and `views.unmount` (PRT-080..082) that answer in sentences.
 
 use std::fmt::Write as _;
 
 use omfp_protocol::{
-    Call, Empty, MountParams, MountPlace, MountUpdateParams, Mounted, SaveWidgetParams,
-    UnmountParams, Unmounted, WidgetLibrary, WidgetSaved,
+    Call, MountParams, MountPlace, MountUpdateParams, Mounted, UnmountParams, Unmounted,
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value, json};
@@ -19,14 +17,10 @@ pub const UI_MOUNT: &str = "omfp_ui_mount";
 pub const UI_UPDATE: &str = "omfp_ui_update";
 /// Name of the tool that removes a mounted widget (AGT-063).
 pub const UI_REMOVE: &str = "omfp_ui_remove";
-/// Name of the tool that saves a component to the user library (AGT-064).
-pub const COMPONENT_SAVE: &str = "omfp_component_save";
-/// Name of the tool that lists the user library (AGT-065).
-pub const COMPONENT_LIST: &str = "omfp_component_list";
 
 /// The tools of this module, for the registry (AGT-066).
 pub(crate) fn tools() -> Vec<AgentTool> {
-    vec![mount(), update(), remove(), save(), list()]
+    vec![mount(), update(), remove()]
 }
 
 const WORKSPACE_ID: &str = "The workspace (default: the calling thread's; required without one, e.g. over MCP with a user token).";
@@ -40,9 +34,9 @@ fn mount() -> AgentTool {
                       `place` (`view` names the view; a new name makes a dashboard view showing only it) or as a \
                       floating panel over every view (`panel: true`). The widget is `code` (a React component in \
                       TSX, default export, imports only from react, omfp/sdk and omfp/kit; written to \
-                      .omfp/widgets/<id>/index.tsx) or `widget`, a reference: `user:<name>` (a saved component, see \
-                      omfp_component_list), `./widgets/<name>` or `omfp:<name>`. Mounting an id again replaces it \
-                      and omfp_ui_remove { id } removes it. Pass data as `props` and change them later with \
+                      .omfp/widgets/<id>/index.tsx) or `widget`, a reference: `./widgets/<name>` (a bare name) or \
+                      `omfp:<name>`. Mounting an id again replaces it and omfp_ui_remove { id } removes it. Pass \
+                      data as `props` and change them later with \
                       omfp_ui_update. Keep the main slot, `[\"tabs\", {\"id\": \"main\"}, …\"omfp:chat\"]`, in every \
                       view: the files the user opens become its tabs (without it they float in a panel). Check new \
                       code with omfp_widget_check { name: \"<id>\" }; omfp://docs/widgets documents the SDK and kit.",
@@ -51,7 +45,7 @@ fn mount() -> AgentTool {
             "properties": {
                 "id": { "type": "string", "minLength": 1, "description": ID },
                 "code": { "type": "string", "description": "The component's source (TSX); exclusive with `widget`." },
-                "widget": { "type": "string", "minLength": 1, "description": "A widget reference: `user:<name>`, `./widgets/<name>` (a bare name), `omfp:<name>`; exclusive with `code`." },
+                "widget": { "type": "string", "minLength": 1, "description": "A widget reference: `./widgets/<name>` (a bare name), `omfp:<name>`; exclusive with `code`." },
                 "props": { "type": "object", "description": "The widget's props; `title` labels its tab or panel." },
                 "view": { "type": "string", "minLength": 1, "description": "The view (default: the default view); a new id creates a view showing only this widget." },
                 "place": {
@@ -96,8 +90,7 @@ fn remove() -> AgentTool {
         name: UI_REMOVE,
         label: "Remove UI",
         description: "Removes a widget mounted with omfp_ui_mount (or a floating panel) from the workspace's views; \
-                      a view left empty goes too. Its folder stays: save it with omfp_component_save first if it \
-                      should be reused.",
+                      a view left empty goes too. Its folder stays.",
         parameters: json!({
             "type": "object",
             "properties": {
@@ -108,43 +101,6 @@ fn remove() -> AgentTool {
             "additionalProperties": false
         }),
         run: run_remove,
-    }
-}
-
-fn save() -> AgentTool {
-    AgentTool {
-        name: COMPONENT_SAVE,
-        label: "Save component",
-        description: "Saves a widget to the user's component library (<data-dir>/widgets/<name>/), so any \
-                      workspace, thread or later session can mount it as `user:<name>`: a workspace widget \
-                      (`widget`, e.g. the folder of an inline mount) or `code`. Start the entry with a one-line \
-                      comment saying what it shows and which props it takes: omfp_component_list shows it. An \
-                      existing component is replaced only with `replace: true`.",
-        parameters: json!({
-            "type": "object",
-            "properties": {
-                "name": { "type": "string", "minLength": 1, "description": "The component's name (letters, digits, `_`, `-`, `.` not first)." },
-                "widget": { "type": "string", "minLength": 1, "description": "A widget of the workspace: `./widgets/<name>` or a bare name; exclusive with `code`." },
-                "code": { "type": "string", "description": "The component's source (TSX), saved as index.tsx; exclusive with `widget`." },
-                "replace": { "type": "boolean", "description": "Replace an existing component of that name." },
-                "workspaceId": { "type": "string", "minLength": 1, "description": WORKSPACE_ID }
-            },
-            "required": ["name"],
-            "additionalProperties": false
-        }),
-        run: run_save,
-    }
-}
-
-fn list() -> AgentTool {
-    AgentTool {
-        name: COMPONENT_LIST,
-        label: "List components",
-        description: "Lists the user's component library: each `user:<name>` with its files and description. \
-                      Mount one with omfp_ui_mount { widget: \"user:<name>\" }; read its source with the read tool \
-                      at the folder it names.",
-        parameters: json!({ "type": "object", "properties": {}, "additionalProperties": false }),
-        run: run_list,
     }
 }
 
@@ -310,81 +266,22 @@ fn quoted(ids: &[String]) -> String {
         .join(", ")
 }
 
-fn run_save(context: ToolContext, arguments: Map<String, Value>) -> ToolFuture {
-    Box::pin(async move {
-        let widget = text(&arguments, "widget")?;
-        let workspace_id = match widget {
-            Some(_) => Some(workspace(&context, &arguments)?),
-            None => text(&arguments, "workspaceId")?,
-        };
-        let params = SaveWidgetParams {
-            name: required(&arguments, "name")?,
-            workspace_id,
-            widget,
-            code: code(&arguments, "code")?,
-            replace: flag(&arguments, "replace")?,
-        };
-        let saved: WidgetSaved = run_call(&context, Call::WidgetsSave(params)).await?;
-        Ok(format!(
-            "Saved {0} to the user library; any workspace can mount it with omfp_ui_mount {{ widget: \"{0}\" }}.",
-            saved.reference
-        ))
-    })
-}
-
-fn run_list(context: ToolContext, _arguments: Map<String, Value>) -> ToolFuture {
-    Box::pin(async move {
-        let library: WidgetLibrary = run_call(&context, Call::WidgetsLibrary(Empty {})).await?;
-        if library.components.is_empty() {
-            return Ok(
-                "The user library is empty: save a widget with omfp_component_save.".to_owned(),
-            );
-        }
-        let mut answer = format!(
-            "{} component(s) in the user library:",
-            library.components.len()
-        );
-        for component in &library.components {
-            let entry = component.entry.as_deref().unwrap_or("no entry file");
-            let description = if component.description.is_empty() {
-                "(no description)"
-            } else {
-                component.description.as_str()
-            };
-            let _ = write!(
-                answer,
-                "\n- {} ({entry}; files: {}): {description}",
-                component.reference,
-                component.files.join(", ")
-            );
-        }
-        Ok(answer)
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
-    use std::sync::Arc;
 
     use tempfile::TempDir;
 
     use super::*;
     use crate::agent::FakeLauncher;
-    use crate::git::{FakeGit, Git};
-    use crate::paths::DataDir;
-    use crate::server::{Principal, Services};
-    use crate::store::Store;
-    use crate::supervisor::{Supervisor, SupervisorConfig};
-    use crate::threads::Threads;
-    use crate::widgets::Widgets;
-    use crate::workspaces::{NewWorkspace, Workspaces};
+    use crate::server::Principal;
+    use crate::test_support::Stack;
+    use crate::workspaces::NewWorkspace;
 
     struct Harness {
         _dir: TempDir,
         context: ToolContext,
         folder: PathBuf,
-        library: PathBuf,
     }
 
     async fn harness() -> Harness {
@@ -394,36 +291,9 @@ mod tests {
     /// A harness whose daemon serves the web bundle `static_dir` (its built-in widgets).
     async fn harness_with(static_dir: Option<&Path>) -> Harness {
         let dir = tempfile::tempdir().unwrap();
-        let data = DataDir::new(dir.path().join("data"));
-        std::fs::create_dir_all(data.root()).unwrap();
-        let root = dir.path().join("workspaces");
-        let store = Arc::new(Store::open(&data.db(), &root).unwrap());
-        let threads = Arc::new(Threads::new(Arc::clone(&store), data.clone()));
-        let workspaces = Arc::new(Workspaces::new(
-            Arc::clone(&store),
-            Arc::new(FakeGit::new()) as Arc<dyn Git>,
-            root,
-        ));
-        let library = data.widgets();
-        let widgets = Arc::new(Widgets::new(library.clone(), static_dir));
-        let supervisor = Supervisor::new(
-            Arc::new(FakeLauncher::new()),
-            Arc::clone(&threads),
-            Arc::clone(&workspaces),
-            data,
-            SupervisorConfig::new("omp"),
-        );
-        let view = workspaces.create(NewWorkspace::new()).unwrap();
-        let services = Services::new(
-            store,
-            threads,
-            workspaces,
-            supervisor,
-            widgets,
-            Arc::new(crate::jobs::declared::SystemClock),
-        )
-        .await
-        .unwrap();
+        let stack = Stack::with_launcher(dir.path(), &FakeLauncher::new());
+        let view = stack.workspaces.create(NewWorkspace::new()).unwrap();
+        let services = stack.services(static_dir).await;
         Harness {
             _dir: dir,
             context: ToolContext {
@@ -436,7 +306,6 @@ mod tests {
                 tool_call_id: None,
             },
             folder: view.workspace.path,
-            library,
         }
     }
 
@@ -631,17 +500,17 @@ mod tests {
         let answer = run(
             &harness,
             run_mount,
-            json!({ "id": "clock", "widget": "user:clock", "panel": true, "props": { "title": "Clock" } }),
+            json!({ "id": "clock", "widget": "./widgets/board", "panel": true, "props": { "title": "Clock" } }),
         )
         .await
         .unwrap();
         assert_eq!(
             answer,
-            "Mounted user:clock as \"clock\" as the floating panel \"clock\"; open windows show it now."
+            "Mounted ./widgets/board as \"clock\" as the floating panel \"clock\"; open windows show it now."
         );
         assert_eq!(
             manifest(&harness.folder)["panels"],
-            json!({ "clock": ["user:clock", { "instance": "clock", "title": "Clock" }] })
+            json!({ "clock": ["./widgets/board", { "instance": "clock", "title": "Clock" }] })
         );
 
         for (arguments, reason) in [
@@ -763,24 +632,14 @@ mod tests {
             .iter()
             .map(|tool| tool.name)
             .collect();
-        for name in [
-            UI_MOUNT,
-            UI_UPDATE,
-            UI_REMOVE,
-            COMPONENT_SAVE,
-            COMPONENT_LIST,
-        ] {
+        for name in [UI_MOUNT, UI_UPDATE, UI_REMOVE] {
             assert!(names.contains(&name), "{name} missing from {names:?}");
             assert!(
                 crate::widgets::DOCS.contains(name),
                 "{name} missing from the docs"
             );
         }
-        for needle in [
-            "## Mounts, panels and the library",
-            "\"panels\"",
-            "views.mount",
-        ] {
+        for needle in ["## Mounts and panels", "\"panels\"", "views.mount"] {
             assert!(
                 crate::widgets::DOCS.contains(needle),
                 "{needle} missing from the docs"
@@ -794,59 +653,5 @@ mod tests {
                 tool.name
             );
         }
-    }
-
-    // spec: AGT-064, AGT-065, AGT-066, PRT-083, PRT-084
-    #[tokio::test]
-    async fn components_are_saved_from_a_mount_or_code_and_listed() {
-        let harness = harness().await;
-        assert_eq!(
-            run(&harness, run_list, json!({})).await.unwrap(),
-            "The user library is empty: save a widget with omfp_component_save."
-        );
-        run(
-            &harness,
-            run_mount,
-            json!({ "id": "board", "code": "// A board; props: rows.\nexport default () => null;\n" }),
-        )
-        .await
-        .unwrap();
-        let answer = run(
-            &harness,
-            run_save,
-            json!({ "name": "board", "widget": "board" }),
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            answer,
-            "Saved user:board to the user library; any workspace can mount it with omfp_ui_mount { widget: \
-             \"user:board\" }."
-        );
-        let mut context = harness.context.clone();
-        context.workspace_id = None;
-        run_save(
-            context.clone(),
-            args(
-                json!({ "name": "clock", "code": "/* A clock. */\nexport default () => null;\n" }),
-            ),
-        )
-        .await
-        .unwrap();
-        let error = run_save(context, args(json!({ "name": "x", "widget": "board" })))
-            .await
-            .unwrap_err();
-        assert!(error.contains("`workspaceId` is required"), "{error}");
-        let error = run(&harness, run_save, json!({ "name": "clock", "code": "" }))
-            .await
-            .unwrap_err();
-        assert!(error.starts_with("conflict: "), "{error}");
-
-        assert_eq!(
-            run(&harness, run_list, json!({})).await.unwrap(),
-            "2 component(s) in the user library:\n- user:board (index.tsx; files: index.tsx): A board; props: \
-             rows.\n- user:clock (index.tsx; files: index.tsx): A clock."
-        );
-        assert!(harness.library.join("board/index.tsx").is_file());
     }
 }

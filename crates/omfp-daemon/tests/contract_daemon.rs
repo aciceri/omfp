@@ -7,15 +7,13 @@ mod common;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
-use clap::Parser;
 use client::{Client, Follower};
-use common::{Harness, system_prompt, workspace_roots};
+use common::{Harness, omp_daemon, system_prompt, workspace_roots};
 use fake_llm::{Reply, Step, ToolCall};
 use omfp_core::wire::{AgentMessage, ExtensionUiRequest, FormUiRequest, SelectUiRequest};
 use omfp_core::{ProcessState, ThreadState};
-use omfp_daemon::config::{Cli, Config};
-use omfp_daemon::{DaemonHandle, Ports, start_with};
-use omfp_testkit::{FAKE_MODEL, FAKE_PROVIDER, TempRepo, omp_bin};
+use omfp_daemon::DaemonHandle;
+use omfp_testkit::{FAKE_MODEL, FAKE_PROVIDER, TempRepo};
 use serde_json::{Value, json};
 use tempfile::TempDir;
 
@@ -25,38 +23,15 @@ struct Daemon {
 }
 
 impl Daemon {
-    /// A daemon without title generation: the fake LLM scripts every model call, and a title run would take a step
-    /// (DMN-073).
+    /// A daemon without title generation (DMN-073).
     async fn start(harness: &Harness) -> Self {
-        Self::launch(harness, &["--no-title-generation"]).await
+        let (handle, data) = omp_daemon(harness, &["--no-title-generation"]).await;
+        Self { handle, data }
     }
 
     /// A daemon that generates titles as `omfp daemon` does.
     async fn start_titling(harness: &Harness) -> Self {
-        Self::launch(harness, &[]).await
-    }
-
-    async fn launch(harness: &Harness, extra: &[&str]) -> Self {
-        let data = tempfile::tempdir().unwrap();
-        let omp = omp_bin();
-        let workspaces = data.path().join("workspaces");
-        let mut args = vec![
-            "daemon",
-            "--bind",
-            "127.0.0.1:0",
-            "--data-dir",
-            data.path().to_str().unwrap(),
-            "--workspaces-root",
-            workspaces.to_str().unwrap(),
-            "--omp-bin",
-            &omp,
-        ];
-        args.extend_from_slice(extra);
-        let cli = Cli::try_parse_from(args).unwrap();
-        let config = Config::from_cli(cli, None, None).unwrap();
-        let mut ports = Ports::resolve(&config).unwrap();
-        ports.omp_env = harness.env.prepare_omfp_profile(data.path()).unwrap();
-        let handle = start_with(config, ports).await.unwrap();
+        let (handle, data) = omp_daemon(harness, &[]).await;
         Self { handle, data }
     }
 

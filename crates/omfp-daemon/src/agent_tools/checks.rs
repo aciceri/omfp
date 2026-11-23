@@ -1,6 +1,6 @@
-//! The check tools (DMN-063, DMN-196): `omfp_widget_check` checks a widget, an init file or a TSX view against the
-//! daemon's compile and what the open windows report, and `omfp_views_errors` lists the errors windows report for
-//! init files and TSX views; registry tools, so threads (host tools) and MCP clients get the same.
+//! The check tools (DMN-063, DMN-196): `omfp_widget_check` checks a widget or an init file against the daemon's
+//! compile and what the open windows report, and `omfp_views_errors` lists the errors windows report for init files;
+//! registry tools, so threads (host tools) and MCP clients get the same.
 
 use serde_json::{Map, Value, json};
 
@@ -10,7 +10,7 @@ use crate::server::{CHECK_WAIT, authorize};
 
 /// Name of the tool that checks a widget (DMN-063).
 pub const WIDGET_CHECK: &str = "omfp_widget_check";
-/// Name of the tool that lists the init file and TSX view errors windows report (DMN-196).
+/// Name of the tool that lists the init file errors windows report (DMN-196).
 pub const VIEWS_ERRORS: &str = "omfp_views_errors";
 
 /// The tools of this module, for the registry.
@@ -24,20 +24,19 @@ fn widget_check() -> AgentTool {
     AgentTool {
         name: WIDGET_CHECK,
         label: "Check widget",
-        description: "Checks a workspace or user widget, an init file (`init`, `user:init`) or a TSX view \
-                      (`views/<file>`) without a browser: the daemon compiles it as it serves it, then reports what \
-                      every open omfp window showing the workspace shows of it (for a widget: render, import and \
-                      console errors, the rendered text, its jobs; for an init file or a TSX view: the runtime, \
-                      render and layout errors the windows report). A widget no window shows in its current view \
-                      is rendered out of sight in the most recently focused one, and the answer says which views \
-                      hold it. Use it after writing or changing one.",
+        description: "Checks a workspace widget or an init file (`init`, `user:init`) without a browser: the \
+                      daemon compiles it as it serves it, then reports what every open omfp window showing the \
+                      workspace shows of it (for a widget: render, import and console errors, the rendered text, its \
+                      jobs; for an init file: the errors the windows report running it and its views). A widget no \
+                      window shows in its current view is rendered out of sight in the most recently focused one, \
+                      and the answer says which views hold it. Use it after writing or changing one.",
         parameters: json!({
             "type": "object",
             "properties": {
                 "name": {
                     "type": "string",
                     "minLength": 1,
-                    "description": "A widget: its folder name (`tests` for .omfp/widgets/tests/), `./widgets/<name>` or `user:<name>`. An init file: `init` (or `.omfp/init.ts`, the workspace's) or `user:init` (the user's). A TSX view: `views/<file>` (or `.omfp/views/<file>`, e.g. `views/ops.tsx`)."
+                    "description": "A widget: its folder name (`tests` for .omfp/widgets/tests/) or `./widgets/<name>`. An init file: `init` (or `.omfp/init.ts`, the workspace's) or `user:init` (the user's)."
                 },
                 "workspaceId": { "type": "string", "minLength": 1, "description": WORKSPACE_ID }
             },
@@ -53,10 +52,9 @@ fn views_errors() -> AgentTool {
         name: VIEWS_ERRORS,
         label: "View errors",
         description: "Lists the errors the open omfp windows showing the workspace report for its init files (the \
-                      workspace's .omfp/init.ts and the user's init file) and TSX views (.omfp/views/): compile \
-                      errors, throws, render and layout errors, window by window, after they caught up with the \
-                      latest change. Use it after changing an init file or a TSX view; omfp_widget_check \
-                      { name: \"init\" } checks one file.",
+                      workspace's .omfp/init.ts and the user's init file): compile errors, throws, the layout errors \
+                      of the views they add, window by window, after they caught up with the latest change. Use it \
+                      after changing an init file; omfp_widget_check { name: \"init\" } checks one file.",
         parameters: json!({
             "type": "object",
             "properties": {

@@ -9,6 +9,7 @@ use clap::Parser;
 
 use crate::config_file::{ConfigFile, DaemonOptions};
 use crate::server::parse_origin;
+use crate::supervisor::{DEFAULT_EVENT_BUFFER, DEFAULT_IDLE_MINUTES, DEFAULT_MAX_PROCESSES};
 
 /// Default `--bind` (DMN-002).
 pub const DEFAULT_BIND: SocketAddr =
@@ -168,14 +169,17 @@ impl Config {
                 .map(|home| home.join(".omfp"))
                 .ok_or("cannot determine the workspaces root: set --workspaces-root or HOME")?,
         };
-        let max_processes = cli.max_processes.or(options.max_processes).unwrap_or(64);
+        let max_processes = cli
+            .max_processes
+            .or(options.max_processes)
+            .unwrap_or(DEFAULT_MAX_PROCESSES);
         if max_processes == 0 {
             return Err("--max-processes must be at least 1".into());
         }
         let idle_minutes = cli
             .idle_timeout_minutes
             .or(options.idle_timeout_minutes)
-            .unwrap_or(15);
+            .unwrap_or(DEFAULT_IDLE_MINUTES);
         let allowed_origins = if cli.allowed_origins.is_empty() {
             let file = cli
                 .config
@@ -198,7 +202,10 @@ impl Config {
                 || options.allow_omp_mismatch.unwrap_or(false),
             idle_timeout: Duration::from_secs(idle_minutes.saturating_mul(60)),
             max_processes,
-            event_buffer: cli.event_buffer.or(options.event_buffer).unwrap_or(2000),
+            event_buffer: cli
+                .event_buffer
+                .or(options.event_buffer)
+                .unwrap_or(DEFAULT_EVENT_BUFFER),
             allowed_origins,
             theme_file: cli.theme_file.or(options.theme_file),
             init_file: None,
@@ -207,6 +214,31 @@ impl Config {
             file_options,
             restarts_in_place: false,
         })
+    }
+
+    /// The config of a test daemon: `omfp daemon --bind 127.0.0.1:0 --data-dir <data_dir> --workspaces-root
+    /// <data_dir>/workspaces` followed by `extra`, without a config file or the environment's defaults.
+    ///
+    /// # Panics
+    ///
+    /// When `extra` is not a valid command line.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn loopback(data_dir: &Path, extra: &[&str]) -> Self {
+        let fixed: [std::ffi::OsString; 6] = [
+            "daemon".into(),
+            "--bind".into(),
+            "127.0.0.1:0".into(),
+            "--data-dir".into(),
+            data_dir.into(),
+            "--workspaces-root".into(),
+        ];
+        let args = fixed
+            .into_iter()
+            .chain([data_dir.join("workspaces").into()])
+            .chain(extra.iter().map(Into::into));
+        let cli = Cli::try_parse_from(args).unwrap_or_else(|error| panic!("{error}"));
+        Self::from_cli(cli, None, None).unwrap_or_else(|error| panic!("{error}"))
     }
 }
 

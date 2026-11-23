@@ -4,13 +4,10 @@
 mod client;
 mod common;
 
-use clap::Parser;
 use client::{Client, Follower};
-use common::Harness;
+use common::{Harness, omp_daemon};
 use fake_llm::{Reply, Step};
 use omfp_core::wire::QueuedMessageQueue;
-use omfp_daemon::config::{Cli, Config};
-use omfp_daemon::{DaemonHandle, Ports, start_with};
 use omfp_protocol::method::{
     AuthModels, ThreadAbort, ThreadCommands, ThreadFollowUp, ThreadModels, ThreadPrompt,
     ThreadQueuePromote, ThreadQueueRemove, ThreadSetModel, ThreadSetThinking, ThreadState,
@@ -20,32 +17,7 @@ use omfp_protocol::{
     CreateThreadParams, CreateWorkspaceParams, Empty, MessageParams, PromptParams,
     QueueMessageParams, SetModelParams, SetThinkingParams, ThreadRef, ThreadWorkspace,
 };
-use omfp_testkit::{FAKE_MODEL, FAKE_PROVIDER, omp_bin};
-use tempfile::TempDir;
-
-async fn start(harness: &Harness) -> (DaemonHandle, TempDir) {
-    let data = tempfile::tempdir().unwrap();
-    let omp = omp_bin();
-    let workspaces = data.path().join("workspaces");
-    let cli = Cli::try_parse_from([
-        "daemon",
-        "--bind",
-        "127.0.0.1:0",
-        "--data-dir",
-        data.path().to_str().unwrap(),
-        "--workspaces-root",
-        workspaces.to_str().unwrap(),
-        "--omp-bin",
-        &omp,
-        // The fake LLM scripts every model call; a title run would take a step (DMN-073).
-        "--no-title-generation",
-    ])
-    .unwrap();
-    let config = Config::from_cli(cli, None, None).unwrap();
-    let mut ports = Ports::resolve(&config).unwrap();
-    ports.omp_env = harness.env.prepare_omfp_profile(data.path()).unwrap();
-    (start_with(config, ports).await.unwrap(), data)
-}
+use omfp_testkit::{FAKE_MODEL, FAKE_PROVIDER};
 
 fn texts(messages: &[omfp_core::wire::RestoredQueuedMessage]) -> Vec<&str> {
     messages
@@ -73,7 +45,7 @@ async fn follow_up(client: &mut Client, view: &mut Follower, thread: &str, text:
 #[tokio::test(flavor = "multi_thread")]
 async fn omp_forwarded_methods_return_their_declared_results() {
     let harness = Harness::new(vec![Step::reply(Reply::text("slow answer")).gated()]).await;
-    let (daemon, _data) = start(&harness).await;
+    let (daemon, _data) = omp_daemon(&harness, &["--no-title-generation"]).await;
     let mut client = Client::hello(daemon.addr(), daemon.token().expose(), "test").await;
     let models = client.typed::<AuthModels>(Empty {}).await.models;
     let chosen = models

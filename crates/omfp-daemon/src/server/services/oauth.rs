@@ -5,7 +5,7 @@ use omfp_protocol::{ErrorBody, ErrorCode, OAuthCallbackParams, OAuthCallbackRela
 use serde_json::json;
 use tracing::info;
 
-use super::super::convert::{bad_request, supervisor_error};
+use super::super::convert::bad_request;
 use super::Services;
 use crate::oauth_relay::{self, Refusal, Relayed};
 
@@ -19,8 +19,7 @@ impl Services {
         let target = self
             .supervisor
             .oauth_target(params.thread_id.as_deref(), &params.url)
-            .await
-            .map_err(supervisor_error)?;
+            .await?;
         let (owner, relay) = target.map_err(|refusal| match refusal {
             Refusal::Invalid(message) => bad_request(message),
             Refusal::NotPending => ErrorBody::new(

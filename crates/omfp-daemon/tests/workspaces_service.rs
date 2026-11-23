@@ -11,13 +11,13 @@ use std::time::Duration;
 use omfp_core::{ThreadState, ToolRun, ToolStatus};
 use omfp_daemon::git::{FakeGit, Git, WorktreeBranch};
 use omfp_daemon::paths::DataDir;
-use omfp_daemon::store::{Provenance, Store, StoreError};
+use omfp_daemon::store::{Store, StoreError};
 use omfp_daemon::threads::{NewThread, Threads};
 use omfp_daemon::workspaces::{
     Discovered, MAX_CANDIDATES, NewWorkspace, RepoKind, RepoSource, WorkspaceError, WorkspaceView,
     Workspaces, named_files, scan,
 };
-use omfp_protocol::FileMatch;
+use omfp_protocol::{CreatedBy, FileMatch};
 use serde_json::json;
 use tempfile::TempDir;
 
@@ -41,7 +41,7 @@ fn env() -> Env {
     let workspaces_root = root.join("workspaces");
     let data = DataDir::new(root.join("data"));
     std::fs::create_dir_all(data.root()).unwrap();
-    let store = Arc::new(Store::open(&data.db(), &workspaces_root).unwrap());
+    let store = Arc::new(Store::open(&data.db()).unwrap());
     let git = Arc::new(FakeGit::new());
     let repo = fake_repo(&git, &root.join("repos").join("app"), "main");
     let workspaces = Workspaces::new(store.clone(), git.clone(), workspaces_root.clone());
@@ -152,7 +152,7 @@ fn a_new_workspace_is_a_folder_under_the_workspaces_root_with_the_default_views(
 
     assert_eq!(view.workspace.name, "Fix login!");
     assert_eq!(view.workspace.path, env.workspaces_root.join("fix-login"));
-    assert_eq!(view.workspace.created_by, Provenance::User);
+    assert_eq!(view.workspace.created_by, CreatedBy::User);
     assert!(view.workspace.path.is_dir());
     assert_eq!(
         std::fs::read_to_string(view.workspace.path.join(".omfp/views.json")).unwrap(),
@@ -376,19 +376,25 @@ fn workspace_provenance_is_recorded() {
     let view = env
         .workspaces
         .create(NewWorkspace {
-            created_by: Provenance::Thread(creator.id.clone()),
+            created_by: CreatedBy::Thread {
+                thread_id: creator.id.clone(),
+            },
             ..named("made by agent")
         })
         .unwrap();
     assert_eq!(
         env.workspaces.get(&view.workspace.id).unwrap().created_by,
-        Provenance::Thread(creator.id)
+        CreatedBy::Thread {
+            thread_id: creator.id,
+        }
     );
 
     let unknown = env
         .workspaces
         .create(NewWorkspace {
-            created_by: Provenance::Thread("01JUNKNOWNTHREAD0000000000".into()),
+            created_by: CreatedBy::Thread {
+                thread_id: "01JUNKNOWNTHREAD0000000000".into(),
+            },
             ..named("orphan")
         })
         .unwrap_err();

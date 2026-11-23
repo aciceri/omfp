@@ -19,9 +19,11 @@ pub use find::{MAX_CANDIDATES, named_files};
 pub use fingerprint::{Fingerprint, fingerprint};
 pub use scan::{Discovered, RepoKind, scan};
 
+use omfp_protocol::CreatedBy;
+
 use crate::git::{Git, GitError, GitStatus, WorktreeBranch};
 use crate::names::{is_entry_name, slugify, unique};
-use crate::store::{Provenance, SeenRepository, Store, StoreError, Workspace, new_id, now_ms};
+use crate::store::{SeenRepository, Store, StoreError, Workspace, new_id, now_ms};
 
 #[derive(Debug, thiserror::Error)]
 pub enum WorkspaceError {
@@ -91,7 +93,7 @@ pub struct NewWorkspace {
     pub fallback_name: Option<String>,
     /// A git repository to link into the new folder, as [`Workspaces::add_repo`] does with [`RepoSource::Link`].
     pub link: Option<PathBuf>,
-    pub created_by: Provenance,
+    pub created_by: CreatedBy,
 }
 
 impl NewWorkspace {
@@ -102,7 +104,7 @@ impl NewWorkspace {
             name: None,
             fallback_name: None,
             link: None,
-            created_by: Provenance::User,
+            created_by: CreatedBy::User,
         }
     }
 }

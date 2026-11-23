@@ -179,7 +179,7 @@ async fn explicit_media_names_resolve_unique_ambiguous_and_missing_files() -> an
     journey.until_focused("file-picker-input").await?;
     assert_eq!(
         journey
-            .attrs("[data-testid=file-picker-option]", "data-path")
+            .attrs("[data-testid=file-picker-option]", "data-id")
             .await?,
         [
             Some("media/tone.wav".to_owned()),

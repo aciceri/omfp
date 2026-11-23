@@ -43,6 +43,8 @@ use omfp_protocol::{
 use serde::Deserialize;
 use toml_edit::{DocumentMut, Item, Table};
 
+use crate::wire_name;
+
 /// The `[daemon]` table: every `omfp daemon` option under the flag's name in snake case. Paths may start with `~`.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -260,34 +262,28 @@ pub fn write_back(text: &str, update: &SetSettingsParams) -> Result<String, Stri
         .map_err(|error| format!("the config file is not valid TOML: {error}"))?;
     if let Some(ui) = &update.ui {
         let table = child(doc.as_table_mut(), "ui")?;
-        if let Some(density) = ui.density {
-            set(table, "density", density_name(density));
-        }
-        if let Some(size) = ui.font_size {
-            set(table, "font_size", i64::from(size));
-        }
-        if let Some(motion) = ui.motion {
-            set(table, "motion", motion_name(motion));
-        }
-        if let Some(notifications) = ui.notifications {
-            set(table, "notifications", notifications_name(notifications));
-        }
-        if let Some(theme) = ui.theme {
-            set(table, "theme", theme_name(theme));
-        }
-        if let Some(visible) = ui.show_xdev_notices {
-            set(table, "show_xdev_notices", visible);
-        }
-        if let Some(skin) = ui.skin {
-            set(table, "skin", skin_name(skin));
-        }
-        if let Some(voice) = ui.live_voice {
-            set(table, "live_voice", voice.as_str());
-        }
-        match ui.recent_threads {
-            Some(RecentThreads::Count(count)) => set(table, "recent_threads", i64::from(count)),
-            Some(RecentThreads::All(AllThreads::All)) => set(table, "recent_threads", "all"),
-            None => {}
+        let recent_threads: Option<toml_edit::Value> =
+            ui.recent_threads.map(|recent| match recent {
+                RecentThreads::Count(count) => i64::from(count).into(),
+                RecentThreads::All(AllThreads::All) => "all".into(),
+            });
+        for (key, value) in [
+            ("density", ui.density.map(named)),
+            ("font_size", ui.font_size.map(|size| i64::from(size).into())),
+            ("motion", ui.motion.map(named)),
+            ("notifications", ui.notifications.map(named)),
+            ("theme", ui.theme.map(named)),
+            (
+                "show_xdev_notices",
+                ui.show_xdev_notices.map(toml_edit::Value::from),
+            ),
+            ("skin", ui.skin.map(named)),
+            ("live_voice", ui.live_voice.map(named)),
+            ("recent_threads", recent_threads),
+        ] {
+            if let Some(value) = value {
+                set(table, key, value);
+            }
         }
         if let Some(fonts) = &ui.fonts {
             let table = child(table, "fonts")?;
@@ -345,52 +341,9 @@ fn set(table: &mut Table, key: &str, value: impl Into<toml_edit::Value>) {
     }
 }
 
-fn density_name(density: Density) -> &'static str {
-    match density {
-        Density::Compact => "compact",
-        Density::Normal => "normal",
-    }
-}
-
-fn motion_name(motion: Motion) -> &'static str {
-    match motion {
-        Motion::Full => "full",
-        Motion::Reduced => "reduced",
-        Motion::None => "none",
-    }
-}
-
-fn notifications_name(mode: NotificationMode) -> &'static str {
-    match mode {
-        NotificationMode::Background => "background",
-        NotificationMode::Always => "always",
-        NotificationMode::Never => "never",
-    }
-}
-
-fn skin_name(skin: Skin) -> &'static str {
-    match skin {
-        Skin::Crush => "crush",
-        Skin::Boring => "boring",
-    }
-}
-
-fn theme_name(theme: BuiltinTheme) -> &'static str {
-    match theme {
-        BuiltinTheme::Synth => "synth",
-        BuiltinTheme::Catppuccin => "catppuccin",
-        BuiltinTheme::Gruvbox => "gruvbox",
-        BuiltinTheme::TokyoNight => "tokyo-night",
-        BuiltinTheme::Nord => "nord",
-        BuiltinTheme::Solarized => "solarized",
-        BuiltinTheme::RosePine => "rose-pine",
-        BuiltinTheme::Graphite => "graphite",
-        BuiltinTheme::Paper => "paper",
-        BuiltinTheme::Clay => "clay",
-        BuiltinTheme::Primer => "primer",
-        BuiltinTheme::Accent => "accent",
-        BuiltinTheme::Matugen => "matugen",
-    }
+/// The config file's value of a `[ui]` enum: its protocol name.
+fn named(value: impl serde::Serialize) -> toml_edit::Value {
+    wire_name(value).into()
 }
 
 #[cfg(test)]

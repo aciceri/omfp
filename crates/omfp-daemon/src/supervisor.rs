@@ -9,13 +9,13 @@ use std::collections::HashMap;
 use std::ffi::OsString;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
+use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
 
 use omfp_core::{
     LiveOwner, NotifyRequest, OpenFileRequest, ProcessState, SessionInfo, ThreadEvent, ThreadState,
 };
-use omfp_protocol::RestartReason;
+use omfp_protocol::{RestartReason, TitleSource};
 use omp_rpc::{
     ExtensionUiRequest, FollowUpCommand, GetMessagesResult, LiveLevelsEvent, PromptCommand,
     RpcAgentEvent, RpcNotification, SetModelCommand, SteerCommand,
@@ -30,12 +30,12 @@ use crate::agent::{AgentLauncher, AgentProcess, OmpCall, PromptAdmission};
 use crate::conventions;
 use crate::event_log::EventLog;
 use crate::host_tools;
+use crate::lock;
 use crate::paths::DataDir;
-use crate::store::{Thread, TitleSource, new_id};
+use crate::store::{Thread, new_id};
 use crate::threads::{ThreadError, Threads};
 use crate::workspaces::{WorkspaceError, Workspaces};
 
-mod blobs;
 mod cards;
 mod dialogs;
 mod fork;
@@ -123,6 +123,13 @@ pub const NO_WINDOW: &str = "No omfp window shows this thread, so the file canno
 pub const NOTIFY_NO_WINDOW: &str = "No omfp window is open, so the user cannot be notified: say it in your reply \
                                     instead; they will read it when they open the thread.";
 
+/// Default `--max-processes`: concurrent omp processes (DMN-038).
+pub const DEFAULT_MAX_PROCESSES: usize = 64;
+/// Default `--idle-timeout-minutes` (DMN-034).
+pub const DEFAULT_IDLE_MINUTES: u64 = 15;
+/// Default `--event-buffer`: events kept per thread (DMN-041).
+pub const DEFAULT_EVENT_BUFFER: usize = 2000;
+
 /// Supervisor settings.
 #[derive(Debug, Clone)]
 pub struct SupervisorConfig {
@@ -153,16 +160,16 @@ pub struct SupervisorConfig {
 }
 
 impl SupervisorConfig {
-    /// Spec defaults: 64 processes, 15 minutes idle timeout, 2000 events kept.
+    /// The defaults of `omfp daemon`'s options.
     #[must_use]
     pub fn new(omp_program: impl Into<PathBuf>) -> Self {
         Self {
             omp_program: omp_program.into(),
             omp_env: Vec::new(),
             user_omp_env: Vec::new(),
-            max_processes: 64,
-            idle_timeout: Duration::from_mins(15),
-            event_capacity: 2000,
+            max_processes: DEFAULT_MAX_PROCESSES,
+            idle_timeout: Duration::from_mins(DEFAULT_IDLE_MINUTES),
+            event_capacity: DEFAULT_EVENT_BUFFER,
             live_buffer: 4096,
             agent_dir: None,
             title_generation: true,
@@ -310,10 +317,6 @@ impl Default for ThreadStatus {
             restart_pending: Vec::new(),
         }
     }
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // `EventLog` takes `fn(&mut S, &E)`.

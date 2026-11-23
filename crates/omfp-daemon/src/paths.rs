@@ -69,12 +69,6 @@ impl DataDir {
         self.thread(thread_id).join("commands.json")
     }
 
-    /// The user's widget library, `user:<name>` (AGT-023).
-    #[must_use]
-    pub fn widgets(&self) -> PathBuf {
-        self.root.join("widgets")
-    }
-
     /// The daemon's omp extension root, passed to every omp as `--extension` (DMN-107): `agents/` and the extension
     /// module `index.ts` (DMN-113).
     #[must_use]
@@ -89,7 +83,7 @@ impl DataDir {
     }
 
     /// The isolated omp user configuration and state (ARC-021), never imported from standalone omp except its provider
-    /// logins, copied on request (DMN-230), and the images omfp's older threads left in its blob store (DMN-385).
+    /// logins, copied on request (DMN-230).
     #[must_use]
     pub fn omp_profile(&self) -> PathBuf {
         self.root.join("omp-profile")
@@ -268,7 +262,6 @@ mod tests {
             data.thread_log("T1"),
             Path::new("/data/omfp/threads/T1/omp.log")
         );
-        assert_eq!(data.widgets(), Path::new("/data/omfp/widgets"));
         assert_eq!(data.omp_extension(), Path::new("/data/omfp/omp"));
         assert_eq!(
             data.widget_builder(),

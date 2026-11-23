@@ -4,23 +4,10 @@
 mod client;
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
-use clap::Parser;
-use client::Client;
-use omfp_daemon::agent::FakeLauncher;
-use omfp_daemon::config::{Cli, Config};
-use omfp_daemon::git::FakeGit;
-use omfp_daemon::{DaemonHandle, Ports, start_with};
+use client::{Client, TestDaemon as Daemon};
 use serde_json::json;
 use sha1::Digest as _;
-use tempfile::TempDir;
-
-struct Daemon {
-    handle: DaemonHandle,
-    git: Arc<FakeGit>,
-    _data: TempDir,
-}
 
 /// One HTTP response: status, headers (lowercase names) and body.
 struct Reply {
@@ -39,38 +26,6 @@ impl Reply {
 }
 
 impl Daemon {
-    async fn new() -> Self {
-        let data = tempfile::tempdir().unwrap();
-        let workspaces = data.path().join("workspaces");
-        let args = [
-            "daemon".to_owned(),
-            "--bind".into(),
-            "127.0.0.1:0".into(),
-            "--data-dir".into(),
-            data.path().display().to_string(),
-            "--workspaces-root".into(),
-            workspaces.display().to_string(),
-        ];
-        let config = Config::from_cli(Cli::try_parse_from(args).unwrap(), None, None).unwrap();
-        let git = Arc::new(FakeGit::new());
-        let ports = Ports {
-            launcher: Arc::new(FakeLauncher::new()),
-            git: Arc::clone(&git) as _,
-            omp_program: "omp".into(),
-            omp_version: omfp_core::OMP_VERSION.into(),
-            omp_env: Vec::new(),
-            user_omp_env: omfp_testkit::absent_standalone_omp(&data),
-            warnings: Vec::new(),
-            clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
-        };
-        let handle = start_with(config, ports).await.unwrap();
-        Self {
-            handle,
-            git,
-            _data: data,
-        }
-    }
-
     /// `system.hello`'s result.
     async fn hello(&self) -> serde_json::Value {
         let mut client = Client::connect(self.handle.addr()).await;
@@ -151,7 +106,7 @@ fn video_bytes() -> Vec<u8> {
 // spec: DMN-250, PRT-150
 #[tokio::test]
 async fn files_are_served_only_under_the_file_key_of_hello() {
-    let daemon = Daemon::new().await;
+    let daemon = Daemon::start(&[]).await;
     let hello = daemon.hello().await;
     let base = hello["fileBase"].as_str().unwrap().to_owned();
     let widget_base = hello["widgetBase"].as_str().unwrap();
@@ -189,7 +144,7 @@ async fn files_are_served_only_under_the_file_key_of_hello() {
 // spec: DMN-250, DMN-312, DMN-314, PRT-197
 #[tokio::test]
 async fn paths_resolve_as_read_file_does_and_only_absolute_ones_leave_the_workspace() {
-    let daemon = Daemon::new().await;
+    let daemon = Daemon::start(&[]).await;
     let base = daemon.hello().await["fileBase"]
         .as_str()
         .unwrap()
@@ -257,7 +212,7 @@ async fn paths_resolve_as_read_file_does_and_only_absolute_ones_leave_the_worksp
 // spec: DMN-311, DMN-314
 #[tokio::test]
 async fn rev_head_serves_an_outside_file_at_head_of_the_working_tree_holding_it() {
-    let daemon = Daemon::new().await;
+    let daemon = Daemon::start(&[]).await;
     let base = daemon.hello().await["fileBase"]
         .as_str()
         .unwrap()
@@ -288,7 +243,7 @@ async fn rev_head_serves_an_outside_file_at_head_of_the_working_tree_holding_it(
 // spec: DMN-252
 #[tokio::test]
 async fn one_byte_range_is_a_partial_response_and_the_whole_file_streams() {
-    let daemon = Daemon::new().await;
+    let daemon = Daemon::start(&[]).await;
     let base = daemon.hello().await["fileBase"]
         .as_str()
         .unwrap()
@@ -339,7 +294,7 @@ async fn one_byte_range_is_a_partial_response_and_the_whole_file_streams() {
 // spec: DMN-253
 #[tokio::test]
 async fn validators_answer_a_current_copy_with_not_modified() {
-    let daemon = Daemon::new().await;
+    let daemon = Daemon::start(&[]).await;
     let base = daemon.hello().await["fileBase"]
         .as_str()
         .unwrap()
@@ -386,7 +341,7 @@ async fn validators_answer_a_current_copy_with_not_modified() {
 // spec: DMN-251, DMN-254
 #[tokio::test]
 async fn files_have_their_type_and_never_run_in_the_daemons_origin() {
-    let daemon = Daemon::new().await;
+    let daemon = Daemon::start(&[]).await;
     let base = daemon.hello().await["fileBase"]
         .as_str()
         .unwrap()
@@ -418,7 +373,7 @@ async fn files_have_their_type_and_never_run_in_the_daemons_origin() {
 // spec: DMN-255
 #[tokio::test]
 async fn rev_head_serves_the_bytes_head_has_with_their_hash_as_validator() {
-    let daemon = Daemon::new().await;
+    let daemon = Daemon::start(&[]).await;
     let base = daemon.hello().await["fileBase"]
         .as_str()
         .unwrap()

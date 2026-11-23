@@ -183,7 +183,7 @@ export type CardAnswerParams = {
 
 /** `windows.check_widget` params (PRT-124). */
 export type CheckWidgetParams = {
-  /** The widget reference: `./widgets/<name>` or `user:<name>`. */
+  /** The widget reference: `./widgets/<name>`. */
   widget: string;
   /** The window; default: the most recently focused window showing the workspace. */
   windowId?: number | null;
@@ -240,7 +240,7 @@ export type ContextUsage = {
 export type CopyWidgetParams = {
   /** Folder name in `.omfp/widgets/`; default: the widget's own name. */
   name?: string | null;
-  /** `omfp:<name>` (a built-in) or `user:<name>` (the user library). */
+  /** `omfp:<name>`, a built-in. */
   widget: string;
   workspaceId: string;
 };
@@ -421,18 +421,10 @@ export type FileDiff = {
   truncated: boolean;
 };
 
-/** What kind of file a [`FileErrorReport`] is about (PRT-115). */
-export type FileErrorKind =
-  /** An init file: the user's or the workspace's `.omfp/init.ts`. */
-  | "init"
-  /** A TSX view file of the workspace's `.omfp/views/`. */
-  | "view";
-
-/** One runtime error a window shows of an init file or a TSX view (PRT-115). */
+/** One runtime error a window shows of an init file (PRT-115). */
 export type FileErrorReport = {
-  /** `user` for the user's init file, else the workspace-relative path (`.omfp/init.ts`, `.omfp/views/ops.tsx`). */
+  /** `user` for the user's init file, else `.omfp/init.ts`. */
   file: string;
-  kind: FileErrorKind;
   /** The error as the window shows it: a compile error with `file:line:column`, a throw, a render or layout error. */
   message: string;
 };
@@ -872,21 +864,6 @@ export type LabelParams = {
   threadId: string;
 };
 
-/** A component of the user library (PRT-084, AGT-065). */
-export type LibraryComponent = {
-  /** The entry's leading comment, whitespace collapsed; empty without one. */
-  description: string;
-  /** The entry file; `null` when the folder has none. */
-  entry?: string | null;
-  /** The folder's files, relative, in path order. */
-  files: string[];
-  name: string;
-  /** `user:<name>`. */
-  reference: string;
-  /** The folder's version (DMN-084). */
-  version: string;
-};
-
 /** `activity.list` params (PRT-086). */
 export type ListActivityParams = {
   /** Only entries with a greater `seq` (newer ones). */
@@ -1146,7 +1123,7 @@ export type MountParams = {
   props?: Record<string, unknown> | null;
   /** The view to mount into (default: the default view); a new id creates a view showing only the widget. */
   view?: string | null;
-  /** A widget reference (`./widgets/<name>`, `user:<name>`, `omfp:<name>`); a bare name means `./widgets/<name>`. */
+  /** A widget reference (`./widgets/<name>`, `omfp:<name>`); a bare name means `./widgets/<name>`. */
   widget?: string | null;
   workspaceId: string;
 };
@@ -1465,7 +1442,7 @@ export type RepoSuggestions = {
 
 /** `widgets.report` params (PRT-043, AGT-026): what this connection's window shows of a workspace's own widgets. */
 export type ReportWidgetsParams = {
-  /** The runtime errors the window shows of init files and TSX views (PRT-115); absent means none. */
+  /** The runtime errors the window shows of init files (PRT-115); absent means none. */
   fileErrors?: FileErrorReport[];
   /** The position of `views/<workspaceId>` the window rendered; `null` before that topic arrived. */
   views?: Position | null;
@@ -1547,19 +1524,6 @@ export type RunTrigger =
   | "missed"
   /** A transient run of `jobs.start`. */
   | "start";
-
-/** `widgets.save` params (PRT-083, AGT-064): exactly one of `widget` (with `workspaceId`) and `code`. */
-export type SaveWidgetParams = {
-  /** The component's source (TSX), saved as its `index.tsx`. */
-  code?: string | null;
-  /** The component's name in the user library (a widget name). */
-  name: string;
-  /** Replace an existing component of that name. */
-  replace?: boolean;
-  /** A widget of that workspace: `./widgets/<name>` or a bare name. */
-  widget?: string | null;
-  workspaceId?: string | null;
-};
 
 /** `threads.search` params (DMN-076). */
 export type SearchThreadsParams = {
@@ -2084,7 +2048,7 @@ export type UpdateWorkspaceParams = {
 };
 
 /**
- * `views.errors` result (PRT-116): the latest init file and TSX view errors of every window whose
+ * `views.errors` result (PRT-116): the latest init file errors of every window whose
  * report is about the workspace, by connection.
  */
 export type ViewErrors = {
@@ -2130,14 +2094,6 @@ export type ViewsEvent =
     init?: string | null;
     kind: "views_init";
   }
-  /**
-   * A file of the workspace's `.omfp/views/` (TSX views) appeared, changed or went away, or the
-   * folder did (PRT-096): replaces `viewFiles`.
-   */
-  | {
-    kind: "views_files";
-    viewFiles?: string | null;
-  }
   /** A widget stored a value (`null`: removed the key, DMN-086). */
   | {
     instance: string;
@@ -2172,12 +2128,7 @@ export type ViewsState = {
   manifest?: unknown;
   /** What widgets stored with `useStored` (DMN-086): instance → key → value. */
   stored: Record<string, Record<string, unknown>>;
-  /**
-   * The version of `.omfp/views/` (TSX views, PRT-096): a hash of its files' paths, sizes and
-   * modification times (`folders::version`); `null` without the folder.
-   */
-  viewFiles?: string | null;
-  /** Widget folders of the workspace, then of the user library, each by name. */
+  /** Widget folders of the workspace, by name. */
   widgets: WidgetInfo[];
 };
 
@@ -2227,11 +2178,6 @@ export type WidgetJobReport = {
   tail: string[];
 };
 
-/** `widgets.library` result (PRT-084): the user library by name. */
-export type WidgetLibrary = {
-  components: LibraryComponent[];
-};
-
 /** One widget instance as a window shows it (PRT-043). */
 export type WidgetReport = {
   /** Console errors and uncaught errors whose stack names the widget's module, oldest first. */
@@ -2244,7 +2190,7 @@ export type WidgetReport = {
   jobs: WidgetJobReport[];
   /** The widget folder's name. */
   name: string;
-  /** The view node's reference (`./widgets/tests`, `user:clock`, or `omfp:<name>` overridden by the workspace). */
+  /** The view node's reference (`./widgets/tests`, or `omfp:<name>` overridden by the workspace). */
   reference: string;
   source: WidgetSource;
   state: WidgetReportState;
@@ -2257,19 +2203,8 @@ export type WidgetReport = {
 /** Where a widget instance stands in a window (PRT-043). */
 export type WidgetReportState = "loading" | "rendered" | "compile_error" | "load_error" | "render_error";
 
-/** `widgets.save` result (PRT-083). */
-export type WidgetSaved = {
-  name: string;
-  /** `user:<name>`. */
-  reference: string;
-};
-
-/** Where a widget folder lives (AGT-012, AGT-023). */
-export type WidgetSource =
-  /** `<workspace>/.omfp/widgets/<name>/`, referenced as `./widgets/<name>`. */
-  | "workspace"
-  /** `<data-dir>/widgets/<name>/`, referenced as `user:<name>`. */
-  | "user";
+/** Where a widget folder lives: `<workspace>/.omfp/widgets/<name>/`, referenced as `./widgets/<name>` (AGT-012). */
+export type WidgetSource = "workspace";
 
 /** A window's answer to a [`WindowRequest`] (PRT-124). */
 export type WindowAnswer =
@@ -2318,7 +2253,7 @@ export type WindowCommand = {
   widget?: string | null;
 };
 
-/** The init file and TSX view errors one window reports (PRT-116). */
+/** The init file errors one window reports (PRT-116). */
 export type WindowFileErrors = {
   /** The `client` of the window's `system.hello`. */
   client: string;
@@ -2416,7 +2351,7 @@ export type WindowState = {
   client: string;
   commands: WindowCommand[];
   defaultView?: string | null;
-  /** The errors it shows of init files and TSX views (PRT-115). */
+  /** The errors it shows of init files (PRT-115). */
   fileErrors: FileErrorReport[];
   focused: boolean;
   threadId?: string | null;
@@ -2432,7 +2367,7 @@ export type WindowSummary = {
   activeView?: string | null;
   /** The `client` of its `system.hello`. */
   client: string;
-  /** How many errors it shows: init files and TSX views (`fileErrors`) and widgets in an error state. */
+  /** How many errors it shows: init files (`fileErrors`) and widgets in an error state. */
   errors: number;
   focused: boolean;
   threadId?: string | null;
@@ -2444,13 +2379,11 @@ export type WindowSummary = {
 
 /** One view of a window (PRT-122). */
 export type WindowView = {
-  /** The TSX file (`./views/<name>.tsx`) the view renders; `null` for a written layout. */
-  file?: string | null;
   id: string;
   source: ViewSource;
   title: string;
-  /** The widget references of its layout; `null` for a TSX view this window has not rendered. */
-  widgets?: string[] | null;
+  /** The widget references of its layout. */
+  widgets: string[];
 };
 
 /** A folder threads work in; its repositories are its top-level entries (D-11, DMN-020). */
@@ -2662,8 +2595,6 @@ export interface Methods {
   "views.mount": { params: MountParams; result: Mounted };
   "views.mount_update": { params: MountUpdateParams; result: Mounted };
   "views.unmount": { params: UnmountParams; result: Unmounted };
-  "widgets.save": { params: SaveWidgetParams; result: WidgetSaved };
-  "widgets.library": { params: Empty; result: WidgetLibrary };
   "activity.list": { params: ListActivityParams; result: ActivityPage };
   "prompts.history": { params: PromptHistoryParams; result: PromptHistory };
   "prompts.predict_word": { params: PredictWordParams; result: PredictedWord };
@@ -2784,8 +2715,6 @@ export const METHODS: readonly MethodName[] = [
   "views.mount",
   "views.mount_update",
   "views.unmount",
-  "widgets.save",
-  "widgets.library",
   "activity.list",
   "prompts.history",
   "prompts.predict_word",

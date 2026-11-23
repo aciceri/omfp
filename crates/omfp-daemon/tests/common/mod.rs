@@ -1,5 +1,6 @@
 //! Shared helpers for the daemon's contract tests (L3): an isolated omp wired to the fake LLM, laid out like a
-//! thread, and a recorder turning omp's frames into reducer inputs (fixtures, TST-012).
+//! thread, the real daemon on it ([`omp_daemon`]), and a recorder turning omp's frames into reducer inputs (fixtures,
+//! TST-012).
 
 #![allow(dead_code)] // Each test binary uses a different subset.
 
@@ -10,7 +11,9 @@ use std::time::{Duration, Instant};
 
 use fake_llm::{FakeLlm, Script, Step};
 use omfp_core::ThreadEvent;
+use omfp_daemon::config::Config;
 use omfp_daemon::omp::{LaunchSpec, OmpProcess, Startup, startup_events, thread_event};
+use omfp_daemon::{DaemonHandle, Ports, start_with};
 use omfp_testkit::{
     DenyProxy, FAKE_MODEL, FAKE_PROVIDER, KNOWN_DISCOVERY_HOSTS, OmpEnv, normalize_frame, omp_bin,
     require_pinned_omp,
@@ -86,6 +89,32 @@ impl Harness {
             self.env.root().to_string_lossy().into_owned(),
         ]
     }
+}
+
+/// The real daemon over a new data directory: the real ports, with the pinned omp isolated by `harness`'s environment
+/// and `extra` daemon arguments (e.g. `--no-title-generation`: the fake LLM scripts every model call, and a title
+/// run would take one, DMN-073).
+pub async fn omp_daemon(harness: &Harness, extra: &[&str]) -> (DaemonHandle, TempDir) {
+    omp_daemon_with(harness, extra, |_| {}).await
+}
+
+/// [`omp_daemon`], its ports changed by `adjust` first.
+pub async fn omp_daemon_with(
+    harness: &Harness,
+    extra: &[&str],
+    adjust: impl FnOnce(&mut Ports),
+) -> (DaemonHandle, TempDir) {
+    let data = tempfile::tempdir().unwrap();
+    let omp = omp_bin();
+    let args: Vec<&str> = ["--omp-bin", omp.as_str()]
+        .into_iter()
+        .chain(extra.iter().copied())
+        .collect();
+    let config = Config::loopback(data.path(), &args);
+    let mut ports = Ports::resolve(&config).unwrap();
+    ports.omp_env = harness.env.prepare_omfp_profile(data.path()).unwrap();
+    adjust(&mut ports);
+    (start_with(config, ports).await.unwrap(), data)
 }
 
 pub fn prompt(text: &str) -> PromptCommand {

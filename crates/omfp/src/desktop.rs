@@ -709,7 +709,7 @@ mod tests {
 
     use clap::Parser as _;
     use omfp_daemon::agent::FakeLauncher;
-    use omfp_daemon::config::{Cli, Config};
+    use omfp_daemon::config::Config;
     use omfp_daemon::git::FakeGit;
     use omfp_daemon::{Ports, start_with};
     use omfp_protocol::Empty;
@@ -1076,27 +1076,12 @@ mod tests {
     #[tokio::test]
     async fn the_theme_file_follows_to_the_connected_daemon() {
         let dir = tempfile::tempdir().unwrap();
-        let cli = Cli::try_parse_from([
-            "daemon",
-            "--bind",
-            "127.0.0.1:0",
-            "--data-dir",
-            dir.path().join("data").to_str().unwrap(),
-            "--workspaces-root",
-            dir.path().join("workspaces").to_str().unwrap(),
-        ])
-        .unwrap();
-        let ports = Ports {
-            launcher: Arc::new(FakeLauncher::new()),
-            git: Arc::new(FakeGit::new()),
-            omp_program: "omp".into(),
-            omp_version: omfp_core::OMP_VERSION.into(),
-            omp_env: Vec::new(),
-            user_omp_env: Vec::new(),
-            warnings: Vec::new(),
-            clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
-        };
-        let daemon = start_with(Config::from_cli(cli, None, None).unwrap(), ports)
+        let ports = Ports::fake(
+            Arc::new(FakeLauncher::new()),
+            Arc::new(FakeGit::new()),
+            Vec::new(),
+        );
+        let daemon = start_with(Config::loopback(&dir.path().join("data"), &[]), ports)
             .await
             .unwrap();
         let target = Target {

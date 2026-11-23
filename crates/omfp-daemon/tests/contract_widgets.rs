@@ -5,55 +5,12 @@
 mod client;
 mod common;
 
-use clap::Parser;
 use client::{Client, Follower};
-use common::Harness;
+use common::{Harness, omp_daemon};
 use fake_llm::{Matcher, Reply, Step, ToolCall};
-use omfp_daemon::config::{Cli, Config};
 use omfp_daemon::widgets::{DOCS, SCHEMA_URL};
-use omfp_daemon::{DaemonHandle, Ports, start_with};
-use omfp_testkit::{FAKE_MODEL, FAKE_PROVIDER, omp_bin};
+use omfp_testkit::{FAKE_MODEL, FAKE_PROVIDER};
 use serde_json::{Value, json};
-use tempfile::TempDir;
-
-struct Daemon {
-    handle: DaemonHandle,
-    _data: TempDir,
-}
-
-impl Daemon {
-    /// A daemon on the real ports with omp isolated by `harness`, without title generation (DMN-073).
-    async fn start(harness: &Harness) -> Self {
-        let data = tempfile::tempdir().unwrap();
-        let omp = omp_bin();
-        let workspaces = data.path().join("workspaces");
-        let cli = Cli::try_parse_from([
-            "daemon",
-            "--bind",
-            "127.0.0.1:0",
-            "--data-dir",
-            data.path().to_str().unwrap(),
-            "--workspaces-root",
-            workspaces.to_str().unwrap(),
-            "--omp-bin",
-            &omp,
-            "--no-title-generation",
-        ])
-        .unwrap();
-        let config = Config::from_cli(cli, None, None).unwrap();
-        let mut ports = Ports::resolve(&config).unwrap();
-        ports.omp_env = harness.env.prepare_omfp_profile(data.path()).unwrap();
-        let handle = start_with(config, ports).await.unwrap();
-        Self {
-            handle,
-            _data: data,
-        }
-    }
-
-    async fn client(&self) -> Client {
-        Client::hello(self.handle.addr(), self.handle.token().expose(), "test").await
-    }
-}
 
 /// A new thread on the fake model, followed from its snapshot.
 async fn thread(client: &mut Client) -> (String, Follower) {
@@ -130,8 +87,8 @@ async fn the_agent_reads_the_widget_docs_and_the_views_schema_from_omfp_urls() {
         Step::reply(Reply::text("Read them.")),
     ])
     .await;
-    let daemon = Daemon::start(&harness).await;
-    let mut client = daemon.client().await;
+    let (daemon, _data) = omp_daemon(&harness, &["--no-title-generation"]).await;
+    let mut client = Client::hello(daemon.addr(), daemon.token().expose(), "test").await;
     let (thread, mut view) = thread(&mut client).await;
 
     let prompt_id = prompt(&mut client, &thread, "learn widgets").await;
@@ -180,8 +137,8 @@ async fn omp_streams_the_bash_output_while_the_command_runs() {
         Step::reply(Reply::text("Both lines.")),
     ])
     .await;
-    let daemon = Daemon::start(&harness).await;
-    let mut client = daemon.client().await;
+    let (daemon, _data) = omp_daemon(&harness, &["--no-title-generation"]).await;
+    let mut client = Client::hello(daemon.addr(), daemon.token().expose(), "test").await;
     let (thread, mut view) = thread(&mut client).await;
 
     let prompt_id = prompt(&mut client, &thread, "run it").await;
@@ -288,8 +245,8 @@ fn delegation_script() -> Vec<Step> {
 async fn the_main_agent_delegates_a_widget_to_the_widget_builder_which_checks_it_through_the_daemon()
  {
     let harness = Harness::new(delegation_script()).await;
-    let daemon = Daemon::start(&harness).await;
-    let mut client = daemon.client().await;
+    let (daemon, _data) = omp_daemon(&harness, &["--no-title-generation"]).await;
+    let mut client = Client::hello(daemon.addr(), daemon.token().expose(), "test").await;
     let (thread, mut view) = thread(&mut client).await;
 
     prompt(&mut client, &thread, "show a clock").await;

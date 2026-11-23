@@ -8,11 +8,10 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Command;
 
-use clap::Parser;
 use client::{Client, Follower};
 use common::{Harness, system_prompt};
 use fake_llm::{Reply, Step, ToolCall};
-use omfp_daemon::config::{Cli, Config};
+use omfp_daemon::config::Config;
 use omfp_daemon::paths::DataDir;
 use omfp_daemon::{Ports, omp_profile, start_with};
 use serde_json::{Value, json};
@@ -145,20 +144,8 @@ async fn fresh_profile_never_imports_standalone_state_and_mutations_are_bidirect
     let xdg_before = snapshot(&standalone_xdg);
 
     let data = tempfile::tempdir().unwrap();
-    let workspaces = data.path().join("workspaces");
     disable_keyless_providers(data.path());
-    let cli = Cli::try_parse_from([
-        "daemon",
-        "--bind",
-        "127.0.0.1:0",
-        "--data-dir",
-        data.path().to_str().unwrap(),
-        "--workspaces-root",
-        workspaces.to_str().unwrap(),
-        "--no-title-generation",
-    ])
-    .unwrap();
-    let config = Config::from_cli(cli, None, None).unwrap();
+    let config = Config::loopback(data.path(), &["--no-title-generation"]);
     let mut ports = Ports::resolve(&config).unwrap();
     ports.omp_env.clone_from(&standalone_env);
     ports
@@ -407,20 +394,8 @@ async fn copy_scenario(store: StandaloneStore) {
     let before = untouched(&harness);
 
     let data = tempfile::tempdir().unwrap();
-    let workspaces = data.path().join("workspaces");
     disable_keyless_providers(data.path());
-    let cli = Cli::try_parse_from([
-        "daemon",
-        "--bind",
-        "127.0.0.1:0",
-        "--data-dir",
-        data.path().to_str().unwrap(),
-        "--workspaces-root",
-        workspaces.to_str().unwrap(),
-        "--no-title-generation",
-    ])
-    .unwrap();
-    let config = Config::from_cli(cli, None, None).unwrap();
+    let config = Config::loopback(data.path(), &["--no-title-generation"]);
     let mut ports = Ports::resolve(&config).unwrap();
     ports.omp_env.clone_from(&standalone_env);
     ports.user_omp_env.clone_from(&standalone_env);

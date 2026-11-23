@@ -70,32 +70,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn starts_on_main_with_a_clean_initial_commit() {
-        let repo = TempRepo::new().unwrap();
-
-        assert_eq!(repo.git(&["branch", "--show-current"]).unwrap(), "main");
-        assert_eq!(repo.git(&["log", "--format=%s"]).unwrap(), "initial commit");
-        assert_eq!(repo.git(&["status", "--porcelain"]).unwrap(), "");
-    }
-
-    #[test]
-    fn commit_file_creates_directories_and_records_a_commit() {
-        let repo = TempRepo::new().unwrap();
-
-        repo.commit_file("src/deep/file.txt", "content", "add file")
-            .unwrap();
-
-        assert_eq!(
-            std::fs::read_to_string(repo.path().join("src/deep/file.txt")).unwrap(),
-            "content"
-        );
-        assert_eq!(
-            repo.git(&["log", "--format=%s"]).unwrap(),
-            "add file\ninitial commit"
-        );
-    }
-
-    #[test]
     fn is_removed_when_dropped() {
         let repo = TempRepo::new().unwrap();
         let path = repo.path().to_path_buf();

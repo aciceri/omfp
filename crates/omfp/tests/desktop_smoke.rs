@@ -644,10 +644,9 @@ fn a_second_window_reuses_the_background_daemon_that_outlives_the_first() {
 )]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_restored_audio_tab_keeps_the_desktop_responsive_and_can_be_closed() {
-    use clap::Parser as _;
     use omfp::remote::{Connection, Target};
     use omfp_daemon::agent::FakeLauncher;
-    use omfp_daemon::config::{Cli, Config};
+    use omfp_daemon::config::Config;
     use omfp_daemon::git::FakeGit;
     use omfp_daemon::{Ports, start_with};
     use omfp_protocol::method::{ThreadGit, ThreadsCreate, WorkspacesRescan};
@@ -658,7 +657,6 @@ async fn a_restored_audio_tab_keeps_the_desktop_responsive_and_can_be_closed() {
 
     let dir = tempfile::tempdir().unwrap();
     let data = dir.path().join("data");
-    let workspaces = dir.path().join("workspaces");
     let init = dir.path().join("init.ts");
     std::fs::write(&init, r#"
 export default function init(omfp) {
@@ -690,35 +688,15 @@ export default function init(omfp) {
   return () => clearInterval(tick);
 }
 "#).unwrap();
-    let cli = Cli::try_parse_from([
-        "daemon",
-        "--bind",
-        "127.0.0.1:0",
-        "--data-dir",
-        data.to_str().unwrap(),
-        "--workspaces-root",
-        workspaces.to_str().unwrap(),
-        "--static-dir",
-        web_bundle().to_str().unwrap(),
-    ])
-    .unwrap();
-    let mut config = Config::from_cli(cli, None, None).unwrap();
+    let mut config = Config::loopback(&data, &[]);
+    config.static_dir = Some(web_bundle());
     config.init_file = Some(init);
-    let handle = start_with(
-        config,
-        Ports {
-            launcher: Arc::new(FakeLauncher::new()),
-            git: Arc::new(FakeGit::new()),
-            omp_program: "omp".into(),
-            omp_version: omfp_core::OMP_VERSION.into(),
-            omp_env: Vec::new(),
-            user_omp_env: Vec::new(),
-            warnings: Vec::new(),
-            clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
-        },
-    )
-    .await
-    .unwrap();
+    let ports = Ports::fake(
+        Arc::new(FakeLauncher::new()),
+        Arc::new(FakeGit::new()),
+        Vec::new(),
+    );
+    let handle = start_with(config, ports).await.unwrap();
     let mut client = Connection::open(&Target {
         url: format!("ws://{}/api/ws", handle.addr()),
         token: handle.token().expose().to_owned(),
@@ -864,10 +842,9 @@ const VIEWER_BATCH: usize = 8;
 )]
 #[tokio::test(flavor = "multi_thread")]
 async fn desktop_file_viewers_open_restore_and_close() {
-    use clap::Parser as _;
     use omfp::remote::{Connection, Target};
     use omfp_daemon::agent::FakeLauncher;
-    use omfp_daemon::config::{Cli, Config};
+    use omfp_daemon::config::Config;
     use omfp_daemon::git::FakeGit;
     use omfp_daemon::{Ports, start_with};
     use omfp_protocol::method::{ThreadGit, ThreadsCreate, WorkspacesRescan};
@@ -880,39 +857,14 @@ async fn desktop_file_viewers_open_restore_and_close() {
     let data = dir.path().join("data");
     #[cfg(target_os = "macos")]
     let _web_store = RetainedWebStore(data.clone());
-    let workspaces = dir.path().join("workspaces");
     let init = dir.path().join("init.ts");
     std::fs::write(&init, include_str!("fixtures/desktop-viewers/probe.ts")).unwrap();
-    let cli = Cli::try_parse_from([
-        "daemon",
-        "--bind",
-        "127.0.0.1:0",
-        "--data-dir",
-        data.to_str().unwrap(),
-        "--workspaces-root",
-        workspaces.to_str().unwrap(),
-        "--static-dir",
-        web_bundle().to_str().unwrap(),
-    ])
-    .unwrap();
-    let mut config = Config::from_cli(cli, None, None).unwrap();
+    let mut config = Config::loopback(&data, &[]);
+    config.static_dir = Some(web_bundle());
     config.init_file = Some(init);
     let git = Arc::new(FakeGit::new());
-    let handle = start_with(
-        config,
-        Ports {
-            launcher: Arc::new(FakeLauncher::new()),
-            git: git.clone(),
-            omp_program: "omp".into(),
-            omp_version: omfp_core::OMP_VERSION.into(),
-            omp_env: Vec::new(),
-            user_omp_env: Vec::new(),
-            warnings: Vec::new(),
-            clock: Arc::new(omfp_daemon::jobs::declared::SystemClock),
-        },
-    )
-    .await
-    .unwrap();
+    let ports = Ports::fake(Arc::new(FakeLauncher::new()), git.clone(), Vec::new());
+    let handle = start_with(config, ports).await.unwrap();
     let mut client = Connection::open(&Target {
         url: format!("ws://{}/api/ws", handle.addr()),
         token: handle.token().expose().to_owned(),

@@ -71,7 +71,7 @@ fn resources() -> [Described; 9] {
             DOCS_URL,
             "omfp-docs-widgets",
             "omfp widgets",
-            "Widgets, views, init files, TSX views, the omfp/sdk SDK and the omfp/kit kit.",
+            "Widgets, views, init files, the omfp/sdk SDK and the omfp/kit kit.",
             "text/markdown",
         ),
         (

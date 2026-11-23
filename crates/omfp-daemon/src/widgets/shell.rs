@@ -8,6 +8,7 @@ use omfp_protocol::{KeymapEntry, KeymapMode, WorkspaceBinding};
 use serde::Deserialize;
 
 use super::{BUILTIN_URL, DOCS_URL, SCHEMA_URL, keymap};
+use crate::wire_name;
 
 /// Host URI of the docs index (DMN-198).
 pub const INDEX_URL: &str = "omfp://docs";
@@ -71,18 +72,8 @@ pub struct Additions {
     pub workspace: Option<Result<Vec<WorkspaceBinding>, String>>,
 }
 
-const MODES: [(KeymapMode, &str); 3] = [
-    (KeymapMode::Normal, "normal"),
-    (KeymapMode::Insert, "insert"),
-    (KeymapMode::Cmdline, "cmdline"),
-];
-
-fn mode_name(mode: KeymapMode) -> &'static str {
-    MODES
-        .iter()
-        .find(|(known, _)| *known == mode)
-        .map_or("normal", |(_, name)| name)
-}
+/// The keymap modes in the order the docs list them.
+const MODES: [KeymapMode; 3] = [KeymapMode::Normal, KeymapMode::Insert, KeymapMode::Cmdline];
 
 /// `` `keys` → `command` `` with its arguments; an empty command removes the binding of `keys`.
 fn binding_line(keys: &str, command: &str, args: &[String]) -> String {
@@ -105,7 +96,7 @@ pub fn index() -> String {
          \n\
          Read-only `omfp://` resources about the omfp window, for agents:\n\
          \n\
-         - {DOCS_URL} — widgets, views (`.omfp/views.json`), init files, TSX views, the `omfp/sdk` SDK and the \
+         - {DOCS_URL} — widgets, views (`.omfp/views.json`), init files, the `omfp/sdk` SDK and the \
          `omfp/kit` kit.\n\
          - {SHELL_URL} — the window: left column, mode line and view tabs, `:` commands, default keys.\n\
          - {KEYMAP_URL} — the default key bindings and commands; a thread's agent also sees what this daemon's \
@@ -121,7 +112,7 @@ pub fn index() -> String {
          `:-N`, comma lists, `:raw`, `:raw:N-M`); a long answer comes in pages and ends with the selector that \
          reads on, in the document's own line numbers.\n\
          \n\
-         Check a widget, an init file (`init`, `user:init`) or a TSX view (`views/<file>`) with `omfp_widget_check`, \
+         Check a widget or an init file (`init`, `user:init`) with `omfp_widget_check`, \
          and what the open windows show with `omfp_windows` ({DOCS_URL}, \"Checking your work in the window\").\n",
         keymap::SCHEMA_URL,
         crate::jobs::file::SCHEMA_URL,
@@ -168,7 +159,7 @@ fn render(defaults: &Result<Defaults, serde_json::Error>, additions: &Additions)
     match defaults {
         Ok(defaults) => {
             text.push_str("\n## Default bindings\n");
-            for (mode, name) in MODES {
+            for mode in MODES {
                 let bindings: Vec<&DefaultBinding> = defaults
                     .bindings
                     .iter()
@@ -177,7 +168,7 @@ fn render(defaults: &Result<Defaults, serde_json::Error>, additions: &Additions)
                 if bindings.is_empty() {
                     continue;
                 }
-                let _ = writeln!(text, "\n### {name} mode\n");
+                let _ = writeln!(text, "\n### {} mode\n", wire_name(mode));
                 for binding in bindings {
                     let _ = writeln!(
                         text,
@@ -209,7 +200,7 @@ fn render(defaults: &Result<Defaults, serde_json::Error>, additions: &Additions)
             let _ = writeln!(
                 text,
                 "  - {} mode: {}",
-                mode_name(entry.mode),
+                wire_name(entry.mode),
                 binding_line(&entry.keys, &entry.command, &[])
             );
         }
@@ -228,7 +219,7 @@ fn render(defaults: &Result<Defaults, serde_json::Error>, additions: &Additions)
                 let _ = writeln!(
                     text,
                     "  - {} mode: {}",
-                    mode_name(binding.mode),
+                    wire_name(binding.mode),
                     binding_line(&binding.keys, &binding.command, &binding.args)
                 );
             }
@@ -399,6 +390,5 @@ mod tests {
             );
         }
         assert!(text.contains("`user:init`"), "{text}");
-        assert!(text.contains("`views/<file>`"), "{text}");
     }
 }

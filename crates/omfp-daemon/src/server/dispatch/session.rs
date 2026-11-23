@@ -8,8 +8,8 @@ use omfp_protocol::{ContextUsage, ErrorBody, SessionTokens, SessionUsage, Thread
 use omp_rpc::SessionStats;
 
 use crate::agent::OmpCall;
-use crate::server::convert::{internal, supervisor_error, thread_error, workspace_error};
-use crate::server::services::{Services, blocking};
+use crate::server::convert::{blocking, internal};
+use crate::server::services::Services;
 use crate::threads;
 
 fn path_text(path: &Path) -> String {
@@ -22,23 +22,19 @@ pub(super) async fn thread_session(
 ) -> Result<ThreadSession, ErrorBody> {
     let supervisor = &services.supervisor;
     // The session omp loaded in this daemon run (its `history` event), with the transcript of its branch.
-    let (loaded, message_count) = supervisor
-        .thread_log(id)
-        .await
-        .map_err(supervisor_error)?
-        .with_state(|state| {
-            let count = state
-                .session
-                .as_ref()
-                .map(|_| state.transcript.len() as u64);
-            (state.session.clone(), count)
-        });
+    let log = supervisor.thread_log(id).await?;
+    let (loaded, message_count) = log.with_state(|state| {
+        let count = state
+            .session
+            .as_ref()
+            .map(|_| state.transcript.len() as u64);
+        (state.session.clone(), count)
+    });
     let status = supervisor.status(id);
     let session_model = supervisor.session_model(id);
     let usage = supervisor
         .call_if_running(id, OmpCall::SessionStats)
-        .await
-        .map_err(supervisor_error)?
+        .await?
         .map(serde_json::from_value::<SessionStats>)
         .transpose()
         .map_err(internal)?
@@ -48,12 +44,9 @@ pub(super) async fn thread_session(
     let workspaces = Arc::clone(&services.workspaces);
     let thread_id = id.to_owned();
     blocking(move || {
-        let thread = records.get(&thread_id).map_err(thread_error)?;
-        let cwd = workspaces
-            .get(&thread.workspace_id)
-            .map_err(workspace_error)?
-            .path;
-        let roots = records.roots(&thread_id).map_err(thread_error)?;
+        let thread = records.get(&thread_id)?;
+        let cwd = workspaces.get(&thread.workspace_id)?.path;
+        let roots = records.roots(&thread_id)?;
         // omp's own word when it loaded this session; a fork may have moved the thread on since (DMN-072).
         let session_file = match (&thread.omp_session_id, loaded) {
             (Some(session_id), Some(loaded))

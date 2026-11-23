@@ -31,7 +31,7 @@ impl Place {
 /// What to add, and where.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Addition<'a> {
-    /// The widget reference (`./widgets/<name>`, `user:<name>`, `omfp:<name>`).
+    /// The widget reference (`./widgets/<name>`, `omfp:<name>`).
     pub reference: &'a str,
     /// The node's props; an empty object adds the bare reference.
     pub props: Map<String, Value>,
@@ -175,12 +175,6 @@ pub fn add(manifest: Option<&Value>, addition: &Addition<'_>) -> Result<(Value, 
         .and_then(Value::as_object_mut)
         .ok_or("views.json has no views")?;
     let said = if let Some(view) = views.get_mut(&view_id) {
-        // A TSX view has no layout to add to (AGT-074).
-        if let Some(file) = manifest::view_file(view) {
-            return Err(format!(
-                "view {view_id:?} is a TSX view ({file}): edit that file, or mount into another view"
-            ));
-        }
         let layout = view
             .get_mut("layout")
             .ok_or_else(|| format!("view {view_id:?} has no layout"))?;
@@ -280,12 +274,12 @@ mod tests {
     // spec: PRT-080
     #[test]
     fn main_tabs_and_the_end_of_the_root_take_the_widget_with_its_props() {
-        let mut main = addition("user:clock", Place::MainTab);
+        let mut main = addition("./widgets/clock", Place::MainTab);
         main.props.insert("zone".to_owned(), json!("UTC"));
         let (manifest, _) = add(None, &main).unwrap();
         assert_eq!(
             layout(&manifest)[2][3],
-            json!(["tabs", { "id": "main" }, "omfp:chat", ["user:clock", { "zone": "UTC" }]])
+            json!(["tabs", { "id": "main" }, "omfp:chat", ["./widgets/clock", { "zone": "UTC" }]])
         );
 
         let (manifest, said) =
@@ -336,26 +330,6 @@ mod tests {
         let error = add(Some(&plain), &addition("./widgets/tests", Place::SideTab)).unwrap_err();
         assert!(error.contains("\"id\": \"side\""), "{error}");
         assert!(error.contains("use place: \"end\""), "{error}");
-    }
-
-    // spec: AGT-074
-    #[test]
-    fn a_tsx_view_has_no_layout_to_add_to() {
-        let manifest = json!({ "default": "ops", "views": {
-            "ops": { "view": "./views/ops.tsx" },
-            "work": { "layout": "omfp:chat" },
-        } });
-        assert_eq!(manifest::check(&manifest), Ok(()));
-        let error = add(Some(&manifest), &addition("./widgets/tests", Place::End)).unwrap_err();
-        assert_eq!(
-            error,
-            "view \"ops\" is a TSX view (./views/ops.tsx): edit that file, or mount into another view"
-        );
-        let mut elsewhere = addition("./widgets/tests", Place::End);
-        elsewhere.view = Some("work");
-        let (added, _) = add(Some(&manifest), &elsewhere).unwrap();
-        assert_eq!(added["views"]["ops"], json!({ "view": "./views/ops.tsx" }));
-        assert!(!has_main_slot(&manifest));
     }
 
     // spec: AGT-028

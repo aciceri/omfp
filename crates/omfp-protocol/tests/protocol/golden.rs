@@ -49,14 +49,13 @@ use omfp_protocol::{
     CreatedBy, ForkOrigin, ListThreadsParams, Provenance, RestartReason, ThreadList, ThreadSummary,
     TitleSource, WorkspaceList,
 };
-use omfp_protocol::{FileErrorKind, FileErrorReport, ViewErrors, WindowFileErrors};
-use omfp_protocol::{
-    LibraryComponent, MountParams, MountPlace, MountUpdateParams, Mounted, SaveWidgetParams,
-    UnmountParams, Unmounted, WidgetLibrary, WidgetSaved,
-};
+use omfp_protocol::{FileErrorReport, ViewErrors, WindowFileErrors};
 use omfp_protocol::{
     McpCallParams, McpCallResult, McpReconnectParams, McpServer, McpServers, McpSource, McpState,
     McpTool, McpTools, McpToolsParams, McpTransport,
+};
+use omfp_protocol::{
+    MountParams, MountPlace, MountUpdateParams, Mounted, UnmountParams, Unmounted,
 };
 use omfp_protocol::{ReorderThreadParams, ReorderWorkspaceParams};
 use serde::de::DeserializeOwned;
@@ -891,7 +890,6 @@ fn widget_examples() -> Vec<(&'static str, Value)> {
                     }],
                 }],
                 file_errors: vec![FileErrorReport {
-                    kind: FileErrorKind::Init,
                     file: ".omfp/init.ts".to_owned(),
                     message: ".omfp/init.ts:3:7: Unexpected token".to_owned(),
                 }],
@@ -1196,14 +1194,12 @@ fn view_error_examples() -> Vec<(&'static str, Value)> {
                     client: "web".to_owned(),
                     errors: vec![
                         FileErrorReport {
-                            kind: FileErrorKind::Init,
                             file: "user".to_owned(),
                             message: "TypeError: x is undefined".to_owned(),
                         },
                         FileErrorReport {
-                            kind: FileErrorKind::View,
-                            file: ".omfp/views/ops.tsx".to_owned(),
-                            message: "Row: unknown widget ./widgets/nope".to_owned(),
+                            file: ".omfp/init.ts".to_owned(),
+                            message: ".omfp/init.ts:3:7: Unexpected token".to_owned(),
                         },
                     ],
                 },
@@ -1228,19 +1224,17 @@ fn window_report() -> WindowReport {
                 id: "default".to_owned(),
                 title: "Default".to_owned(),
                 source: ViewSource::ViewsJson,
-                file: None,
-                widgets: Some(vec![
+                widgets: vec![
                     "omfp:header".to_owned(),
                     "omfp:chat".to_owned(),
                     "./widgets/tests".to_owned(),
-                ]),
+                ],
             },
             WindowView {
                 id: "ops".to_owned(),
                 title: "Ops".to_owned(),
                 source: ViewSource::WorkspaceInit,
-                file: Some("./views/ops.tsx".to_owned()),
-                widgets: None,
+                widgets: vec!["./widgets/tests".to_owned()],
             },
         ],
         commands: vec![WindowCommand {
@@ -1307,9 +1301,8 @@ fn window_examples() -> Vec<(&'static str, Value)> {
                 views: report.views,
                 commands: report.commands,
                 file_errors: vec![FileErrorReport {
-                    kind: FileErrorKind::View,
-                    file: ".omfp/views/ops.tsx".to_owned(),
-                    message: "Row: unknown widget ./widgets/nope".to_owned(),
+                    file: "user".to_owned(),
+                    message: "TypeError: x is undefined".to_owned(),
                 }],
                 widgets: vec![widget_report(WidgetReportState::Rendered, Vec::new())],
             },
@@ -1402,33 +1395,6 @@ fn mount_examples() -> Vec<(&'static str, Value)> {
                 views: Vec::new(),
                 removed_views: vec!["dashboard".to_owned()],
                 panel: false,
-            },
-        ),
-        example::<method::WidgetsSave>(
-            SaveWidgetParams {
-                name: "checkout".to_owned(),
-                workspace_id: Some(WORKSPACE_ID.to_owned()),
-                widget: Some("./widgets/checkout".to_owned()),
-                code: None,
-                replace: true,
-            },
-            &WidgetSaved {
-                name: "checkout".to_owned(),
-                reference: "user:checkout".to_owned(),
-            },
-        ),
-        example::<method::WidgetsLibrary>(
-            Empty {},
-            &WidgetLibrary {
-                components: vec![LibraryComponent {
-                    name: "checkout".to_owned(),
-                    reference: "user:checkout".to_owned(),
-                    entry: Some("index.tsx".to_owned()),
-                    files: vec!["index.tsx".to_owned()],
-                    version: "3f2a".to_owned(),
-                    description: "Threads of a feature with their live state; props: threads."
-                        .to_owned(),
-                }],
             },
         ),
     ]
@@ -1819,7 +1785,7 @@ fn what_an_mcp_client_created_says_so() {
 
 // spec: PRT-115, PRT-116
 #[test]
-fn a_report_without_file_errors_has_none_and_view_errors_name_kind_file_and_message() {
+fn a_report_without_file_errors_has_none_and_view_errors_name_file_and_message() {
     let older: ReportWidgetsParams = serde_json::from_value(
         json!({ "workspaceId": WORKSPACE_ID, "views": null, "widgets": [] }),
     )
@@ -1830,8 +1796,8 @@ fn a_report_without_file_errors_has_none_and_view_errors_name_kind_file_and_mess
         "views": null,
         "widgets": [],
         "fileErrors": [
-            { "kind": "init", "file": "user", "message": "boom" },
-            { "kind": "view", "file": ".omfp/views/ops.tsx", "message": "ops.tsx:2:3: x" },
+            { "file": "user", "message": "boom" },
+            { "file": ".omfp/init.ts", "message": ".omfp/init.ts:2:3: x" },
         ],
     }))
     .expect("decodes");
@@ -1839,23 +1805,18 @@ fn a_report_without_file_errors_has_none_and_view_errors_name_kind_file_and_mess
         report.file_errors,
         [
             FileErrorReport {
-                kind: FileErrorKind::Init,
                 file: "user".to_owned(),
                 message: "boom".to_owned(),
             },
             FileErrorReport {
-                kind: FileErrorKind::View,
-                file: ".omfp/views/ops.tsx".to_owned(),
-                message: "ops.tsx:2:3: x".to_owned(),
+                file: ".omfp/init.ts".to_owned(),
+                message: ".omfp/init.ts:2:3: x".to_owned(),
             },
         ]
     );
     assert!(
-        serde_json::from_value::<FileErrorReport>(
-            json!({ "kind": "widget", "file": "x", "message": "y" })
-        )
-        .is_err(),
-        "only init and view files"
+        serde_json::from_value::<FileErrorReport>(json!({ "file": "user" })).is_err(),
+        "an error has a message"
     );
     assert_eq!(
         serde_json::to_value(ViewErrors {

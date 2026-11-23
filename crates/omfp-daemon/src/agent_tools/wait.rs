@@ -4,12 +4,12 @@
 use std::time::Duration;
 
 use omfp_core::{ProcessState, ThreadState};
+use omfp_protocol::ErrorBody;
 use omp_rpc::{AgentMessage, AssistantContent};
 use serde_json::{Map, Value, json};
 use tokio::sync::broadcast::error::RecvError;
 
 use super::{AgentTool, THREAD_WAIT, ToolContext, ToolFuture, error_text};
-use crate::server::convert::supervisor_error;
 
 /// How long a wait lasts without `timeoutSeconds`.
 const DEFAULT_TIMEOUT_SECONDS: u64 = 600;
@@ -97,11 +97,11 @@ fn run(context: ToolContext, arguments: Map<String, Value>) -> ToolFuture {
         let log = supervisor
             .thread_log(&wait.thread_id)
             .await
-            .map_err(|error| error_text(&supervisor_error(error)))?;
+            .map_err(|error| error_text(&ErrorBody::from(error)))?;
         let mut prompts = supervisor
             .last_prompt(&wait.thread_id)
             .await
-            .map_err(|error| error_text(&supervisor_error(error)))?;
+            .map_err(|error| error_text(&ErrorBody::from(error)))?;
         let explicit = wait.prompt_id.is_some();
         let mut events = log.listen();
         // A waiting card needs the user without an event in the log: its start is a status change (DMN-911).

@@ -4,13 +4,12 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use omfp_protocol::{Call, CreateWorkspaceParams, ErrorBody, ErrorCode};
+use omfp_protocol::{Call, CreateWorkspaceParams, CreatedBy, ErrorBody, ErrorCode};
 
 use super::{Reply, empty, ok, on_workspaces};
 use crate::server::auth::Principal;
-use crate::server::convert::{diff_page, internal, supervisor_error, workspace_error};
-use crate::server::services::{Services, blocking};
-use crate::store::Provenance;
+use crate::server::convert::{blocking, diff_page, internal};
+use crate::server::services::Services;
 use crate::workspaces::{NewWorkspace, RepoSource, WorkspaceError, named_files};
 
 /// A `workspaces.add_repo` source in the daemon's terms.
@@ -35,7 +34,7 @@ pub(super) async fn create_workspace(
     services: &Services,
     params: CreateWorkspaceParams,
     fallback_name: Option<String>,
-    created_by: Provenance,
+    created_by: CreatedBy,
     client: String,
 ) -> Result<String, ErrorBody> {
     let workspaces = Arc::clone(&services.workspaces);
@@ -47,7 +46,7 @@ pub(super) async fn create_workspace(
         created_by,
     };
     let id = blocking(move || {
-        let view = workspaces.create(new).map_err(workspace_error)?;
+        let view = workspaces.create(new)?;
         store.set_created_client(&view.workspace.id, &client)?;
         Ok(view.workspace.id)
     })
@@ -118,7 +117,7 @@ pub(super) async fn workspaces(services: &Services, principal: &Principal, call:
                     Some(error) => Err(ErrorBody::new(ErrorCode::GitError, error)),
                     None => ok(&repo.status),
                 },
-                None => Err(workspace_error(WorkspaceError::NoSuchRepo {
+                None => Err(ErrorBody::from(WorkspaceError::NoSuchRepo {
                     workspace: params.workspace_id,
                     name: params.repo,
                 })),
@@ -151,8 +150,7 @@ pub(super) async fn workspaces(services: &Services, principal: &Principal, call:
                 Some(thread_id) => services
                     .supervisor
                     .thread_log(thread_id)
-                    .await
-                    .map_err(supervisor_error)?
+                    .await?
                     .with_state(named_files),
                 None => BTreeSet::new(),
             };

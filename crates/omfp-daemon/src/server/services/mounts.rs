@@ -1,23 +1,20 @@
-//! Mounts and the component library (AGT-060..065): `views.mount`, `views.mount_update` and `views.unmount`
-//! (PRT-080..082) edit the workspace's `views.json` with [`crate::widgets::mounts`] and publish it as `views.set` does;
-//! `widgets.save` and `widgets.library` (PRT-083, PRT-084) work on the user library.
+//! Mounts (AGT-060..063): `views.mount`, `views.mount_update` and `views.unmount` (PRT-080..082) edit the workspace's
+//! `views.json` with [`crate::widgets::mounts`] and publish it as `views.set` does.
 
 use std::path::Path;
-use std::sync::{Arc, PoisonError};
+use std::sync::Arc;
 
 use omfp_protocol::{
-    ErrorBody, ErrorCode, LibraryComponent, MountParams, MountPlace, MountUpdateParams, Mounted,
-    SaveWidgetParams, UnmountParams, Unmounted, WidgetSaved,
+    ErrorBody, ErrorCode, MountParams, MountPlace, MountUpdateParams, Mounted, UnmountParams,
+    Unmounted,
 };
 use serde_json::Value;
 
-use super::views::copy_error;
 use super::{Services, blocking};
 use crate::paths::replace_file;
 use crate::server::convert::{bad_request, internal};
-use crate::widgets::folders::{ENTRIES, MOUNT_MARKER, checked_name, is_widget_name};
+use crate::widgets::folders::{ENTRIES, MOUNT_MARKER, checked_name};
 use crate::widgets::layout::Place;
-use crate::widgets::library::{self, Source};
 use crate::widgets::mounts::{self, Mount, MountError, Placed, Target};
 use crate::widgets::{Widgets, manifest, manifest_path, workspace_widgets};
 
@@ -40,7 +37,7 @@ fn reference(widget: &str) -> Result<String, ErrorBody> {
         return Err(bad_request("`widget` is empty"));
     }
     Ok(
-        if ["./widgets/", "user:", "omfp:"]
+        if ["./widgets/", "omfp:"]
             .iter()
             .any(|prefix| widget.starts_with(prefix))
         {
@@ -258,56 +255,5 @@ impl Services {
             })
         })
         .await
-    }
-
-    /// `widgets.save` (PRT-083, AGT-064): then every followed views topic lists the component.
-    pub async fn save_widget(&self, params: SaveWidgetParams) -> Result<WidgetSaved, ErrorBody> {
-        let name = params.name.trim().to_owned();
-        let (store, widgets) = (Arc::clone(&self.store), Arc::clone(&self.widgets));
-        let saved = name.clone();
-        blocking(move || {
-            let library = widgets.user_library();
-            match (&params.widget, &params.code) {
-                (Some(widget), None) => {
-                    let workspace_id = params
-                        .workspace_id
-                        .as_deref()
-                        .ok_or_else(|| bad_request("`workspaceId` is required with `widget`"))?;
-                    let folder_name = widget.trim();
-                    let folder_name = folder_name.strip_prefix("./widgets/").unwrap_or(folder_name);
-                    if !is_widget_name(folder_name) {
-                        return Err(bad_request(format!(
-                            "cannot save {widget:?}: expected a workspace widget, `./widgets/<name>` or a bare name"
-                        )));
-                    }
-                    let folder = workspace_widgets(&store.workspace(workspace_id)?.path).join(folder_name);
-                    library::save(library, &name, Source::Folder(&folder), params.replace)
-                }
-                (None, Some(code)) => library::save(library, &name, Source::Code(code), params.replace),
-                _ => return Err(bad_request("give exactly one of `widget` and `code`")),
-            }
-            .map_err(copy_error)
-        })
-        .await?;
-        let followed: Vec<String> = self
-            .views_logs
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .keys()
-            .cloned()
-            .collect();
-        for workspace_id in followed {
-            self.refresh_views(&workspace_id).await;
-        }
-        Ok(WidgetSaved {
-            reference: format!("user:{saved}"),
-            name: saved,
-        })
-    }
-
-    /// `widgets.library` (PRT-084, AGT-065).
-    pub async fn widget_library(&self) -> Result<Vec<LibraryComponent>, ErrorBody> {
-        let widgets = Arc::clone(&self.widgets);
-        blocking(move || Ok(library::list(widgets.user_library()))).await
     }
 }

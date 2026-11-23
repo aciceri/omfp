@@ -11,17 +11,17 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use omfp_protocol::{
-    AnswerWindowParams, CheckWidgetParams, ErrorBody, ErrorCode, ListWindowsParams, RanInWindow,
+    AnswerWindowParams, CheckWidgetParams, ErrorBody, ListWindowsParams, RanInWindow,
     ReportWidgetsParams, RunFailure, RunInWindowParams, ServerFrame, WidgetChecked,
-    WidgetReportState, WidgetSource, WindowAnswer, WindowList, WindowRef, WindowReport,
-    WindowRequest, WindowState, WindowSummary,
+    WidgetReportState, WindowAnswer, WindowList, WindowRef, WindowReport, WindowRequest,
+    WindowState, WindowSummary,
 };
 use tokio::sync::{mpsc, oneshot, watch};
 
 use super::super::connection::Outbound;
 use super::{Services, blocking, lock};
-use crate::server::convert::bad_request;
-use crate::widgets::folders;
+use crate::server::convert::{bad_request, conflict, not_found};
+use crate::widgets::{Widgets, folders};
 
 /// How long a window has to run a command (DMN-206).
 pub(crate) const RUN_TIMEOUT: Duration = Duration::from_secs(5);
@@ -62,9 +62,7 @@ fn trimmed_window(mut window: WindowReport) -> WindowReport {
     window.views.truncate(MAX_VIEWS);
     for view in &mut window.views {
         view.title = clip(&view.title, MAX_NAME);
-        if let Some(widgets) = &mut view.widgets {
-            widgets.truncate(MAX_VIEW_WIDGETS);
-        }
+        view.widgets.truncate(MAX_VIEW_WIDGETS);
     }
     window.commands.truncate(MAX_COMMANDS);
     for command in &mut window.commands {
@@ -117,7 +115,7 @@ impl Window {
         self.report.window.clone().unwrap_or_default()
     }
 
-    /// Its init file and TSX view errors and the widgets of its view in an error state.
+    /// Its init file errors and the widgets of its view in an error state.
     fn errors(&self) -> u32 {
         let widgets = self
             .report
@@ -197,10 +195,6 @@ impl Drop for PendingGuard<'_> {
     }
 }
 
-fn not_found(message: impl Into<String>) -> ErrorBody {
-    ErrorBody::new(ErrorCode::NotFound, message)
-}
-
 /// Queues `request`, request `id`, on `link`, the outbound queue of `connection`'s window.
 fn send(
     link: &mpsc::Sender<Outbound>,
@@ -215,10 +209,6 @@ fn send(
             "omfp window {connection} is busy or closing; try again"
         ))
     })
-}
-
-fn conflict(message: impl Into<String>) -> ErrorBody {
-    ErrorBody::new(ErrorCode::Conflict, message)
 }
 
 impl Windows {
@@ -572,17 +562,13 @@ impl Services {
         params: CheckWidgetParams,
     ) -> Result<WidgetChecked, ErrorBody> {
         let path = self.known_workspace(&params.workspace_id).await?;
-        let widgets = Arc::clone(&self.widgets);
         let name = params.widget.clone();
-        let (source, name, version) = blocking(move || {
-            let (source, name, folder) = widgets.locate(&path, &name).map_err(bad_request)?;
-            Ok((source, name, folders::version(&folder)))
+        let (name, version) = blocking(move || {
+            let (_, name, folder) = Widgets::locate(&path, &name).map_err(bad_request)?;
+            Ok((name, folders::version(&folder)))
         })
         .await?;
-        let reference = match source {
-            WidgetSource::Workspace => format!("./widgets/{name}"),
-            WidgetSource::User => format!("user:{name}"),
-        };
+        let reference = format!("./widgets/{name}");
         // Windows get the folder's current version before they render it.
         self.refresh_views(&params.workspace_id).await;
         self.render_offscreen(
@@ -643,8 +629,8 @@ impl Services {
 #[cfg(test)]
 mod tests {
     use omfp_protocol::{
-        CommandSource, FileErrorKind, FileErrorReport, ViewSource, WidgetJobReport, WidgetReport,
-        WindowCommand, WindowView,
+        CommandSource, ErrorCode, FileErrorReport, ViewSource, WidgetJobReport, WidgetReport,
+        WidgetSource, WindowCommand, WindowView,
     };
 
     use super::*;
@@ -699,8 +685,7 @@ mod tests {
         }];
         let mut file_errors: Vec<FileErrorReport> = (0..25)
             .map(|n| FileErrorReport {
-                kind: FileErrorKind::View,
-                file: ".omfp/views/ops.tsx".to_owned(),
+                file: ".omfp/init.ts".to_owned(),
                 message: format!("error {n}"),
             })
             .collect();
@@ -710,8 +695,7 @@ mod tests {
                 id: format!("v{n}"),
                 title: "t".repeat(MAX_NAME + 3),
                 source: ViewSource::ViewsJson,
-                file: None,
-                widgets: Some((0..120).map(|n| format!("./widgets/w{n}")).collect()),
+                widgets: (0..120).map(|n| format!("./widgets/w{n}")).collect(),
             })
             .collect();
         let commands = (0..110)
@@ -754,10 +738,7 @@ mod tests {
         let window = kept.window.unwrap();
         assert_eq!(window.views.len(), MAX_VIEWS);
         assert_eq!(window.views[0].title.chars().count(), MAX_NAME + 1);
-        assert_eq!(
-            window.views[0].widgets.as_ref().map(Vec::len),
-            Some(MAX_VIEW_WIDGETS)
-        );
+        assert_eq!(window.views[0].widgets.len(), MAX_VIEW_WIDGETS);
         assert_eq!(window.commands.len(), MAX_COMMANDS);
         assert_eq!(window.commands[0].title.chars().count(), MAX_NAME + 1);
     }
@@ -818,7 +799,6 @@ mod tests {
             noisy,
         ];
         shown.file_errors = vec![FileErrorReport {
-            kind: FileErrorKind::Init,
             file: "user".to_owned(),
             message: "boom".to_owned(),
         }];

@@ -36,6 +36,12 @@ conversation has its own oh-my-pi running in the background.
 
 Early and changing fast.
 
+## Install
+
+`nix profile install github:aciceri/omfp`, or download a `.dmg`, Flatpak or tarball from the
+[releases](https://github.com/aciceri/omfp/releases). Setup, settings and running the daemon as a service:
+[docs/overview.md](docs/overview.md#install).
+
 ## Interfaces shaped by the work
 
 Agents build and reshape these views live. They are examples, not prescribed

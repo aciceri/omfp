@@ -1,27 +1,8 @@
-# omfp overview
+# Using omfp
 
-omfp is a GUI client for the [omp](https://github.com/can1357/oh-my-pi) coding agent (oh-my-pi), in the browser and as
-a desktop app on Linux and macOS. A daemon runs one omp process per thread, each in a workspace folder whose entries
-are your repositories, and serves a web UI over WebSocket; threads keep running when the window closes. The agent can
-build widgets for the UI itself, and you can talk to it with live voice.
-
-## Features
-
-- Threads grouped by workspace folder; omp gets every repository of the folder as a root, with its `AGENTS.md`.
-- Transcript with streaming Markdown, thinking blocks and tool cards for `bash`, `read`, `edit`/`write`, `grep`,
-  `glob`, `ast_grep`/`ast_edit`, `lsp`, `todo`, `web_search`, `task` and more; approvals and `ask` forms answered in
-  place; queued follow-ups and steering.
-- Views as layout trees in `.omfp/views.json` (or TSX views and init files), written by the agent, with `:widget add`
-  in the window; widgets are React components the
-  agent writes and checks without a browser (`omfp/sdk`), next to built-ins for changes and diffs, files (CodeMirror
-  with vim keys; a file outside the workspace folder, such as an agent's worktree elsewhere, opens by its absolute path,
-  read-only), subagents, todos and the session tree.
-- Live voice through omp's live session, with a transcript and mute.
-- Keyboard first: vim-style modes, a `:` command line, `?` help, per-workspace key bindings an agent can add.
-- Desktop app (Tauri: WebKitGTK on Linux, WKWebView on macOS) sharing a background daemon with the browser, with a tray
-  icon (a menu bar item on macOS); system notifications and in-window notices when a thread needs you.
-- Themes from tokens: built-in light and dark, matugen output or your own CSS, with a contrast guard for unreadable
-  roles. Narrow windows and phones get a strip and a bottom bar.
+How to install, run and configure omfp, a browser and desktop app for the
+[oh-my-pi](https://github.com/can1357/oh-my-pi) coding agent (omp). What it is and why: [README](../README.md); how it
+is built: [docs/specs](specs/README.md).
 
 ## Run
 
@@ -99,7 +80,7 @@ default. The entry's header is `"Bearer ${OMFP_TOKEN}"`: omp reads the token fro
 it. The token grants full access to the daemon (including shell commands): `--literal-token` writes it into the entry
 instead, but never put such an entry in a project's `.omp/mcp.json`, which may be committed. Threads and workspaces
 such a client creates show its name as their origin, and its actions appear in the `omfp:activity` widget. See
-[08-agent-control](specs/08-agent-control.md#mcp-server-m10) for the details.
+[08-agent-control](specs/08-agent-control.md#mcp-server) for the details.
 
 ## Install
 
@@ -118,7 +99,7 @@ microphone again after each update. The daemon keeps its data in `~/.local/share
 **Without Nix**: download from the [releases](https://github.com/aciceri/omfp/releases); each one comes with its own
 oh-my-pi, and you need git.
 
-- **macOS (Apple silicon, macOS 14+)**: open `omfp-<version>-macos-arm64.dmg` and drag omfp to Applications. Unless a
+- **macOS (Apple silicon, macOS 14.5+)**: open `omfp-<version>-macos-arm64.dmg` and drag omfp to Applications. Unless a
   release says it is notarized, macOS refuses to open it the first time: open it once, then allow it in System
   Settings → Privacy & Security → Open Anyway (or run `xattr -dr com.apple.quarantine /Applications/omfp.app`).
 - **Linux desktop (x86_64, Flatpak)**: `flatpak install --user omfp-<version>-linux-x86_64.flatpak`, then start omfp
@@ -215,15 +196,10 @@ prose = "Literata, serif"
 theme set <file>` pushes a theme to a running daemon instead. The windows show it with the `matugen` theme (`:theme
 matugen`), over Synth; any other theme leaves it stored but unused.
 
-Informational MCP tool command mount/unmount notices are hidden in new and existing transcripts by default. Run
-`:set show_xdev_notices=true` to reveal retained notices immediately; `:set show_xdev_notices=false` hides them
-again. The API uses `settings.set { ui: { showXdevNotices: true } }`. This changes presentation only: events,
-thread state, warnings/errors, other sources, startup inventory records, MCP tools and omp configuration stay intact.
-
 ## Status
 
-Pre-1.0 and under active development: the done milestones and the next ones are in the
-[roadmap](specs/07-roadmap.md). The specifications are in [docs/specs](specs/README.md).
+Pre-1.0 and under active development: changes per release are in [CHANGELOG.md](../CHANGELOG.md) and on the
+[releases](https://github.com/aciceri/omfp/releases) page. The specifications are in [docs/specs](specs/README.md).
 
 ## Licence
 

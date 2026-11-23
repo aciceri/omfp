@@ -12,7 +12,7 @@
 | `mark-light.svg`, `mark-dark.svg` | Mark with fixed bracket colours |
 | `icon.svg`, `icon-32.png` | `π` alone, for 16–32 px (the web favicon) |
 | `app-icon-192.png` | The desktop icon's mark at 192 px, for the web app manifest (UI-425) |
-| `screenshot-light.png`, `screenshot-dark.png` | The app, for the repository README |
+| `screenshot-light.png`, `screenshot-dark.png` | The app, for the project site (`ui/packages/site`) |
 
 The UI draws the same outlines inline (`ui/packages/kit/src/logo.tsx`) with the theme's gradient instead of the fixed
 one. The desktop icon is `crates/omfp/icons/icon.png`; the web app manifest uses it as its 512 px icon.
@@ -25,13 +25,6 @@ the SVGs here, the kit's `logo-paths.ts` and the desktop icon's `icon.html`; `ju
 
 ```sh
 nix develop -c just brand
-```
-
-The generator alone (fontTools with brotli for woff2):
-
-```sh
-nix shell --impure --expr 'with import <nixpkgs> {}; python3.withPackages (p: [p.fonttools p.brotli])' \
-  -c python3 docs/brand/generate.py
 ```
 
 The screenshots come from the headless E2E journey `cargo test -p e2e --test screenshots a_busy_thread` (after

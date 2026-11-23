@@ -29,9 +29,6 @@ The version's section is also the source of the GitHub release notes.
 - The daemon writes its log to `<data-dir>/daemon.log` however it was started (from a terminal, the session's
   autostart, a service), not only when `omfp desktop` starts it, besides stderr; the file no longer holds colour
   escapes (#282).
-
-### Changed
-
 - Agents' `omfp_call` of a reading `thread.*` method (`thread.session`, `thread.state`, `thread.mcp_servers`, …)
   without `threadId` now reads their own thread; the other `thread.*` methods still need it, and their error names the
   agent's own thread id (#284).
@@ -42,6 +39,23 @@ The version's section is also the source of the GitHub release notes.
 - Tools omp offers as commands of its shell (`lsp`, `ast_grep`, `ast_edit`, `debug`, MCP tools) keep their own cards
   in the chat, and the tool cards keep showing what each call is for, which omp 19 otherwise leaves out of omfp's
   sessions.
+- The macOS app needs macOS 14.5 or later: the built-in themes, the matugen template and theme files use CSS
+  `light-dark()` for their light and dark palettes (a user theme written the old way still works).
+- Copying standalone omp's logins lets SQLite take the snapshot of its `agent.db`, so SQLite may leave `-wal`/`-shm`
+  files beside it, as omp itself does.
+- The daemon refuses a database from a pre-release omfp build (before 0.1.0) instead of migrating it: delete it, or
+  start an older omfp once.
+- The file picker (`Space f`) is built like the other pickers: it shows its keys and says when no file matches.
+
+### Removed
+
+- TSX views (`{ "view": "./views/<name>.tsx" }` in `views.json`) and the layout components of `omfp/sdk` (`Row`,
+  `Col`, `Tabs`, `Stack`, `Widget`): build computed views with `views.add` in `.omfp/init.ts` instead.
+- The user component library: `user:<name>` widgets in `<data-dir>/widgets`, `omfp_component_save`,
+  `omfp_component_list`, `widgets.save`, `widgets.library` and `:widget save`. Copy widget folders between workspaces
+  instead; `user:init` is unchanged.
+- The pre-0.1.0 command ids `theme.set` and `widget` in keymaps and `omfp_window_run`, and the retired
+  `omfp:subagents` reference in `views.json` (use `window.theme`, `widget.manage` and `omfp:background`).
 
 ### Fixed
 
@@ -51,9 +65,6 @@ The version's section is also the source of the GitHub release notes.
 - A repository without commits (right after `git init`) no longer stops the changes view of its whole workspace: it
   shows its branch and every file as added. A repository whose git status fails for another reason shows that error
   in `omfp:changes` while the others keep updating, and the daemon logs it once instead of every 30 s (#268).
-- Threads from before omfp's own omp profile (0.1.0) show their images again, and their agent sees them: the
-  screenshots and images in their conversations had stayed in standalone omp's `~/.omp/agent/blobs`. The daemon
-  links them into its profile once, in the background, at its first start after the upgrade (#283).
 - Refreshing an MCP server's OAuth login asks for the same scope as the original sign-in, as omp 19.1 does, so
   Microsoft Entra servers whose client is also the resource keep working.
 

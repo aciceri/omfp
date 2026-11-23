@@ -230,7 +230,6 @@
               pkgs.cargo-llvm-cov
               pkgs.cargo-mutants
               pkgs.cargo-deny
-              pkgs.bacon
 
               # TypeScript UI (D-10, D-18): Bun is runtime, package manager and test runner. The JS dependencies
               # come from Nix (ENV-001): bun2nix turns ui/bun.lock into ui/bun.nix, whose Bun cache `just
@@ -244,7 +243,6 @@
               pkgs.just
               pkgs.git
               pkgs.jq
-              pkgs.websocat
               pkgs.nixfmt
               # GitHub Actions workflow lint (`just check`, .github/workflows)
               pkgs.actionlint

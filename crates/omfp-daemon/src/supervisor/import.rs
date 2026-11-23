@@ -159,7 +159,7 @@ async fn detached<T: Send + 'static>(
 }
 
 /// The value `key` has in the environment `overrides` make of `inherited` (the last override wins; `None` unsets).
-fn variable(
+pub(super) fn variable(
     overrides: &[(OsString, Option<OsString>)],
     key: &str,
     inherited: impl FnOnce(&str) -> Option<OsString>,
@@ -171,7 +171,7 @@ fn variable(
 }
 
 /// `path` with `.` and `..` resolved lexically, as node's `path.normalize` does.
-fn normalized(path: &Path) -> PathBuf {
+pub(super) fn normalized(path: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for component in path.components() {
         match component {
@@ -224,19 +224,19 @@ fn profile_name(value: &OsStr) -> Option<String> {
     (valid && !reserved).then(|| name.to_owned())
 }
 
-/// The credential store (`agent.db`) the user's omp opens, `var` giving its environment and `cwd` its working
-/// directory, mirroring omp 18.22.0's `DirResolver` and `getAgentDbPath` (`packages/utils/src/dirs.ts`; re-check on an
-/// omp upgrade, ENV-020):
+/// The directory of the data files (`agent.db`, `blobs/`, `sessions/`, …) of the omp whose environment `var` gives,
+/// `cwd` being its working directory, mirroring omp 18.22.0's `DirResolver` and its `agentSubdir(…, "data")`
+/// (`getAgentDbPath`, `getBlobsDir`; `packages/utils/src/dirs.ts`; re-check on an omp upgrade, ENV-020):
 /// - the base root is `path.join(HOME, PI_CONFIG_DIR || ".omp")`;
 /// - the profile is `OMP_PROFILE` when set (empty: the default), else `PI_PROFILE`; a refused name is the default;
 /// - a named profile's root is `<base>/profiles/<name>`, its agent directory `<root>/agent`; the default profile's
 ///   agent directory is `path.resolve(PI_CODING_AGENT_DIR)` when that is set and not, as a string, `PI_PROFILE`'s own
 ///   agent directory, else `<root>/agent`;
 /// - when the agent directory is the root's own, an existing `$XDG_DATA_HOME/omp` (a named profile's
-///   `$XDG_DATA_HOME/omp/profiles/<name>`) holds the store instead.
+///   `$XDG_DATA_HOME/omp/profiles/<name>`) holds the data instead.
 ///
 /// omp's `.env` files, which may set these variables too, are not read. `None` without a `HOME`.
-fn credential_store(
+pub(super) fn data_dir(
     var: impl Fn(&str) -> Option<OsString>,
     cwd: &Path,
     exists: impl Fn(&Path) -> bool,
@@ -279,7 +279,16 @@ fn credential_store(
             };
             exists(&resolve(cwd, &dir)).then_some(dir)
         });
-    Some(resolve(cwd, &data.unwrap_or(agent_dir)).join(STORE))
+    Some(resolve(cwd, &data.unwrap_or(agent_dir)))
+}
+
+/// The credential store (`agent.db`) the user's omp opens: `agent.db` in its [`data_dir`].
+fn credential_store(
+    var: impl Fn(&str) -> Option<OsString>,
+    cwd: &Path,
+    exists: impl Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    data_dir(var, cwd, exists).map(|dir| dir.join(STORE))
 }
 
 /// Why the store could not be copied: never its content.

@@ -121,8 +121,9 @@ crates/omfp-daemon    daemon library: omp adapter (omp.rs), agent port + FakeLau
                       the logins to omp's providers (supervisor/login.rs: the short-lived login omp, one login at a
                       time, the reload of running threads after a login; supervisor/models.rs: the count of usable
                       models of `auth.status`; supervisor/import.rs: standalone omp's logins offered and copied, its
-                      store found as omp finds it and exported from a private snapshot; server/services/logins.rs:
-                      `auth.*` and the `login_*` window requests of a login's flow);
+                      store found as omp finds it and exported from a private snapshot; supervisor/blobs.rs: the
+                      images older threads left in standalone omp's blob store, linked into omfp's profile once at
+                      start; server/services/logins.rs: `auth.*` and the `login_*` window requests of a login's flow);
                       the relay of an OAuth sign-in's loopback callback pasted from a remote browser (oauth_relay.rs:
                       the SSRF guard and the GET; supervisor/oauth.rs: the sign-ins each thread and the login wait on;
                       server/services/oauth.rs: `oauth.callback`);

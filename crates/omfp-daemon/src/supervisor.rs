@@ -35,6 +35,7 @@ use crate::store::{Thread, TitleSource, new_id};
 use crate::threads::{ThreadError, Threads};
 use crate::workspaces::{WorkspaceError, Workspaces};
 
+mod blobs;
 mod cards;
 mod dialogs;
 mod fork;

@@ -390,6 +390,7 @@ pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHa
             ..SupervisorConfig::new(ports.omp_program)
         },
     );
+    let blobs = supervisor.spawn_blob_migration(Arc::clone(&store));
     let services = Services::new(
         store,
         threads,
@@ -411,6 +412,7 @@ pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHa
         services.spawn_job_counts(),
         services.spawn_polls(),
         follow_threads,
+        blobs,
     ];
     if let Some(path) = config.theme_file.clone() {
         info!(theme = %path.display(), "following the theme file");

@@ -20,6 +20,9 @@ The version's section is also the source of the GitHub release notes.
 - A repository without commits (right after `git init`) no longer stops the changes view of its whole workspace: it
   shows its branch and every file as added. A repository whose git status fails for another reason shows that error
   in `omfp:changes` while the others keep updating, and the daemon logs it once instead of every 30 s (#268).
+- Threads from before omfp's own omp profile (0.1.0) show their images again, and their agent sees them: the
+  screenshots and images in their conversations had stayed in standalone omp's `~/.omp/agent/blobs`. The daemon
+  links them into its profile once, in the background, at its first start after the upgrade (#283).
 
 ## 0.4.2 — 2026-11-22
 

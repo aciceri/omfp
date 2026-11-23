@@ -16,7 +16,9 @@
     </p>
   </description>
   <launchable type="desktop-id">io.github.aciceri.omfp.desktop</launchable>
-  <url type="homepage">https://github.com/aciceri/omfp</url>
+  <url type="homepage">https://omfp.dev</url>
+  <url type="bugtracker">https://github.com/aciceri/omfp/issues</url>
+  <url type="vcs-browser">https://github.com/aciceri/omfp</url>
   <developer id="io.github.aciceri">
     <name>Andrea Ciceri</name>
   </developer>

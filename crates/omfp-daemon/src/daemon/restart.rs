@@ -14,7 +14,7 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, bail};
-use rustix::process::{Pid, Signal, kill_process};
+use rustix::process::{Signal, kill_process};
 use serde::{Deserialize, Serialize};
 
 use super::{DaemonInfo, POLL, discover, process_alive, restarting};
@@ -52,10 +52,15 @@ pub fn restart(data_dir: &Path, program: &Path, deadline: Duration) -> anyhow::R
             running.pid
         );
     };
-    let pid = i32::try_from(running.pid)
-        .ok()
-        .and_then(Pid::from_raw)
-        .with_context(|| format!("daemon.json names no process ({})", running.pid))?;
+    // A Flatpak's daemon shares the data directory with the host, but its pid names another process here.
+    let pid = running.local_pid().with_context(|| {
+        format!(
+            "the omfp daemon of {} (pid {}) runs in another PID namespace (a Flatpak sandbox, a container), where \
+             this command cannot reach it: stop it and start it again",
+            data_dir.display(),
+            running.pid
+        )
+    })?;
     let request = serde_json::to_vec(&Request {
         program: program.to_owned(),
     })?;
@@ -75,7 +80,7 @@ pub fn restart(data_dir: &Path, program: &Path, deadline: Duration) -> anyhow::R
         {
             return Ok(info);
         }
-        if !process_alive(running.pid) {
+        if !process_alive(pid) {
             bail!(
                 "the omfp daemon (pid {}) exited while restarting, see {}",
                 running.pid,
@@ -226,6 +231,17 @@ mod tests {
         let older = format!(r#"{{"addr":"127.0.0.1:9","pid":{}}}"#, std::process::id());
         std::fs::write(dir.path().join("daemon.json"), older).unwrap();
         assert!(error(dir.path()).contains("older than `omfp daemon restart`"));
+        assert!(!dir.path().join(REQUEST_FILE).exists());
+
+        // A daemon in a Flatpak sandbox shares the data directory, but its pid is not one of this namespace's.
+        let mut gone = Command::new("true").spawn().unwrap();
+        gone.wait().unwrap();
+        let sandboxed = format!(
+            r#"{{"addr":"127.0.0.1:9","pid":{},"started":1,"pid_namespace":"pid:[1]"}}"#,
+            gone.id()
+        );
+        std::fs::write(dir.path().join("daemon.json"), sandboxed).unwrap();
+        assert!(error(dir.path()).contains("another PID namespace"));
         assert!(!dir.path().join(REQUEST_FILE).exists());
     }
 }

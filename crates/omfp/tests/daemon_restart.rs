@@ -171,3 +171,48 @@ fn a_daemon_started_anywhere_appends_its_log_to_daemon_log() {
         assert_eq!(written.matches(line).count(), 1, "{written}");
     }
 }
+
+/// `omfp daemon restart --data-dir <data>`, which must succeed; returns the restarted daemon.
+fn restart(home: &Path, data: &Path) -> DaemonInfo {
+    let restart = omfp(
+        home,
+        &["daemon", "restart", "--data-dir", data.to_str().unwrap()],
+    )
+    .output()
+    .unwrap();
+    assert!(
+        restart.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&restart.stdout),
+        String::from_utf8_lossy(&restart.stderr)
+    );
+    omfp_daemon::discover(data)
+        .unwrap()
+        .expect("the restarted daemon")
+}
+
+// spec: DMN-391, DMN-355
+#[test]
+fn a_daemon_whose_output_reader_is_gone_restarts_and_runs_on() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut command, data) = daemon(dir.path());
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let _stop = Stop(Pid::from_child(&child));
+    let first = running(&data);
+    // `omfp daemon | head -n 1`: whatever read its output is gone, every write to stdout or stderr fails.
+    drop(child.stdout.take());
+    drop(child.stderr.take());
+
+    let second = restart(dir.path(), &data);
+    assert_ne!(second.started, first.started);
+    // The restarted daemon printed its URL into the closed pipe and runs on: it takes the next restart too, which it
+    // reads only once that line is behind it.
+    let third = restart(dir.path(), &data);
+    assert_ne!(third.started, second.started);
+    assert_eq!(third.pid, first.pid);
+    assert_eq!(child.try_wait().unwrap(), None);
+}

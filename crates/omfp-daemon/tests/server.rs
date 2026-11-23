@@ -510,22 +510,37 @@ async fn a_daemon_restarting_in_place_is_waited_for_not_replaced() {
 
 // spec: DMN-392
 #[test]
-fn a_restart_mark_of_a_gone_process_is_stale() {
+fn a_restart_mark_of_a_gone_or_unreachable_process_is_stale() {
     let dir = tempfile::tempdir().unwrap();
-    let mut gone = std::process::Command::new("true").spawn().unwrap();
-    let pid = gone.id();
-    gone.wait().unwrap();
-    std::fs::write(
-        dir.path().join("daemon.json"),
-        format!(r#"{{"addr":"127.0.0.1:9","pid":{pid},"started":1,"restarting":true}}"#),
-    )
-    .unwrap();
+    let namespace = std::fs::read_link("/proc/self/ns/pid")
+        .ok()
+        .map(|link| link.to_string_lossy().into_owned());
+    let mark = |pid: u32, namespace: Option<&str>| {
+        let info = json!({
+            "addr": "127.0.0.1:9",
+            "pid": pid,
+            "started": 1,
+            "pid_namespace": namespace,
+            "restarting": true,
+        });
+        std::fs::write(dir.path().join("daemon.json"), info.to_string()).unwrap();
+    };
 
+    // This process lives: its mark holds.
+    mark(std::process::id(), namespace.as_deref());
+    assert!(restarting(dir.path()).unwrap());
+    // A process gone while restarting.
+    let mut gone = std::process::Command::new("true").spawn().unwrap();
+    gone.wait().unwrap();
+    mark(gone.id(), namespace.as_deref());
     assert!(!restarting(dir.path()).unwrap());
     assert_eq!(
         discover_through_restart(dir.path(), std::time::Duration::ZERO).unwrap(),
         None
     );
+    // A daemon in another PID namespace (a Flatpak sandbox): its pid says nothing here.
+    mark(std::process::id(), Some("pid:[1]"));
+    assert!(!restarting(dir.path()).unwrap());
     assert!(!restarting(&dir.path().join("missing")).unwrap());
 }
 

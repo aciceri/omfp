@@ -7,7 +7,7 @@ mod restart;
 
 use std::ffi::OsString;
 use std::fs::{File, Permissions, TryLockError};
-use std::io::IsTerminal as _;
+use std::io::{IsTerminal as _, Write as _};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
@@ -126,9 +126,31 @@ pub struct DaemonInfo {
     /// an omfp older than restarts in place, which `SIGUSR2` would kill.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub started: Option<u64>,
+    /// The PID namespace `pid` belongs to (Linux: the target of `/proc/self/ns/pid`; `None` elsewhere): a client in
+    /// another one (a Flatpak sandbox, a container) can neither signal nor watch that pid (DMN-391).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pid_namespace: Option<String>,
     /// The daemon is restarting in place (DMN-392): it no longer serves, and the restarted one writes this file anew.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub restarting: bool,
+}
+
+impl DaemonInfo {
+    /// The daemon's pid as this process sees it: `None` when the daemon runs in another PID namespace, where the
+    /// same number names another process (DMN-391).
+    fn local_pid(&self) -> Option<Pid> {
+        if self.pid_namespace != pid_namespace() {
+            return None;
+        }
+        i32::try_from(self.pid).ok().and_then(Pid::from_raw)
+    }
+}
+
+/// The PID namespace of this process (Linux), as [`DaemonInfo::pid_namespace`] names it.
+fn pid_namespace() -> Option<String> {
+    std::fs::read_link("/proc/self/ns/pid")
+        .ok()
+        .and_then(|link| link.into_os_string().into_string().ok())
 }
 
 const INFO_FILE: &str = "daemon.json";
@@ -152,8 +174,8 @@ pub fn discover(data_dir: &Path) -> std::io::Result<Option<DaemonInfo>> {
     Ok((!info.restarting).then_some(info))
 }
 
-/// Whether the daemon of `data_dir` is restarting in place (DMN-392): `daemon.json` says so and its process lives
-/// (a daemon that died while restarting left a stale mark).
+/// Whether the daemon of `data_dir` is restarting in place (DMN-392): `daemon.json` says so and its process lives (a
+/// daemon that died while restarting left a stale mark, as does one in another PID namespace, which cannot be watched).
 pub fn restarting(data_dir: &Path) -> std::io::Result<bool> {
     let text = match std::fs::read_to_string(data_dir.join(INFO_FILE)) {
         Ok(text) => text,
@@ -161,7 +183,7 @@ pub fn restarting(data_dir: &Path) -> std::io::Result<bool> {
         Err(error) => return Err(error),
     };
     let info: DaemonInfo = serde_json::from_str(&text).map_err(std::io::Error::other)?;
-    Ok(info.restarting && process_alive(info.pid))
+    Ok(info.restarting && info.local_pid().is_some_and(process_alive))
 }
 
 /// [`discover`] through a restart in place (DMN-392): while the daemon restarts, waits (at most `deadline`) for the
@@ -194,11 +216,8 @@ pub fn discover_through_restart(
 }
 
 /// Whether the process `pid` exists (a zombie counts).
-fn process_alive(pid: u32) -> bool {
-    i32::try_from(pid)
-        .ok()
-        .and_then(Pid::from_raw)
-        .is_some_and(|pid| test_kill_process(pid) != Err(Errno::SRCH))
+fn process_alive(pid: Pid) -> bool {
+    test_kill_process(pid) != Err(Errno::SRCH)
 }
 
 /// Whether a daemon holds the data directory's lock (DMN-007): its process is alive, even before it wrote
@@ -548,6 +567,7 @@ pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHa
         addr,
         pid: std::process::id(),
         started: Some(started),
+        pid_namespace: pid_namespace(),
         restarting: false,
     };
     write_info(&data_dir, &info).context("cannot write daemon.json")?;
@@ -645,7 +665,13 @@ pub fn run_with<A>(mut cli: Cli, attach: impl FnOnce(&DaemonHandle) -> A) -> any
         // Signals are caught before the URL is printed: whoever waits for it may stop the daemon at once.
         let signal = signal_handler()?;
         tokio::pin!(signal);
-        println!("{}", daemon.listening_line(std::io::stdout().is_terminal()));
+        // Dropped when stdout is gone (DMN-355): a restarted daemon prints it again to whatever its first start had.
+        let stdout = std::io::stdout();
+        let _ = writeln!(
+            stdout.lock(),
+            "{}",
+            daemon.listening_line(stdout.is_terminal())
+        );
         let attached = attach(&daemon);
         let requested = Arc::clone(&daemon.stop_request);
         let program = loop {

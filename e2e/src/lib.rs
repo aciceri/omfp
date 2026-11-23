@@ -935,11 +935,22 @@ impl Journey {
         .await
     }
 
-    /// The computed value of the custom property `name` on `<html>`.
+    /// The computed value of the custom property `name` on `<html>`. A `light-dark(…)` color is resolved for the page's
+    /// current colour scheme through a probe and given as `#rrggbb`, as themes write their colors.
     pub async fn token(&self, name: &str) -> anyhow::Result<String> {
         let value = self
             .eval(
-                "return getComputedStyle(document.documentElement).getPropertyValue(arguments[0]).trim();",
+                r##"const root = document.documentElement;
+                const raw = getComputedStyle(root).getPropertyValue(arguments[0]).trim();
+                if (!raw.startsWith("light-dark(")) return raw;
+                const probe = document.createElement("span");
+                probe.style.color = `var(${arguments[0]})`;
+                root.append(probe);
+                const color = getComputedStyle(probe).color;
+                probe.remove();
+                const parts = color.match(/[\d.]+/g);
+                if (parts === null || parts.length < 3) return color;
+                return "#" + parts.slice(0, 3).map((part) => Math.round(Number(part)).toString(16).padStart(2, "0")).join("");"##,
                 vec![json!(name)],
             )
             .await?;

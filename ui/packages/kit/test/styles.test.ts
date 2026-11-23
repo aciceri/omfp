@@ -403,8 +403,10 @@ describe("kit styles", () => {
     const rule = (status: string, part = "") =>
       Object.fromEntries(findRule(kitRules, [LAYER], `.omfp-todo__item[data-status="${status}"]${part}`).declarations);
     expect(rule("completed", " .omfp-todo__mark")).toEqual({ color: "var(--omfp-ok)" });
-    expect(rule("in_progress")).toEqual({ color: "var(--omfp-primary)" });
-    expect(rule("in_progress", " .omfp-todo__mark")).toEqual({ color: "var(--omfp-primary)" });
+    const inProgress = '.omfp-todo__item[data-status="in_progress"]';
+    expect(
+      Object.fromEntries(findRule(kitRules, [LAYER], `${inProgress}, ${inProgress} .omfp-todo__mark`).declarations),
+    ).toEqual({ color: "var(--omfp-primary)" });
     expect(rule("abandoned", " .omfp-todo__text")).toEqual({ "text-decoration": "line-through" });
     const todo = /\.omfp-todo(?:__|(?![\w-]))/;
     const elsewhere = [

@@ -186,7 +186,8 @@ rustPlatform.buildRustPackage {
 
   meta = {
     description = "Web and desktop GUI for the omp coding agent (oh-my-pi)";
-    homepage = "https://github.com/aciceri/omfp";
+    homepage = "https://omfp.dev";
+    downloadPage = "https://github.com/aciceri/omfp/releases";
     changelog = "https://github.com/aciceri/omfp/blob/master/CHANGELOG.md";
     license = lib.licenses.gpl3Plus;
     mainProgram = "omfp";

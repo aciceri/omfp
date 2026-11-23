@@ -189,13 +189,8 @@ async fn a_thread_in_a_workspace_folder_sees_its_repositories_the_conventions_an
         "the link's AGENTS.md: {system}"
     );
     assert_eq!(workspace_roots(&system), [link.display().to_string()]);
-    let daemon_text = omfp_daemon::conventions::daemon_text(
-        "Full stack",
-        &workspace,
-        &folder,
-        &daemon.data.path().join("widgets"),
-        &thread,
-    );
+    let daemon_text =
+        omfp_daemon::conventions::daemon_text("Full stack", &workspace, &folder, &thread);
     assert!(
         system.ends_with(&format!("{daemon_text}\n\n{USER_APPEND}")),
         "the daemon's conventions, widgets and control notes, then the user's APPEND_SYSTEM.md, end the prompt: {}",

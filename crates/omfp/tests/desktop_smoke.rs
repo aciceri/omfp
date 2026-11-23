@@ -853,6 +853,10 @@ fn matrix_bmp(red: bool) -> Vec<u8> {
     bytes
 }
 
+/// The files `desktop-viewers/probe.ts` takes through one phase per window (its `BATCH`): few enough windows to keep the
+/// test short, few enough files per window for the smoke deadline.
+const VIEWER_BATCH: usize = 8;
+
 // spec: TST-033, UI-115, UI-250, UI-541, UI-542, UI-543, UI-544, UI-545, UI-546, UI-547, UI-548, UI-549, UI-551, UI-553, UI-560, UI-561, UI-562, UI-563, UI-567
 #[expect(
     clippy::too_many_lines,
@@ -1074,39 +1078,53 @@ async fn desktop_file_viewers_open_restore_and_close() {
         "data.jsonc",
         "data.yaml",
     ];
-    for name in files {
-        for phase in ["open", "restore", "reopen"] {
-            let output = desktop_with_store(
-                dir.path(),
-                &[
-                    ("OMFP_SMOKE", "local"),
-                    ("OMFP_SMOKE_WAIT", "body[data-matrix=ready]"),
-                ],
-                &args,
-                true,
-            );
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let state: serde_json::Value = stdout
-                .lines()
-                .find_map(|line| line.strip_prefix("OMFP_SMOKE_READY "))
-                .map(|line| serde_json::from_str(line).unwrap())
-                .unwrap();
-            let result: serde_json::Value =
-                serde_json::from_str(state["smoke"].as_str().unwrap()).unwrap();
-            assert_eq!(result["name"], name, "{result}");
-            assert_eq!(result["phase"], phase, "{result}");
+    // probe.ts takes a batch of `VIEWER_BATCH` files through one phase per window (open, restore, reopen), then the
+    // next batch, until a window with no file tab left reports `done`.
+    let mut seen: Vec<(String, String)> = Vec::new();
+    let mut done = false;
+    for _ in 0..=files.len().div_ceil(VIEWER_BATCH) * 3 {
+        let output = desktop_with_store(
+            dir.path(),
+            &[
+                ("OMFP_SMOKE", "local"),
+                ("OMFP_SMOKE_WAIT", "body[data-matrix=ready]"),
+            ],
+            &args,
+            true,
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let state: serde_json::Value = stdout
+            .lines()
+            .find_map(|line| line.strip_prefix("OMFP_SMOKE_READY "))
+            .map(|line| serde_json::from_str(line).unwrap())
+            .unwrap();
+        let smoke: serde_json::Value =
+            serde_json::from_str(state["smoke"].as_str().unwrap()).unwrap();
+        if smoke["done"] == true {
+            done = true;
+            break;
+        }
+        for result in smoke["results"].as_array().unwrap() {
+            assert_eq!(result["phase"], smoke["phase"], "{result}");
             println!("viewer: {result}");
+            seen.push((
+                result["name"].as_str().unwrap().to_owned(),
+                result["phase"].as_str().unwrap().to_owned(),
+            ));
         }
     }
-    desktop_with_store(
-        dir.path(),
-        &[
-            ("OMFP_SMOKE", "local"),
-            ("OMFP_SMOKE_WAIT", "body[data-matrix=done]"),
-        ],
-        &args,
-        true,
-    );
+    assert!(done, "no window found every file tab closed");
+    let expected: Vec<(String, String)> = files
+        .chunks(VIEWER_BATCH)
+        .flat_map(|batch| {
+            ["open", "restore", "reopen"].into_iter().flat_map(|phase| {
+                batch
+                    .iter()
+                    .map(move |name| ((*name).to_owned(), phase.to_owned()))
+            })
+        })
+        .collect();
+    assert_eq!(seen, expected, "every file through every phase, in order");
     handle.shutdown().await.unwrap();
 }
 

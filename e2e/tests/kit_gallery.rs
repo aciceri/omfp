@@ -132,11 +132,11 @@ async fn key_hint_failures(journey: &Journey) -> anyhow::Result<Vec<String>> {
     Ok(serde_json::from_value(value)?)
 }
 
-// spec: UI-173, UI-174, UI-132, UI-135, UI-140, UI-148, UI-196, UI-337, UI-338, UI-510, UI-512, UI-514, UI-736, UI-794, UI-797
+// spec: UI-514
 #[tokio::test(flavor = "multi_thread")]
-async fn the_kit_gallery_text_reaches_aa_in_every_theme_and_skin() -> anyhow::Result<()> {
+async fn the_kit_gallery_tests_every_theme_of_its_picker() -> anyhow::Result<()> {
     let journey = Journey::start(Vec::new()).await?;
-    // The picker links every theme of the gallery (UI-514), then the schemes and the skins: each one is tested here.
+    // The picker links every theme of the gallery (UI-514), then the schemes and the skins: each one is tested below.
     open(&journey, "theme=synth", "light", "crush").await?;
     let picked: Vec<String> = serde_json::from_value(
         journey
@@ -158,69 +158,100 @@ async fn the_kit_gallery_text_reaches_aa_in_every_theme_and_skin() -> anyhow::Re
         untested.is_empty(),
         "the picker's themes {untested:?} are not tested"
     );
+    journey.finish("kit gallery picker").await
+}
+
+// spec: UI-173, UI-174, UI-132, UI-135, UI-140, UI-148, UI-196, UI-337, UI-338, UI-510, UI-512, UI-736, UI-797
+#[tokio::test(flavor = "multi_thread")]
+async fn the_kit_gallery_text_reaches_aa_in_every_light_theme() -> anyhow::Result<()> {
+    gallery(SKINS[0], "light").await
+}
+
+// spec: UI-173, UI-174, UI-132, UI-135, UI-140, UI-148, UI-196, UI-337, UI-338, UI-510, UI-512, UI-736, UI-797
+#[tokio::test(flavor = "multi_thread")]
+async fn the_kit_gallery_text_reaches_aa_in_every_dark_theme() -> anyhow::Result<()> {
+    gallery(SKINS[0], "dark").await
+}
+
+// spec: UI-173, UI-174, UI-132, UI-135, UI-140, UI-148, UI-196, UI-337, UI-338, UI-510, UI-512, UI-736, UI-794, UI-797
+#[tokio::test(flavor = "multi_thread")]
+async fn the_kit_gallery_text_reaches_aa_in_every_light_theme_of_the_boring_skin()
+-> anyhow::Result<()> {
+    gallery(SKINS[1], "light").await
+}
+
+// spec: UI-173, UI-174, UI-132, UI-135, UI-140, UI-148, UI-196, UI-337, UI-338, UI-510, UI-512, UI-736, UI-794, UI-797
+#[tokio::test(flavor = "multi_thread")]
+async fn the_kit_gallery_text_reaches_aa_in_every_dark_theme_of_the_boring_skin()
+-> anyhow::Result<()> {
+    gallery(SKINS[1], "dark").await
+}
+
+/// Every theme of the gallery in `scheme` and the skin `(skin, prefix)`: one test per skin and scheme, so that nextest
+/// runs the four in parallel.
+async fn gallery((skin, prefix): (&str, &str), scheme: &str) -> anyhow::Result<()> {
+    let journey = Journey::start(Vec::new()).await?;
     let mut problems = Vec::new();
-    for (skin, prefix) in SKINS {
-        for (theme, query) in THEMES {
-            for scheme in SCHEMES {
-                open(&journey, query, scheme, skin).await?;
-                let shown = journey.attr("html", "data-skin").await?;
-                if shown.as_deref() != Some(skin) {
-                    problems.push(format!("{skin} {theme} {scheme}: data-skin {shown:?}"));
-                }
-                let shown = journey.attr("html", "data-theme").await?;
-                let expected = if theme.starts_with("accent") {
-                    "accent"
-                } else if theme == GUARDED_THEME || theme == "matugen" {
-                    "synth"
-                } else {
-                    theme
-                };
-                if shown.as_deref() != Some(expected) {
-                    problems.push(format!("{skin} {theme} {scheme}: data-theme {shown:?}"));
-                }
-                assert_eq!(
-                    journey.attr("html", "data-motion").await?.as_deref(),
-                    Some("none"),
-                    "the gallery runs at motion none"
-                );
-                for failure in contrast_failures(&journey).await? {
-                    problems.push(format!("{skin} {theme} {scheme}: under AA: {failure}"));
-                }
-                for failure in key_hint_failures(&journey).await? {
-                    problems.push(format!(
-                        "{skin} {theme} {scheme}: key hint under 3:1: {failure}"
-                    ));
-                }
-                let guarded = journey.attr("html", "data-contrast-guard").await?;
-                if (theme == GUARDED_THEME) != guarded.is_some() {
-                    problems.push(format!(
-                        "{skin} {theme} {scheme}: contrast guard overrides {guarded:?}"
-                    ));
-                }
-                for (passes, measure) in focus_measures(&journey).await? {
-                    eprintln!("focus {skin} {theme} {scheme}: {measure}");
-                    if !passes && theme != GUARDED_THEME {
-                        problems.push(format!(
-                            "{skin} {theme} {scheme}: focus not visible: {measure}"
-                        ));
-                    }
-                }
-                // The gallery's four composers start their text where their bars' chips start.
-                anyhow::ensure!(
-                    journey
-                        .composer_aligned("[data-testid=kit-gallery]")
-                        .await?
-                        == 4
-                );
-                if let Some(dir) = e2e::screenshot_dir() {
-                    let path = dir.join(format!("omfp-kit-{prefix}{theme}-{scheme}.png"));
-                    std::fs::write(&path, full_page(&journey).await?)?;
-                    eprintln!("screenshot: {}", path.display());
-                }
+    for (theme, query) in THEMES {
+        open(&journey, query, scheme, skin).await?;
+        let shown = journey.attr("html", "data-skin").await?;
+        if shown.as_deref() != Some(skin) {
+            problems.push(format!("{skin} {theme} {scheme}: data-skin {shown:?}"));
+        }
+        let shown = journey.attr("html", "data-theme").await?;
+        let expected = if theme.starts_with("accent") {
+            "accent"
+        } else if theme == GUARDED_THEME || theme == "matugen" {
+            "synth"
+        } else {
+            theme
+        };
+        if shown.as_deref() != Some(expected) {
+            problems.push(format!("{skin} {theme} {scheme}: data-theme {shown:?}"));
+        }
+        assert_eq!(
+            journey.attr("html", "data-motion").await?.as_deref(),
+            Some("none"),
+            "the gallery runs at motion none"
+        );
+        for failure in contrast_failures(&journey).await? {
+            problems.push(format!("{skin} {theme} {scheme}: under AA: {failure}"));
+        }
+        for failure in key_hint_failures(&journey).await? {
+            problems.push(format!(
+                "{skin} {theme} {scheme}: key hint under 3:1: {failure}"
+            ));
+        }
+        let guarded = journey.attr("html", "data-contrast-guard").await?;
+        if (theme == GUARDED_THEME) != guarded.is_some() {
+            problems.push(format!(
+                "{skin} {theme} {scheme}: contrast guard overrides {guarded:?}"
+            ));
+        }
+        for (passes, measure) in focus_measures(&journey).await? {
+            eprintln!("focus {skin} {theme} {scheme}: {measure}");
+            if !passes && theme != GUARDED_THEME {
+                problems.push(format!(
+                    "{skin} {theme} {scheme}: focus not visible: {measure}"
+                ));
             }
         }
+        // The gallery's four composers start their text where their bars' chips start.
+        anyhow::ensure!(
+            journey
+                .composer_aligned("[data-testid=kit-gallery]")
+                .await?
+                == 4
+        );
+        if let Some(dir) = e2e::screenshot_dir() {
+            let path = dir.join(format!("omfp-kit-{prefix}{theme}-{scheme}.png"));
+            std::fs::write(&path, full_page(&journey).await?)?;
+            eprintln!("screenshot: {}", path.display());
+        }
     }
-    journey.finish("kit gallery").await?;
+    journey
+        .finish(&format!("kit gallery {skin} {scheme}"))
+        .await?;
     if !problems.is_empty() {
         bail!("the gallery's contrast:\n{}", problems.join("\n"));
     }

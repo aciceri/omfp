@@ -1,4 +1,8 @@
-// Drives real file tabs in the desktop smoke window. State is per origin and survives each window restart.
+// Drives real file tabs in the desktop smoke window. State is per origin and survives each window restart. Each window
+// takes one batch of files through one phase: `open` opens them and leaves their tabs, `restore` finds them restored
+// after the restart and closes them, `reopen` opens and closes them again; then the next batch. A window that is done
+// with its batch reports it in `body[data-smoke]` and sets `body[data-matrix=ready]`; once every batch went through
+// every phase, a window with no file tab left reports `done`.
 export default function init(omfp) {
   const files = [
     ["video.mp4", "video"], ["video.webm", "video"], ["video.ogv", "video"], ["unsupported.mkv", "video"],
@@ -9,46 +13,72 @@ export default function init(omfp) {
     ["guide.md", "markdown"], ["guide.mdx", "markdown"], ["data.csv", "table"],
     ["data.tsv", "table"], ["data.json", "tree"], ["data.jsonc", "tree"], ["data.yaml", "tree"],
   ];
-  const state = JSON.parse(localStorage.getItem("test.matrix") || '{"index":0,"phase":"open"}');
+  // Files per window (the test's `VIEWER_BATCH`): a batch must fit the smoke deadline (60 s on Linux).
+  const BATCH = 8;
+  const PHASES = ["open", "restore", "reopen"];
+  const state = JSON.parse(localStorage.getItem("test.matrix") || '{"batch":0,"phase":"open"}');
+  const first = state.batch * BATCH;
+  const batch = files.slice(first, first + BATCH);
   const q = (selector) => document.querySelector(selector);
+  // The stored tabs name `path` (its closing quote too: `guide.md` is not `guide.mdx`).
+  const opened = (path) => localStorage.getItem("omfp.openFiles")?.includes(`${path}"`);
+  const results = [];
+  let index = 0;
   let action = 0;
   let original = "";
   let clickedClose = false;
-  let completed = false;
   let outcome = "";
+  let completed = false;
+  const report = (smoke) => {
+    document.body.dataset.smoke = JSON.stringify(smoke);
+    completed = true;
+    document.body.dataset.matrix = "ready";
+  };
+  // The file at `index` went through this window's phase: on to the next, or the batch is done.
+  const advance = (name) => {
+    results.push({name, phase: state.phase, outcome: outcome || "rendered"});
+    index += 1;
+    action = 0;
+    original = "";
+    clickedClose = false;
+    outcome = "";
+    if (index < batch.length) return;
+    const phase = PHASES.indexOf(state.phase) + 1;
+    const next = phase < PHASES.length ? {batch: state.batch, phase: PHASES[phase]} : {batch: state.batch + 1, phase: "open"};
+    localStorage.setItem("test.matrix", JSON.stringify(next));
+    report({phase: state.phase, results});
+  };
   const tick = setInterval(() => {
     if (completed) return;
-    const item = files[state.index];
-    if (!item) {
-      if (!q('[data-testid=file-tab]') && !localStorage.getItem("omfp.openFiles")?.includes("viewers/")) {
-        document.body.dataset.matrix = "done";
-      }
+    if (batch.length === 0) {
+      if (!q('[data-testid=file-tab]') && !localStorage.getItem("omfp.openFiles")?.includes("viewers/")) report({done: true});
       return;
     }
-    const [name, kind] = item;
+    const [name, kind] = batch[index];
     const path = `viewers/${name}`;
     const tab = q(`[data-testid=file-tab][data-file="${path}"]`);
     const active = tab?.getAttribute("aria-selected") === "true";
     const file = q(`[data-testid=file][data-path="${path}"]`);
-    document.body.dataset.smoke = JSON.stringify({name, phase: state.phase, action, active, status: file?.dataset.status});
+    // Progress, reported if the window misses the smoke deadline.
+    const tabs = [...document.querySelectorAll("[data-testid=file-tab]")].map((other) => other.dataset.file);
+    document.body.dataset.smoke = JSON.stringify({name, phase: state.phase, action, active, tabs, status: file?.dataset.status});
     if ((state.phase === "open" || state.phase === "reopen") && !tab && !clickedClose) {
       omfp.run("file.open", [path]);
       return;
     }
     if (clickedClose) {
-      if (!tab && !localStorage.getItem("omfp.openFiles")?.includes(path)) {
-        const next = state.phase === "restore" ? {index: state.index, phase: "reopen"} : {index: state.index + 1, phase: "open"};
-        localStorage.setItem("test.matrix", JSON.stringify(next));
-        document.body.dataset.smoke = JSON.stringify({name, phase: state.phase, outcome: outcome || "rendered"});
-        completed = true;
-        document.body.dataset.matrix = "ready";
-      }
+      if (!tab && !opened(path)) advance(name);
       return;
     }
     if (kind === "markdown" && action === 1 && q('[data-testid=file-tab][data-file="viewers/next.md"][aria-selected="true"]')) {
       q('[data-testid=file-tab][data-file="viewers/next.md"] [data-testid=file-tab-close]')?.click();
       tab?.click();
       action = 2;
+      return;
+    }
+    // A restored tab behind another one is brought to the front.
+    if (tab && !active && action === 0) {
+      tab.click();
       return;
     }
     if (!active || !file) return;
@@ -59,7 +89,11 @@ export default function init(omfp) {
       if (player && player.paused) { player.muted = true; player.play().catch(() => {}); }
       ready = !!((player && player.currentTime > 0 && (kind !== "video" || player.videoWidth > 0)) ||
         error?.textContent?.includes(`This window cannot play this ${kind} file`));
-      if (ready) outcome = error ? "fallback" : "played";
+      if (ready) {
+        outcome = error ? "fallback" : "played";
+        // Left open, it would keep playing behind the next tabs.
+        if (player && !player.paused) player.pause();
+      }
     } else if (kind === "pdf") {
       const page = file.querySelector('[data-testid=pdf-page][data-page="1"]');
       const label = file.querySelector('[data-testid=pdf-zoom]');
@@ -121,11 +155,8 @@ export default function init(omfp) {
     }
     if (!ready) return;
     if (state.phase === "open") {
-      if (!localStorage.getItem("omfp.openFiles")?.includes(path)) return;
-      localStorage.setItem("test.matrix", JSON.stringify({index: state.index, phase: "restore"}));
-      document.body.dataset.smoke = JSON.stringify({name, phase: state.phase, outcome: outcome || "rendered"});
-      completed = true;
-      document.body.dataset.matrix = "ready";
+      // The tab stays open for the next window to restore.
+      if (opened(path)) advance(name);
     } else {
       tab.querySelector('[data-testid=file-tab-close]')?.click();
       clickedClose = true;

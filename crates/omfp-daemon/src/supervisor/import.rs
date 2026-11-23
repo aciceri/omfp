@@ -343,9 +343,9 @@ impl Snapshot {
     /// SQLite's own: it takes standalone omp's locks, replays its write-ahead log or rolls a hot journal back, and
     /// waits up to [`STORE_BUSY_TIMEOUT`] for its writers. The store is opened read-only when its directory is not
     /// writable, else read-write, never created; SQLite may leave `-wal`/`-shm` files beside it. In a directory it
-    /// cannot write, SQLite cannot build the index of a log without `-shm`; no writer can use that log then, so the
-    /// store and its log are copied into the snapshot first and read from there. Never reads a credential row; an
-    /// error names the reason only.
+    /// cannot write, SQLite can neither build the index of a log without `-shm` nor roll a hot journal back, and no
+    /// writer can be using either there (it could not have created them), so the store and those files are copied
+    /// into the snapshot first and read from there. Never reads a credential row; an error names the reason only.
     fn copy(&self, store: &Path) -> Result<(), CopyError> {
         if !store.is_file() {
             return Err(CopyError::Gone);
@@ -353,14 +353,19 @@ impl Snapshot {
         let writable = store
             .parent()
             .is_some_and(|dir| nix::unistd::access(dir, nix::unistd::AccessFlags::W_OK).is_ok());
-        let wal = store.with_file_name(format!("{STORE}-wal"));
-        let staged =
-            !writable && wal.is_file() && !store.with_file_name(format!("{STORE}-shm")).exists();
+        let beside = |suffix: &str| store.with_file_name(format!("{STORE}{suffix}"));
+        let staged = !writable
+            && ((beside("-wal").is_file() && !beside("-shm").exists())
+                || beside("-journal").is_file());
         let source = if staged {
             let staging = self.dir.join("source");
             std::fs::create_dir(&staging)?;
             std::fs::copy(store, staging.join(STORE))?;
-            std::fs::copy(&wal, staging.join(format!("{STORE}-wal")))?;
+            for suffix in ["-wal", "-journal"] {
+                if beside(suffix).is_file() {
+                    std::fs::copy(beside(suffix), staging.join(format!("{STORE}{suffix}")))?;
+                }
+            }
             staging.join(STORE)
         } else {
             store.to_owned()
@@ -877,42 +882,62 @@ mod tests {
     // spec: DMN-229
     #[test]
     fn a_writer_that_died_mid_transaction_leaves_its_last_committed_state_in_the_copy() {
-        let dir = tempfile::tempdir().unwrap();
-        let live = dir.path().join("live");
-        std::fs::create_dir(&live).unwrap();
-        let writer = Connection::open(live.join(STORE)).unwrap();
-        writer
-            .execute_batch(
-                "PRAGMA journal_mode=DELETE; PRAGMA cache_size=5; CREATE TABLE t (n INTEGER, pad BLOB);",
-            )
-            .unwrap();
-        for _ in 0..200 {
+        use std::os::unix::fs::PermissionsExt;
+        // A directory omfp cannot write too, unless root, who writes whatever the mode says.
+        let read_only = if rustix::process::geteuid().is_root() {
+            vec![false]
+        } else {
+            vec![false, true]
+        };
+        for read_only in read_only {
+            let dir = tempfile::tempdir().unwrap();
+            let live = dir.path().join("live");
+            std::fs::create_dir(&live).unwrap();
+            let writer = Connection::open(live.join(STORE)).unwrap();
             writer
-                .execute("INSERT INTO t (n, pad) VALUES (0, zeroblob(1000))", [])
+                .execute_batch(
+                    "PRAGMA journal_mode=DELETE; PRAGMA cache_size=5; CREATE TABLE t (n INTEGER, pad BLOB);",
+                )
                 .unwrap();
-        }
-        // A transaction touching every row spills pages into the database file before it commits; the files as they
-        // are now are what a writer that dies here leaves.
-        writer.execute_batch("BEGIN; UPDATE t SET n = 1;").unwrap();
-        let standalone = standalone(dir.path());
-        for name in [STORE.to_owned(), format!("{STORE}-journal")] {
-            std::fs::copy(live.join(&name), standalone.join(&name)).unwrap();
-        }
-        writer.execute_batch("ROLLBACK;").unwrap();
-        drop(writer);
+            for _ in 0..200 {
+                writer
+                    .execute("INSERT INTO t (n, pad) VALUES (0, zeroblob(1000))", [])
+                    .unwrap();
+            }
+            // A transaction touching every row spills pages into the database file before it commits; the files as
+            // they are now are what a writer that dies here leaves.
+            writer.execute_batch("BEGIN; UPDATE t SET n = 1;").unwrap();
+            let standalone = standalone(dir.path());
+            for name in [STORE.to_owned(), format!("{STORE}-journal")] {
+                std::fs::copy(live.join(&name), standalone.join(&name)).unwrap();
+            }
+            writer.execute_batch("ROLLBACK;").unwrap();
+            drop(writer);
+            if read_only {
+                std::fs::set_permissions(&standalone, std::fs::Permissions::from_mode(0o555))
+                    .unwrap();
+            }
 
-        let snapshot = Snapshot::create(&dir.path().join("login")).unwrap();
-        snapshot.copy(&standalone.join(STORE)).unwrap();
+            let snapshot = Snapshot::create(&dir.path().join("login")).unwrap();
+            let copied = snapshot.copy(&standalone.join(STORE));
+            std::fs::set_permissions(&standalone, std::fs::Permissions::from_mode(0o755)).unwrap();
+            copied.unwrap();
 
-        let values: Vec<i64> = Connection::open(snapshot.store())
-            .unwrap()
-            .prepare("SELECT DISTINCT n FROM t")
-            .unwrap()
-            .query_map([], |row| row.get(0))
-            .unwrap()
-            .map(Result::unwrap)
-            .collect();
-        assert_eq!(values, [0], "the last committed state");
+            let values: Vec<i64> = Connection::open(snapshot.store())
+                .unwrap()
+                .prepare("SELECT DISTINCT n FROM t")
+                .unwrap()
+                .query_map([], |row| row.get(0))
+                .unwrap()
+                .map(Result::unwrap)
+                .collect();
+            assert_eq!(
+                values,
+                [0],
+                "the last committed state, read-only: {read_only}"
+            );
+            assert_eq!(listing(snapshot.dir()), [OsString::from(STORE)]);
+        }
     }
 
     // spec: DMN-229

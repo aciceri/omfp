@@ -174,11 +174,10 @@ Its jobs run in parallel on `ubuntu-latest`, each `nix develop -c just <recipe>`
 | Job | Runs |
 | --- | --- |
 | `dev-shell` | no recipe: builds (or fetches) the Linux dev shell once; every Linux recipe job `needs:` it (TST-076) |
-| `web` | `just build-web`; uploads `ui/packages/app/dist` as the `web-bundle` artifact |
 | `check` | `just check`: lints, version pins, spec-trace, `cargo deny`, the workflow itself (`actionlint`) |
 | `test`, `test-ts`, `test-contract` | `just test`, `just test-ts`, `just test-contract` (the pinned omp of the dev shell, the fake LLM) |
-| `test-e2e`, `test-desktop` | after `web`, on its artifact (`OMFP_WEB_BUNDLE`): `just test-e2e` (headless Chromium), `just test-desktop` (`xvfb-run`) |
-| `macos` | pushes to `master`, runs by hand and pull requests labeled `ci/macos` only (adding the label runs `ci.yml` by hand on the branch: `ci-macos-label.yml`; that run reports the job as the commit status `macOS (ci/macos)` of the pull request's head), `macos-15`, after `web`: `just test-desktop` (WKWebView, the menu bar item) and `just package` (the darwin packages and `omfp.app`); advisory, not in `required` (TST-092, ENV-042) |
+| `test-e2e`, `test-desktop` | each on a web bundle of its own (TST-073): `just test-e2e` (headless Chromium), `just test-desktop` (`xvfb-run`) |
+| `macos` | pushes to `master`, runs by hand and pull requests labeled `ci/macos` only (adding the label runs `ci.yml` by hand on the branch: `ci-macos-label.yml`; that run reports the job as the commit status `macOS (ci/macos)` of the pull request's head), `macos-15`: `just test-desktop` (WKWebView, the menu bar item) and `just package` (the darwin packages and `omfp.app`); advisory, not in `required` (TST-092, ENV-042) |
 | `package` | `just package`: `nix build .#omfp .#omfp-headless` (ENV-030..ENV-033) |
 | `mutants`, `cov` | `just mutants-gate`, `just cov`: the mutation and coverage gates of TST-050 |
 | `required` | no recipe or dev shell: after every blocking Linux job, fails unless all succeeded; branch protection requires its stable `required CI` status while `mutants` remains non-blocking (TST-118) |
@@ -191,12 +190,14 @@ from it and keep `CARGO_HOME` there, as the purge deletes `~/.cargo`), `cachix/i
 shell; the jobs that compile Rust also restore `Swatinem/rust-cache` (the shell's toolchain is put on `PATH` for it).
 The aggregate `required` job has no build step and therefore needs none of that setup. Caching (TST-072):
 
-- **Nix store**: Cachix `omfp`. Every run reads it; only pushes to `master` push what they built (the dev shell, Bun's
-  install cache `OMFP_BUN_CACHE`, which is a store path, and the packages); pull requests only read. The Cachix daemon
-  pushes each path as soon as it is built, so a job that fails (or runs out of time) still caches its work for the
-  rerun. The `dev-shell` job builds the Linux dev shell before any other Linux job starts (TST-076), so a cold cache on
-  `master` builds omp once, not once per job; `macos` builds its own. A pull request does not push, so there the other
-  jobs fetch what master cached and build only what the pull request changed.
+- **Nix store**: Cachix `omfp`. Every run reads it; pushes to `master` push what they built (the dev shell, Bun's
+  install cache `OMFP_BUN_CACHE`, which is a store path, and the packages). The Cachix daemon pushes each path as soon
+  as it is built, so a job that fails (or runs out of time) still caches its work for the rerun. The `dev-shell` job
+  builds the Linux dev shell before any other Linux job starts (TST-076), so a cold cache builds omp once, not once per
+  job; `macos` builds its own. On a pull request from this repository only the `dev-shell` job pushes
+  (`push-pull-request`), so a pull request changing the dev shell (an omp upgrade) builds it there once and the other
+  jobs fetch it; they push nothing and build only what else the pull request changed. Pull requests from forks only
+  read.
 - **Cargo**: registry and `target/` per job, keyed on `Cargo.lock`, the manifests, `rust-toolchain.toml` and `rustc
   -vV` (prefix `v1-rust`); saved on `master` only, restored by pull requests. `mutants` (`target-cache: "false"`)
   restores `test-ts`'s cache and saves none (TST-072). Each Rust job's summary reports its cache: exact hit, sizes.
@@ -205,7 +206,7 @@ The aggregate `required` job has no build step and therefore needs none of that 
   `$CARGO_HOME/git` links to, so the per-job caches store only the link. On `master` the `dev-shell` job fills and
   saves it when it misses (`fill-cargo-git`), before the other jobs restore it; elsewhere a miss makes each job's cargo
   clone it.
-- **Web bundle**: built once by `web`, shared as an artifact (7 days).
+- **Web bundle**: none; the e2e and desktop jobs build their own in seconds (TST-073).
 
 Secrets and variables (repository settings → Secrets and variables → Actions):
 

@@ -66,14 +66,25 @@ describe("check-workflow", () => {
   });
 
   // spec: TST-112
-  test("every job running the desktop tests serves the shared bundle, the Linux one too", () => {
+  test("a desktop job waiting for another job's web bundle fails", () => {
     const problems = check(
       withWorkflow((workflow) => {
         const job = workflow.jobs["test-desktop"];
-        if (job !== undefined) delete job.env;
+        if (job !== undefined) job.env = { OMFP_WEB_BUNDLE: "../web-bundle" };
       }),
     );
-    expect(problems).toContain("job test-desktop must serve the bundle of job web through OMFP_WEB_BUNDLE");
+    expect(problems).toContain("job test-desktop must build its own web bundle, waiting for no job but dev-shell");
+  });
+
+  // spec: TST-072
+  test("a job other than dev-shell pushing to Cachix on pull requests fails", () => {
+    const problems = check(
+      withWorkflow((workflow) => {
+        const setup = workflow.jobs.check?.steps?.find((step) => step.uses === "./.github/actions/dev-shell");
+        if (setup?.with !== undefined) setup.with["push-pull-request"] = "true";
+      }),
+    );
+    expect(problems).toContain("job check must not push to Cachix on pull requests: only dev-shell does");
   });
 
   // spec: TST-072

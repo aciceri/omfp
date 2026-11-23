@@ -1,8 +1,8 @@
 name: Dev shell
 description: >-
-  The runner's disk pooled into a Btrfs /nix, Nix with the omfp Cachix cache (pushed to by pushes to master only), the
-  flake's dev shell, and for Rust jobs the cargo registry and target cache and the shared cache of the cargo git
-  checkouts.
+  The runner's disk pooled into a Btrfs /nix, Nix with the omfp Cachix cache (pushed to by pushes to master, and by the
+  dev-shell job of pull requests from this repository), the flake's dev shell, and for Rust jobs the cargo registry and
+  target cache and the shared cache of the cargo git checkouts.
 inputs:
   cachix-auth-token:
     description: The `CACHIX_AUTH_TOKEN` secret; empty (forks) reads the cache only.
@@ -23,6 +23,13 @@ inputs:
     description: >-
       Whether this job fills the shared cache of the cargo git checkouts ("true"/"false"): on master, when the cache
       misses, it fetches the git dependencies and saves them. Only the dev-shell job, which the other jobs wait for.
+    required: false
+    default: "false"
+  push-pull-request:
+    description: >-
+      Whether this job pushes what it builds to Cachix on pull requests from this repository too ("true"/"false"). Only
+      the dev-shell job: a pull request changing the dev shell (an omp upgrade) builds it once, and the other jobs fetch
+      it instead of building it again each.
     required: false
     default: "false"
 runs:
@@ -67,8 +74,9 @@ runs:
       with:
         name: omfp
         authToken: ${{ inputs.cachix-auth-token }}
-        # Pull requests read the cache; only pushes to master fill it.
-        skipPush: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/master') }}
+        # Pushes to master fill the cache; on a pull request from this repository the dev-shell job fills it with the
+        # dev shell (TST-072); every other job of a pull request only reads it.
+        skipPush: ${{ !(github.event_name == 'push' && github.ref == 'refs/heads/master' || inputs.push-pull-request == 'true' && github.event.pull_request.head.repo.full_name == github.repository) }}
 
     - name: Build the dev shell
       shell: bash

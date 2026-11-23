@@ -25,9 +25,10 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # TST-076: builds the Linux dev shell once (omp from source on a cold cache, ~26 min); its cachix daemon pushes it
-  # (on master), and every other Linux job waits for it instead of building it again in parallel. On master it also
-  # fills the shared cache of the cargo git checkouts when it misses (TST-072), before the Rust jobs restore it.
+  # TST-076: builds the Linux dev shell once (omp from source on a cold cache, ~26 min); its cachix daemon pushes it (on
+  # master and on pull requests from this repository, TST-072), and every other Linux job waits for it instead of
+  # building it again in parallel. On master it also fills the shared cache of the cargo git checkouts when it misses
+  # (TST-072), before the Rust jobs restore it.
   dev-shell:
     name: dev shell
     runs-on: ubuntu-latest
@@ -39,26 +40,7 @@ jobs:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
           rust: "false"
           fill-cargo-git: "true"
-
-  web:
-    name: web bundle
-    needs: dev-shell
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v7
-      - uses: ./.github/actions/dev-shell
-        with:
-          cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
-          rust: "false"
-      - run: nix develop -c just build-web
-      # Built once, served by the e2e and desktop jobs (OMFP_WEB_BUNDLE).
-      - uses: actions/upload-artifact@v7
-        with:
-          name: web-bundle
-          path: ui/packages/app/dist
-          if-no-files-found: error
-          retention-days: 7
+          push-pull-request: "true"
 
   check:
     name: lint, versions, spec-trace, deny, workflow
@@ -96,19 +78,15 @@ jobs:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
       - run: nix develop -c just test-contract
 
+  # TST-073: the e2e and desktop jobs build their own web bundle (`with-web-bundle`, TST-074; seconds in the dev shell)
+  # rather than wait for a job building it.
   test-e2e:
     name: E2E (headless Chromium)
-    needs: [dev-shell, web]
+    needs: dev-shell
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    env:
-      OMFP_WEB_BUNDLE: ${{ github.workspace }}/../web-bundle
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
-        with:
-          name: web-bundle
-          path: ${{ env.OMFP_WEB_BUNDLE }}
       - uses: ./.github/actions/dev-shell
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
@@ -116,17 +94,11 @@ jobs:
 
   test-desktop:
     name: desktop (WebKitGTK under xvfb)
-    needs: [dev-shell, web]
+    needs: dev-shell
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    env:
-      OMFP_WEB_BUNDLE: ${{ github.workspace }}/../web-bundle
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
-        with:
-          name: web-bundle
-          path: ${{ env.OMFP_WEB_BUNDLE }}
       - uses: ./.github/actions/dev-shell
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}
@@ -141,14 +113,11 @@ jobs:
   macos:
     name: macOS desktop and packages
     if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ci/macos')
-    needs: web
     runs-on: macos-15
     timeout-minutes: 120
     permissions:
       contents: read
       statuses: write
-    env:
-      OMFP_WEB_BUNDLE: ${{ github.workspace }}/../web-bundle
     steps:
       - if: github.event_name == 'workflow_dispatch'
         env:
@@ -156,10 +125,6 @@ jobs:
           STATE: pending
         run: gh api "repos/$GITHUB_REPOSITORY/statuses/$GITHUB_SHA" -f state="$STATE" -f context="macOS (ci/macos)" -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
       - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v8
-        with:
-          name: web-bundle
-          path: ${{ env.OMFP_WEB_BUNDLE }}
       - uses: ./.github/actions/dev-shell
         with:
           cachix-auth-token: ${{ secrets.CACHIX_AUTH_TOKEN }}

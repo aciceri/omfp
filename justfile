@@ -29,8 +29,8 @@ bench *args: (with-web-bundle "cargo nextest run -p e2e --release --run-ignored 
 # display
 test-desktop: (with-web-bundle "cargo nextest run -p omfp --features desktop --test-threads 1")
 
-# spec: TST-074 — `command` with a web bundle of its own in `OMFP_WEB_BUNDLE`: the one given (CI's `web` job builds it
-# once, TST-073; `just ci` once for its recipes, TST-113), else a release bundle built into a temporary directory.
+# spec: TST-074 — `command` with a web bundle of its own in `OMFP_WEB_BUNDLE`: the one given (`just ci` builds it once for its
+# recipes, TST-113), else a release bundle built into a temporary directory.
 # Never `ui/packages/app/dist`: another `just build-web` deletes and rebuilds it, and a test serving it meanwhile gets
 # 404 pages.
 [private]
@@ -156,7 +156,7 @@ deny:
 
 # spec: TST-070, TST-071, TST-072, TST-073, TST-075, TST-076, TST-092, TST-112, TST-118, ENV-042, ENV-060 — the
 # GitHub workflow (.github/workflows/ci.yml) passes actionlint and runs what `just ci` runs, in the dev shell, with its
-# caches, the shared web bundle, the runner's disk pooled for Nix, a macOS job and one stable required aggregate; the
+# caches, a web bundle per test job, the runner's disk pooled for Nix, a macOS job and one stable required aggregate; the
 # release workflow (release.yml) builds the packages in the dev shell and writes only from its tag-only job
 # (.github/check-workflow.ts, its tests beside it)
 check-workflow:

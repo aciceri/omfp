@@ -5,17 +5,17 @@
  *
  * - TST-070: CI runs on pushes to master and on pull requests; each recipe job sets up the dev shell and runs only `nix
  *   develop -c just <recipe>`; every recipe `just ci` runs has a job that runs it on pull requests too (no `if:`), and
- *   no job runs a recipe `just ci` does not (but the web bundle).
+ *   no job runs a recipe `just ci` does not.
  * - TST-071: actionlint passes; every action of every workflow (ENV-051 too) is pinned by a major tag or a commit SHA.
  *   The other rules are about `ci.yml` only.
- * - TST-072: the Nix store comes from the `omfp` Cachix cache, which only pushes to master fill; the cargo cache is
- *   saved on master only, by the jobs with a target cache; a job without one (the mutation gate's) restores the cache
- *   of a job that saves one; the git checkouts are one cache of their own, keyed on Cargo.lock's git sources, filled
- *   and saved on master by the `dev-shell` job alone, restored by every Rust job and linked into CARGO_HOME after
- *   rust-cache; the dev-shell action reports the cargo cache in the job summary; every recipe job hands the dev-shell
- *   action the Cachix token.
- * - TST-073: the web bundle is built once: every job running the e2e or desktop tests needs the `build-web` job and
- *   serves its artifact through `OMFP_WEB_BUNDLE`.
+ * - TST-072: the Nix store comes from the `omfp` Cachix cache, which pushes to master fill, and on pull requests from
+ *   this repository the `dev-shell` job alone (`push-pull-request`); the cargo cache is saved on master only, by the
+ *   jobs with a target cache; a job without one (the mutation gate's) restores the cache of a job that saves one; the
+ *   git checkouts are one cache of their own, keyed on Cargo.lock's git sources, filled and saved on master by the
+ *   `dev-shell` job alone, restored by every Rust job and linked into CARGO_HOME after rust-cache; the dev-shell
+ *   action reports the cargo cache in the job summary; every recipe job hands the dev-shell action the Cachix token.
+ * - TST-073: every job running the e2e or desktop tests builds its own web bundle: it sets no `OMFP_WEB_BUNDLE`,
+ *   downloads no artifact and waits for no job but `dev-shell`.
  * - TST-075: before installing Nix, the dev-shell action pools the runner's disk into a Btrfs /nix with
  *   `wimpysworld/nothing-but-nix` (Linux runners), Nix builds in /nix/build, and the cachix daemon pushes every path as
  *   it is built.
@@ -144,7 +144,7 @@ function checkRecipes({ workflow, recipes, ci }: Inputs, ranBy: Map<string, stri
     }
   }
   for (const [recipe, ids] of ranBy) {
-    if (recipe === "build-web" || ci.includes(recipe) || !(recipe in recipes)) continue;
+    if (ci.includes(recipe) || !(recipe in recipes)) continue;
     for (const id of ids) problems.push(`job ${id} runs \`just ${recipe}\`, which \`just ci\` does not`);
   }
 }
@@ -199,8 +199,18 @@ function checkCaches(inputs: Inputs, ranBy: Map<string, string[]>, problems: str
   const { workflow, setup } = inputs;
   const cachix = setupStep(setup, "cachix/cachix-action");
   if (cachix?.with?.name !== "omfp") problems.push(`${SETUP} must use the omfp Cachix cache`);
-  if (cachix?.with?.skipPush !== expression(`!(github.event_name == 'push' && ${ON_MASTER})`)) {
-    problems.push(`${SETUP} must push to Cachix on pushes to master only`);
+  const pushes = [
+    `github.event_name == 'push' && ${ON_MASTER}`,
+    "inputs.push-pull-request == 'true' && github.event.pull_request.head.repo.full_name == github.repository",
+  ];
+  if (cachix?.with?.skipPush !== expression(`!(${pushes.join(" || ")})`)) {
+    problems.push(`${SETUP} must push to Cachix on pushes to master, and on pull requests from this repository`);
+  }
+  for (const [id, job] of Object.entries(workflow.jobs)) {
+    const setupWith = job.steps?.find((step) => step.uses === SETUP_USES)?.with;
+    if (id !== SHELL_JOB && setupWith?.["push-pull-request"] !== undefined) {
+      problems.push(`job ${id} must not push to Cachix on pull requests: only ${SHELL_JOB} does`);
+    }
   }
   const rustCache = setupStep(setup, "Swatinem/rust-cache");
   if (rustCache?.with?.["save-if"] !== expression(`inputs.target-cache == 'true' && ${ON_MASTER}`)) {
@@ -296,29 +306,15 @@ function checkCargoGit({ workflow, setup }: Inputs, problems: string[]) {
   }
 }
 
-/** TST-073: every job running the e2e or desktop tests serves the bundle of the one `build-web` job. */
+/** TST-073: every job running the e2e or desktop tests builds its own web bundle (`with-web-bundle`, seconds). */
 function checkBundle({ workflow }: Inputs, ranBy: Map<string, string[]>, problems: string[]) {
-  const webJobs = ranBy.get("build-web") ?? [];
-  const webJob = webJobs.length === 1 ? webJobs[0] : undefined;
-  const upload = webJob
-    ? workflow.jobs[webJob]?.steps?.find((step) => step.uses?.startsWith("actions/upload-artifact@"))
-    : undefined;
-  if (webJob === undefined || upload?.with?.path !== "ui/packages/app/dist") {
-    problems.push("one job must run `just build-web` and upload ui/packages/app/dist");
-  }
   const ids = new Set(["test-e2e", "test-desktop"].flatMap((recipe) => ranBy.get(recipe) ?? []));
   for (const id of ids) {
     const job = workflow.jobs[id];
-    const needs = [job?.needs ?? []].flat();
-    const download = job?.steps?.find((step) => step.uses?.startsWith("actions/download-artifact@"));
-    if (
-      webJob === undefined ||
-      !needs.includes(webJob) ||
-      job?.env?.OMFP_WEB_BUNDLE === undefined ||
-      download?.with?.name !== upload?.with?.name ||
-      download?.with?.path !== expression("env.OMFP_WEB_BUNDLE")
-    ) {
-      problems.push(`job ${id} must serve the bundle of job ${webJob ?? "?"} through OMFP_WEB_BUNDLE`);
+    const waits = [job?.needs ?? []].flat().filter((need) => need !== SHELL_JOB);
+    const download = job?.steps?.some((step) => step.uses?.startsWith("actions/download-artifact@"));
+    if (job?.env?.OMFP_WEB_BUNDLE !== undefined || waits.length > 0 || download) {
+      problems.push(`job ${id} must build its own web bundle, waiting for no job but ${SHELL_JOB}`);
     }
   }
 }

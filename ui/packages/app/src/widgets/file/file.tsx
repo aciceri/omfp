@@ -12,13 +12,11 @@
 import type { FileContent } from "@omfp/protocol";
 import {
   Button,
-  Chip,
   CodeDiff,
   type CodeDiffLayout,
   CodeEditor,
   type CodeEditorHandle,
   EmptyState,
-  Icon,
   type VimMode,
 } from "omfp/kit";
 import {
@@ -34,9 +32,9 @@ import {
 } from "omfp/sdk";
 import { type ReactNode, type RefObject, useCallback, useEffect, useRef, useState } from "react";
 import { ImageFile } from "./image.tsx";
-import { extension, MediaFile, mediaKind } from "./media.tsx";
+import { MediaFile, mediaKind } from "./media.tsx";
 import { PdfFile } from "./pdf.tsx";
-import { type ViewerFailure, viewerOf } from "./viewers.tsx";
+import { extension, FileBar, type ViewerFailure, viewerOf } from "./viewers.tsx";
 
 const text = strings.shell.file;
 
@@ -242,12 +240,7 @@ function TextFile({ file, content, line, jump, diff, save, reload, root }: TextF
   const showEditor = mode !== "view" || (!showDiff && !previewing);
   return (
     <>
-      <div className="omfp-file__bar" data-testid="file-bar">
-        <span className="omfp-file__path">
-          <Icon name="file" className="omfp-file__icon" />
-          {typeof file.repo === "string" && <Chip>{file.repo}</Chip>}
-          <span data-testid="file-path">{file.path}</span>
-        </span>
+      <FileBar file={file}>
         <span className="omfp-file__actions">
           {mode === "view" && viewer !== undefined && (
             <Button
@@ -308,7 +301,7 @@ function TextFile({ file, content, line, jump, diff, save, reload, root }: TextF
             </>
           )}
         </span>
-      </div>
+      </FileBar>
       {file.truncated === true && <p className="omfp-file__notice">{text.truncated(text.size(file.size))}</p>}
       {file.outside === true && (
         <p className="omfp-file__notice" data-testid="file-outside">

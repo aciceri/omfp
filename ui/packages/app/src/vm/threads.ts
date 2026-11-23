@@ -95,8 +95,6 @@ export interface ThreadFilter {
   readonly spawned?: ReadonlySet<string>;
 }
 
-export const NO_FILTER: ThreadFilter = { query: "", conversation: new Map() };
-
 /** A query is typed or a spawned tree is chosen: sections without matching threads are hidden and collapsed ones are
  * shown. */
 export function isFiltering(filter: ThreadFilter): boolean {

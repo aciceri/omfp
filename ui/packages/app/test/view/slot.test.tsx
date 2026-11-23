@@ -5,7 +5,6 @@ import type { ReportWidgetsParams, ViewsState, WidgetInfo, WidgetReport } from "
 import { act, cleanup, screen } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { OmfpProvider, useStored, useWidget, type WidgetComponent, type WidgetProps } from "../../src/sdk/index.ts";
-import { widgetTitle } from "../../src/view/render.tsx";
 import { resolveWidget, type WidgetRegistry, widgetUrl } from "../../src/view/resolve.ts";
 import { WidgetSlot } from "../../src/view/slot.tsx";
 import { FakeClient, ManualTimers, renderWithHost, type TestHost, testHost } from "../support/host.tsx";
@@ -151,19 +150,17 @@ function Count(): ReactNode {
 }
 
 describe("resolveWidget", () => {
-  // spec: AGT-022, AGT-023
-  test("resolves built-ins, workspace overrides, workspace and user widgets", () => {
+  // spec: AGT-022
+  test("resolves built-ins, workspace overrides and workspace widgets", () => {
     const tests = folder("workspace", "tests", "w1");
     const header = folder("workspace", "header", "h1");
-    const clock = folder("user", "clock", "u1");
-    const state = views(tests, header, clock);
+    const state = views(tests, header);
     expect(resolveWidget("omfp:header", WS, undefined, REGISTRY)).toEqual({ kind: "builtin", component: Builtin });
     expect(resolveWidget("omfp:header", WS, views(tests), REGISTRY)).toEqual({ kind: "builtin", component: Builtin });
     expect(resolveWidget("omfp:header", WS, state, REGISTRY)).toEqual({ kind: "module", widget: header });
     expect(resolveWidget("./widgets/tests", WS, state, REGISTRY)).toEqual({ kind: "module", widget: tests });
-    expect(resolveWidget("user:clock", WS, state, REGISTRY)).toEqual({ kind: "module", widget: clock });
     expect(resolveWidget("./widgets/tests", WS, undefined, REGISTRY)).toEqual({ kind: "pending" });
-    for (const reference of ["omfp:nope", "./widgets/clock", "user:tests", "user:", "./widgets/", "tests"]) {
+    for (const reference of ["omfp:nope", "./widgets/clock", "./widgets/", "tests"]) {
       expect({ reference, resolved: resolveWidget(reference, WS, state, REGISTRY) }).toEqual({
         reference,
         resolved: { kind: "missing" },
@@ -172,22 +169,13 @@ describe("resolveWidget", () => {
     expect(resolveWidget("./widgets/tests", undefined, undefined, REGISTRY)).toEqual({ kind: "missing" });
   });
 
-  // spec: UI-493, AGT-022
-  test("the retired omfp:subagents resolves to omfp:background, unless a workspace folder replaces it", () => {
-    const registry: WidgetRegistry = new Map<string, WidgetComponent>([["omfp:background", Builtin]]);
-    const copy = folder("workspace", "subagents", "s1");
-    expect(resolveWidget("omfp:subagents", WS, views(), registry)).toEqual({ kind: "builtin", component: Builtin });
-    expect(resolveWidget("omfp:subagents", WS, views(copy), registry)).toEqual({ kind: "module", widget: copy });
-    expect(widgetTitle("omfp:subagents")).toBe("Background");
-  });
-
-  // spec: UI-105, AGT-023
+  // spec: UI-105
   test("widget URLs follow the daemon's scheme", () => {
     expect(widgetUrl(BASE, WS, folder("workspace", "tests", "v1"), "index.tsx")).toBe(
       "/widgets/test/01W/tests/v1/index.tsx",
     );
-    expect(widgetUrl(BASE, WS, folder("user", "clock", "u 2"), "index.js")).toBe(
-      "/widgets/test/user/clock/u%202/index.js",
+    expect(widgetUrl(BASE, WS, folder("workspace", "clock", "u 2"), "index.js")).toBe(
+      "/widgets/test/01W/clock/u%202/index.js",
     );
   });
 });
@@ -222,17 +210,6 @@ describe("widget slot", () => {
 
     expect(screen.getByTestId("module").textContent).toBe("hello you");
     expect(widget().dataset.version).toBe("v1");
-  });
-
-  // spec: AGT-023, UI-105
-  test("user widgets resolve to the user library", async () => {
-    const { imports } = renderSlots(
-      [{ reference: "user:hello", props: { who: "me" } }],
-      views(folder("user", "hello", "u1", "index.js")),
-    );
-    await imports.resolve("/widgets/test/user/hello/u1/index.js", { default: Hello });
-    expect(screen.getByTestId("module").textContent).toBe("hello me");
-    expect(widget().dataset).toMatchObject({ source: "user", version: "u1" });
   });
 
   // spec: AGT-022
@@ -417,16 +394,16 @@ describe("slot reports", () => {
       [
         { reference: "./widgets/bad", path: "0.0" },
         { reference: "./widgets/gone", path: "0.1" },
-        { reference: "user:broken", path: "0.2" },
+        { reference: "./widgets/broken", path: "0.2" },
       ],
-      views(folder("workspace", "bad", "b1"), folder("workspace", "gone", "g1"), folder("user", "broken", "r1")),
+      views(folder("workspace", "bad", "b1"), folder("workspace", "gone", "g1"), folder("workspace", "broken", "r1")),
     );
     await imports.resolve("/widgets/test/01W/bad/b1/index.tsx", {
       compileError: { file: "parts/view.tsx", line: 3, column: 7, message: "Unexpected token" },
       default: () => createElement("pre", null, "stand-in"),
     });
     await imports.reject("/widgets/test/01W/gone/g1/index.tsx", new Error("Failed to fetch"));
-    await imports.resolve("/widgets/test/user/broken/r1/index.tsx", { default: Broken });
+    await imports.resolve("/widgets/test/01W/broken/r1/index.tsx", { default: Broken });
 
     expect((await report()).map(({ name, state, version, errors }) => ({ name, state, version, errors }))).toEqual([
       { name: "bad", state: "compile_error", version: "b1", errors: ["parts/view.tsx:3:7: Unexpected token"] },

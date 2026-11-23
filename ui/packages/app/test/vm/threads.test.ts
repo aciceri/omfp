@@ -13,7 +13,6 @@ import {
   isUnread,
   isWorkspacePath,
   moveSelection,
-  NO_FILTER,
   newWorkspaceParams,
   nextNeedingAttention,
   SEARCH_DELAY_MS,
@@ -30,7 +29,7 @@ import {
   waitingCount,
   workspaceChip,
 } from "../../src/vm/threads.ts";
-import { repo, thread, workspace } from "../support/fixtures.ts";
+import { NO_FILTER, repo, thread, workspace } from "../support/fixtures.ts";
 
 function index(): { workspaces: Workspace[]; threads: ThreadSummary[] } {
   const linked: WorkspaceRepo = {

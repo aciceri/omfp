@@ -23,10 +23,10 @@ import { resolveWidget, type WidgetRegistry, widgetModulePath, widgetUrl } from 
 const text = strings.widgets;
 
 export interface WidgetSlotProps {
-  /** The node's widget reference (`omfp:chat`, `./widgets/tests`, `user:clock`). */
+  /** The node's widget reference (`omfp:chat`, `./widgets/tests`). */
   readonly reference: string;
   readonly props: WidgetProps;
-  /** The node's path in the view (`"0.1"`, UI-103). */
+  /** The node's path in the view (`"0.1"`). */
   readonly path: string;
   /** The workspace whose view this is; `undefined` without a current workspace. */
   readonly workspaceId: string | undefined;

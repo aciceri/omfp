@@ -5,7 +5,7 @@ import { widgetsOf, windowReport } from "../../src/frame/window-state.ts";
 import type { Binding } from "../../src/keymap/keymap.ts";
 import type { Command } from "../../src/sdk/index.ts";
 import { parseLayout } from "../../src/view/layout.ts";
-import { BUILTIN_VIEW, type FileView, type ResolvedView, type Views } from "../../src/view/views.ts";
+import { BUILTIN_VIEW, type ResolvedView, type Views } from "../../src/view/views.ts";
 
 function resolved(id: string, layout: unknown, extra: Partial<ResolvedView> = {}): ResolvedView {
   const tree = parseLayout(layout);
@@ -17,7 +17,7 @@ function resolved(id: string, layout: unknown, extra: Partial<ResolvedView> = {}
 
 const work = resolved("work", ["row", {}, ["tabs", { id: "main" }, "omfp:chat"], "./widgets/tests", "omfp:chat"]);
 const solo = resolved("solo", "omfp:chat", { init: "workspace" });
-const ops: FileView = { id: "ops", title: "Ops", file: "./views/ops.tsx", init: "user" };
+const ops = resolved("ops", ["row", {}, "omfp:chat", "./widgets/tests"], { init: "user" });
 const views: Views = { views: [ops, solo, work], defaultId: "work", panels: [], error: undefined };
 
 const noop = () => {};
@@ -34,13 +34,12 @@ const bindings: Binding[] = [
 
 describe("window state", () => {
   // spec: UI-350
-  test("each view says where it comes from, its TSX file and its widgets; a TSX view only once rendered", () => {
+  test("each view says where it comes from and its widgets", () => {
     const report = windowReport({
       workspaceId: "w1",
       threadId: "t1",
       focused: true,
       views,
-      listed: work,
       shown: work,
       commands: [],
       bindings,
@@ -51,38 +50,12 @@ describe("window state", () => {
       activeView: "work",
       defaultView: "work",
       views: [
-        { id: "ops", title: "Ops", source: "user_init", file: "./views/ops.tsx", widgets: null },
-        { id: "solo", title: "SOLO", source: "workspace_init", file: null, widgets: ["omfp:chat"] },
-        { id: "work", title: "WORK", source: "views_json", file: null, widgets: ["omfp:chat", "./widgets/tests"] },
+        { id: "ops", title: "OPS", source: "user_init", widgets: ["omfp:chat", "./widgets/tests"] },
+        { id: "solo", title: "SOLO", source: "workspace_init", widgets: ["omfp:chat"] },
+        { id: "work", title: "WORK", source: "views_json", widgets: ["omfp:chat", "./widgets/tests"] },
       ],
       commands: [],
     });
-
-    // The TSX view rendered: its layout's widgets; failing, the default view stands in and says nothing of it.
-    const rendered = resolved("ops", ["row", {}, "omfp:chat", "./widgets/tests"], { file: "./views/ops.tsx" });
-    const shown = windowReport({
-      workspaceId: "w1",
-      threadId: undefined,
-      focused: false,
-      views,
-      listed: ops,
-      shown: rendered,
-      commands: [],
-      bindings,
-    });
-    expect(shown.activeView).toBe("ops");
-    expect(shown.views?.[0]?.widgets).toEqual(["omfp:chat", "./widgets/tests"]);
-    const failing = windowReport({
-      workspaceId: "w1",
-      threadId: undefined,
-      focused: false,
-      views,
-      listed: ops,
-      shown: BUILTIN_VIEW,
-      commands: [],
-      bindings,
-    });
-    expect(failing.views?.[0]?.widgets).toBeNull();
 
     const builtin: Views = { views: [BUILTIN_VIEW], defaultId: "default", panels: [], error: undefined };
     const fallback = windowReport({
@@ -90,7 +63,6 @@ describe("window state", () => {
       threadId: undefined,
       focused: false,
       views: builtin,
-      listed: BUILTIN_VIEW,
       shown: BUILTIN_VIEW,
       commands: [],
       bindings,
@@ -105,7 +77,6 @@ describe("window state", () => {
       threadId: undefined,
       focused: false,
       views,
-      listed: work,
       shown: work,
       commands,
       bindings,
@@ -140,7 +111,6 @@ describe("window state", () => {
         threadId: undefined,
         focused: true,
         views,
-        listed: work,
         shown: work,
         commands: [],
         bindings,

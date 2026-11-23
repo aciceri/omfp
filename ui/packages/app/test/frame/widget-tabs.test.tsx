@@ -239,37 +239,4 @@ describe("revealed widgets as tabs of the main slot", () => {
     expect(tabs()).toEqual([]);
     expect(screen.queryAllByTestId("floating-widget").length).toBe(0);
   });
-
-  // spec: UI-493
-  test("a view naming the retired omfp:subagents shows Background there; revealing Background selects it", () => {
-    const test = setup({
-      views: {
-        manifest: {
-          default: "work",
-          views: {
-            work: {
-              layout: [
-                "row",
-                {},
-                ["tabs", { id: "main" }, "omfp:chat"],
-                ["tabs", {}, "omfp:workspace", "omfp:subagents"],
-              ],
-            },
-          },
-        },
-      },
-    });
-    // Rendered by omfp:background under its old reference, titled like it.
-    expect(screen.getByTestId("stub-background").textContent).toBe("omfp:subagents");
-    expect(screen.queryAllByText("Unknown widget omfp:subagents").length).toBe(0);
-    const side = [...document.querySelectorAll<HTMLElement>('[role="tab"]')].map((tab) => tab.textContent);
-    expect(side).toEqual(["Workspace", "Background"]);
-    // The view holds Background: a reveal selects that tab instead of opening another.
-    reveal(test, "omfp:background", 1);
-    expect(test.host.window.get(REVEAL_WIDGET)).toBeUndefined();
-    expect(test.host.window.get(OPEN_FILES).w1).toBeUndefined();
-    expect(screen.queryAllByTestId("floating-widget").length).toBe(0);
-    const selected = document.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
-    expect(selected?.textContent).toBe("Background");
-  });
 });

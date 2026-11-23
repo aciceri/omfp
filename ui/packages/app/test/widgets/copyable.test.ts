@@ -1,7 +1,7 @@
 /** L0: the built-in widgets are written like agent widgets, so their folders can be copied into a workspace. */
 
 import { describe, expect, test } from "bun:test";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BUILTINS } from "../../builtins.ts";
 import { BUILTIN_WIDGETS } from "../../src/view/registry.ts";
@@ -68,12 +68,9 @@ describe("copyable built-ins", () => {
     }
   });
 
-  // spec: AGT-021, UI-493
+  // spec: AGT-021
   test("every built-in `omfp:<name>` a view can hold ships as a copyable folder, and only those", () => {
     const shipped = BUILTINS.map(({ name }) => `omfp:${name}`).sort();
     expect(shipped).toEqual([...BUILTIN_WIDGETS.keys()].sort());
-    // `omfp:subagents` merged into `omfp:background`: no built-in, no folder.
-    expect(BUILTIN_WIDGETS.has("omfp:subagents")).toBe(false);
-    expect(existsSync(join(WIDGETS, "subagents"))).toBe(false);
   });
 });

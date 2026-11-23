@@ -1,18 +1,21 @@
 /** L1/L4: the keymap as data, its sequence matcher and the global key handler (UI-095). */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import type { ViewsState } from "@omfp/protocol";
+import { renderHook } from "@testing-library/react";
 import { CMDLINE_ATTRIBUTE, createKeyHandler, modeAt } from "../../src/keymap/handler.ts";
 import {
   type Binding,
   DEFAULT_BINDINGS,
   describeKeys,
-  effectiveBindings,
+  type InitBindings,
   KeymapMatcher,
   keyLabel,
   keysFor,
   keyToken,
   SEQUENCE_TIMEOUT_MS,
 } from "../../src/keymap/keymap.ts";
+import { useBindings } from "../../src/keymap/workspace.tsx";
 import { CommandRegistry, SCOPE_ATTRIBUTE } from "../../src/sdk/index.ts";
 
 function key(
@@ -338,22 +341,26 @@ describe("init layers", () => {
       { mode: "normal", keys: "g h", command: "help.open" },
       { mode: "normal", keys: "j", command: "nav.next" },
     ];
-    const merged = effectiveBindings(
-      defaults,
-      [{ mode: "normal", keys: "j", command: "nav.prev" }],
-      [{ mode: "normal", keys: "g h", command: "demo.ping" }],
-      {
-        user: [
-          { mode: "normal", keys: "g h", command: "my.hello", args: ["user"] },
-          { mode: "normal", keys: "Space h", command: "my.hello" },
-        ],
-        workspace: [
-          { mode: "normal", keys: "Space h", command: "my.other" },
-          { mode: "normal", keys: "j", command: "" },
-        ],
-      },
+    const views: ViewsState = {
+      widgets: [],
+      stored: {},
+      keymap: [{ mode: "normal", keys: "g h", command: "demo.ping" }],
+    };
+    const init: InitBindings = {
+      user: [
+        { mode: "normal", keys: "g h", command: "my.hello", args: ["user"] },
+        { mode: "normal", keys: "Space h", command: "my.hello" },
+      ],
+      workspace: [
+        { mode: "normal", keys: "Space h", command: "my.other" },
+        { mode: "normal", keys: "j", command: "" },
+      ],
+    };
+    const { result, unmount } = renderHook(() =>
+      useBindings(defaults, [{ mode: "normal", keys: "j", command: "nav.prev" }], views, init),
     );
-    expect(merged).toEqual([
+    unmount();
+    expect(result.current).toEqual([
       { mode: "normal", keys: "g h", command: "my.hello", args: ["user"], source: "init:user" },
       { mode: "normal", keys: "Space h", command: "my.other", source: "init:workspace" },
     ]);
@@ -370,22 +377,5 @@ describe("init layers", () => {
     expect(describeKeys(bindings, "Space n")).toEqual({ kind: "done", keys: "Space n", bindings: bindings.slice(2) });
     expect(describeKeys(bindings, "Ctrl-c")).toEqual({ kind: "done", keys: "Ctrl-c", bindings: bindings.slice(0, 2) });
     expect(describeKeys(bindings, "q")).toEqual({ kind: "done", keys: "q", bindings: [] });
-  });
-});
-
-describe("former command ids", () => {
-  // spec: UI-527
-  test("config, workspace and init entries naming a former built-in id bind its current id", () => {
-    const merged = effectiveBindings(
-      [],
-      [{ mode: "normal", keys: "Space t", command: "theme.set", args: ["dark"] }],
-      [{ mode: "normal", keys: "Space w", command: "widget", args: ["add"] }],
-      { user: [{ mode: "normal", keys: "Space u", command: "theme.set" }], workspace: [] },
-    );
-    expect(merged.map((binding) => [binding.keys, binding.command, binding.source])).toEqual([
-      ["Space t", "window.theme", "config"],
-      ["Space w", "widget.manage", "workspace"],
-      ["Space u", "window.theme", "init:user"],
-    ]);
   });
 });

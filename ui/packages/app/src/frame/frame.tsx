@@ -3,7 +3,7 @@
  * workspaces and threads (UI-100), the view of the current workspace with its error banner (UI-100..102, AGT-011)
  * or, while omp has no usable model, the first run's welcome (UI-500)
  * and its view tabs in the mode line (UI-301), the keymap, `:` command line (UI-095), which-key panel (UI-320) and
- * help panel (UI-198), the runtime errors of init files and TSX views reported to the daemon (UI-304), the window's
+ * help panel (UI-198), the runtime errors of init files reported to the daemon (UI-304), the window's
  * state for agents and their requests to it (UI-350..UI-353), the safety net for pending interactions (AGT-015),
  * floating panels (UI-230), notices and notifications (UI-096, UI-192), the live region (UI-092), dialogs, the files
  * the agent opens (DMN-060), and theme/density on `<html>` (UI-091, UI-094). Everything else is a widget of the view.
@@ -35,21 +35,13 @@ import {
 import { strings } from "../strings/index.ts";
 import { useAppearance, useUserTheme } from "../theme/theme.ts";
 import { CardWidgetView, WidgetRegistryScope } from "../view/card.tsx";
-import { useFileView } from "../view/file-view.tsx";
 import { keepViews, NO_KEPT_VIEWS } from "../view/kept.ts";
 import { chatCell, containsWidget, hasMainSlot } from "../view/layout.ts";
 import { BUILTIN_WIDGETS, INTERACTION_WIDGETS } from "../view/registry.ts";
 import { ViewRenderer } from "../view/render.tsx";
 import { resolveWidget, type WidgetRegistry } from "../view/resolve.ts";
 import { WidgetBoundary } from "../view/slot.tsx";
-import {
-  BUILTIN_VIEW,
-  isFileView,
-  type ResolvedView,
-  resolveViews,
-  type Views,
-  withInitPanels,
-} from "../view/views.ts";
+import { type ResolvedView, resolveViews, type Views, withInitPanels } from "../view/views.ts";
 import { InteractionsWidget } from "../widgets/chat/index.ts";
 import { ThreadsWidget } from "../widgets/threads/index.ts";
 import { AgentFiles } from "./agent-files.tsx";
@@ -141,50 +133,23 @@ export function Frame({
   useViewChoicesUpkeep();
   const viewIds = views.views.map((candidate) => candidate.id);
   const active = useActiveView(viewIds);
-  const listed =
+  const view =
     views.views.find((candidate) => candidate.id === active) ??
     views.views.find((candidate) => candidate.id === views.defaultId);
-  // A TSX view renders its file first (UI-268); while it fails, the default view stands in.
-  const file = useFileView(listed !== undefined && isFileView(listed) ? listed : undefined, workspaceId, state);
-  const fileError = listed !== undefined && isFileView(listed) ? file.error : undefined;
-  // The last views shown stay mounted, hidden (UI-390); a TSX view shown again shows as it was until it rendered.
+  // The last views shown stay mounted, hidden (UI-390).
   const [kept, setKept] = useState(NO_KEPT_VIEWS);
-  const keptListed =
-    listed === undefined || kept.workspaceId !== workspaceId
-      ? undefined
-      : kept.views.find((entry) => entry.id === listed.id)?.view;
-  const view =
-    listed === undefined || !isFileView(listed)
-      ? listed
-      : (file.view ??
-        (file.error !== undefined ? BUILTIN_VIEW : keptListed?.file === listed.file ? keptListed : undefined));
   // Where opening a file or a widget tab selects it (UI-372); a tab opened right after a thread switch waits for the
   // workspace's views, not the built-in view standing in while they load.
   useShownView(view?.id, state !== undefined);
-  const keeping = keepViews(
-    kept,
-    workspaceId,
-    listed === undefined || view === undefined ? undefined : { id: listed.id, view },
-    views.views,
-  );
+  const keeping = keepViews(kept, workspaceId, view === undefined ? undefined : { id: view.id, view }, views.views);
   if (keeping !== kept) {
     setKept(keeping);
   }
-  const addWidget = useAddWidget(workspaceId, state, listed);
+  const addWidget = useAddWidget(workspaceId, state, view);
   const fileErrors = useMemo(
-    (): FileErrorReport[] => [
-      ...init.errors.map(
-        ({ file: which, message }): FileErrorReport => ({
-          kind: "init",
-          file: which === "user" ? "user" : ".omfp/init.ts",
-          message,
-        }),
-      ),
-      ...(listed === undefined || !isFileView(listed) || fileError === undefined
-        ? []
-        : [{ kind: "view" as const, file: strings.init.viewFile.path(listed.file), message: fileError }]),
-    ],
-    [init.errors, listed, fileError],
+    (): FileErrorReport[] =>
+      init.errors.map(({ file: which, message }) => ({ file: which === "user" ? "user" : ".omfp/init.ts", message })),
+    [init.errors],
   );
   useFileErrorReports(fileErrors);
   const settings = useSettings();
@@ -196,7 +161,7 @@ export function Frame({
   const [selectedThread] = useWindowState(SELECTED_THREAD);
   const welcome = useWelcome(selectedThread);
   const focused = useWindowFocus(hasFocus);
-  useWindowStateReport({ workspaceId, threadId: selectedThread, focused, views, listed, shown: view, bindings });
+  useWindowStateReport({ workspaceId, threadId: selectedThread, focused, views, shown: view, bindings });
   useAppearance();
   useUserTheme();
   const appRef = useRef<HTMLDivElement>(null);
@@ -219,10 +184,10 @@ export function Frame({
   const modeViews = useMemo(
     (): ModeLineViews => ({
       views: views.views.map(({ id, title }) => ({ id, title })),
-      current: listed?.id,
+      current: view?.id,
       onSelect: (id) => chooseView(host, id),
     }),
-    [views.views, listed?.id, host],
+    [views.views, view?.id, host],
   );
   // Cards in the chat draw their widget with the view slot and resolve `omfp:<name>` references in the window's
   // registry (UI-920).
@@ -238,17 +203,6 @@ export function Frame({
           )}
           <KeymapError views={state} />
           <InitErrors errors={init.errors} />
-          {listed !== undefined && isFileView(listed) && fileError !== undefined && (
-            <div
-              className="omfp-banner"
-              data-tone="error"
-              role="alert"
-              data-testid="view-file-error"
-              data-file={listed.file}
-            >
-              {strings.init.viewFile.banner(strings.init.viewFile.path(listed.file), fileError)}
-            </div>
-          )}
           {settings.error !== null && settings.error !== undefined && (
             <div className="omfp-banner" data-tone="error" role="alert" data-testid="settings-error">
               {strings.shell.settings.error(settings.error)}
@@ -277,7 +231,7 @@ export function Frame({
             {breakpoint === "wide" && !collapsed && <LeftSplitter aside={asideRef} />}
             <div className="omfp-frame__main">
               {keeping.views.map((entry) => {
-                const shown = !welcome && view !== undefined && entry.id === listed?.id;
+                const shown = !welcome && view !== undefined && entry.id === view.id;
                 return (
                   <Activity key={entry.key} mode={shown ? "visible" : "hidden"}>
                     <ViewRenderer
@@ -327,7 +281,7 @@ export function Frame({
           <Describe bindings={bindings} />
           <GlobalCommands
             viewIds={viewIds}
-            currentView={listed?.id}
+            currentView={view?.id}
             widgets={widgetReferences(registry, state)}
             addWidget={addWidget}
           />
@@ -337,7 +291,6 @@ export function Frame({
           <OpenedUrls />
           <InitLoader workspaceId={workspaceId} views={state} />
           <WindowRequests workspaceId={workspaceId} views={state} registry={registry} timers={checkTimers} />
-          {file.source}
         </div>
       </CardWidgetScope>
     </WidgetRegistryScope>
@@ -426,8 +379,8 @@ function useWindowReports(workspaceId: string | undefined): void {
 }
 
 /**
- * Tells the daemon the errors of the init files and of the TSX view this window shows (UI-304), with its widget
- * reports (`widgets.report` `fileErrors`), so agents read them (`views.errors`).
+ * Tells the daemon the errors of the init files (UI-304), with its widget reports (`widgets.report` `fileErrors`), so
+ * agents read them (`views.errors`).
  */
 function useFileErrorReports(errors: readonly FileErrorReport[]): void {
   const { reports } = useHost();

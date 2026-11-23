@@ -21,11 +21,11 @@ describe("resize", () => {
 describe("add", () => {
   // spec: UI-300
   test("as the last tab of the side tabs, else at the end of the root container; a root widget becomes a row", () => {
-    expect(addWidget(DEFAULT_VIEW.layout, "user:charts")).toEqual([
+    expect(addWidget(DEFAULT_VIEW.layout, "./widgets/charts")).toEqual([
       "row",
       { sizes: [3, 1] },
       ["col", {}, "omfp:header", MAIN_TABS],
-      ["tabs", { id: "side" }, "omfp:workspace", "omfp:changes", "omfp:background", "omfp:mcp", "user:charts"],
+      ["tabs", { id: "side" }, "omfp:workspace", "omfp:changes", "omfp:background", "omfp:mcp", "./widgets/charts"],
     ]);
     expect(addWidget(["row", { sizes: [1, 3] }, "a", "b"], "./widgets/tests")).toEqual([
       "row",
@@ -76,12 +76,11 @@ describe("manifest to write", () => {
   });
 
   // spec: UI-300
-  test("with views.json: that view's layout changes, everything else stays; never an invalid file or a TSX view", () => {
+  test("with views.json: that view's layout changes, everything else stays; never an invalid file", () => {
     const manifest = {
       default: "work",
       comment: "kept",
       views: {
-        ops: { title: "Ops", view: "./views/ops.tsx" },
         work: { title: "Work", layout: ["row", {}, "omfp:chat", "omfp:workspace"] },
       },
     };
@@ -96,7 +95,6 @@ describe("manifest to write", () => {
       },
     });
     expect(manifestWithWidget({ manifest }, "gone", "omfp:todos")).toEqual({ ok: false, error: "No view gone" });
-    expect(manifestWithWidget({ manifest }, "ops", "omfp:todos")).toEqual({ ok: false, error: "No view ops" });
     expect(manifestWithWidget({ manifest: null, error: "views: no view" }, "default", "omfp:chat")).toEqual({
       ok: false,
       error: "The layout cannot change while .omfp/views.json is invalid: fix the file first",
@@ -158,7 +156,6 @@ describe("closing a layout tab", () => {
       comment: "kept",
       panels: { notes: "./widgets/notes" },
       views: {
-        ops: { title: "Ops", view: "./views/ops.tsx" },
         work: {
           title: "Work",
           layout: [
@@ -211,10 +208,9 @@ describe("closing a layout tab", () => {
   });
 
   // spec: UI-375
-  test("refused: an invalid file, a view in code, no such tab, a tab alone in its container, another node", () => {
+  test("refused: an invalid file, no such view, no such tab, a tab alone in its container, another node", () => {
     const manifest = {
       views: {
-        ops: { title: "Ops", view: "./views/ops.tsx" },
         work: {
           layout: ["row", {}, ["tabs", {}, "omfp:chat"], ["tabs", {}, "omfp:workspace", ["omfp:todos", { a: 1 }]]],
         },
@@ -228,9 +224,9 @@ describe("closing a layout tab", () => {
     expect(
       manifestWithoutTab({ manifest: null, error: "views: no view" }, "default", ["tabs#1", "omfp:todos#0"], todos),
     ).toEqual(invalid);
-    expect(manifestWithoutTab({ manifest }, "ops", ["tabs#1", "omfp:todos#0"], todos)).toEqual({
+    expect(manifestWithoutTab({ manifest }, "gone", ["tabs#1", "omfp:todos#0"], todos)).toEqual({
       ok: false,
-      error: "No view ops",
+      error: "No view gone",
     });
     const gone = { ok: false, error: "View work no longer has that tab: .omfp/views.json changed meanwhile" } as const;
     // A row's cell is no tab, nor is a key no child has; the last tab of a container stays.

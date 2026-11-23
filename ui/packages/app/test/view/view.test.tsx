@@ -11,7 +11,7 @@ import { containsWidget, parseLayout } from "../../src/view/layout.ts";
 import { ViewRenderer } from "../../src/view/render.tsx";
 import type { WidgetRegistry } from "../../src/view/resolve.ts";
 import { PANE_SIZES } from "../../src/view/sizes.ts";
-import { DEFAULT_MANIFEST, DEFAULT_VIEW, isFileView, type ResolvedView, resolveViews } from "../../src/view/views.ts";
+import { DEFAULT_MANIFEST, DEFAULT_VIEW, type ResolvedView, resolveViews } from "../../src/view/views.ts";
 import { renderWithHost } from "../support/host.tsx";
 
 afterEach(cleanup);
@@ -67,8 +67,7 @@ describe("layouts", () => {
       ["tabs", { id: "side" }, "omfp:workspace", "omfp:changes", "omfp:background", "omfp:mcp"],
     ]);
     expect(DEFAULT_VIEW.title).toBe("Default");
-    const [first] = views;
-    const tree = first === undefined || isFileView(first) ? undefined : first.tree;
+    const tree = views[0]?.tree;
     expect(tree !== undefined && containsWidget(tree, ["omfp:chat"])).toBe(true);
     expect(tree !== undefined && containsWidget(tree, ["omfp:threads", "omfp:interactions"])).toBe(false);
   });
@@ -79,13 +78,9 @@ describe("layouts", () => {
       readFileSync(join(import.meta.dir, "../../../../../crates/omfp-daemon/src/widgets/default-views.json"), "utf8"),
     );
     expect(daemon).toEqual(DEFAULT_MANIFEST);
-    expect(
-      resolveViews(DEFAULT_MANIFEST).views.map((view) => [
-        view.id,
-        view.title,
-        isFileView(view) ? view.file : view.layout,
-      ]),
-    ).toEqual([[DEFAULT_VIEW.id, DEFAULT_VIEW.title, DEFAULT_VIEW.layout]]);
+    expect(resolveViews(DEFAULT_MANIFEST).views.map((view) => [view.id, view.title, view.layout])).toEqual([
+      [DEFAULT_VIEW.id, DEFAULT_VIEW.title, DEFAULT_VIEW.layout],
+    ]);
   });
 
   // spec: AGT-010, AGT-011
@@ -152,7 +147,7 @@ describe("layouts", () => {
 
 function only(manifest: unknown): ResolvedView {
   const view = resolveViews(manifest).views[0];
-  if (view === undefined || isFileView(view)) {
+  if (view === undefined) {
     throw new Error("fixture");
   }
   return view;

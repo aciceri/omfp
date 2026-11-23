@@ -129,23 +129,18 @@ describe("widget reports", () => {
   });
 
   // spec: UI-304
-  test("the window's init file and TSX view errors ride along; an unchanged list sends nothing", () => {
+  test("the window's init file errors ride along; an unchanged list sends nothing", () => {
     const { host, timers, sent } = reporting();
     host.reports.show(WS, undefined);
-    host.reports.setFileErrors([{ kind: "init", file: ".omfp/init.ts", message: "boom" }]);
+    host.reports.setFileErrors([{ file: ".omfp/init.ts", message: "boom" }]);
     timers.run();
-    expect(sent().map((report) => report.fileErrors)).toEqual([
-      [{ kind: "init", file: ".omfp/init.ts", message: "boom" }],
-    ]);
-    host.reports.setFileErrors([{ kind: "init", file: ".omfp/init.ts", message: "boom" }]);
+    expect(sent().map((report) => report.fileErrors)).toEqual([[{ file: ".omfp/init.ts", message: "boom" }]]);
+    host.reports.setFileErrors([{ file: ".omfp/init.ts", message: "boom" }]);
     timers.run();
     expect(sent().length).toBe(1);
     host.reports.setFileErrors([]);
     timers.run();
-    expect(sent().map((report) => report.fileErrors)).toEqual([
-      [{ kind: "init", file: ".omfp/init.ts", message: "boom" }],
-      [],
-    ]);
+    expect(sent().map((report) => report.fileErrors)).toEqual([[{ file: ".omfp/init.ts", message: "boom" }], []]);
   });
 
   // spec: UI-350
@@ -191,11 +186,10 @@ describe("widget reports", () => {
     const slot = new SlotReport(host.reports, IDENTITY);
     const other = new SlotReport(host.reports, {
       ...IDENTITY,
-      reference: "user:clock",
-      instance: "user:clock",
-      source: "user",
+      reference: "./widgets/clock",
+      instance: "clock",
       name: "clock",
-      modulePath: "/widgets/test/user/clock/",
+      modulePath: "/widgets/test/01W/clock/",
     });
     host.reports.show(WS, undefined);
     host.reports.add(slot);
@@ -211,7 +205,7 @@ describe("widget reports", () => {
       new ErrorEvent("error", {
         error: new Error("tick"),
         message: "tick",
-        filename: "http://localhost/widgets/test/user/clock/c1/index.js",
+        filename: "http://localhost/widgets/test/01W/clock/c1/index.js",
       }),
     );
     timers.run();

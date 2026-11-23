@@ -1,5 +1,5 @@
 /**
- * A splitter's behaviour (UI-103, UI-206, UI-207) over the kit's `Splitter`: a pointer drag (previewed while it moves,
+ * A splitter's behaviour (UI-206, UI-207) over the kit's `Splitter`: a pointer drag (previewed while it moves,
  * applied once released), the arrow keys in 5 % steps and a double click that resets. Deltas are shares of the
  * splitter's parent along its axis.
  */

@@ -9,8 +9,12 @@ import type {
   Workspace,
   WorkspaceRepo,
 } from "@omfp/protocol";
+import type { ThreadFilter } from "../../src/vm/threads.ts";
 
 export const provenance: Provenance = { createdBy: { kind: "user" }, client: "omfp/web" };
+
+/** The left column without a query or a spawned tree. */
+export const NO_FILTER: ThreadFilter = { query: "", conversation: new Map() };
 
 /** Entry `name` of the folder `/work/<workspace>`: a worktree of `/src/<name>` on `branch`. */
 export function repo(workspace: string, name: string, branch: string | null): WorkspaceRepo {

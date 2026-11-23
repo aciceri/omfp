@@ -144,10 +144,7 @@ function DraftHeader({ draft }: { draft: DraftThread }): ReactNode {
 /** The header of a thread. It does not read the reducer state, so a streamed delta does not render it again: only
  * {@link SessionCost} follows the thread's events (UI-191). */
 function ThreadHeader({ summary }: { summary: ThreadSummary }): ReactNode {
-  const workspaces = useWorkspaces();
-  const list = useMemo(() => [...workspaces.values()], [workspaces]);
-  const [details, refreshSession] = useThreadDetails(summary.id, summary.process.state);
-  const view = headerView(summary, details, list);
+  const [view, refreshSession] = useHeaderView(summary);
   const header = useRef<HTMLElement>(null);
   // Its own width decides, wherever the view puts it (UI-202).
   const compact = useWidthClass(header, (width, rem) => width > 0 && width < COMPACT_BELOW_REM * rem);
@@ -216,10 +213,7 @@ function ThreadHeader({ summary }: { summary: ThreadSummary }): ReactNode {
  * the line closes.
  */
 export function ThreadMoreButton({ summary, shown }: { summary: ThreadSummary; shown: boolean }): ReactNode {
-  const workspaces = useWorkspaces();
-  const list = useMemo(() => [...workspaces.values()], [workspaces]);
-  const [details, refreshSession] = useThreadDetails(summary.id, summary.process.state);
-  const view = headerView(summary, details, list);
+  const [view, refreshSession] = useHeaderView(summary);
   const [moreOpen, setMoreOpen] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
   usePickModel(view, () => {
@@ -278,6 +272,14 @@ export function ThreadRename({ summary }: { summary: ThreadSummary }): ReactNode
       onCancel={() => setRenaming(undefined)}
     />
   );
+}
+
+/** The header's view of the thread (UI-202) and the function refreshing its session after a model or thinking change. */
+function useHeaderView(summary: ThreadSummary): [HeaderView, () => void] {
+  const workspaces = useWorkspaces();
+  const list = useMemo(() => [...workspaces.values()], [workspaces]);
+  const [details, refreshSession] = useThreadDetails(summary.id, summary.process.state);
+  return [headerView(summary, details, list), refreshSession];
 }
 
 /** `thread.pickModel` (`:model`, omp's `/model`, UI-980): `open` shows the model list; without a model, logs in. */

@@ -7,6 +7,7 @@ import type { FileContent } from "@omfp/protocol";
 import { PdfView } from "omfp/kit";
 import { strings, useFileUrl } from "omfp/sdk";
 import type { ReactNode } from "react";
+import { versionedUrl } from "./viewers.tsx";
 
 const text = strings.shell.file;
 
@@ -18,7 +19,7 @@ export function PdfFile({ file }: { file: FileContent }): ReactNode {
   }
   return (
     <PdfView
-      url={`${base}?v=${encodeURIComponent(file.hash)}`}
+      url={versionedUrl(base, file.hash)}
       labels={text.pdf}
       aria-label={text.pdfLabel(file.path)}
       role="region"

@@ -7,16 +7,16 @@
  * shows or the panel is minimised, so it shows again as it was, unsaved edits included (UI-401).
  */
 
-import { IconButton, Tab, TabList, TabPanel, Tabs } from "@omfp/kit";
+import { Tab, TabList, TabPanel, Tabs } from "@omfp/kit";
 import type { ViewsState } from "@omfp/protocol";
 import type { KeyboardEvent, ReactNode } from "react";
-import { FLOATING_FILES, fileName, fileTabId, movePanel, resizePanel, useFileTabs } from "../sdk/index.ts";
+import { FLOATING_FILES, fileName, fileTabId, useFileTabs } from "../sdk/index.ts";
 import { strings } from "../strings/index.ts";
 import { ClosableTabLabel, closableTabBarHandlers } from "../view/closable-tab.tsx";
 import { FILE_WIDGET, fileProps } from "../view/layout.ts";
 import type { WidgetRegistry } from "../view/resolve.ts";
 import { WidgetSlot } from "../view/slot.tsx";
-import { useFloatingBox } from "./floating-box.ts";
+import { floatingControls, useFloatingBox } from "./floating-box.tsx";
 
 const text = strings.shell.files;
 
@@ -28,7 +28,9 @@ export interface FloatingFileProps {
 
 export function FloatingFile({ workspaceId, views, registry }: FloatingFileProps): ReactNode {
   const files = useFileTabs(workspaceId);
-  const { panel, setPanel, root, handle, style } = useFloatingBox(FLOATING_FILES);
+  const box = useFloatingBox(FLOATING_FILES);
+  const { panel, root, style } = box;
+  const controls = floatingControls(box, "floating-file", text);
   const first = files.tabs[0];
   if (first === undefined) {
     return null;
@@ -42,23 +44,9 @@ export function FloatingFile({ workspaceId, views, registry }: FloatingFileProps
   };
   const bar = (tabs: ReactNode) => (
     <div className="omfp-floating-file__bar" {...closableTabBarHandlers(files.closeTab)}>
-      <button
-        type="button"
-        className="omfp-floating-file__grip omfp-focus-ring"
-        aria-label={text.move}
-        title={text.move}
-        data-testid="floating-file-move"
-        {...handle(movePanel)}
-      >
-        ⠿
-      </button>
+      {controls.grip}
       {tabs}
-      <IconButton
-        label={panel.minimised ? text.restore : text.minimise}
-        icon={panel.minimised ? "□" : "–"}
-        onPress={() => setPanel((now) => ({ ...now, minimised: !now.minimised }))}
-        data-testid="floating-file-minimise"
-      />
+      {controls.minimise}
     </div>
   );
   return (
@@ -120,16 +108,7 @@ export function FloatingFile({ workspaceId, views, registry }: FloatingFileProps
           </TabPanel>
         ))}
       </Tabs>
-      {!panel.minimised && (
-        <button
-          type="button"
-          className="omfp-floating-file__resize omfp-focus-ring"
-          aria-label={text.resize}
-          title={text.resize}
-          data-testid="floating-file-resize"
-          {...handle(resizePanel)}
-        />
-      )}
+      {controls.resize}
     </section>
   );
 }

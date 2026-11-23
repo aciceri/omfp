@@ -159,7 +159,7 @@ describe("init files", () => {
         omfp.views.transform((views) =>
           views.add("logs", { title: "Logs", layout: ["row", {}, "omfp:chat", "./widgets/logs"] }),
         );
-        omfp.panel("clock", ["user:clock", { title: "Clock" }]);
+        omfp.panel("clock", ["./widgets/clock", { title: "Clock" }]);
       }),
       "/bad": module((omfp) => {
         omfp.views.use(omfp.views.load("views.json").add("broken", { layout: ["row", {}, ""] }));

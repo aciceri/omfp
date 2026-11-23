@@ -13,13 +13,11 @@ import { useEffect } from "react";
 import { selectOpenedTab } from "../sdk/files.ts";
 import {
   floatingWidgetKey,
-  movePanel,
   NO_FILE_TABS,
   OPEN_FILES,
   openWidgetTab,
   REVEAL_WIDGET,
   reportError,
-  resizePanel,
   useHost,
   useWindowState,
   useWorkspaces,
@@ -30,7 +28,7 @@ import { containsWidget, hasMainSlot } from "../view/layout.ts";
 import { PanelLayout, widgetTitle } from "../view/render.tsx";
 import type { WidgetRegistry } from "../view/resolve.ts";
 import type { ResolvedPanel, ResolvedView } from "../view/views.ts";
-import { useFloatingBox } from "./floating-box.ts";
+import { floatingControls, useFloatingBox } from "./floating-box.tsx";
 
 const text = strings.shell.panels;
 
@@ -144,14 +142,14 @@ interface FloatingWidgetProps {
 
 function FloatingWidget({ panel, index, workspaceId, views, registry, onClose }: FloatingWidgetProps): ReactNode {
   const host = useHost();
-  const {
-    panel: state,
-    setPanel,
-    root,
-    handle,
-    style,
-  } = useFloatingBox(floatingWidgetKey(workspaceId, panel.id), index);
+  const box = useFloatingBox(floatingWidgetKey(workspaceId, panel.id), index);
   const { title } = panel;
+  const controls = floatingControls(box, "floating-widget", {
+    move: text.move(title),
+    resize: text.resize(title),
+    minimise: text.minimise(title),
+    restore: text.restore(title),
+  });
   const close = () => {
     if (onClose !== undefined) {
       onClose();
@@ -167,50 +165,27 @@ function FloatingWidget({ panel, index, workspaceId, views, registry, onClose }:
   };
   return (
     <section
-      ref={root}
+      ref={box.root}
       className="omfp-floating-widget"
       aria-label={title}
       data-testid="floating-widget"
       data-panel={panel.id}
-      data-minimised={state.minimised ? "" : undefined}
-      style={style}
+      data-minimised={box.panel.minimised ? "" : undefined}
+      style={box.style}
     >
       <div className="omfp-floating-file__bar">
-        <button
-          type="button"
-          className="omfp-floating-file__grip omfp-focus-ring"
-          aria-label={text.move(title)}
-          title={text.move(title)}
-          data-testid="floating-widget-move"
-          {...handle(movePanel)}
-        >
-          ⠿
-        </button>
+        {controls.grip}
         <span className="omfp-floating-file__title" data-testid="floating-widget-title">
           {title}
         </span>
-        <IconButton
-          label={state.minimised ? text.restore(title) : text.minimise(title)}
-          icon={state.minimised ? "□" : "–"}
-          onPress={() => setPanel((now) => ({ ...now, minimised: !now.minimised }))}
-          data-testid="floating-widget-minimise"
-        />
+        {controls.minimise}
         <IconButton label={text.close(title)} icon="×" onPress={close} data-testid="floating-widget-close" />
       </div>
       {/* Minimised, the widget stays mounted (its state too), hidden. */}
-      <div className="omfp-floating-file__body" hidden={state.minimised}>
+      <div className="omfp-floating-file__body" hidden={box.panel.minimised}>
         <PanelLayout id={panel.id} tree={panel.tree} registry={registry} workspaceId={workspaceId} views={views} />
       </div>
-      {!state.minimised && (
-        <button
-          type="button"
-          className="omfp-floating-file__resize omfp-focus-ring"
-          aria-label={text.resize(title)}
-          title={text.resize(title)}
-          data-testid="floating-widget-resize"
-          {...handle(resizePanel)}
-        />
-      )}
+      {controls.resize}
     </section>
   );
 }

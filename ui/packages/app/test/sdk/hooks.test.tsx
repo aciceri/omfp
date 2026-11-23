@@ -278,7 +278,7 @@ describe("hooks", () => {
   test("a topic the hidden tab releases as the shown one follows it stays subscribed, its state kept", async () => {
     const topic = viewsTopic("01W");
     const { client, flush } = renderWithHost(<TwoTabs />, testHost());
-    client.views("01W", { widgets: [{ source: "user", name: "clock", version: "1", entry: "index.tsx" }] });
+    client.views("01W", { widgets: [{ source: "workspace", name: "clock", version: "1", entry: "index.tsx" }] });
     flush();
     expect(screen.getByTestId("views-a").textContent).toBe("1");
 
@@ -348,20 +348,5 @@ describe("command registry", () => {
     off();
     expect(registry.run("theme", ["light"])).toBe(false);
     expect(args).toEqual([["dark"]]);
-  });
-
-  // spec: UI-527
-  test("a former built-in id runs the command it was renamed to, unless a command answers to it", () => {
-    const registry = new CommandRegistry();
-    const ran: string[] = [];
-    registry.register({ id: "window.theme", title: "Theme", aliases: ["theme"], run: () => void ran.push("theme") });
-    registry.register({ id: "widget.manage", title: "Widget", aliases: ["widget"], run: () => void ran.push("w") });
-    expect(registry.resolve("theme.set")?.id).toBe("window.theme");
-    expect(registry.run("theme.set", ["dark"])).toBe(true);
-    const off = registry.register({ id: "theme.set", title: "Mine", run: () => void ran.push("mine") });
-    expect(registry.run("theme.set")).toBe(true);
-    off();
-    expect(registry.resolve("widget")?.id).toBe("widget.manage");
-    expect(ran).toEqual(["theme", "mine"]);
   });
 });

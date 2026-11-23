@@ -109,8 +109,8 @@ describe("the window state", () => {
       activeView: "work",
       defaultView: "work",
       views: [
-        { id: "ops", title: "Ops", source: "views_json", file: null, widgets: ["omfp:chat", "./widgets/tests"] },
-        { id: "work", title: "Work", source: "views_json", file: null, widgets: ["omfp:chat", "omfp:workspace"] },
+        { id: "ops", title: "Ops", source: "views_json", widgets: ["omfp:chat", "./widgets/tests"] },
+        { id: "work", title: "Work", source: "views_json", widgets: ["omfp:chat", "omfp:workspace"] },
       ],
       commands: [],
     });
@@ -186,16 +186,12 @@ describe("commands the daemon runs in the window", () => {
     ]);
   });
 
-  // spec: UI-527, UI-528
-  test("a former built-in id and the short names run the renamed commands", async () => {
+  // spec: UI-525
+  test("a short name runs the command it is an alias of", async () => {
     const test = setup();
-    test.request("r1", { kind: "run_command", command: "theme.set", args: ["dark"] });
-    test.request("r2", { kind: "run_command", command: "theme", args: ["light"] });
+    test.request("r1", { kind: "run_command", command: "theme", args: ["light"] });
     await settle(test);
-    expect(test.answers()).toEqual([
-      { requestId: "r1", answer: { kind: "ran", command: "window.theme" } },
-      { requestId: "r2", answer: { kind: "ran", command: "window.theme" } },
-    ]);
+    expect(test.answers()).toEqual([{ requestId: "r1", answer: { kind: "ran", command: "window.theme" } }]);
     expect(document.documentElement.dataset.colorScheme).toBe("light");
   });
 });

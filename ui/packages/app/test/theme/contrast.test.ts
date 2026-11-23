@@ -6,7 +6,6 @@ import {
   contrastAdjustments,
   contrastRatio,
   deltaE,
-  failingPairs,
   GUARDED_ROLES,
   lowestRatio,
   NON_TEXT,
@@ -48,16 +47,6 @@ describe("contrast", () => {
     expect(contrastRatio([255, 255, 255], [0, 0, 0])).toBeCloseTo(21, 5);
     // Synth light: primary on surface.
     expect(contrastRatio([0, 0x68, 0x76], [0xfa, 0xf8, 0xff])).toBeCloseTo(6.15, 1);
-  });
-
-  // spec: UI-174, UI-135
-  test("pairs under AA (4.5:1) are reported", () => {
-    expect(
-      failingPairs([
-        { text: "primary", background: "surface", ratio: 6.3 },
-        { text: "outline", background: "surface", ratio: 4.2 },
-      ]),
-    ).toEqual(["outline on surface: 4.20"]);
   });
 
   // spec: UI-132

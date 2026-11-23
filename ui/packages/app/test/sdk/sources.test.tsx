@@ -91,7 +91,7 @@ describe("widget scope", () => {
     const { client, flush, view } = renderWithHost(<ViewsProbe />);
     expect(client.subscribed).toEqual([viewsTopic(WS)]);
     expect(text("views")).toBe("none");
-    client.views(WS, { widgets: [{ source: "user", name: "clock", version: "1", entry: "index.tsx" }] });
+    client.views(WS, { widgets: [{ source: "workspace", name: "clock", version: "1", entry: "index.tsx" }] });
     flush();
     expect(text("views")).toBe("1");
     view.unmount();

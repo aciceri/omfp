@@ -1,7 +1,7 @@
 /**
  * What the window tells the daemon about itself for agents (UI-350, UI-351, PRT-122), with its widget report: the
  * selected thread, whether it has the focus, its views after `views.json`, the init files and their transforms (where
- * each comes from, its TSX file, the widgets of its layout), the view it shows, and the commands init files and
+ * each comes from, the widgets of its layout), the view it shows, and the commands init files and
  * workspace or user widgets registered beyond the built-ins, with their keys. Agents read it with `windows.state`
  * (`omfp_windows`).
  */
@@ -11,7 +11,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import type { Binding } from "../keymap/keymap.ts";
 import { type Command, useHost } from "../sdk/index.ts";
 import type { LayoutTree } from "../view/layout.ts";
-import { BUILTIN_VIEW, isFileView, type ListedView, type ResolvedView, type Views } from "../view/views.ts";
+import { BUILTIN_VIEW, type ResolvedView, type Views } from "../view/views.ts";
 
 /** The widget references of `tree`, each once, in layout order. */
 export function widgetsOf(tree: LayoutTree): string[] {
@@ -30,7 +30,7 @@ export function widgetsOf(tree: LayoutTree): string[] {
 }
 
 /** Where a view of the switcher comes from. */
-export function viewSource(view: ListedView): ViewSource {
+export function viewSource(view: ResolvedView): ViewSource {
   if (view === BUILTIN_VIEW) {
     return "builtin";
   }
@@ -52,24 +52,14 @@ export interface WindowStateInput {
   /** The window's views (after the init files). */
   readonly views: Views;
   /** The view of the switcher the window shows. */
-  readonly listed: ListedView | undefined;
-  /** What it renders: the listed view's layout, a TSX view's rendered layout, or the default view standing in. */
   readonly shown: ResolvedView | undefined;
   readonly commands: readonly Command[];
   /** The window's effective bindings. */
   readonly bindings: readonly Binding[];
 }
 
-function windowView(view: ListedView, shown: ResolvedView | undefined): WindowView {
-  const rendered = isFileView(view) ? (shown?.file === view.file && shown.id === view.id ? shown : undefined) : view;
-  const file = isFileView(view) ? view.file : (view.file ?? null);
-  return {
-    id: view.id,
-    title: view.title,
-    source: viewSource(view),
-    file,
-    widgets: rendered === undefined ? null : widgetsOf(rendered.tree),
-  };
+function windowView(view: ResolvedView): WindowView {
+  return { id: view.id, title: view.title, source: viewSource(view), widgets: widgetsOf(view.tree) };
 }
 
 function windowCommand(command: Command, bindings: readonly Binding[]): WindowCommand {
@@ -88,7 +78,7 @@ function windowCommand(command: Command, bindings: readonly Binding[]): WindowCo
 
 /** The window state (PRT-122): without a workspace, no views. */
 export function windowReport(input: WindowStateInput): WindowReport {
-  const { workspaceId, threadId, focused, views, listed, shown } = input;
+  const { workspaceId, threadId, focused, views, shown } = input;
   const commands = input.commands
     .filter((command) => command.init !== undefined || command.widget !== undefined)
     .map((command) => windowCommand(command, input.bindings));
@@ -98,9 +88,9 @@ export function windowReport(input: WindowStateInput): WindowReport {
   return {
     threadId: threadId ?? null,
     focused,
-    activeView: listed?.id ?? null,
+    activeView: shown?.id ?? null,
     defaultView: views.defaultId,
-    views: views.views.map((view) => windowView(view, shown)),
+    views: views.views.map(windowView),
     commands,
   };
 }
@@ -125,10 +115,8 @@ export function useWindowStateReport(input: Omit<WindowStateInput, "commands">):
     setRegistered(commands.list());
     return commands.subscribe(() => setRegistered(commands.list()));
   }, [commands]);
-  const { workspaceId, threadId, focused, views, listed, shown, bindings } = input;
+  const { workspaceId, threadId, focused, views, shown, bindings } = input;
   useEffect(() => {
-    reports.setWindow(
-      windowReport({ workspaceId, threadId, focused, views, listed, shown, bindings, commands: registered }),
-    );
-  }, [reports, workspaceId, threadId, focused, views, listed, shown, bindings, registered]);
+    reports.setWindow(windowReport({ workspaceId, threadId, focused, views, shown, bindings, commands: registered }));
+  }, [reports, workspaceId, threadId, focused, views, shown, bindings, registered]);
 }

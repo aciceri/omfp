@@ -1,8 +1,8 @@
 /**
  * Renders a validated view (AGT-010): containers become flex rows and columns, tabs or stacked layers; each widget
  * renders in its own slot, so a failing widget shows its error in place and the rest of the window keeps working.
- * Splitters between the cells of each `row` and `col` resize them for this window (UI-206); `views.json` (or the TSX
- * view) keeps the defaults. On a phone (UI-204) the view shows one area at a time and its rows as tabs, without
+ * Splitters between the cells of each `row` and `col` resize them for this window (UI-206); `views.json` keeps the
+ * defaults. On a phone (UI-204) the view shows one area at a time and its rows as tabs, without
  * splitters.
  */
 
@@ -49,7 +49,7 @@ import {
   type LayoutTree,
   MAIN_SLOT,
 } from "./layout.ts";
-import { builtinReference, type WidgetRegistry } from "./resolve.ts";
+import type { WidgetRegistry } from "./resolve.ts";
 import { effectiveSizes, PANE_SIZES, sizesKey, withSizes } from "./sizes.ts";
 import { WidgetSlot } from "./slot.tsx";
 import { Resizer } from "./splitter.tsx";
@@ -79,8 +79,8 @@ interface Scope {
   readonly viewId: string;
   /** On a phone: the area shown. */
   readonly area: Area | undefined;
-  /** The view's tree as `views.json` holds it, which closing a layout tab rewrites (UI-375); `undefined` for a TSX
-   * view, an init file's view, a floating panel, or while the views topic has not answered or refuses the file. */
+  /** The view's tree as `views.json` holds it, which closing a layout tab rewrites (UI-375); `undefined` for an init
+   * file's view, a floating panel, or while the views topic has not answered or refuses the file. */
   readonly written: LayoutTree | undefined;
 }
 
@@ -97,11 +97,8 @@ export const ViewRenderer = memo(function ViewRenderer({
   shown = true,
 }: ViewRendererProps): ReactNode {
   const written = useMemo(
-    () =>
-      views === undefined || view.init !== undefined || view.file !== undefined
-        ? undefined
-        : writtenTree(views, view.id),
-    [views, view.id, view.init, view.file],
+    () => (views === undefined || view.init !== undefined ? undefined : writtenTree(views, view.id)),
+    [views, view.id, view.init],
   );
   const scope: Scope = { registry, workspaceId, views, viewId: view.id, area, written };
   const root = useRef<HTMLDivElement>(null);
@@ -594,9 +591,7 @@ function nodeTitle(tree: LayoutTree): string {
   return typeof tree.props.title === "string" ? tree.props.title : widgetTitle(tree.name);
 }
 
-/** A widget's title without a `title` prop: a built-in's own name (a retired one's successor's, UI-493), else its
- * reference. */
+/** A widget's title without a `title` prop: a built-in's own name, else its reference. */
 export function widgetTitle(reference: string): string {
-  const name = builtinReference(reference);
-  return Object.hasOwn(text.widgetTitles, name) ? (text.widgetTitles[name] ?? reference) : reference;
+  return Object.hasOwn(text.widgetTitles, reference) ? (text.widgetTitles[reference] ?? reference) : reference;
 }

@@ -175,8 +175,8 @@ function OffscreenCheck({ check, workspaceId, views, registry, timers, onDone }:
       report: report ?? {
         reference: check.reference,
         instance: check.reference,
-        source: check.reference.startsWith("user:") ? "user" : "workspace",
-        name: check.reference.replace(/^(\.\/widgets\/|user:)/, ""),
+        source: "workspace",
+        name: check.reference.replace(/^\.\/widgets\//, ""),
         version: null,
         state: "loading",
         errors: [text.unknownWidget(check.reference)],

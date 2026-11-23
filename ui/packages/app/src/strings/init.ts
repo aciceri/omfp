@@ -1,5 +1,5 @@
 /**
- * Texts of the init files (UI-260..UI-263, UI-267), of TSX views (UI-268) and of `:describe-key` /
+ * Texts of the init files (UI-260..UI-263, UI-267) and of `:describe-key` /
  * `:describe-command` (UI-264, UI-265).
  */
 
@@ -24,21 +24,7 @@ export const init = {
     noTabs: (id: string) => `no tabs with "id": ${JSON.stringify(id)} in the layout`,
     emptyLayout: (reference: string) => `removing ${reference} would leave the layout empty`,
     noView: (id: string) => `no view ${JSON.stringify(id)}`,
-    fileView: (id: string, file: string) => `view ${JSON.stringify(id)} is the TSX file ${file}: edit that file`,
     lastView: "cannot remove the last view",
-  },
-  /** TSX views (UI-268). */
-  viewFile: {
-    /** `./views/ops.tsx` as the user finds it. */
-    path: (file: string) => `.omfp/${file.replace(/^\.\//, "")}`,
-    banner: (path: string, message: string) => `View ${path} failed, showing the default view: ${message}`,
-    noLayout: "it rendered no layout: return <Row>, <Col>, <Tabs>, <Stack> or <Widget>",
-    manyLayouts: "it rendered several layouts: return one <Row>, <Col>, <Tabs>, <Stack> or <Widget>",
-    notLayout: (name: string) =>
-      `${name} is not a layout component: a view nests only Row, Col, Tabs, Stack and Widget from omfp/sdk`,
-    text: "text is not a layout node: a view nests only Row, Col, Tabs, Stack and Widget",
-    outside: (name: string) => `${name} lays out a view: use it in a view file (.omfp/views/*.tsx), not in a widget`,
-    noUse: 'a <Widget> needs use="<reference>"',
   },
   invalid: (error: string) => `invalid layout: ${error}`,
   /** `:describe-key` and `:describe-command` (UI-264, UI-265). */

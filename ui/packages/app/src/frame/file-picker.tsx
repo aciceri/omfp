@@ -5,13 +5,10 @@
  * of the missing path's tab, Escape (or leaving the line) cancelling the opening.
  */
 
-import { CommandItem, CommandMenu, CommandLine as Prompt } from "@omfp/kit";
-import type { FileCandidate } from "@omfp/protocol";
-import { type KeyboardEvent, type ReactNode, useId, useState } from "react";
-import { CMDLINE_ATTRIBUTE } from "../keymap/handler.ts";
+import { type ReactNode, useState } from "react";
 import { cancelFilePicker, chooseFile, FILE_PICKER, type FilePicker, useHost, useWindowState } from "../sdk/index.ts";
 import { strings } from "../strings/index.ts";
-import { MenuKeys } from "./command-line.tsx";
+import { Picker } from "./picker.tsx";
 
 const text = strings.shell.files;
 
@@ -23,89 +20,28 @@ export function FilePickerLine(): ReactNode {
 
 function PickerInput({ picker }: { picker: FilePicker }): ReactNode {
   const host = useHost();
-  const [value, setValue] = useState("");
-  const [active, setActive] = useState(0);
-  const listId = useId();
-  const typed = value.trim().toLowerCase();
-  const shown = picker.candidates.filter((candidate) => candidate.path.toLowerCase().includes(typed));
-  const highlighted = shown[Math.min(active, shown.length - 1)];
-  const choose = (candidate: FileCandidate | undefined) => {
-    if (candidate !== undefined) {
-      chooseFile(host, picker.workspaceId, picker.path, candidate.path, picker.options);
-    }
-  };
-  const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    switch (event.key) {
-      case "Escape":
-        cancelFilePicker(host);
-        break;
-      case "Enter":
-        choose(highlighted);
-        break;
-      case "ArrowDown":
-      case "ArrowUp":
-        if (shown.length > 0) {
-          const at = Math.min(active, shown.length - 1);
-          setActive((at + (event.key === "ArrowDown" ? 1 : -1) + shown.length) % shown.length);
-        }
-        break;
-      default:
-        return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-  };
+  const [query, setQuery] = useState("");
+  const typed = query.trim().toLowerCase();
   return (
-    <div className="omfp-cmdline" data-testid="file-picker">
-      <CommandMenu
-        className="omfp-cmdline__menu"
-        title={strings.shell.frame.filesMenu}
-        hidden={shown.length === 0}
-        listProps={{ id: listId, "aria-label": text.picker(picker.path) }}
-        footer={<MenuKeys />}
-      >
-        {shown.map((candidate) => (
-          <CommandItem
-            key={candidate.path}
-            id={`${listId}-${candidate.path}`}
-            command={candidate.path}
-            selected={candidate === highlighted}
-            description={[text[candidate.match], ...(candidate.mentioned ? [text.mentioned] : [])].join(", ")}
-            data-testid="file-picker-option"
-            data-path={candidate.path}
-            // Keeps the focus in the input, which would otherwise blur and cancel the picker before the click.
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => choose(candidate)}
-          />
-        ))}
-      </CommandMenu>
-      <Prompt>
+    <Picker
+      id="file-picker"
+      title={text.picker(picker.path)}
+      empty={text.noMatch}
+      prompt={
         <span className="omfp-file-picker__prompt" aria-hidden="true">
           {text.pickerPrompt} {picker.path}
         </span>
-        <input
-          className="omfp-cmd__input"
-          data-testid="file-picker-input"
-          {...{ [CMDLINE_ATTRIBUTE]: "" }}
-          role="combobox"
-          aria-label={text.picker(picker.path)}
-          aria-expanded={shown.length > 0}
-          aria-controls={listId}
-          aria-autocomplete="list"
-          aria-activedescendant={highlighted === undefined ? undefined : `${listId}-${highlighted.path}`}
-          autoComplete="off"
-          spellCheck={false}
-          // biome-ignore lint/a11y/noAutofocus: the picker opens for the path the user just opened and takes the focus
-          autoFocus
-          value={value}
-          onChange={(event) => {
-            setValue(event.target.value);
-            setActive(0);
-          }}
-          onKeyDown={onKeyDown}
-          onBlur={() => cancelFilePicker(host)}
-        />
-      </Prompt>
-    </div>
+      }
+      options={picker.candidates
+        .filter((candidate) => candidate.path.toLowerCase().includes(typed))
+        .map((candidate) => ({
+          id: candidate.path,
+          title: candidate.path,
+          description: [text[candidate.match], ...(candidate.mentioned ? [text.mentioned] : [])].join(", "),
+        }))}
+      search={setQuery}
+      choose={(path) => chooseFile(host, picker.workspaceId, picker.path, path, picker.options)}
+      cancel={() => cancelFilePicker(host)}
+    />
   );
 }

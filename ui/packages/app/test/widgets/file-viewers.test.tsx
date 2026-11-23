@@ -3,12 +3,12 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import type { FileContent } from "@omfp/protocol";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Markdown } from "omfp/kit";
 import { type FilePoll, OPEN_FILES, SELECTED_THREAD, SUCCESSES } from "../../src/sdk/index.ts";
 import { FileWidget } from "../../src/widgets/file/index.ts";
-import { FileImage, FileUrlHook } from "../../src/widgets/file/markdown.tsx";
+import { FileImage } from "../../src/widgets/file/markdown.tsx";
 import { viewerOf } from "../../src/widgets/file/viewers.tsx";
 import { repo, thread, workspace } from "../support/fixtures.ts";
 import { FakeClient, renderWithHost, testHost } from "../support/host.tsx";
@@ -134,21 +134,23 @@ describe("Markdown preview", () => {
   });
 
   // spec: UI-562
-  test("with a file URL hook, relative images load from it; without a URL yet they show their alt text", () => {
-    const urls: Record<string, string> = { "docs/img/chart.png": "/files/w1/docs/img/chart.png" };
-    render(
-      <FileUrlHook.Provider value={(path) => urls[path]}>
-        <Markdown
-          data-testid="md"
-          linkBase="docs"
-          image={FileImage}
-          text={"![chart](img/chart.png) ![gone](gone.png)"}
-        />
-      </FileUrlHook.Provider>,
+  test("relative images show their alt text until the file's URL is known", () => {
+    const test = renderWithHost(
+      <Markdown data-testid="md" linkBase="docs" image={FileImage} text={"![chart](img/chart.png)"} />,
     );
+    expect(screen.getByTestId("file-image-alt").textContent).toBe("chart");
+    act(() => {
+      test.client.connected();
+      test.client.index({ workspaces: [workspace("w1")], threads: [thread("t1", "one", "w1")] });
+      test.host.window.set(SELECTED_THREAD, "t1");
+      test.flush();
+    });
     const image = screen.getByTestId("md").querySelector("img");
-    expect([image?.getAttribute("src"), image?.getAttribute("alt")]).toEqual(["/files/w1/docs/img/chart.png", "chart"]);
-    expect(screen.getByTestId("file-image-alt").textContent).toBe("gone");
+    expect([image?.getAttribute("src"), image?.getAttribute("alt")]).toEqual([
+      "/files/test/w1/docs/img/chart.png",
+      "chart",
+    ]);
+    expect(screen.queryAllByTestId("file-image-alt").length).toBe(0);
   });
 
   // spec: UI-560, UI-563, UI-567

@@ -472,12 +472,12 @@ describe("the file picker", () => {
   }
 
   function options(): string[] {
-    return screen.getAllByTestId("file-picker-option").map((option) => option.dataset.path ?? "");
+    return screen.getAllByTestId("file-picker-option").map((option) => option.dataset.id ?? "");
   }
 
   function highlighted(): string | undefined {
     return screen.getAllByTestId("file-picker-option").find((option) => option.getAttribute("aria-selected") === "true")
-      ?.dataset.path;
+      ?.dataset.id;
   }
 
   // spec: UI-117

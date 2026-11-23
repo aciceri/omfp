@@ -7,7 +7,6 @@
 
 import type { FileTab, WidgetProps } from "../sdk/index.ts";
 import { isObject } from "../sdk/json.ts";
-import { builtinReference } from "./resolve.ts";
 
 export type ContainerKind = "row" | "col" | "tabs" | "stack";
 
@@ -99,10 +98,10 @@ function parseContainer(
   return { ok: true, value: { kind, props: props as ContainerProps, children: trees } };
 }
 
-/** Whether any widget of `tree` is one of `names`; a retired built-in counts as its successor (UI-493). */
+/** Whether any widget of `tree` is one of `names`. */
 export function containsWidget(tree: LayoutTree, names: readonly string[]): boolean {
   return tree.kind === "widget"
-    ? names.some((name) => builtinReference(name) === builtinReference(tree.name))
+    ? names.includes(tree.name)
     : tree.children.some((child) => containsWidget(child, names));
 }
 

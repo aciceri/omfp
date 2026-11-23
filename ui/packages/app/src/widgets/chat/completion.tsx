@@ -12,9 +12,9 @@ import {
   fileSuggestions,
   type Suggestion,
   strings,
-  useHost,
+  useFindFile,
 } from "omfp/sdk";
-import { type KeyboardEvent, type RefObject, type SyntheticEvent, useEffect, useState } from "react";
+import { type KeyboardEvent, type RefObject, type SyntheticEvent, useCallback, useState } from "react";
 import { useClock } from "./state.ts";
 
 const text = strings.chat.composer;
@@ -34,54 +34,30 @@ interface Cursor {
 }
 
 /**
- * The workspace-relative paths `workspaces.find_file { fuzzy: true }` (DMN-092, UI-731) finds for `query` (UI-732),
- * asked once typing has paused {@link FILE_QUERY_DELAY_MS}. An answer to an older query is dropped; until the new one
- * comes, the last answer narrowed to the paths still matching shows.
+ * The workspace-relative paths `workspaces.find_file` finds for `query` (UI-732), asked once typing has paused
+ * {@link FILE_QUERY_DELAY_MS}: until the answer comes, the last one narrowed to the paths still matching shows.
  */
 function useFileSuggestions(
   workspaceId: string | undefined,
   threadId: string | undefined,
   query: string | undefined,
 ): string[] {
-  const host = useHost();
   const clock = useClock();
-  const [answer, setAnswer] = useState<{ workspaceId: string; query: string; paths: readonly string[] }>();
-  useEffect(() => {
-    if (workspaceId === undefined || query === undefined) {
-      return undefined;
-    }
-    let live = true;
-    const stop = clock.every(FILE_QUERY_DELAY_MS, () => {
-      stop();
-      host.client
-        .call("workspaces.find_file", {
-          workspaceId,
-          query,
-          fuzzy: true,
-          ...(threadId === undefined ? {} : { threadId }),
-        })
-        .then(
-          (result) => {
-            if (live) {
-              setAnswer({ workspaceId, query, paths: result.candidates.map((candidate) => candidate.path) });
-            }
-          },
-          () => {
-            if (live) {
-              setAnswer({ workspaceId, query, paths: [] });
-            }
-          },
-        );
-    });
-    return () => {
-      live = false;
-      stop();
-    };
-  }, [host, clock, workspaceId, threadId, query]);
-  if (query === undefined || answer === undefined || answer.workspaceId !== workspaceId) {
+  const delay = useCallback(
+    (ask: () => void) => {
+      const stop = clock.every(FILE_QUERY_DELAY_MS, () => {
+        stop();
+        ask();
+      });
+      return stop;
+    },
+    [clock],
+  );
+  const found = useFindFile(workspaceId, threadId, query, delay);
+  if (query === undefined || found === undefined || found.workspaceId !== workspaceId) {
     return [];
   }
-  return fileSuggestions(query, answer);
+  return fileSuggestions(query, { query: found.query, paths: found.result?.candidates.map((file) => file.path) ?? [] });
 }
 
 /**

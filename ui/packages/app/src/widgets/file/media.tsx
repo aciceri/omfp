@@ -7,6 +7,7 @@ import type { FileContent } from "@omfp/protocol";
 import { EmptyState } from "omfp/kit";
 import { strings, useFileUrl } from "omfp/sdk";
 import { type ReactNode, useState } from "react";
+import { extension, versionedUrl } from "./viewers.tsx";
 
 const text = strings.shell.file;
 
@@ -30,13 +31,6 @@ const MEDIA: Readonly<Record<string, MediaKind>> = {
   aac: "audio",
 };
 
-/** The extension of the file `path` names, in lower case; `undefined` without one (`notes/.wav`, `a.b/clip`). */
-export function extension(path: string): string | undefined {
-  const name = path.slice(path.lastIndexOf("/") + 1);
-  const dot = name.lastIndexOf(".");
-  return dot > 0 ? name.slice(dot + 1).toLowerCase() : undefined;
-}
-
 /** Whether `path` names a video or an audio file, by its extension. */
 export function mediaKind(path: string): MediaKind | undefined {
   const found = extension(path);
@@ -49,7 +43,7 @@ export function mediaKind(path: string): MediaKind | undefined {
  */
 export function MediaFile({ file, kind }: { file: FileContent; kind: MediaKind }): ReactNode {
   const base = useFileUrl(file.path);
-  const src = base === undefined ? undefined : `${base}?v=${encodeURIComponent(file.hash)}`;
+  const src = base === undefined ? undefined : versionedUrl(base, file.hash);
   // The source that failed: a new version gets its own try.
   const [failed, setFailed] = useState<string | undefined>(undefined);
   if (src === undefined) {

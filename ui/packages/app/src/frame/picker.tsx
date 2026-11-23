@@ -2,6 +2,7 @@
 import { CommandItem, CommandLine, CommandMenu, Kbd, KeyHint } from "@omfp/kit";
 import { type ReactNode, useEffect, useId, useState } from "react";
 import { CMDLINE_ATTRIBUTE } from "../keymap/handler.ts";
+import { type Command, useCommand } from "../sdk/index.ts";
 import { strings } from "../strings/index.ts";
 
 export interface PickerOption {
@@ -21,6 +22,26 @@ function matches(text: string, query: string): boolean {
   return true;
 }
 
+/**
+ * A picker `command` opens: `open`'s state when it ran plus the element that had the focus, and `close`, which ends the
+ * session and gives that element the focus back.
+ */
+export function usePickerSession<T extends object>(
+  command: Omit<Command, "run">,
+  open: () => T,
+): readonly [(T & { readonly focus: Element | null }) | undefined, () => void] {
+  const [session, setSession] = useState<T & { readonly focus: Element | null }>();
+  useCommand({ ...command, run: () => setSession({ ...open(), focus: document.activeElement }) });
+  const close = () => {
+    const focus = session?.focus;
+    setSession(undefined);
+    queueMicrotask(() => {
+      if (focus instanceof HTMLElement && focus.isConnected) focus.focus();
+    });
+  };
+  return [session, close];
+}
+
 export function Picker({
   id,
   title,
@@ -29,6 +50,7 @@ export function Picker({
   initial,
   preview,
   numbered = false,
+  prompt,
   search,
   notice,
   busy = false,
@@ -42,6 +64,8 @@ export function Picker({
   initial?: string | undefined;
   preview?: ((id: string) => void) | undefined;
   numbered?: boolean;
+  /** Shown before the query, e.g. what the picker is for. */
+  prompt?: ReactNode;
   /** An external search supplies already-filtered options, avoiding a second, differently ordered text match. */
   search?: ((query: string) => void) | undefined;
   notice?: string | undefined;
@@ -125,6 +149,7 @@ export function Picker({
         )}
       </CommandMenu>
       <CommandLine>
+        {prompt}
         <input
           className="omfp-cmd__input"
           data-testid={`${id}-input`}

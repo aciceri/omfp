@@ -10,7 +10,6 @@ import { join } from "node:path";
 import { act, cleanup } from "@testing-library/react";
 import { Frame } from "../../src/frame/frame.tsx";
 import { DEFAULT_BINDINGS } from "../../src/keymap/keymap.ts";
-import { FORMER_COMMAND_IDS } from "../../src/sdk/commands.ts";
 import { SELECTED_THREAD } from "../../src/sdk/index.ts";
 import { BUILTIN_WIDGETS } from "../../src/view/registry.ts";
 import { thread, workspace } from "../support/fixtures.ts";
@@ -81,7 +80,5 @@ describe("the keymap agents read", () => {
       ["widget"],
       false,
     ]);
-    // Former ids name current commands.
-    expect(Object.values(FORMER_COMMAND_IDS).filter((id) => !byId.has(id))).toEqual([]);
   });
 });

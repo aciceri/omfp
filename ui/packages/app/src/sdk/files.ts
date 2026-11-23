@@ -8,7 +8,7 @@
 
 import { CallError } from "@omfp/client";
 import type { VimMode } from "@omfp/kit";
-import type { FileCandidate, FileContent } from "@omfp/protocol";
+import type { FileCandidate, FileCandidates, FileContent } from "@omfp/protocol";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { strings } from "../strings/index.ts";
 import { MAIN_SLOT } from "../view/layout.ts";
@@ -223,6 +223,60 @@ export async function findMissingFile(
   }
   host.window.set(FILE_PICKER, { workspaceId, path, options, candidates: found.candidates });
   return "choosing";
+}
+
+/** The latest answer of {@link useFindFile}: what `workspaces.find_file` found for `query`, or why it failed. */
+export interface FoundFiles {
+  readonly workspaceId: string;
+  readonly query: string;
+  readonly result: FileCandidates | undefined;
+  readonly error: string | undefined;
+}
+
+/**
+ * The files of workspace `workspaceId` that `workspaces.find_file { fuzzy: true }` (DMN-092, UI-731) finds for `query`,
+ * those the tool cards of thread `threadId` name first: the latest answer, which may be for an earlier query or
+ * workspace. Nothing is asked without a workspace or a query; `delay` (stable across renders) schedules each request
+ * and returns its cancel. An answer arriving after the query, workspace or thread changed is dropped.
+ */
+export function useFindFile(
+  workspaceId: string | undefined,
+  threadId: string | undefined,
+  query: string | undefined,
+  delay?: (ask: () => void) => () => void,
+): FoundFiles | undefined {
+  const host = useHost();
+  const [found, setFound] = useState<FoundFiles>();
+  useEffect(() => {
+    if (workspaceId === undefined || query === undefined) {
+      return undefined;
+    }
+    let live = true;
+    const ask = () => {
+      host.client
+        .call("workspaces.find_file", {
+          workspaceId,
+          query,
+          fuzzy: true,
+          ...(threadId === undefined ? {} : { threadId }),
+        })
+        .then(
+          (result) => {
+            if (live) setFound({ workspaceId, query, result, error: undefined });
+          },
+          (error: unknown) => {
+            if (live) setFound({ workspaceId, query, result: undefined, error: errorMessage(error) });
+          },
+        );
+    };
+    const cancel = delay?.(ask);
+    if (delay === undefined) ask();
+    return () => {
+      live = false;
+      cancel?.();
+    };
+  }, [host, delay, workspaceId, threadId, query]);
+  return found;
 }
 
 /**

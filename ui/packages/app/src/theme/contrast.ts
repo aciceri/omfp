@@ -161,13 +161,6 @@ export function deltaE(a: Rgb, b: Rgb): number {
   return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]) * 100;
 }
 
-/** The pairs under AA, as `text on background: ratio`. */
-export function failingPairs(pairs: readonly ContrastPair[]): string[] {
-  return pairs
-    .filter((pair) => pair.ratio < AA)
-    .map((pair) => `${pair.text} on ${pair.background}: ${pair.ratio.toFixed(2)}`);
-}
-
 type Lab = readonly [lightness: number, a: number, b: number];
 
 function toLinear(channel: number): number {

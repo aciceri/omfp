@@ -10,14 +10,7 @@
 
 import { strings } from "../strings/index.ts";
 import { type LayoutNode, type LayoutTree, parseLayout } from "../view/layout.ts";
-import {
-  DEFAULT_MANIFEST,
-  isFileView,
-  type ListedView,
-  parseView,
-  type ResolvedPanel,
-  resolveViews,
-} from "../view/views.ts";
+import { DEFAULT_MANIFEST, parseView, type ResolvedPanel, type ResolvedView, resolveViews } from "../view/views.ts";
 import { isObject } from "./json.ts";
 
 const text = strings.init.views;
@@ -28,43 +21,29 @@ export type InitFile = "user" | "workspace";
 /** Where a view comes from: `views.json` (even once init files changed its layout), or the init file that added it. */
 export type ViewOrigin = "views.json" | InitFile;
 
-/** A view as an init file writes it: a layout (a node or a {@link Layout}), or a TSX file of `.omfp/views/`. */
+/** A view as an init file writes it: a layout (a node or a {@link Layout}). */
 export interface ViewSpec {
   /** Default: the id. */
   readonly title?: string;
-  readonly layout?: LayoutNode | Layout;
-  /** `./views/<name>.tsx` (UI-268). */
-  readonly view?: string;
+  readonly layout: LayoutNode | Layout;
 }
 
 /** A view as {@link InitViews.get} gives it. */
 export interface ViewEntry {
   readonly id: string;
   readonly title: string;
-  /** The view's layout: its edits change the view. `undefined` for a TSX view. */
-  readonly layout: Layout | undefined;
-  /** The TSX file; `undefined` for a layout. */
-  readonly view: string | undefined;
+  /** The view's layout: its edits change the view. */
+  readonly layout: Layout;
   readonly origin: ViewOrigin;
 }
 
-interface CommonEntry {
+/** A view: `views.json`'s (or the one the file that added it gave), as the files changed it. */
+interface Entry {
   readonly id: string;
   readonly title: string;
   readonly origin: ViewOrigin;
-}
-
-/** A TSX view. */
-interface FileEntry extends CommonEntry {
-  readonly file: string;
-}
-
-/** A view with a layout: `views.json`'s (or the one the file that added it gave), as the files changed it. */
-interface LayoutEntry extends CommonEntry {
   layout: LayoutNode;
 }
-
-type Entry = FileEntry | LayoutEntry;
 
 /** Where the edits of a layout {@link InitViews.get} gave go: its view. */
 const owners = new WeakMap<Layout, (node: LayoutNode) => void>();
@@ -187,12 +166,7 @@ export class InitViews {
     const views = resolveViews(shown);
     const wanted = isObject(shown) && typeof shown.default === "string" ? shown.default : undefined;
     return new InitViews(
-      views.views.map((listed): Entry => {
-        const { id, title } = listed;
-        return isFileView(listed)
-          ? { id, title, origin: "views.json", file: listed.file }
-          : { id, title, origin: "views.json", layout: listed.layout };
-      }),
+      views.views.map(({ id, title, layout }): Entry => ({ id, title, origin: "views.json", layout })),
       wanted,
       views.panels,
       file,
@@ -225,13 +199,10 @@ export class InitViews {
   }
 
   /** The views as the window lists them: a view a file added carries the file in `init`. */
-  get listed(): readonly ListedView[] {
-    return this.#entries.map((entry): ListedView => {
+  get listed(): readonly ResolvedView[] {
+    return this.#entries.map((entry): ResolvedView => {
       const { id, title, origin } = entry;
       const init = origin === "views.json" ? {} : { init: origin };
-      if ("file" in entry) {
-        return { id, title, file: entry.file, ...init };
-      }
       return { id, title, layout: entry.layout, tree: treeOf(entry.layout), ...init };
     });
   }
@@ -241,10 +212,7 @@ export class InitViews {
     if (entry === undefined) {
       return undefined;
     }
-    const { title, origin } = entry;
-    return "file" in entry
-      ? { id, title, layout: undefined, view: entry.file, origin }
-      : { id, title, layout: this.#bound(entry), view: undefined, origin };
+    return { id, title: entry.title, layout: this.#bound(entry), origin: entry.origin };
   }
 
   /** Adds the view `id`, or replaces the view with that id in place; throws when `view` is invalid. */
@@ -253,21 +221,13 @@ export class InitViews {
     if (view.title !== undefined) {
       written.title = view.title;
     }
-    if (view.layout !== undefined) {
-      written.layout = view.layout instanceof Layout ? view.layout.node : view.layout;
-    }
-    if (view.view !== undefined) {
-      written.view = view.view;
-    }
+    written.layout = view.layout instanceof Layout ? view.layout.node : view.layout;
     const parsed = parseView(id, written);
     if (!parsed.ok) {
       throw invalid(parsed.error);
     }
-    const listed = parsed.value;
-    const { title } = listed;
-    const entry: Entry = isFileView(listed)
-      ? { id, title, origin: this.#file, file: listed.file }
-      : { id, title, origin: this.#file, layout: listed.layout };
+    const { title, layout } = parsed.value;
+    const entry: Entry = { id, title, origin: this.#file, layout };
     const index = this.#entries.findIndex((candidate) => candidate.id === id);
     if (index < 0) {
       this.#entries.push(entry);
@@ -279,15 +239,12 @@ export class InitViews {
 
   /**
    * Changes the layout of the view `id`: `change` edits the {@link Layout} it gets, or returns the new layout; throws
-   * for a missing or TSX view.
+   * for a missing view.
    */
   update(id: string, change: (layout: Layout) => Layout | LayoutNode | undefined): InitViews {
     const entry = this.#entries.find((candidate) => candidate.id === id);
     if (entry === undefined) {
       throw new Error(text.noView(id));
-    }
-    if ("file" in entry) {
-      throw new Error(text.fileView(id, entry.file));
     }
     const layout = this.#bound(entry);
     const result = change(layout);
@@ -323,14 +280,14 @@ export class InitViews {
   }
 
   /** The layout of `entry`, whose edits change it. */
-  #bound(entry: LayoutEntry): Layout {
+  #bound(entry: Entry): Layout {
     const layout = new Layout(entry.layout);
     owners.set(layout, (node) => this.#setLayout(entry, node));
     return layout;
   }
 
   /** `node` as the layout of `entry`; throws when it is no layout or the view is gone. */
-  #setLayout(entry: LayoutEntry, node: LayoutNode): void {
+  #setLayout(entry: Entry, node: LayoutNode): void {
     if (!this.#entries.includes(entry)) {
       throw new Error(text.noView(entry.id));
     }

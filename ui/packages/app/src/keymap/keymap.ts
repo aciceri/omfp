@@ -8,8 +8,6 @@
  * separated by spaces: `g g`, `Space n`.
  */
 
-import { currentCommandId } from "../sdk/commands.ts";
-
 /** `normal`: focus not in a text field; `insert`: a text field has the focus; `cmdline`: the `:` line is open. */
 export type Mode = "normal" | "insert" | "cmdline";
 
@@ -317,8 +315,7 @@ export function normalizeKeys(keys: string): string {
 /**
  * The defaults with `overrides` applied one by one (UI-097): an entry replaces the binding with the same mode and
  * keys (keeping its place), `""` removes it, any other entry is added after the defaults. Later entries win. The
- * bindings an entry makes carry its `args` and `source`; an entry naming a former built-in id binds its current id
- * (UI-527).
+ * bindings an entry makes carry its `args` and `source`.
  */
 export function mergeBindings(
   defaults: readonly Binding[],
@@ -337,7 +334,7 @@ export function mergeBindings(
     const replacement: Binding = {
       mode: override.mode,
       keys,
-      command: currentCommandId(override.command),
+      command: override.command,
       ...(override.args === undefined || override.args.length === 0 ? {} : { args: override.args }),
       ...(source === undefined ? {} : { source }),
     };
@@ -358,22 +355,6 @@ export interface InitBindings {
 }
 
 export const NO_INIT_BINDINGS: InitBindings = { user: [], workspace: [] };
-
-/**
- * The window's effective keymap (UI-210, UI-262): the defaults, then the daemon's `[keymap]` entries (UI-097), then the
- * current workspace's `.omfp/keymap.json` bindings, then the user's init file's and the workspace's init file's, each
- * layer applied with {@link mergeBindings}, so every layer wins over the ones before it. Each binding a layer makes
- * carries that layer as its `source`.
- */
-export function effectiveBindings(
-  defaults: readonly Binding[],
-  global: readonly KeymapOverride[],
-  workspace: readonly KeymapOverride[],
-  init: InitBindings = NO_INIT_BINDINGS,
-): readonly Binding[] {
-  const configured = mergeBindings(mergeBindings(defaults, global, "config"), workspace, "workspace");
-  return mergeBindings(mergeBindings(configured, init.user, "init:user"), init.workspace, "init:workspace");
-}
 
 /** What a key sequence typed for `:describe-key` is (UI-264). */
 export type Described =

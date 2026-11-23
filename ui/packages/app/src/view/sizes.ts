@@ -1,7 +1,7 @@
 /**
  * This window's splitter sizes (UI-206, UI-207): the always-active splitters resize the cells of a view's `row` and
  * `col` containers and the left column for this window only, kept in `localStorage` so the next window starts from
- * them. `views.json` keeps the defaults, written by layout editing (UI-103); a window's sizes apply on top of them while
+ * them. `views.json` keeps the defaults; a window's sizes apply on top of them while
  * the container still has as many cells, and a double click drops them.
  */
 

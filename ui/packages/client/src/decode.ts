@@ -246,7 +246,7 @@ function isWidgetInfo(value: unknown): value is WidgetInfo {
   return (
     isObject(value) &&
     typeof value.name === "string" &&
-    (value.source === "workspace" || value.source === "user") &&
+    value.source === "workspace" &&
     typeof value.version === "string" &&
     isOptionalString(value.entry)
   );
@@ -261,7 +261,6 @@ const VIEWS_EVENTS: Record<ViewsEvent["kind"], (event: Record<string, unknown>) 
   views_widgets: (event) => isWidgetList(event.widgets),
   views_keymap: (event) => isWorkspaceKeymap(event.keymap) && isOptionalString(event.error),
   views_init: (event) => isOptionalString(event.init),
-  views_files: (event) => isOptionalString(event.viewFiles),
   widget_stored: (event) => typeof event.instance === "string" && typeof event.key === "string" && "value" in event,
 };
 
@@ -572,7 +571,7 @@ function isStoredMap(value: unknown): value is Record<string, Record<string, unk
 }
 
 /** Decodes the state of a `views/<workspaceId>` snapshot (PRT-040, PRT-060, PRT-095); `manifest`, `error`,
- * `keymapError`, `init` and `viewFiles` default to `null`, `keymap` to no bindings. */
+ * `keymapError` and `init` default to `null`, `keymap` to no bindings. */
 export function decodeViewsState(value: unknown): Decoded<ViewsState> {
   if (
     !isObject(value) ||
@@ -581,8 +580,7 @@ export function decodeViewsState(value: unknown): Decoded<ViewsState> {
     !isStoredMap(value.stored) ||
     !(value.keymap === undefined || isWorkspaceKeymap(value.keymap)) ||
     !isOptionalString(value.keymapError) ||
-    !isOptionalString(value.init) ||
-    !isOptionalString(value.viewFiles)
+    !isOptionalString(value.init)
   ) {
     return invalid("expected `{ manifest, error, widgets: { source, name, version, entry }[], stored, keymap? }`");
   }
@@ -594,7 +592,6 @@ export function decodeViewsState(value: unknown): Decoded<ViewsState> {
     keymap: value.keymap ?? [],
     keymapError: value.keymapError ?? null,
     init: value.init ?? null,
-    viewFiles: value.viewFiles ?? null,
   });
 }
 

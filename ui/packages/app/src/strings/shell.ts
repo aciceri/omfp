@@ -677,7 +677,6 @@ export const shell = {
     commandMenu: "commands",
     commandKeys: { complete: "complete", run: "run", cancel: "cancel" },
     pickerKeys: { move: "move", preview: "preview", choose: "confirm" },
-    filesMenu: "files",
     noViewMatch: "No view matches",
     unknownCommand: (name: string) => `Unknown command: ${name}`,
     scopedCommand,
@@ -729,8 +728,6 @@ export const shell = {
     splitter: (container: string, path: string, index: number) => `Resize ${container} ${path} at ${index}`,
     noView: (id: string) => `No view ${id}`,
     /** `:widget add` on a view that exists only in code (UI-300). */
-    codeFile: (id: string, path: string) =>
-      `View ${id} is the TSX file ${path}: add the widget there (<Widget use="…" />), :widget add writes only views.json`,
     codeInit: (id: string, file: string) =>
       `View ${id} comes from ${file}: add the widget there (layout.addTab), :widget add writes only views.json`,
     invalidManifest: "The layout cannot change while .omfp/views.json is invalid: fix the file first",
@@ -752,10 +749,9 @@ export const shell = {
     cancel: "Cancel",
   },
   widgetCopy: {
-    usage: "Usage: :widget add <reference> | :widget copy <reference> [<name>] | :widget save[!] <widget> [<name>]",
+    usage: "Usage: :widget add <reference> | :widget copy <reference> [<name>]",
     added: (reference: string, view: string) => `Added ${reference} to view ${view}`,
     copied: (name: string) => `Copied to ./widgets/${name}`,
-    saved: (reference: string) => `Saved to the user library as ${reference}`,
   },
   settings: {
     setUsage:
@@ -911,7 +907,7 @@ export const shell = {
     prevView: "Previous view",
     pickView: "Pick a view (Space v; fuzzy search, 1–9 or arrows and Enter)",
     widget:
-      "Add a widget to the view, copy one into the workspace or save one to the user library (:widget add <reference>, :widget copy|save[!] <widget> [<name>])",
+      "Add a widget to the view or copy one into the workspace (:widget add <reference>, :widget copy <reference> [<name>])",
     open: "Open a file (:open <path>[:<line>]), or the focused path (:open)",
     pickFile: "Pick a workspace file",
     next: "Next thread",

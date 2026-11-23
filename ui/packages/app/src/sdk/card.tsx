@@ -10,7 +10,7 @@ import type { WidgetProps } from "./widget.ts";
 export interface CardWidgetProps {
   readonly threadId: string;
   readonly toolCallId: string;
-  /** The widget reference of the call (`./widgets/<name>`, `user:<name>`, `omfp:<name>`). */
+  /** The widget reference of the call (`./widgets/<name>`, `omfp:<name>`). */
   readonly reference: string | undefined;
   /** The one-file source of the call, used instead of `reference`. */
   readonly code: string | undefined;

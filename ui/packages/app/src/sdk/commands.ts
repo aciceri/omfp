@@ -52,20 +52,6 @@ export function scopesAt(element: Element | null): string[] {
   return scopes;
 }
 
-/**
- * Built-in command ids renamed to the dotted `<area>.<verb>` convention (UI-525), old id → current id. Old ids keep
- * working: {@link CommandRegistry.resolve} falls back to them and keymap entries naming them still bind (UI-527).
- */
-export const FORMER_COMMAND_IDS: Readonly<Record<string, string>> = {
-  "theme.set": "window.theme",
-  widget: "widget.manage",
-};
-
-/** The current id of `name` when it is a former built-in id, else `name`. */
-export function currentCommandId(name: string): string {
-  return Object.hasOwn(FORMER_COMMAND_IDS, name) ? (FORMER_COMMAND_IDS[name] ?? name) : name;
-}
-
 export class CommandRegistry {
   /** Newest registration last; a later registration of the same id and scope shadows the earlier one. */
   #commands: Command[] = [];
@@ -95,17 +81,8 @@ export class CommandRegistry {
     return commands.reverse();
   }
 
-  /**
-   * The enabled command for `id` (or an alias) in the innermost of `scopes`, else the global one; when nothing answers
-   * to `name`, the command a former id was renamed to (UI-527).
-   */
+  /** The enabled command for `id` (or an alias) in the innermost of `scopes`, else the global one. */
   resolve(name: string, scopes: readonly string[] = []): Command | undefined {
-    const found = this.#resolveExact(name, scopes);
-    const current = currentCommandId(name);
-    return found === undefined && current !== name ? this.#resolveExact(current, scopes) : found;
-  }
-
-  #resolveExact(name: string, scopes: readonly string[]): Command | undefined {
     const matching = this.list().filter(
       (command) => (command.enabled?.() ?? true) && (command.id === name || (command.aliases?.includes(name) ?? false)),
     );

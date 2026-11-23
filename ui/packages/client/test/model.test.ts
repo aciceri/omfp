@@ -344,7 +344,6 @@ describe("model", () => {
       keymap: [],
       keymapError: null,
       init: null,
-      viewFiles: null,
     };
     expect(model.applySubscribed(topic, snapshot("v1", 0, state))).toEqual({ ok: true, mode: "snapshot" });
     expect(model.views.get("01W")).toEqual(state);
@@ -353,7 +352,7 @@ describe("model", () => {
     const manifest = { views: { main: { layout: "omfp:chat" } } };
     const events: TopicEvent[] = [
       { kind: "views_manifest", manifest, error: null },
-      { kind: "views_widgets", widgets: [{ source: "user", name: "clock", version: "u1", entry: null }] },
+      { kind: "views_widgets", widgets: [{ source: "workspace", name: "clock", version: "u1", entry: null }] },
       { kind: "widget_stored", instance: "tests", key: "count", value: 3 },
       { kind: "widget_stored", instance: "tests", key: "job:make", value: null },
       { kind: "widget_stored", instance: "other", key: "k", value: { a: [1] } },
@@ -365,12 +364,11 @@ describe("model", () => {
     expect(model.views.get("01W")).toEqual({
       manifest,
       error: null,
-      widgets: [{ source: "user", name: "clock", version: "u1", entry: null }],
+      widgets: [{ source: "workspace", name: "clock", version: "u1", entry: null }],
       stored: { tests: { count: 3 }, other: { k: { a: [1] } } },
       keymap: [],
       keymapError: null,
       init: null,
-      viewFiles: null,
     });
     expect([...model.takeDirty().views]).toEqual(["01W"]);
 
@@ -394,7 +392,7 @@ describe("model", () => {
     model.track(topic);
     const older = { manifest: null, error: null, widgets: [], stored: {} };
     expect(model.applySubscribed(topic, snapshot("v1", 0, older))).toEqual({ ok: true, mode: "snapshot" });
-    expect(model.views.get("01W")).toEqual({ ...older, keymap: [], keymapError: null, init: null, viewFiles: null });
+    expect(model.views.get("01W")).toEqual({ ...older, keymap: [], keymapError: null, init: null });
 
     const keymap: WorkspaceBinding[] = [
       { mode: "normal", keys: "g t", command: "tests.run", args: ["unit"] },
@@ -529,32 +527,6 @@ describe("model", () => {
     expect(decodeServerFrame(changed(login)).ok).toBe(true);
     expect(decodeServerFrame(changed(null)).ok).toBe(true);
     expect(decodeServerFrame(changed({ ...login, url: 3 })).ok).toBe(false);
-  });
-
-  // spec: PRT-096
-  test("the view files version follows the views topic; snapshots without one have none", () => {
-    const model = new Model();
-    const topic = viewsTopic("01W");
-    model.track(topic);
-    const older = { manifest: null, error: null, widgets: [], stored: {} };
-    expect(model.applySubscribed(topic, snapshot("v1", 0, older)).ok).toBe(true);
-    expect(model.views.get("01W")?.viewFiles).toBeNull();
-    const changed: TopicEvent = { kind: "views_files", viewFiles: "0123456789abcdef" };
-    expect(model.applyEvent({ type: "event", topic, epoch: "v1", seq: 1, event: changed })).toBe("applied");
-    expect(model.views.get("01W")?.viewFiles).toBe("0123456789abcdef");
-    const removed: TopicEvent = { kind: "views_files", viewFiles: null };
-    expect(model.applyEvent({ type: "event", topic, epoch: "v1", seq: 2, event: removed })).toBe("applied");
-    expect(model.views.get("01W")?.viewFiles).toBeNull();
-    expect(model.applySubscribed(topic, snapshot("v2", 0, { ...older, viewFiles: 2 })).ok).toBe(false);
-    const frame = (viewFiles: unknown) => ({
-      type: "event",
-      topic,
-      epoch: "v1",
-      seq: 3,
-      event: { kind: "views_files", viewFiles },
-    });
-    expect(decodeServerFrame(frame("x")).ok).toBe(true);
-    expect(decodeServerFrame(frame(3)).ok).toBe(false);
   });
 
   // spec: PRT-040

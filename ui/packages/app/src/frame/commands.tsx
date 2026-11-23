@@ -5,7 +5,7 @@
  * scheme (UI-091, window-local),
  * density and `:set` (daemon settings, UI-094, UI-097), the
  * view switch (UI-101), the next and previous view (UI-302) and `:view-reset` (UI-107, UI-430), adding a widget to the view
- * (UI-300), copying a widget into the workspace (UI-106), saving a workspace widget to the user library (UI-233) and
+ * (UI-300), copying a widget into the workspace (UI-106) and
  * the current workspace's declared jobs (UI-745); muting this window's live voice session (UI-530).
  */
 
@@ -66,7 +66,7 @@ export interface GlobalCommandsProps {
 }
 
 /** `widget` actions, completed as the first argument of `:widget`. */
-const WIDGET_ACTIONS = ["add", "copy", "save", "save!"];
+const WIDGET_ACTIONS = ["add", "copy"];
 
 export function GlobalCommands({ viewIds, currentView, widgets, addWidget }: GlobalCommandsProps): ReactNode {
   const host = useHost();
@@ -451,8 +451,7 @@ export function GlobalCommands({ viewIds, currentView, widgets, addWidget }: Glo
         }
         return;
       }
-      const known = action === "copy" || action === "save" || action === "save!";
-      if (!known || widget === undefined || rest.length > 0) {
+      if (action !== "copy" || widget === undefined || rest.length > 0) {
         reportError(host, text.usage);
         return;
       }
@@ -462,22 +461,12 @@ export function GlobalCommands({ viewIds, currentView, widgets, addWidget }: Glo
         return;
       }
       try {
-        if (action === "copy") {
-          const copied = await host.client.call("widgets.copy", {
-            workspaceId,
-            widget,
-            ...(name === undefined ? {} : { name }),
-          });
-          reportSuccess(host, text.copied(copied.name));
-        } else {
-          const saved = await host.client.call("widgets.save", {
-            workspaceId,
-            widget,
-            name: name ?? widget.replace(/^\.\/widgets\//, ""),
-            replace: action === "save!",
-          });
-          reportSuccess(host, text.saved(saved.reference));
-        }
+        const copied = await host.client.call("widgets.copy", {
+          workspaceId,
+          widget,
+          ...(name === undefined ? {} : { name }),
+        });
+        reportSuccess(host, text.copied(copied.name));
       } catch (error) {
         reportError(host, error);
       }

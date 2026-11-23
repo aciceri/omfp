@@ -341,8 +341,6 @@ function applyViewsEvent(views: ViewsState, event: ViewsEvent): ViewsState {
       return { ...views, keymap: event.keymap, keymapError: event.error ?? null };
     case "views_init":
       return { ...views, init: event.init ?? null };
-    case "views_files":
-      return { ...views, viewFiles: event.viewFiles ?? null };
     case "widget_stored": {
       const keys = { ...views.stored[event.instance] };
       if (event.value === null) {
@@ -766,7 +764,6 @@ export class Model implements ModelView {
       case "views_widgets":
       case "views_keymap":
       case "views_init":
-      case "views_files":
       case "widget_stored":
         this.#edit(parsed, "views", (views) => applyViewsEvent(views, event));
         break;

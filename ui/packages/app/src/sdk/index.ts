@@ -376,6 +376,7 @@ export {
   useFile,
   useFileTabs,
   useFileUrl,
+  useFindFile,
   useMissingFile,
   useOpenFile,
 } from "./files.ts";
@@ -461,16 +462,6 @@ export {
   SUCCESSES,
   type Success,
 } from "./keys.ts";
-export {
-  Col,
-  type ContainerElementProps,
-  Row,
-  Stack,
-  Tabs,
-  type TabsElementProps,
-  Widget,
-  type WidgetElementProps,
-} from "./layout.tsx";
 export {
   LiveClient,
   type LiveClientOptions,

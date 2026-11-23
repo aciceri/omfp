@@ -499,16 +499,16 @@ describe("frame", () => {
     expect(appearance()).toEqual(["system", "nord", "crush", "compact", "full", "17px"]);
   });
 
-  // spec: UI-526, UI-527
-  test("the `:` line runs `window.theme` by its id, its alias and its former id `theme.set`", async () => {
+  // spec: UI-526
+  test("the `:` line runs `window.theme` by its id and its alias", async () => {
     const { user } = setup();
     const schemes: Array<string | undefined> = [];
-    for (const line of ["window.theme dark", "theme light", "theme.set dark"]) {
+    for (const line of ["window.theme dark", "theme light"]) {
       press(":");
       await user.type(screen.getByTestId("command-line-input"), `${line}{Enter}`);
       schemes.push(document.documentElement.dataset.colorScheme);
     }
-    expect(schemes).toEqual(["dark", "light", "dark"]);
+    expect(schemes).toEqual(["dark", "light"]);
   });
 
   // spec: UI-336
@@ -1471,12 +1471,12 @@ describe("adding a widget", () => {
   }
 
   // spec: UI-300, UI-520
-  test("`:widget add ` completes built-ins, workspace and user widgets; the widget goes to the current view, written", async () => {
+  test("`:widget add ` completes built-ins and workspace widgets; the widget goes to the current view, written", async () => {
     const test = adding({
       manifest: MANIFEST,
       widgets: [
         { name: "tests", source: "workspace", version: "a", entry: "index.tsx" },
-        { name: "clock", source: "user", version: "b", entry: "index.ts" },
+        { name: "clock", source: "workspace", version: "b", entry: "index.ts" },
       ],
     });
     const { client, flush, user } = test;
@@ -1485,8 +1485,6 @@ describe("adding a widget", () => {
     expect(screen.getAllByTestId("command-option").map((option) => option.getAttribute("data-value"))).toEqual([
       "widget add",
       "widget copy",
-      "widget save",
-      "widget save!",
     ]);
     await user.type(screen.getByTestId("command-line-input"), "add ");
     expect(screen.getAllByTestId("command-option").map((option) => option.getAttribute("data-value"))).toEqual([
@@ -1495,26 +1493,28 @@ describe("adding a widget", () => {
       "widget add omfp:workspace",
       "widget add omfp:transcript",
       "widget add ./widgets/tests",
-      "widget add user:clock",
+      "widget add ./widgets/clock",
     ]);
-    await user.type(screen.getByTestId("command-line-input"), "user:clock{Enter}");
+    await user.type(screen.getByTestId("command-line-input"), "./widgets/clock{Enter}");
     const manifest = {
       ...MANIFEST,
       views: {
         ...MANIFEST.views,
-        work: { title: "Work", layout: ["row", {}, "omfp:chat", "omfp:workspace", "user:clock"] },
+        work: { title: "Work", layout: ["row", {}, "omfp:chat", "omfp:workspace", "./widgets/clock"] },
       },
     };
     expect(written(test)).toEqual([{ workspaceId: "w1", manifest }]);
-    await waitFor(() => expect(screen.getByTestId("live-region").textContent).toBe("Added user:clock to view work"));
+    await waitFor(() =>
+      expect(screen.getByTestId("live-region").textContent).toBe("Added ./widgets/clock to view work"),
+    );
     expect(screen.getAllByTestId("success").map((success) => success.textContent)).toEqual([
-      "Added user:clock to view work",
+      "Added ./widgets/clock to view work",
     ]);
     // Rendering follows the daemon's push, not the local change.
     expect(shownWidgets()).toEqual(["omfp:chat", "omfp:workspace"]);
     client.viewsEvents("w1", { kind: "views_manifest", manifest, error: null });
     flush();
-    expect(shownWidgets()).toEqual(["omfp:chat", "omfp:workspace", "user:clock"]);
+    expect(shownWidgets()).toEqual(["omfp:chat", "omfp:workspace", "./widgets/clock"]);
   });
 
   // spec: UI-300
@@ -1596,16 +1596,16 @@ describe("widget copy", () => {
     ]);
     client.answers.delete("widgets.copy");
     press(":");
-    await user.type(screen.getByTestId("command-line-input"), "widget copy user:clock{Enter}");
+    await user.type(screen.getByTestId("command-line-input"), "widget copy omfp:clock{Enter}");
     const [, failing] = client.callsTo("widgets.copy");
-    expect(failing?.params).toEqual({ workspaceId: "w1", widget: "user:clock" });
+    expect(failing?.params).toEqual({ workspaceId: "w1", widget: "omfp:clock" });
     await act(async () => failing?.reject(new Error("./widgets/clock already exists")));
     expect(host.window.get(ERRORS).map(({ text }) => text)).toEqual(["./widgets/clock already exists"]);
     press(":");
     await user.type(screen.getByTestId("command-line-input"), "widget paste{Enter}");
     expect(host.window.get(ERRORS).map(({ text }) => text)).toEqual([
       "./widgets/clock already exists",
-      "Usage: :widget add <reference> | :widget copy <reference> [<name>] | :widget save[!] <widget> [<name>]",
+      "Usage: :widget add <reference> | :widget copy <reference> [<name>]",
     ]);
   });
 

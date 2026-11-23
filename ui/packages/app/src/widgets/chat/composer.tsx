@@ -62,6 +62,7 @@ import {
   SCOPE_ATTRIBUTE,
   type SendMode,
   type SlashRoute,
+  type Suggestion,
   sendMode,
   slashAction,
   slashSuggestions,
@@ -84,6 +85,7 @@ import {
   type KeyboardEvent,
   memo,
   type RefObject,
+  type SyntheticEvent,
   useCallback,
   useEffect,
   useRef,
@@ -160,8 +162,6 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
   /** The message is on its way: sent, taken by the mic making the thread, or in a `threads.create` still pending
    * after the mic gave up. It is read-only and takes no images meanwhile. */
   const locked = sending || creating || (live.local.kind === "starting" && live.local.threadId === undefined);
-  /** The input has the focus: the keymap is in insert mode (UI-098), drawn as the gradient border (UI-172). */
-  const [insert, setInsert] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const host = useHost();
   const reads = draftReads(host);
@@ -199,22 +199,16 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
     inputRef.current?.blur();
   };
   useFocusCommands(inputRef, leave);
-  const pastes = usePastes(message, setMessage, inputRef);
-  const completions = useCompletions({
+  const { insert, pastes, word, onSelect, keyDown, field } = useComposerInput({
+    draft: message,
+    setDraft: setMessage,
     inputRef,
-    value: message.text,
     commands: [],
     workspaceId: draft.workspaceId,
     threadId: undefined,
-    onChange: pastes.onChange,
+    touch,
+    locked,
   });
-  const word = useWordCompletion({ inputRef, value: message.text, enabled: !touch && !completions.open });
-  const typed = (value: string) => {
-    pastes.onChange(value);
-    completions.typed();
-    word.typed();
-  };
-  useLineKeys(inputRef, typed, message.pastes);
   const images = imageInput(
     (files) => {
       // While the thread is created (sent or by the mic) the message is read-only: images pasted or dropped then are
@@ -243,30 +237,6 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
       }
     },
   );
-  const onKeyDownCapture = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.target !== inputRef.current || event.nativeEvent.isComposing) {
-      return;
-    }
-    pastes.onKeyDown(event, modifiersOf(event));
-    // While locked, the suggestions insert nothing, Alt+Enter breaks no line and no word completion is accepted:
-    // only leaving works.
-    if (!locked && completions.onKeyDown(event, inputRef.current)) {
-      return;
-    }
-    composerKey(event, inputRef.current, {
-      busy: false,
-      touch,
-      ghost: word.ghost !== undefined,
-      onChange: pastes.onChange,
-      send,
-      leave,
-      accept: (space) => {
-        if (!locked) {
-          word.accept(space, pastes.onChange);
-        }
-      },
-    });
-  };
   return (
     <form
       className="omfp-composer"
@@ -276,40 +246,21 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
       data-phone={layout === "mobile" || undefined}
       data-workspace-id={draft.workspaceId}
       {...{ [SCOPE_ATTRIBUTE]: "composer" }}
-      onSelect={(event) => {
-        completions.onSelect(event);
-        word.onSelect(event);
-      }}
+      onSelect={onSelect}
       onSubmit={(event) => {
         event.preventDefault();
         send();
       }}
       onDragOver={(event) => event.preventDefault()}
       onDrop={images.onDrop}
-      onKeyDownCapture={onKeyDownCapture}
+      onKeyDownCapture={(event) => keyDown(event, { busy: false, send, leave })}
     >
       <KitComposer mode={insert ? "insert" : "normal"}>
-        {message.images.length > 0 && <Attachments draft={message} setDraft={setMessage} locked={locked} />}
-        {message.pastes.length > 0 && (
-          <PasteChips draft={message} setDraft={setMessage} inputRef={inputRef} locked={locked} />
-        )}
-        <Autocomplete inputValue={message.text} onInputChange={typed}>
-          <ComposerTextArea
-            touch={touch}
-            keys="Enter Alt+Enter Escape Tab ArrowRight"
-            placeholder={labels.placeholder}
-            onFocus={() => setInsert(true)}
-            onBlur={() => {
-              setInsert(false);
-              word.dismiss();
-            }}
-            isReadOnly={locked}
-            inputRef={inputRef}
-            onPaste={images.onPaste}
-            ghost={word.ghost}
-          />
-          {!locked && completions.menu}
-        </Autocomplete>
+        {field({
+          keys: "Enter Alt+Enter Escape Tab ArrowRight",
+          placeholder: labels.placeholder,
+          onPaste: images.onPaste,
+        })}
         <ComposerBar hints={keyless ? undefined : <KeyHints abortable={false} interruptHint={false} />}>
           <DraftMicButton disabled={sending || creating} ready={() => Promise.all(reads)} />
           <Button
@@ -579,6 +530,148 @@ function imageInput(
 }
 
 /**
+ * The input both composers share (UI-060): large pastes as chips (UI-357), the `/` and `@` suggestions (UI-732), the
+ * word completion (UI-175), the line keys (UI-760) and the composer's keys over `draft`, and whether the text area has
+ * the focus (`insert`: the keymap is in insert mode, UI-098, drawn as the gradient border, UI-172). While `locked`, the
+ * suggestions insert nothing, Alt+Enter breaks no line and no word completion is accepted: only leaving works.
+ */
+function useComposerInput({
+  draft,
+  setDraft,
+  inputRef,
+  commands,
+  workspaceId,
+  threadId,
+  onCommand,
+  touch,
+  locked = false,
+  onTyped,
+  onModifiers,
+  onKey,
+  onLineStep,
+}: {
+  draft: Draft;
+  setDraft: (update: (previous: Draft) => Draft) => void;
+  inputRef: RefObject<HTMLTextAreaElement | null>;
+  commands: readonly Suggestion[];
+  workspaceId: string | undefined;
+  threadId: string | undefined;
+  onCommand?: (suggestion: Suggestion) => void;
+  touch: boolean;
+  locked?: boolean;
+  /** Typing, once the draft and the suggestions followed it. */
+  onTyped?: () => void;
+  /** The modifiers held at each key down in the text area. */
+  onModifiers?: (modifiers: Modifiers) => void;
+  /** A key after the suggestions' and before the composer's: whether it took the key (ending the word completion). */
+  onKey?: (event: KeyboardEvent<HTMLElement>) => boolean;
+  /** `Ctrl-p` / `Ctrl-n` at the first / last line while no suggestion shows: whether it took the key (which ends the
+   * word completion, UI-177). */
+  onLineStep?: (direction: "up" | "down") => boolean;
+}) {
+  const [insert, setInsert] = useState(false);
+  const pastes = usePastes(draft, setDraft, inputRef);
+  const completions = useCompletions({
+    inputRef,
+    value: draft.text,
+    commands,
+    workspaceId,
+    threadId,
+    onChange: pastes.onChange,
+    ...(onCommand === undefined ? {} : { onCommand }),
+  });
+  const word = useWordCompletion({ inputRef, value: draft.text, enabled: !touch && !completions.open });
+  const typed = (value: string) => {
+    pastes.onChange(value);
+    completions.typed();
+    word.typed();
+    onTyped?.();
+  };
+  useLineKeys(inputRef, typed, draft.pastes, (direction) => {
+    if (completions.open || onLineStep?.(direction) !== true) {
+      return false;
+    }
+    word.dismiss();
+    return true;
+  });
+  // Captured before React Aria's Autocomplete: while no suggestion list is open the text area keeps its own keys
+  // (arrows move the caret), and the composer's bindings apply. Chords other than the send ones (Ctrl-C, Alt-a, …)
+  // go on to the keymap (UI-095).
+  const keyDown = (
+    event: KeyboardEvent<HTMLElement>,
+    keys: { busy: boolean; send: (mode: SendMode) => void; leave: () => void },
+  ) => {
+    if (event.target !== inputRef.current || event.nativeEvent.isComposing) {
+      return;
+    }
+    const modifiers = modifiersOf(event);
+    pastes.onKeyDown(event, modifiers);
+    onModifiers?.(modifiers);
+    if (!locked && completions.onKeyDown(event, inputRef.current)) {
+      return;
+    }
+    if (onKey?.(event)) {
+      word.dismiss();
+      event.stopPropagation();
+      return;
+    }
+    composerKey(event, inputRef.current, {
+      busy: keys.busy,
+      touch,
+      ghost: word.ghost !== undefined,
+      onChange: pastes.onChange,
+      send: keys.send,
+      leave: keys.leave,
+      accept: (space) => {
+        if (!locked) {
+          word.accept(space, pastes.onChange);
+        }
+      },
+    });
+  };
+  const onSelect = (event: SyntheticEvent) => {
+    completions.onSelect(event);
+    word.onSelect(event);
+  };
+  /** The attached images, the paste chips and the text area with its suggestions. */
+  const field = ({
+    keys,
+    placeholder,
+    onPaste,
+    onBlur,
+  }: {
+    keys: string;
+    placeholder: string;
+    onPaste: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
+    onBlur?: () => void;
+  }) => (
+    <>
+      {draft.images.length > 0 && <Attachments draft={draft} setDraft={setDraft} locked={locked} />}
+      {draft.pastes.length > 0 && <PasteChips draft={draft} setDraft={setDraft} inputRef={inputRef} locked={locked} />}
+      <Autocomplete inputValue={draft.text} onInputChange={typed}>
+        <ComposerTextArea
+          touch={touch}
+          keys={keys}
+          placeholder={placeholder}
+          onFocus={() => setInsert(true)}
+          onBlur={() => {
+            onBlur?.();
+            setInsert(false);
+            word.dismiss();
+          }}
+          isReadOnly={locked}
+          inputRef={inputRef}
+          onPaste={onPaste}
+          ghost={word.ghost}
+        />
+        {!locked && completions.menu}
+      </Autocomplete>
+    </>
+  );
+  return { insert, pastes, word, onSelect, keyDown, field };
+}
+
+/**
  * The thread's `/` commands: those of the last `available_commands_update` (UI-060), or, while the state has none,
  * `thread.commands` asked once the draft starts with `/` (`slash`): showing or focusing the composer asks nothing
  * (UI-998).
@@ -651,8 +744,6 @@ export const Composer = memo(function Composer({
   /** "Ctrl-C again to abort" shows while a second press would abort. */
   const [interruptHint, setInterruptHint] = useState(false);
   const [queueHeld, setQueueHeld] = useState(false);
-  /** The input has the focus: the keymap is in insert mode (UI-098), drawn as the gradient border (UI-172). */
-  const [insert, setInsert] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const box = useRef<HTMLFormElement>(null);
   const tight = useWidthClass(box, (width, rem) => width > 0 && width < TIGHT_BELOW_REM * rem);
@@ -671,15 +762,28 @@ export const Composer = memo(function Composer({
   const mode = sendMode(busy, queueHeld);
   const other = alternative(mode);
   const commands = useThreadCommands(threadId, known, draft.text.startsWith("/"));
-  const pastes = usePastes(draft, setDraft, inputRef);
-  const completions = useCompletions({
+  const history = usePromptHistory(threadId, draft, setDraft, inputRef);
+  const { insert, pastes, word, onSelect, keyDown, field } = useComposerInput({
+    draft,
+    setDraft,
     inputRef,
-    value: draft.text,
     commands: slashSuggestions(draft.text, commands),
     workspaceId: useThreadSummary(threadId)?.workspaceId,
     threadId,
-    onChange: pastes.onChange,
     onCommand: (suggestion) => setDraft((previous) => ({ ...previous, text: complete(suggestion) })),
+    touch,
+    onTyped: () => {
+      // Typing ends a history walk; the recalled text stays as the draft (UI-362).
+      history.end();
+      // Typing ends a `Ctrl-C` sequence: the next press clears what was typed rather than aborting (UI-063).
+      lastInterrupt.current = undefined;
+      setInterruptHint(false);
+    },
+    onModifiers: (modifiers) => setQueueHeld(queueModifier(modifiers)),
+    // Up on the first line, Down on the last line: the prompt history (UI-361, UI-362).
+    onKey: history.onKey,
+    // `Ctrl-p` / `Ctrl-n` walk the prompt history at the first / last line (UI-760).
+    onLineStep: history.step,
   });
 
   const actions = useThreadActions();
@@ -808,56 +912,6 @@ export const Composer = memo(function Composer({
     },
   });
 
-  const history = usePromptHistory(threadId, draft, setDraft, inputRef);
-  const word = useWordCompletion({ inputRef, value: draft.text, enabled: !touch && !completions.open });
-  const typed = (value: string) => {
-    pastes.onChange(value);
-    completions.typed();
-    word.typed();
-    // Typing ends a history walk; the recalled text stays as the draft (UI-362).
-    history.end();
-    // Typing ends a `Ctrl-C` sequence: the next press clears what was typed rather than aborting (UI-063).
-    lastInterrupt.current = undefined;
-    setInterruptHint(false);
-  };
-  // `Ctrl-p` / `Ctrl-n` walk the prompt history at the first / last line, unless the suggestions are open (UI-760); a
-  // recall ends the word completion (UI-177).
-  useLineKeys(inputRef, typed, draft.pastes, (direction) => {
-    if (completions.open || !history.step(direction)) {
-      return false;
-    }
-    word.dismiss();
-    return true;
-  });
-  // Captured before React Aria's Autocomplete: while no suggestion list is open the text area keeps its own keys
-  // (arrows move the caret), and the composer's bindings apply. Chords other than the send ones (Ctrl-C, Alt-a, …)
-  // go on to the keymap (UI-095).
-  const onKeyDownCapture = (event: KeyboardEvent<HTMLElement>) => {
-    if (event.target !== inputRef.current || event.nativeEvent.isComposing) {
-      return;
-    }
-    const modifiers = modifiersOf(event);
-    pastes.onKeyDown(event, modifiers);
-    setQueueHeld(queueModifier(modifiers));
-    if (completions.onKeyDown(event, inputRef.current)) {
-      return;
-    }
-    // Up on the first line, Down on the last line: the prompt history (UI-361, UI-362).
-    if (history.onKey(event)) {
-      word.dismiss();
-      event.stopPropagation();
-      return;
-    }
-    composerKey(event, inputRef.current, {
-      busy,
-      touch,
-      ghost: word.ghost !== undefined,
-      onChange: pastes.onChange,
-      send,
-      leave,
-      accept: (space) => word.accept(space, pastes.onChange),
-    });
-  };
   const { onPaste, onDrop } = imageInput((files) => void attachImages(files, setDraft), pastes.onPaste);
 
   return (
@@ -870,17 +924,14 @@ export const Composer = memo(function Composer({
       data-phone={layout === "mobile" || undefined}
       data-tight={tight || undefined}
       {...{ [SCOPE_ATTRIBUTE]: "composer" }}
-      onSelect={(event) => {
-        completions.onSelect(event);
-        word.onSelect(event);
-      }}
+      onSelect={onSelect}
       onSubmit={(event) => {
         event.preventDefault();
         send(mode);
       }}
       onDragOver={(event) => event.preventDefault()}
       onDrop={onDrop}
-      onKeyDownCapture={onKeyDownCapture}
+      onKeyDownCapture={(event) => keyDown(event, { busy, send, leave })}
       onKeyUpCapture={(event) => setQueueHeld(queueModifier(modifiersOf(event)))}
     >
       {activityKey !== undefined && activityKind !== undefined && activityLabel !== undefined && (
@@ -894,25 +945,12 @@ export const Composer = memo(function Composer({
         />
       )}
       <KitComposer mode={insert ? "insert" : "normal"}>
-        {draft.images.length > 0 && <Attachments draft={draft} setDraft={setDraft} />}
-        {draft.pastes.length > 0 && <PasteChips draft={draft} setDraft={setDraft} inputRef={inputRef} />}
-        <Autocomplete inputValue={draft.text} onInputChange={typed}>
-          <ComposerTextArea
-            touch={touch}
-            keys="Enter Control+Enter Meta+Enter Shift+Enter Control+Q Alt+Enter Escape Tab ArrowRight"
-            placeholder={busy ? (keyless ? text.placeholderBusyTouch : text.placeholderBusy) : text.placeholderIdle}
-            inputRef={inputRef}
-            onFocus={() => setInsert(true)}
-            onBlur={() => {
-              setQueueHeld(false);
-              setInsert(false);
-              word.dismiss();
-            }}
-            onPaste={onPaste}
-            ghost={word.ghost}
-          />
-          {completions.menu}
-        </Autocomplete>
+        {field({
+          keys: "Enter Control+Enter Meta+Enter Shift+Enter Control+Q Alt+Enter Escape Tab ArrowRight",
+          placeholder: busy ? (keyless ? text.placeholderBusyTouch : text.placeholderBusy) : text.placeholderIdle,
+          onPaste,
+          onBlur: () => setQueueHeld(false),
+        })}
         <ComposerActions
           threadId={threadId}
           abortable={abortable}

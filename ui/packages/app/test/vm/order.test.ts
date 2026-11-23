@@ -12,8 +12,8 @@ import {
   threadTargetAt,
   workspaceTargetAt,
 } from "../../src/vm/order.ts";
-import { NO_FILTER, sidebarSections } from "../../src/vm/threads.ts";
-import { thread, workspace } from "../support/fixtures.ts";
+import { sidebarSections } from "../../src/vm/threads.ts";
+import { NO_FILTER, thread, workspace } from "../support/fixtures.ts";
 
 /** `shop` (t1, t2, t3, an archived one), then `docs` (d1), then the empty `misc`. */
 const SECTIONS = sidebarSections(

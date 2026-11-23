@@ -1,25 +1,14 @@
 /** Space v selects a view by fuzzy query, arrows and Enter, or its visible 1–9 hint. */
-import { useState } from "react";
-import { useCommand } from "../sdk/index.ts";
 import { strings } from "../strings/index.ts";
 import type { ModeLineViews } from "./mode-line.tsx";
-import { Picker } from "./picker.tsx";
+import { Picker, usePickerSession } from "./picker.tsx";
 
 export function ViewPicker({ views }: { views: ModeLineViews }) {
-  const [session, setSession] = useState<{ focus: Element | null }>();
-  useCommand({
-    id: "view.pick",
-    title: strings.shell.commands.pickView,
-    enabled: () => views.views.length > 0,
-    run: () => setSession({ focus: document.activeElement }),
-  });
+  const [session, close] = usePickerSession(
+    { id: "view.pick", title: strings.shell.commands.pickView, enabled: () => views.views.length > 0 },
+    () => ({}),
+  );
   if (session === undefined) return null;
-  const close = () => {
-    setSession(undefined);
-    queueMicrotask(() => {
-      if (session.focus instanceof HTMLElement && session.focus.isConnected) session.focus.focus();
-    });
-  };
   return (
     <Picker
       id="view-picker"

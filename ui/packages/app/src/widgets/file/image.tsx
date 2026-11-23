@@ -5,9 +5,10 @@
  */
 
 import type { FileContent } from "@omfp/protocol";
-import { Button, Chip, Icon, type ImageCompare, ImageView } from "omfp/kit";
+import { Button, type ImageCompare, ImageView } from "omfp/kit";
 import { strings, useFileUrl } from "omfp/sdk";
 import { type ReactNode, useState } from "react";
+import { FileBar, versionedUrl } from "./viewers.tsx";
 
 const text = strings.shell.file;
 
@@ -21,7 +22,7 @@ export function ImageFile({ file, diff }: { file: FileContent; diff: boolean }):
       ? `data:${file.mime ?? "image/png"};base64,${file.content}`
       : base === undefined
         ? undefined
-        : `${base}?v=${encodeURIComponent(file.hash)}`;
+        : versionedUrl(base, file.hash);
   if (src === undefined) {
     return <p className="omfp-file__notice">{text.loading}</p>;
   }
@@ -31,12 +32,7 @@ export function ImageFile({ file, diff }: { file: FileContent; diff: boolean }):
       : undefined;
   return (
     <>
-      <div className="omfp-file__bar" data-testid="file-bar">
-        <span className="omfp-file__path">
-          <Icon name="file" className="omfp-file__icon" />
-          {typeof file.repo === "string" && <Chip>{file.repo}</Chip>}
-          <span data-testid="file-path">{file.path}</span>
-        </span>
+      <FileBar file={file}>
         {head !== undefined && (
           <span className="omfp-file__actions">
             <Button
@@ -60,7 +56,7 @@ export function ImageFile({ file, diff }: { file: FileContent; diff: boolean }):
             )}
           </span>
         )}
-      </div>
+      </FileBar>
       <ImageView
         src={src}
         alt={file.path}

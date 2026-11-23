@@ -1,30 +1,21 @@
 /** Space / previews threads without discarding a draft; only confirmation commits the selection. */
-import { useCallback, useState } from "react";
-import { SELECTED_THREAD, useCommand, useHost, useThreadActions, useThreads, useWorkspaces } from "../sdk/index.ts";
+import { useCallback } from "react";
+import { SELECTED_THREAD, useHost, useThreadActions, useThreads, useWorkspaces } from "../sdk/index.ts";
 import { strings } from "../strings/index.ts";
 import { displayTitle, isArchived } from "../vm/threads.ts";
-import { Picker } from "./picker.tsx";
+import { Picker, usePickerSession } from "./picker.tsx";
 
 export function ThreadPicker() {
   const host = useHost();
   const actions = useThreadActions();
   const threads = useThreads();
   const workspaces = useWorkspaces();
-  const [session, setSession] = useState<{ original: string | undefined; focus: Element | null }>();
+  const [session, close] = usePickerSession(
+    { id: "threads.pick", title: strings.shell.commands.pickThread, aliases: ["threads"] },
+    () => ({ original: host.window.get(SELECTED_THREAD) }),
+  );
   const preview = useCallback((id: string) => host.window.set(SELECTED_THREAD, id), [host]);
-  useCommand({
-    id: "threads.pick",
-    title: strings.shell.commands.pickThread,
-    aliases: ["threads"],
-    run: () => setSession({ original: host.window.get(SELECTED_THREAD), focus: document.activeElement }),
-  });
   if (session === undefined) return null;
-  const close = () => {
-    setSession(undefined);
-    queueMicrotask(() => {
-      if (session.focus instanceof HTMLElement && session.focus.isConnected) session.focus.focus();
-    });
-  };
   return (
     <Picker
       id="thread-picker"

@@ -1,4 +1,4 @@
-/** L4: views init files make and TSX views in the window (UI-267, UI-268, UI-300, UI-304, UI-375). */
+/** L4: views init files make in the window (UI-267, UI-300, UI-304, UI-375). */
 
 import { afterEach, describe, expect, test } from "bun:test";
 import type { CallMethod } from "@omfp/client";
@@ -8,21 +8,14 @@ import userEvent from "@testing-library/user-event";
 import { Frame } from "../../src/frame/frame.tsx";
 import { initUrl } from "../../src/frame/init.tsx";
 import {
-  Col,
   chooseView,
   ERRORS,
   type InitApi,
-  openFile,
-  Row,
   SELECTED_THREAD,
-  Tabs,
-  Widget,
   type WidgetComponent,
   type WidgetProps,
 } from "../../src/sdk/index.ts";
-import { viewFileUrl } from "../../src/view/file-view.tsx";
 import type { WidgetRegistry } from "../../src/view/resolve.ts";
-import { PANE_SIZES } from "../../src/view/sizes.ts";
 import { repo, thread, workspace } from "../support/fixtures.ts";
 import { ManualTimers, renderWithHost, type TestHost, testHost } from "../support/host.tsx";
 
@@ -45,38 +38,19 @@ const registry: WidgetRegistry = new Map<string, WidgetComponent>(
 const BASE = "/widgets/test";
 const WORKSPACE_URL = initUrl(BASE, "w1", "v1");
 const USER_URL = initUrl(BASE, "user", "u1");
-const opsUrl = (version: string) => viewFileUrl(BASE, "w1", version, "./views/ops.tsx");
-
-/** The example of the docs (UI-268): the same layout as {@link SAME}. */
-function Ops() {
-  return (
-    <Row sizes={[3, 2]}>
-      <Tabs id="main">
-        <Widget use="omfp:chat" />
-      </Tabs>
-      <Col sizes={[1, 1]}>
-        <Widget use="omfp:changes" props={{ repo: "api" }} />
-        <Tabs>
-          <Widget use="omfp:background" />
-          <Widget use="omfp:mcp" />
-        </Tabs>
-      </Col>
-    </Row>
-  );
-}
-
-const SAME = [
-  "row",
-  { sizes: [3, 2] },
-  ["tabs", { id: "main" }, "omfp:chat"],
-  ["col", { sizes: [1, 1] }, ["omfp:changes", { repo: "api" }], ["tabs", {}, "omfp:background", "omfp:mcp"]],
-];
 
 const MANIFEST = {
   default: "work",
   views: {
-    ops: { title: "Ops", view: "./views/ops.tsx" },
-    same: { title: "Same", layout: SAME },
+    same: {
+      title: "Same",
+      layout: [
+        "row",
+        { sizes: [3, 2] },
+        ["tabs", { id: "main" }, "omfp:chat"],
+        ["col", { sizes: [1, 1] }, ["omfp:changes", { repo: "api" }], ["tabs", {}, "omfp:background", "omfp:mcp"]],
+      ],
+    },
     work: { title: "Work", layout: ["row", {}, ["tabs", { id: "main" }, "omfp:chat"], "omfp:workspace"] },
   },
 };
@@ -111,7 +85,7 @@ function setup(
     init: user,
   });
   act(() => test.host.window.set(SELECTED_THREAD, "t1"));
-  test.client.views("w1", { manifest, viewFiles: "f1" });
+  test.client.views("w1", { manifest });
   test.flush();
   return {
     ...test,
@@ -140,30 +114,6 @@ function show(test: TestHost, id: string): void {
   act(() => chooseView(test.host, id));
 }
 
-/** The view as rendered: each laid-out element's path, kind and slot, then the widgets' text. */
-function structure(): string[] {
-  const view = screen.getByTestId("view");
-  return [
-    ...[...view.querySelectorAll<HTMLElement>("[data-path][data-layout]")].map(
-      (element) => `${element.dataset.path} ${element.dataset.layout} ${element.dataset.slot ?? ""}`,
-    ),
-    ...within(view)
-      .queryAllByTestId("stub")
-      .map((element) => element.textContent ?? ""),
-  ];
-}
-
-/** The splitter at `path` of the view shown (the views the frame keeps hidden have theirs, UI-390). */
-function splitter(path: string): HTMLElement {
-  const found = within(screen.getByTestId("view"))
-    .getAllByTestId("splitter")
-    .find((element) => element.dataset.path === path);
-  if (found === undefined) {
-    throw new Error(`no splitter at ${path}`);
-  }
-  return found;
-}
-
 /** Runs `line` on the `:` command line. */
 async function command(line: string): Promise<void> {
   act(() => {
@@ -180,10 +130,6 @@ function written(test: TestHost): unknown[] {
   return test.client.callsTo("views.set").map((call) => call.params);
 }
 
-function banner(): string | undefined {
-  return screen.queryByTestId("view-file-error")?.textContent ?? undefined;
-}
-
 /** The titles of the view's tabs that close as `views.json` edits (UI-375). */
 function closable(): string[] {
   return within(screen.getByTestId("view"))
@@ -191,134 +137,9 @@ function closable(): string[] {
     .map((mark) => mark.closest('[role="tab"]')?.textContent ?? "");
 }
 
-describe("TSX views", () => {
-  // spec: UI-268
-  test("a TSX view renders like the same layout in views.json: tree, main slot, splitters", async () => {
-    const test = setup({ [opsUrl("f1")]: { default: Ops } });
-    show(test, "same");
-    await settle(test);
-    const manifest = structure();
-    show(test, "ops");
-    await settle(test);
-    expect(screen.getByTestId("view").dataset.view).toBe("ops");
-    expect(structure()).toEqual(manifest);
-    expect(
-      within(screen.getByTestId("view"))
-        .getAllByTestId("splitter")
-        .map((element) => element.dataset.path),
-    ).toEqual(["0", "0.1"]);
-    // Files open as tabs of its `main` slot.
-    act(() => openFile(test.host, "src/lib.rs"));
-    test.flush();
-    expect(within(screen.getByTestId("view")).getAllByTestId("file-tab").length).toBe(1);
-    expect(banner()).toBeUndefined();
-  });
-
-  // spec: UI-268, UI-375
-  test("its tabs have no ×, which the same tabs of views.json have", async () => {
-    const test = setup({ [opsUrl("f1")]: { default: Ops } });
-    show(test, "same");
-    await settle(test);
-    expect(closable()).toEqual(["Background", "MCP servers"]);
-    show(test, "ops");
-    await settle(test);
-    expect(closable()).toEqual([]);
-  });
-
-  // spec: UI-268, UI-300
-  test("its splitters keep this window's sizes by workspace, view and path; a double click resets; `:widget add` refuses it", async () => {
-    const test = setup({ [opsUrl("f1")]: { default: Ops } });
-    show(test, "ops");
-    await settle(test);
-    expect(splitter("0").getAttribute("aria-valuenow")).toBe("60");
-    fireEvent.keyDown(splitter("0"), { key: "ArrowRight" });
-    expect(Object.keys(test.host.window.get(PANE_SIZES))).toEqual(["w1/ops/0"]);
-    expect(splitter("0").getAttribute("aria-valuenow")).not.toBe("60");
-    fireEvent.doubleClick(splitter("0"));
-    expect(test.host.window.get(PANE_SIZES)).toEqual({});
-    expect(splitter("0").getAttribute("aria-valuenow")).toBe("60");
-
-    // The view exists only in code: nothing writes a views.json the window would not show.
-    await command("widget add omfp:mcp");
-    expect(written(test)).toEqual([]);
-    expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual([
-      'View ops is the TSX file .omfp/views/ops.tsx: add the widget there (<Widget use="…" />), :widget add writes only views.json',
-    ]);
-  });
-
-  // spec: UI-268, UI-304
-  test("a compile error, a throw or a node that is no layout shows a banner and the default view, reported to the daemon; the next save recovers", async () => {
-    const throws = () => {
-      throw new Error("kaboom");
-    };
-    const noLayout = () => (
-      <Row>
-        <div />
-      </Row>
-    );
-    const test = setup({
-      [opsUrl("f1")]: { compileError: { file: "ops.tsx", line: 3, column: 5, message: "Unexpected token" } },
-      [opsUrl("f2")]: { default: throws },
-      [opsUrl("f3")]: { default: noLayout },
-      [opsUrl("f4")]: { default: Ops },
-    });
-    show(test, "ops");
-    await settle(test);
-    expect(banner()).toBe("View .omfp/views/ops.tsx failed, showing the default view: ops.tsx:3:5: Unexpected token");
-    expect(screen.getByTestId("view").dataset.view).toBe("default");
-    // The mode line still shows the failing view as the current one.
-    expect(screen.getAllByTestId("mode-view").find((tab) => tab.dataset.current !== undefined)?.textContent).toBe(
-      "Ops",
-    );
-    expect(test.fileErrors()).toEqual([
-      { kind: "view", file: ".omfp/views/ops.tsx", message: "ops.tsx:3:5: Unexpected token" },
-    ]);
-
-    test.client.viewsEvents("w1", { kind: "views_files", viewFiles: "f2" });
-    test.flush();
-    await settle(test);
-    expect(banner()).toBe("View .omfp/views/ops.tsx failed, showing the default view: kaboom");
-    expect(screen.getByTestId("view").dataset.view).toBe("default");
-    expect(test.fileErrors()).toEqual([{ kind: "view", file: ".omfp/views/ops.tsx", message: "kaboom" }]);
-
-    test.client.viewsEvents("w1", { kind: "views_files", viewFiles: "f3" });
-    test.flush();
-    await settle(test);
-    expect(banner()).toContain("<div> is not a layout component");
-
-    test.client.viewsEvents("w1", { kind: "views_files", viewFiles: "f4" });
-    test.flush();
-    await settle(test);
-    expect(banner()).toBeUndefined();
-    expect(screen.getByTestId("view").dataset.view).toBe("ops");
-    expect(test.fileErrors()).toEqual([]);
-  });
-
-  // spec: UI-268, UI-390
-  test("a kept TSX view shows its last layout when it shows again while its new version loads", async () => {
-    const opsTwoUrl = viewFileUrl(BASE, "w1", "f1", "./views/ops2.tsx");
-    const manifest = { ...MANIFEST, views: { ...MANIFEST.views, ops2: { title: "Ops 2", view: "./views/ops2.tsx" } } };
-    const test = setup({ [opsUrl("f1")]: { default: Ops }, [opsTwoUrl]: { default: Ops } }, { manifest });
-    show(test, "ops");
-    await settle(test);
-    const layout = structure();
-    show(test, "ops2");
-    await settle(test);
-    // A save of `.omfp/views/`: the new versions never finish loading here.
-    test.client.viewsEvents("w1", { kind: "views_files", viewFiles: "f2" });
-    test.flush();
-    await settle(test);
-    expect(screen.getByTestId("view").dataset.view).toBe("ops2");
-    show(test, "ops");
-    await settle(test);
-    expect(screen.getByTestId("view").dataset.view).toBe("ops");
-    expect(structure()).toEqual(layout);
-  });
-});
-
 describe("init file errors reported to the daemon", () => {
   // spec: UI-304
-  test("a failing init file is reported with its kind and file until it runs cleanly", async () => {
+  test("a failing init file is reported with its file until it runs cleanly", async () => {
     const test = setup(
       {
         [WORKSPACE_URL]: {
@@ -334,8 +155,8 @@ describe("init file errors reported to the daemon", () => {
     test.flush();
     await settle(test);
     expect(test.fileErrors()).toEqual([
-      { kind: "init", file: "user", message: "init.ts:2:1: Unexpected }" },
-      { kind: "init", file: ".omfp/init.ts", message: "no such view" },
+      { file: "user", message: "init.ts:2:1: Unexpected }" },
+      { file: ".omfp/init.ts", message: "no such view" },
     ]);
   });
 });
@@ -347,7 +168,7 @@ describe("views of init files in the window", () => {
     test.client.viewsEvents("w1", { kind: "views_init", init: "v1" });
     test.flush();
     await settle(test);
-    expect(viewTitles()).toEqual(["Ops", "Same", "Work", "Review"]);
+    expect(viewTitles()).toEqual(["Same", "Work", "Review"]);
 
     // views.json's view takes the widget in views.json.
     await command("widget add omfp:mcp");
@@ -405,7 +226,6 @@ describe("views of init files in the window", () => {
     expect(viewTitles()).toContain("Extra");
     expect(test.host.init.getSnapshot().views?.views.views.map((view) => view.id)).toEqual([
       "extra",
-      "ops",
       "same",
       "work",
       "review",

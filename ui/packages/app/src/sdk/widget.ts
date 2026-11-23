@@ -12,7 +12,7 @@ export type WidgetComponent = ComponentType<WidgetProps>;
 export interface WidgetInfoScope {
   /** The node's `instance` prop when it is a string, else its reference; keys {@link useStored} state. */
   readonly instance: string;
-  /** The reference of the view node (`omfp:chat`, `./widgets/tests`, `user:clock`). */
+  /** The reference of the view node (`omfp:chat`, `./widgets/tests`). */
   readonly reference: string;
   /** The workspace whose view holds the widget; `undefined` without a current workspace. */
   readonly workspaceId: string | undefined;

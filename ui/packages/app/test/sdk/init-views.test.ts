@@ -4,7 +4,6 @@ import { describe, expect, test } from "bun:test";
 import type { InitApi, InitContext, InitSnapshot } from "../../src/sdk/index.ts";
 import { InitViews, Layout } from "../../src/sdk/init-views.ts";
 import type { LayoutNode } from "../../src/view/layout.ts";
-import { isFileView } from "../../src/view/views.ts";
 import { testHost } from "../support/host.tsx";
 
 type Main = (omfp: InitApi) => unknown;
@@ -18,7 +17,7 @@ const MANIFEST = {
     },
     logs: { layout: "./widgets/logs" },
   },
-  panels: { clock: "user:clock" },
+  panels: { clock: "./widgets/clock" },
 };
 
 function context(patch: Partial<InitContext> = {}): InitContext {
@@ -58,7 +57,7 @@ describe("InitViews", () => {
 
     // The style of the docs: one call after another on the same views.
     views.add("review", { title: "Review", layout: ["row", {}, "omfp:chat", ["omfp:changes", { repo: "api" }]] });
-    views.add("ops", { title: "Ops", view: "./views/ops.tsx" });
+    views.add("ops", { title: "Ops", layout: "omfp:mcp" });
     expect(
       views.update("work", (layout) => {
         layout.addTab("side", "omfp:mcp");
@@ -68,19 +67,17 @@ describe("InitViews", () => {
     expect(views.remove("logs").withDefault("review")).toBe(views);
     expect([views.ids, views.default]).toEqual([["work", "review", "ops"], "review"]);
     // A views.json view the file changed is still views.json's.
-    expect(views.get("work")).toMatchObject({ title: "Work", origin: "views.json", view: undefined });
+    expect(views.get("work")).toMatchObject({ title: "Work", origin: "views.json" });
     expect(views.get("work")?.layout?.node).toEqual([
       "row",
       {},
       ["tabs", { id: "main" }, "omfp:chat"],
       ["tabs", { id: "side" }, "omfp:changes", "omfp:mcp"],
     ]);
-    expect(views.get("ops")).toMatchObject({ view: "./views/ops.tsx", layout: undefined });
-    const listed = views.listed;
-    expect(listed.map((view) => [view.id, view.init, isFileView(view)])).toEqual([
-      ["work", undefined, false],
-      ["review", "workspace", false],
-      ["ops", "workspace", true],
+    expect(views.listed.map((view) => [view.id, view.init])).toEqual([
+      ["work", undefined],
+      ["review", "workspace"],
+      ["ops", "workspace"],
     ]);
     // The layout `get` gives changes its view.
     views.get("review")?.layout?.removeWidget("omfp:chat");
@@ -101,20 +98,13 @@ describe("InitViews", () => {
     expect(() => views.add("bad", { layout: ["row", {}] })).toThrow(
       "invalid view: views.bad.layout: row has no children",
     );
-    expect(() => views.add("bad", { view: "./ops.tsx" })).toThrow(
-      'invalid view: views.bad.view: expected "./views/<name>.tsx"',
-    );
-    expect(() => views.add("bad", { view: "./views/ops.tsx", layout: "omfp:chat" })).toThrow(
-      "views.bad: a layout or a view file, not both",
-    );
+    expect(() => views.add("bad", { view: "./views/ops.tsx" } as never)).toThrow("invalid view: views.bad.layout:");
     expect(() => views.update("nope", (layout) => layout)).toThrow('no view "nope"');
     expect(() => views.update("work", (layout) => layout.addTab("nope", "omfp:mcp"))).toThrow(
       'no tabs with "id": "nope" in the layout',
     );
     expect(() => views.update("work", () => ["row", {}] as unknown as LayoutNode)).toThrow("row has no children");
     expect(views.ids).toEqual(["logs", "work"]);
-    const ops = InitViews.load(MANIFEST, null, "user").add("ops", { view: "./views/ops.tsx" });
-    expect(() => ops.update("ops", (layout) => layout)).toThrow("is the TSX file ./views/ops.tsx");
     expect(() => views.remove("logs").remove("work")).toThrow("cannot remove the last view");
     expect(() => views.withDefault("nope")).toThrow('no view "nope"');
     // A layout of a view removed since changes nothing.

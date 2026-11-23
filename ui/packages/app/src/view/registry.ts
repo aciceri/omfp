@@ -1,5 +1,5 @@
 /** The built-in `omfp:*` widgets a view can hold, by reference (AGT-021); the frame renders the threads column itself
- * (UI-100). Retired references resolve to their successor (`resolve.ts`, UI-493). */
+ * (UI-100). */
 
 import type { WidgetComponent } from "../sdk/index.ts";
 import { ActivityWidget } from "../widgets/activity/index.ts";

@@ -1,7 +1,7 @@
 /**
  * `:widget add <reference>` (UI-300): adds a widget to the view this window shows and writes `views.json` with
- * `views.set`; the window then renders the manifest the daemon pushes back. Views that exist only in code (a TSX view,
- * a view an init file added) refuse it and name the file to edit.
+ * `views.set`; the window then renders the manifest the daemon pushes back. Views an init file added exist only in
+ * code: they refuse it and name the file to edit.
  */
 
 import type { ViewsState } from "@omfp/protocol";
@@ -10,30 +10,21 @@ import { useCall, useReportError } from "../sdk/index.ts";
 import { strings } from "../strings/index.ts";
 import { manifestWithWidget } from "../view/edit.ts";
 import type { WidgetRegistry } from "../view/resolve.ts";
-import { isFileView, type ListedView } from "../view/views.ts";
+import type { ResolvedView } from "../view/views.ts";
 
 const text = strings.shell.layout;
 
 /**
- * Why `:widget add` cannot write the view `view` (UI-300): it is a TSX file, or an init file added it, so writing
- * `views.json` would change nothing the window shows; `undefined` for a view of `views.json` (init transforms
- * included).
+ * Why `:widget add` cannot write the view `view` (UI-300): an init file added it, so writing `views.json` would change
+ * nothing the window shows; `undefined` for a view of `views.json` (init transforms included).
  */
-export function codeOnly(view: ListedView): string | undefined {
-  if (isFileView(view)) {
-    return text.codeFile(view.id, strings.init.viewFile.path(view.file));
-  }
+export function codeOnly(view: ResolvedView): string | undefined {
   return view.init === undefined ? undefined : text.codeInit(view.id, strings.init.files[view.init]);
 }
 
-/** The references `:widget add` completes: built-ins, the workspace's widgets and the user library's. */
+/** The references `:widget add` completes: built-ins and the workspace's widgets. */
 export function widgetReferences(registry: WidgetRegistry, views: ViewsState | undefined): string[] {
-  const folders = views?.widgets ?? [];
-  return [
-    ...registry.keys(),
-    ...folders.filter((widget) => widget.source === "workspace").map((widget) => `./widgets/${widget.name}`),
-    ...folders.filter((widget) => widget.source === "user").map((widget) => `user:${widget.name}`),
-  ];
+  return [...registry.keys(), ...(views?.widgets ?? []).map((widget) => `./widgets/${widget.name}`)];
 }
 
 /**
@@ -43,7 +34,7 @@ export function widgetReferences(registry: WidgetRegistry, views: ViewsState | u
 export function useAddWidget(
   workspaceId: string | undefined,
   views: ViewsState | undefined,
-  view: ListedView | undefined,
+  view: ResolvedView | undefined,
 ): (reference: string) => Promise<boolean> {
   const call = useCall();
   const report = useReportError();

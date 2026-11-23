@@ -5,9 +5,17 @@
  * while they fit across the view, then cascaded (UI-454).
  */
 
-import type { CSSProperties, KeyboardEvent, PointerEvent, RefObject } from "react";
+import { IconButton } from "@omfp/kit";
+import type { CSSProperties, KeyboardEvent, PointerEvent, ReactNode, RefObject } from "react";
 import { useLayoutEffect, useRef, useState } from "react";
-import { type FloatingPanel, type Update, useWindowState, type WindowKey } from "../sdk/index.ts";
+import {
+  type FloatingPanel,
+  movePanel,
+  resizePanel,
+  type Update,
+  useWindowState,
+  type WindowKey,
+} from "../sdk/index.ts";
 
 /** How far an arrow key moves or resizes the panel; with Shift, four times as far. */
 const KEY_STEP = 16;
@@ -189,4 +197,56 @@ export function useFloatingBox(key: WindowKey<FloatingPanel>, index = 0): Floati
           bottom: "auto",
         };
   return { panel, setPanel, root, handle, style };
+}
+
+/** The labels of a panel's controls. */
+export interface FloatingLabels {
+  readonly move: string;
+  readonly resize: string;
+  readonly minimise: string;
+  readonly restore: string;
+}
+
+/**
+ * The controls of `box`: the grip moving it, the button minimising it to its bar (or showing it again) and the corner
+ * resizing it (none while minimised); their test ids are `testId` with `-move`, `-minimise` and `-resize`.
+ */
+export function floatingControls(
+  box: FloatingBox,
+  testId: string,
+  labels: FloatingLabels,
+): { readonly grip: ReactNode; readonly minimise: ReactNode; readonly resize: ReactNode } {
+  const { minimised } = box.panel;
+  return {
+    grip: (
+      <button
+        type="button"
+        className="omfp-floating-file__grip omfp-focus-ring"
+        aria-label={labels.move}
+        title={labels.move}
+        data-testid={`${testId}-move`}
+        {...box.handle(movePanel)}
+      >
+        ⠿
+      </button>
+    ),
+    minimise: (
+      <IconButton
+        label={minimised ? labels.restore : labels.minimise}
+        icon={minimised ? "□" : "–"}
+        onPress={() => box.setPanel((now) => ({ ...now, minimised: !now.minimised }))}
+        data-testid={`${testId}-minimise`}
+      />
+    ),
+    resize: !minimised && (
+      <button
+        type="button"
+        className="omfp-floating-file__resize omfp-focus-ring"
+        aria-label={labels.resize}
+        title={labels.resize}
+        data-testid={`${testId}-resize`}
+        {...box.handle(resizePanel)}
+      />
+    ),
+  };
 }

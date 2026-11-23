@@ -6,7 +6,7 @@
  * views no longer listed are dropped.
  */
 
-import { isFileView, type ListedView, type ResolvedView } from "./views.ts";
+import type { ResolvedView } from "./views.ts";
 
 /** How many views besides the shown one stay mounted, hidden: the least recently shown goes first. */
 export const KEPT_VIEWS = 2;
@@ -16,9 +16,9 @@ export interface KeptView {
    * takes over the mount of the view shown before (its widgets update in place, as they did before views were
    * kept). */
   readonly key: string;
-  /** The id of the switcher's view (a TSX view's, also while the default view stands in for it). */
+  /** The id of the switcher's view. */
   readonly id: string;
-  /** What it renders: the listed layout, or a TSX view's rendered layout as last shown. */
+  /** What it renders. */
   readonly view: ResolvedView;
   /** When it was last shown, on the {@link KeptViews.clock}. */
   readonly shown: number;
@@ -36,15 +36,15 @@ export interface KeptViews {
 export const NO_KEPT_VIEWS: KeptViews = { workspaceId: undefined, views: [], clock: 0 };
 
 /**
- * `kept` once the window shows `shown` of `workspaceId` (`undefined`: nothing yet, a TSX view still rendering), whose
- * switcher lists `listed`: the views still listed (written layouts as listed now, TSX views as last rendered), `shown`
- * as the most recent, at most {@link KEPT_VIEWS} others. `kept` itself when nothing changes.
+ * `kept` once the window shows `shown` of `workspaceId` (`undefined`: nothing yet), whose switcher lists `listed`: the
+ * views still listed, `shown` as the most recent, at most {@link KEPT_VIEWS} others. `kept` itself when nothing
+ * changes.
  */
 export function keepViews(
   kept: KeptViews,
   workspaceId: string | undefined,
   shown: { readonly id: string; readonly view: ResolvedView } | undefined,
-  listed: readonly ListedView[],
+  listed: readonly ResolvedView[],
 ): KeptViews {
   const moved = kept.workspaceId !== workspaceId;
   let changed = moved;
@@ -55,7 +55,7 @@ export function keepViews(
       changed = true;
       continue;
     }
-    const view = isFileView(now) || sameView(now, entry.view) ? entry.view : now;
+    const view = sameView(now, entry.view) ? entry.view : now;
     changed ||= view !== entry.view;
     views.push(view === entry.view ? entry : { ...entry, view });
   }
@@ -84,8 +84,8 @@ export function keepViews(
   return changed ? { workspaceId, views, clock } : kept;
 }
 
-/** Whether `a` and `b` render the same: the same layout as written (a TSX view's render or a manifest's), so a new
- * object made of an unchanged layout changes nothing. */
+/** Whether `a` and `b` render the same: the same layout as written, so a new object made of an unchanged layout
+ * changes nothing. */
 function sameView(a: ResolvedView, b: ResolvedView): boolean {
-  return a.id === b.id && a.title === b.title && a.layout === b.layout && a.file === b.file && a.init === b.init;
+  return a.id === b.id && a.title === b.title && a.layout === b.layout && a.init === b.init;
 }

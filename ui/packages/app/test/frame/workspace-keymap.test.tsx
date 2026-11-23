@@ -2,10 +2,11 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import type { CallMethod } from "@omfp/client";
-import type { Settings, ThreadSummary, WorkspaceBinding } from "@omfp/protocol";
-import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
+import type { Settings, ThreadSummary, ViewsState, WorkspaceBinding } from "@omfp/protocol";
+import { act, cleanup, fireEvent, renderHook, screen, within } from "@testing-library/react";
 import { Frame } from "../../src/frame/frame.tsx";
-import { type Binding, effectiveBindings } from "../../src/keymap/keymap.ts";
+import { type Binding, NO_INIT_BINDINGS } from "../../src/keymap/keymap.ts";
+import { useBindings } from "../../src/keymap/workspace.tsx";
 import { type HostOptions, SELECTED_THREAD, useCommand, type WidgetComponent } from "../../src/sdk/index.ts";
 import type { WidgetRegistry } from "../../src/view/resolve.ts";
 import { thread, workspace } from "../support/fixtures.ts";
@@ -92,6 +93,14 @@ function rows(section: string): string[][] {
     ]);
 }
 
+/** The window's bindings as the frame merges them, without init files: `keymap` is the workspace's file. */
+function bindings(defaults: readonly Binding[], global: Settings["keymap"], keymap?: WorkspaceBinding[]) {
+  const views: ViewsState | undefined = keymap === undefined ? undefined : { widgets: [], stored: {}, keymap };
+  const { result, unmount } = renderHook(() => useBindings(defaults, global, views, NO_INIT_BINDINGS));
+  unmount();
+  return result.current;
+}
+
 describe("workspace keymap", () => {
   // spec: UI-210, UI-097
   test("the workspace's bindings win over the `[keymap]` entries, which win over the defaults", () => {
@@ -100,7 +109,7 @@ describe("workspace keymap", () => {
       { mode: "normal", keys: "?", command: "help.open" },
       { mode: "normal", keys: "j", command: "nav.next" },
     ];
-    const merged = effectiveBindings(
+    const merged = bindings(
       defaults,
       [
         { mode: "normal", keys: "g n", command: "thread.new" },
@@ -120,7 +129,7 @@ describe("workspace keymap", () => {
       { mode: "normal", keys: "g h", command: "help.open", source: "config" },
       { mode: "insert", keys: "j", command: "demo.ping", source: "workspace" },
     ]);
-    expect(effectiveBindings(defaults, [], [])).toEqual(defaults);
+    expect(bindings(defaults, [])).toEqual(defaults);
   });
 
   // spec: UI-210, AGT-030

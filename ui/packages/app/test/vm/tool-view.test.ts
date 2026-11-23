@@ -883,7 +883,7 @@ describe("card of omfp_card", () => {
       wait: false,
       answer: { state: "none", value: undefined },
     });
-    for (const reference of ["user:clock", "omfp:file", "./widgets/tests"]) {
+    for (const reference of ["./widgets/clock", "omfp:file", "./widgets/tests"]) {
       expect(view(omfpCard({ widget: reference }, "succeeded", shown), "card").reference).toBe(reference);
     }
     const code = view(omfpCard({ code: "export default () => null;" }, "succeeded", shown), "card");

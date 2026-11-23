@@ -1,14 +1,42 @@
 /**
  * The viewers `omfp:file` offers besides the source (UI-560): a rendered form of a text file, chosen by the file's
- * extension, shown while the file is read-only, with a toggle back to the source.
+ * extension, shown while the file is read-only, with a toggle back to the source. Also what every viewer of the
+ * widget shares: a path's extension, a file's URL pinned to its version and the bar naming the file.
  */
 
 import type { FileContent } from "@omfp/protocol";
+import { Chip, Icon } from "omfp/kit";
 import { strings } from "omfp/sdk";
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { MarkdownViewer } from "./markdown.tsx";
 import { CsvViewer, TsvViewer } from "./table.tsx";
 import { JsonViewer, YamlViewer } from "./tree.tsx";
+
+/** The extension of the file `path` names, in lower case; `undefined` without one (`notes/.wav`, `a.b/clip`). */
+export function extension(path: string): string | undefined {
+  const name = path.slice(path.lastIndexOf("/") + 1);
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(dot + 1).toLowerCase() : undefined;
+}
+
+/** The file's raw URL `base` with its hash, so a changed file loads again. */
+export function versionedUrl(base: string, hash: string): string {
+  return `${base}?v=${encodeURIComponent(hash)}`;
+}
+
+/** The bar over a file: its path and repository, then `children` (its actions). */
+export function FileBar({ file, children }: { file: FileContent; children?: ReactNode }): ReactNode {
+  return (
+    <div className="omfp-file__bar" data-testid="file-bar">
+      <span className="omfp-file__path">
+        <Icon name="file" className="omfp-file__icon" />
+        {typeof file.repo === "string" && <Chip>{file.repo}</Chip>}
+        <span data-testid="file-path">{file.path}</span>
+      </span>
+      {children}
+    </div>
+  );
+}
 
 /** Why a viewer cannot show a file (UI-569): the sentence to show, and the line of the source to show instead. */
 export interface ViewerFailure {
@@ -49,7 +77,6 @@ const VIEWERS: ReadonlyMap<string, Viewer> = new Map([
 
 /** The viewer of the file at `path`, by its extension (case aside), if it has one. */
 export function viewerOf(path: string): Viewer | undefined {
-  const name = path.slice(path.lastIndexOf("/") + 1);
-  const dot = name.lastIndexOf(".");
-  return dot <= 0 ? undefined : VIEWERS.get(name.slice(dot + 1).toLowerCase());
+  const found = extension(path);
+  return found === undefined ? undefined : VIEWERS.get(found);
 }

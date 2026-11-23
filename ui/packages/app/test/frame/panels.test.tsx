@@ -1,12 +1,12 @@
-/** L4: floating widget panels (UI-230, UI-231, AGT-060), props updates in place (UI-232) and `:widget save` (UI-233),
- * in the frame over a fake client. */
+/** L4: floating widget panels (UI-230, UI-231, AGT-060) and props updates in place (UI-232), in the frame over a fake
+ * client. */
 
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import type { ReportWidgetsParams, ViewsState, WidgetInfo } from "@omfp/protocol";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
-import { openingSlot, topBarsBottom } from "../../src/frame/floating-box.ts";
+import { openingSlot, topBarsBottom } from "../../src/frame/floating-box.tsx";
 import { Frame } from "../../src/frame/frame.tsx";
 import {
   chooseView,
@@ -165,13 +165,20 @@ describe("floating panels", () => {
   // spec: UI-230, AGT-026
   test("a panel's module widget shows in place and is part of the window's report", async () => {
     const test = setup({
-      manifest: { views: VIEWS, panels: { clock: ["user:clock", { instance: "clock" }] } },
-      widgets: [folder("user", "clock", "v1")],
+      manifest: { views: VIEWS, panels: { clock: ["./widgets/clock", { instance: "clock" }] } },
+      widgets: [folder("workspace", "clock", "v1")],
     });
     await waitFor(() => expect(within(panel("clock")).getByTestId("counter").textContent).toBe(" 0"));
     expect(within(panel("clock")).getByTestId("floating-widget-title").textContent).toBe("clock");
     expect(await test.report()).toMatchObject([
-      { reference: "user:clock", instance: "clock", source: "user", name: "clock", version: "v1", state: "rendered" },
+      {
+        reference: "./widgets/clock",
+        instance: "clock",
+        source: "workspace",
+        name: "clock",
+        version: "v1",
+        state: "rendered",
+      },
     ]);
   });
 
@@ -306,52 +313,5 @@ describe("props updates", () => {
     // Right away: no placeholder, the same component state with the new props.
     expect(screen.queryAllByTestId("widget-loading").length).toBe(0);
     expect(counters().map((counter) => counter.textContent)).toEqual(["b 1", "b 1"]);
-  });
-});
-
-describe("widget save", () => {
-  // spec: UI-233, AGT-064, UI-520
-  test("`:widget save <widget> [<name>]` saves to the user library, a success toast says user:<name>; save! replaces", async () => {
-    const test = setup();
-    test.client.answers.set("widgets.save", (params) => {
-      const { name } = params as { name: string };
-      return { name, reference: `user:${name}` };
-    });
-    press(":");
-    await test.user.type(screen.getByTestId("command-line-input"), "widget save ./widgets/board{Enter}");
-    expect(test.client.callsTo("widgets.save").map((call) => call.params)).toEqual([
-      { workspaceId: "w1", widget: "./widgets/board", name: "board", replace: false },
-    ]);
-    await waitFor(() =>
-      expect(screen.getByTestId("live-region").textContent).toBe("Saved to the user library as user:board"),
-    );
-    press(":");
-    await test.user.type(screen.getByTestId("command-line-input"), "widget save! board dash{Enter}");
-    expect(test.client.callsTo("widgets.save").at(-1)?.params).toEqual({
-      workspaceId: "w1",
-      widget: "board",
-      name: "dash",
-      replace: true,
-    });
-    await waitFor(() =>
-      expect(screen.getByTestId("live-region").textContent).toBe("Saved to the user library as user:dash"),
-    );
-    expect(screen.getAllByTestId("success").map((success) => success.textContent)).toEqual([
-      "Saved to the user library as user:board",
-      "Saved to the user library as user:dash",
-    ]);
-
-    test.client.answers.delete("widgets.save");
-    press(":");
-    await test.user.type(screen.getByTestId("command-line-input"), "widget save clock{Enter}");
-    const failing = test.client.callsTo("widgets.save").at(-1);
-    expect(failing?.params).toEqual({ workspaceId: "w1", widget: "clock", name: "clock", replace: false });
-    await act(async () => failing?.reject(new Error("user:clock already exists")));
-    press(":");
-    await test.user.type(screen.getByTestId("command-line-input"), "widget save{Enter}");
-    expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual([
-      "user:clock already exists",
-      "Usage: :widget add <reference> | :widget copy <reference> [<name>] | :widget save[!] <widget> [<name>]",
-    ]);
   });
 });

@@ -358,12 +358,15 @@ impl Snapshot {
             && ((beside("-wal").is_file() && !beside("-shm").exists())
                 || beside("-journal").is_file());
         let source = if staged {
+            use std::os::unix::fs::PermissionsExt;
             let staging = self.dir.join("source");
             std::fs::create_dir(&staging)?;
-            std::fs::copy(store, staging.join(STORE))?;
-            for suffix in ["-wal", "-journal"] {
-                if beside(suffix).is_file() {
-                    std::fs::copy(beside(suffix), staging.join(format!("{STORE}{suffix}")))?;
+            for suffix in ["", "-wal", "-journal"] {
+                if suffix.is_empty() || beside(suffix).is_file() {
+                    // `copy` keeps the original's mode: a read-only store would stay read-only here.
+                    let copy = staging.join(format!("{STORE}{suffix}"));
+                    std::fs::copy(beside(suffix), &copy)?;
+                    std::fs::set_permissions(&copy, std::fs::Permissions::from_mode(0o600))?;
                 }
             }
             staging.join(STORE)
@@ -914,6 +917,12 @@ mod tests {
             writer.execute_batch("ROLLBACK;").unwrap();
             drop(writer);
             if read_only {
+                // A restored backup: read-only files in a read-only directory.
+                for name in [STORE.to_owned(), format!("{STORE}-journal")] {
+                    let file = standalone.join(name);
+                    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o444))
+                        .unwrap();
+                }
                 std::fs::set_permissions(&standalone, std::fs::Permissions::from_mode(0o555))
                     .unwrap();
             }

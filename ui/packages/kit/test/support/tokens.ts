@@ -48,8 +48,6 @@ export const TYPE_SCALE: Readonly<Record<string, string>> = {
   "lh-ui": "1.4",
   "lh-prose": "1.5",
   "lh-code": "1.5",
-  "label-case": "none",
-  "label-track": "0",
 };
 
 /** Spacing steps (UI-127): `unit × n × density`. */
@@ -79,7 +77,6 @@ export const DENSITY_SIZES: Readonly<Record<string, string>> = {
 };
 export const FRAME_SIZES: Readonly<Record<string, string>> = {
   "side-w": "17rem",
-  "panel-w": "22rem",
   "bar-h": "2.125rem",
   "status-h": "1.625rem",
   gutter: "2rem",

@@ -198,7 +198,8 @@
   }
 
   .omfp-welcome__note,
-  .omfp-welcome__keys {
+  .omfp-welcome__keys,
+  .omfp-login__note {
     font-size: var(--omfp-fs-xs);
     color: var(--omfp-on-surface-variant);
   }
@@ -357,11 +358,6 @@
     align-items: center;
     gap: var(--omfp-s1);
     color: var(--omfp-ok);
-    font-size: var(--omfp-fs-xs);
-  }
-
-  .omfp-login__note {
-    color: var(--omfp-on-surface-variant);
     font-size: var(--omfp-fs-xs);
   }
 
@@ -606,8 +602,9 @@
     margin: 0;
   }
 
-  /* The summary's focus (UI-912) takes the row's room beside its button. */
-  .omfp-thread-header__compaction > .omfp-field {
+  /* The summary's focus (UI-912) and the new workspace's fields take the row's room beside their button. */
+  .omfp-thread-header__compaction > .omfp-field,
+  .omfp-workspace__add-fields > .omfp-field {
     flex: 1 1 12rem;
     min-inline-size: 0;
   }
@@ -1258,7 +1255,8 @@
     gap: var(--omfp-s2);
   }
 
-  .omfp-job-counts__part {
+  .omfp-job-counts__part,
+  .omfp-mcp__state {
     display: inline-flex;
     align-items: center;
     gap: var(--omfp-s1);
@@ -1349,7 +1347,8 @@
   /* omfp:browser (UI-870..UI-872): a note, then a border box per tab (UI-187): its address and last action on one
    * line each, cut with an ellipsis, then its latest screenshot as a 10rem thumbnail that opens at full size. */
   .omfp-browser__note,
-  .omfp-browser__meta {
+  .omfp-browser__meta,
+  .omfp-tree__empty {
     margin: 0;
     font-size: var(--omfp-fs-2xs);
     color: var(--omfp-on-surface-variant);
@@ -1500,12 +1499,6 @@
     opacity: 1;
   }
 
-  .omfp-tree__empty {
-    margin: 0;
-    font-size: var(--omfp-fs-2xs);
-    color: var(--omfp-on-surface-variant);
-  }
-
   /* omfp:activity (UI-241): one row per agent action, newest first: time, thread, method, what it names, its error. */
   .omfp-activity {
     display: flex;
@@ -1557,7 +1550,8 @@
     color: var(--omfp-primary);
   }
 
-  .omfp-activity__target {
+  .omfp-activity__target,
+  .omfp-mcp__path {
     flex: 1 1 10rem;
     min-inline-size: 0;
     overflow: hidden;
@@ -1590,12 +1584,6 @@
     flex: 1 1 12rem;
     font-size: var(--omfp-fs-2xs);
     color: var(--omfp-on-surface-variant);
-  }
-
-  .omfp-mcp__state {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--omfp-s1);
   }
 
   .omfp-mcp__server[data-state="done"] .omfp-bbox__end {
@@ -1642,14 +1630,6 @@
   .omfp-mcp__origin {
     font-size: var(--omfp-fs-2xs);
     color: var(--omfp-on-surface-variant);
-  }
-
-  .omfp-mcp__path {
-    flex: 1 1 10rem;
-    min-inline-size: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .omfp-mcp__link {
@@ -2091,11 +2071,6 @@
   /* The Add button stays beside the field: the path completion list opens below the field and must not cover it. */
   .omfp-workspace__add-fields {
     flex-wrap: nowrap;
-  }
-
-  .omfp-workspace__add-fields > .omfp-field {
-    flex: 1 1 12rem;
-    min-inline-size: 0;
   }
 
   /* Token screen (UI-002). */

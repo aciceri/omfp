@@ -6,7 +6,7 @@
 import type { BuiltinTheme } from "@omfp/protocol";
 import builtins from "../../../kit/src/themes.css" with { type: "text" };
 import tokens from "../../../kit/src/tokens.css" with { type: "text" };
-import { findRule, parseCss } from "../../../kit/test/support/css.ts";
+import { findRule, parseCss, schemeRule } from "../../../kit/test/support/css.ts";
 import dux from "../../src/gallery/dux-solarized.css" with { type: "text" };
 import forest from "../../src/gallery/matugen-forest.css" with { type: "text" };
 import { fromOklab, parseCssColor, type Rgb, toOklab } from "../../src/theme/contrast.ts";
@@ -14,15 +14,22 @@ import { fromOklab, parseCssColor, type Rgb, toOklab } from "../../src/theme/con
 export type Scheme = "light" | "dark";
 export type ThemeName = "synth" | "matugen-forest" | "dux-solarized";
 
-const DARK_BLOCK = ':root[data-color-scheme="dark"] {';
+const FORCED_DARK = ':root[data-color-scheme="dark"]';
 
+/** The `#rrggbb` roles of `css` in `scheme`: `:root`'s `light-dark()` sides, or a user theme's forced dark rule. */
 function roles(css: string, scheme: Scheme): Map<string, Rgb> {
-  const block = scheme === "light" ? css.slice(0, css.indexOf("@media")) : css.slice(css.indexOf(DARK_BLOCK));
+  const rules = parseCss(css);
+  const forced = rules.filter(
+    (rule) => rule.selector === FORCED_DARK && [...rule.declarations.keys()].some((name) => name.startsWith("--omfp-")),
+  );
+  const chosen = scheme === "dark" && forced.length > 0 ? forced : rules.filter((rule) => rule.selector === ":root");
   const map = new Map<string, Rgb>();
-  for (const [, name, value] of block.matchAll(/--omfp-([\w-]+):\s*(#[0-9a-fA-F]{6})/g)) {
-    const color = parseCssColor(value ?? "");
-    if (name !== undefined && color !== undefined) {
-      map.set(name, color);
+  for (const rule of chosen) {
+    for (const [property, value] of schemeRule(rule, scheme).declarations) {
+      const color = /^#[0-9a-fA-F]{6}$/.test(value) ? parseCssColor(value) : undefined;
+      if (property.startsWith("--omfp-") && color !== undefined) {
+        map.set(property.slice("--omfp-".length), color);
+      }
     }
   }
   return map;
@@ -95,11 +102,9 @@ export function builtinColors(
 ): Map<string, Rgb> {
   const map = themeColors("synth", scheme);
   if (theme !== "synth") {
-    const root = `:root[data-theme="${theme}"]`;
-    const rule = findRule(
-      parseCss(builtins as unknown as string),
-      ["@layer omfp-tokens"],
-      scheme === "light" ? root : `${root}[data-color-scheme="dark"]`,
+    const rule = schemeRule(
+      findRule(parseCss(builtins as unknown as string), ["@layer omfp-tokens"], `:root[data-theme="${theme}"]`),
+      scheme,
     );
     for (const [property, value] of rule.declarations) {
       const color = parseCssColor(value) ?? fromAccent(value, systemAccent);

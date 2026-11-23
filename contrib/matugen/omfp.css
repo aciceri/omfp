@@ -2,131 +2,47 @@
  * omfp theme template for matugen (https://github.com/InioX/matugen). matugen renders it to the omfp theme file
  * (`$XDG_CONFIG_HOME/omfp/theme.css` on the daemon host, or pushed with `omfp theme set`); see README.md.
  *
- * Unlayered on purpose: the built-in tokens live in `@layer omfp-tokens`, so these rules always win. Same selectors
- * as the built-in themes: light on :root, dark through prefers-color-scheme unless data-color-scheme="light", and
- * data-color-scheme="dark" forcing it. `success`/`warning` are the custom colors of config.toml.
+ * Unlayered on purpose: the built-in tokens live in `@layer omfp-tokens`, so this rule always wins. Like the built-in
+ * themes, every role is `light-dark(light, dark)`, so it follows the window's color scheme (the system's unless
+ * data-color-scheme forces light or dark). `success`/`warning` are the custom colors of config.toml.
  */
 :root {
-  --omfp-primary: {{colors.primary.light.hex}};
-  --omfp-on-primary: {{colors.on_primary.light.hex}};
-  --omfp-primary-container: {{colors.primary_container.light.hex}};
-  --omfp-on-primary-container: {{colors.on_primary_container.light.hex}};
-  --omfp-secondary: {{colors.secondary.light.hex}};
-  --omfp-on-secondary: {{colors.on_secondary.light.hex}};
-  --omfp-secondary-container: {{colors.secondary_container.light.hex}};
-  --omfp-on-secondary-container: {{colors.on_secondary_container.light.hex}};
-  --omfp-tertiary: {{colors.tertiary.light.hex}};
-  --omfp-on-tertiary: {{colors.on_tertiary.light.hex}};
-  --omfp-tertiary-container: {{colors.tertiary_container.light.hex}};
-  --omfp-on-tertiary-container: {{colors.on_tertiary_container.light.hex}};
-  --omfp-error: {{colors.error.light.hex}};
-  --omfp-on-error: {{colors.on_error.light.hex}};
-  --omfp-error-container: {{colors.error_container.light.hex}};
-  --omfp-on-error-container: {{colors.on_error_container.light.hex}};
-  --omfp-surface: {{colors.surface.light.hex}};
-  --omfp-on-surface: {{colors.on_surface.light.hex}};
-  --omfp-surface-variant: {{colors.surface_variant.light.hex}};
-  --omfp-on-surface-variant: {{colors.on_surface_variant.light.hex}};
-  --omfp-surface-container-lowest: {{colors.surface_container_lowest.light.hex}};
-  --omfp-surface-container-low: {{colors.surface_container_low.light.hex}};
-  --omfp-surface-container: {{colors.surface_container.light.hex}};
-  --omfp-surface-container-high: {{colors.surface_container_high.light.hex}};
-  --omfp-surface-container-highest: {{colors.surface_container_highest.light.hex}};
-  --omfp-surface-dim: {{colors.surface_dim.light.hex}};
-  --omfp-surface-bright: {{colors.surface_bright.light.hex}};
-  --omfp-inverse-surface: {{colors.inverse_surface.light.hex}};
-  --omfp-inverse-on-surface: {{colors.inverse_on_surface.light.hex}};
-  --omfp-inverse-primary: {{colors.inverse_primary.light.hex}};
-  --omfp-outline: {{colors.outline.light.hex}};
-  --omfp-outline-variant: {{colors.outline_variant.light.hex}};
-  --omfp-shadow: {{colors.shadow.light.hex}};
-  --omfp-scrim: {{colors.scrim.light.hex}};
-  --omfp-success: {{colors.success.light.hex}};
-  --omfp-on-success: {{colors.on_success.light.hex}};
-  --omfp-warning: {{colors.warning.light.hex}};
-  --omfp-on-warning: {{colors.on_warning.light.hex}};
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-color-scheme="light"]) {
-    --omfp-primary: {{colors.primary.dark.hex}};
-    --omfp-on-primary: {{colors.on_primary.dark.hex}};
-    --omfp-primary-container: {{colors.primary_container.dark.hex}};
-    --omfp-on-primary-container: {{colors.on_primary_container.dark.hex}};
-    --omfp-secondary: {{colors.secondary.dark.hex}};
-    --omfp-on-secondary: {{colors.on_secondary.dark.hex}};
-    --omfp-secondary-container: {{colors.secondary_container.dark.hex}};
-    --omfp-on-secondary-container: {{colors.on_secondary_container.dark.hex}};
-    --omfp-tertiary: {{colors.tertiary.dark.hex}};
-    --omfp-on-tertiary: {{colors.on_tertiary.dark.hex}};
-    --omfp-tertiary-container: {{colors.tertiary_container.dark.hex}};
-    --omfp-on-tertiary-container: {{colors.on_tertiary_container.dark.hex}};
-    --omfp-error: {{colors.error.dark.hex}};
-    --omfp-on-error: {{colors.on_error.dark.hex}};
-    --omfp-error-container: {{colors.error_container.dark.hex}};
-    --omfp-on-error-container: {{colors.on_error_container.dark.hex}};
-    --omfp-surface: {{colors.surface.dark.hex}};
-    --omfp-on-surface: {{colors.on_surface.dark.hex}};
-    --omfp-surface-variant: {{colors.surface_variant.dark.hex}};
-    --omfp-on-surface-variant: {{colors.on_surface_variant.dark.hex}};
-    --omfp-surface-container-lowest: {{colors.surface_container_lowest.dark.hex}};
-    --omfp-surface-container-low: {{colors.surface_container_low.dark.hex}};
-    --omfp-surface-container: {{colors.surface_container.dark.hex}};
-    --omfp-surface-container-high: {{colors.surface_container_high.dark.hex}};
-    --omfp-surface-container-highest: {{colors.surface_container_highest.dark.hex}};
-    --omfp-surface-dim: {{colors.surface_dim.dark.hex}};
-    --omfp-surface-bright: {{colors.surface_bright.dark.hex}};
-    --omfp-inverse-surface: {{colors.inverse_surface.dark.hex}};
-    --omfp-inverse-on-surface: {{colors.inverse_on_surface.dark.hex}};
-    --omfp-inverse-primary: {{colors.inverse_primary.dark.hex}};
-    --omfp-outline: {{colors.outline.dark.hex}};
-    --omfp-outline-variant: {{colors.outline_variant.dark.hex}};
-    --omfp-shadow: {{colors.shadow.dark.hex}};
-    --omfp-scrim: {{colors.scrim.dark.hex}};
-    --omfp-success: {{colors.success.dark.hex}};
-    --omfp-on-success: {{colors.on_success.dark.hex}};
-    --omfp-warning: {{colors.warning.dark.hex}};
-    --omfp-on-warning: {{colors.on_warning.dark.hex}};
-  }
-}
-
-:root[data-color-scheme="dark"] {
-  --omfp-primary: {{colors.primary.dark.hex}};
-  --omfp-on-primary: {{colors.on_primary.dark.hex}};
-  --omfp-primary-container: {{colors.primary_container.dark.hex}};
-  --omfp-on-primary-container: {{colors.on_primary_container.dark.hex}};
-  --omfp-secondary: {{colors.secondary.dark.hex}};
-  --omfp-on-secondary: {{colors.on_secondary.dark.hex}};
-  --omfp-secondary-container: {{colors.secondary_container.dark.hex}};
-  --omfp-on-secondary-container: {{colors.on_secondary_container.dark.hex}};
-  --omfp-tertiary: {{colors.tertiary.dark.hex}};
-  --omfp-on-tertiary: {{colors.on_tertiary.dark.hex}};
-  --omfp-tertiary-container: {{colors.tertiary_container.dark.hex}};
-  --omfp-on-tertiary-container: {{colors.on_tertiary_container.dark.hex}};
-  --omfp-error: {{colors.error.dark.hex}};
-  --omfp-on-error: {{colors.on_error.dark.hex}};
-  --omfp-error-container: {{colors.error_container.dark.hex}};
-  --omfp-on-error-container: {{colors.on_error_container.dark.hex}};
-  --omfp-surface: {{colors.surface.dark.hex}};
-  --omfp-on-surface: {{colors.on_surface.dark.hex}};
-  --omfp-surface-variant: {{colors.surface_variant.dark.hex}};
-  --omfp-on-surface-variant: {{colors.on_surface_variant.dark.hex}};
-  --omfp-surface-container-lowest: {{colors.surface_container_lowest.dark.hex}};
-  --omfp-surface-container-low: {{colors.surface_container_low.dark.hex}};
-  --omfp-surface-container: {{colors.surface_container.dark.hex}};
-  --omfp-surface-container-high: {{colors.surface_container_high.dark.hex}};
-  --omfp-surface-container-highest: {{colors.surface_container_highest.dark.hex}};
-  --omfp-surface-dim: {{colors.surface_dim.dark.hex}};
-  --omfp-surface-bright: {{colors.surface_bright.dark.hex}};
-  --omfp-inverse-surface: {{colors.inverse_surface.dark.hex}};
-  --omfp-inverse-on-surface: {{colors.inverse_on_surface.dark.hex}};
-  --omfp-inverse-primary: {{colors.inverse_primary.dark.hex}};
-  --omfp-outline: {{colors.outline.dark.hex}};
-  --omfp-outline-variant: {{colors.outline_variant.dark.hex}};
-  --omfp-shadow: {{colors.shadow.dark.hex}};
-  --omfp-scrim: {{colors.scrim.dark.hex}};
-  --omfp-success: {{colors.success.dark.hex}};
-  --omfp-on-success: {{colors.on_success.dark.hex}};
-  --omfp-warning: {{colors.warning.dark.hex}};
-  --omfp-on-warning: {{colors.on_warning.dark.hex}};
+  --omfp-primary: light-dark({{colors.primary.light.hex}}, {{colors.primary.dark.hex}});
+  --omfp-on-primary: light-dark({{colors.on_primary.light.hex}}, {{colors.on_primary.dark.hex}});
+  --omfp-primary-container: light-dark({{colors.primary_container.light.hex}}, {{colors.primary_container.dark.hex}});
+  --omfp-on-primary-container: light-dark({{colors.on_primary_container.light.hex}}, {{colors.on_primary_container.dark.hex}});
+  --omfp-secondary: light-dark({{colors.secondary.light.hex}}, {{colors.secondary.dark.hex}});
+  --omfp-on-secondary: light-dark({{colors.on_secondary.light.hex}}, {{colors.on_secondary.dark.hex}});
+  --omfp-secondary-container: light-dark({{colors.secondary_container.light.hex}}, {{colors.secondary_container.dark.hex}});
+  --omfp-on-secondary-container: light-dark({{colors.on_secondary_container.light.hex}}, {{colors.on_secondary_container.dark.hex}});
+  --omfp-tertiary: light-dark({{colors.tertiary.light.hex}}, {{colors.tertiary.dark.hex}});
+  --omfp-on-tertiary: light-dark({{colors.on_tertiary.light.hex}}, {{colors.on_tertiary.dark.hex}});
+  --omfp-tertiary-container: light-dark({{colors.tertiary_container.light.hex}}, {{colors.tertiary_container.dark.hex}});
+  --omfp-on-tertiary-container: light-dark({{colors.on_tertiary_container.light.hex}}, {{colors.on_tertiary_container.dark.hex}});
+  --omfp-error: light-dark({{colors.error.light.hex}}, {{colors.error.dark.hex}});
+  --omfp-on-error: light-dark({{colors.on_error.light.hex}}, {{colors.on_error.dark.hex}});
+  --omfp-error-container: light-dark({{colors.error_container.light.hex}}, {{colors.error_container.dark.hex}});
+  --omfp-on-error-container: light-dark({{colors.on_error_container.light.hex}}, {{colors.on_error_container.dark.hex}});
+  --omfp-surface: light-dark({{colors.surface.light.hex}}, {{colors.surface.dark.hex}});
+  --omfp-on-surface: light-dark({{colors.on_surface.light.hex}}, {{colors.on_surface.dark.hex}});
+  --omfp-surface-variant: light-dark({{colors.surface_variant.light.hex}}, {{colors.surface_variant.dark.hex}});
+  --omfp-on-surface-variant: light-dark({{colors.on_surface_variant.light.hex}}, {{colors.on_surface_variant.dark.hex}});
+  --omfp-surface-container-lowest: light-dark({{colors.surface_container_lowest.light.hex}}, {{colors.surface_container_lowest.dark.hex}});
+  --omfp-surface-container-low: light-dark({{colors.surface_container_low.light.hex}}, {{colors.surface_container_low.dark.hex}});
+  --omfp-surface-container: light-dark({{colors.surface_container.light.hex}}, {{colors.surface_container.dark.hex}});
+  --omfp-surface-container-high: light-dark({{colors.surface_container_high.light.hex}}, {{colors.surface_container_high.dark.hex}});
+  --omfp-surface-container-highest: light-dark({{colors.surface_container_highest.light.hex}}, {{colors.surface_container_highest.dark.hex}});
+  --omfp-surface-dim: light-dark({{colors.surface_dim.light.hex}}, {{colors.surface_dim.dark.hex}});
+  --omfp-surface-bright: light-dark({{colors.surface_bright.light.hex}}, {{colors.surface_bright.dark.hex}});
+  --omfp-inverse-surface: light-dark({{colors.inverse_surface.light.hex}}, {{colors.inverse_surface.dark.hex}});
+  --omfp-inverse-on-surface: light-dark({{colors.inverse_on_surface.light.hex}}, {{colors.inverse_on_surface.dark.hex}});
+  --omfp-inverse-primary: light-dark({{colors.inverse_primary.light.hex}}, {{colors.inverse_primary.dark.hex}});
+  --omfp-outline: light-dark({{colors.outline.light.hex}}, {{colors.outline.dark.hex}});
+  --omfp-outline-variant: light-dark({{colors.outline_variant.light.hex}}, {{colors.outline_variant.dark.hex}});
+  --omfp-shadow: light-dark({{colors.shadow.light.hex}}, {{colors.shadow.dark.hex}});
+  --omfp-scrim: light-dark({{colors.scrim.light.hex}}, {{colors.scrim.dark.hex}});
+  --omfp-success: light-dark({{colors.success.light.hex}}, {{colors.success.dark.hex}});
+  --omfp-on-success: light-dark({{colors.on_success.light.hex}}, {{colors.on_success.dark.hex}});
+  --omfp-warning: light-dark({{colors.warning.light.hex}}, {{colors.warning.dark.hex}});
+  --omfp-on-warning: light-dark({{colors.on_warning.light.hex}}, {{colors.on_warning.dark.hex}});
 }

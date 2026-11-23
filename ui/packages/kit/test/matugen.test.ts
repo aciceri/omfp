@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { type CssRule, findRule, MATUGEN_DIR, parseCss } from "./support/css.ts";
+import { type CssRule, findRule, MATUGEN_DIR, parseCss, schemeRule } from "./support/css.ts";
 import { COLOR_TOKENS, prop } from "./support/tokens.ts";
 
 const PLACEHOLDER = /\{\{\s*([\w.]+)\s*\}\}/g;
@@ -19,15 +19,11 @@ function expectScheme(rule: CssRule, scheme: "light" | "dark"): void {
 
 describe("contrib/matugen", () => {
   // spec: UI-091
-  test("the template maps every color token for light and dark, with the built-in selectors, unlayered", () => {
-    expect(rules.filter((rule) => rule.at.some((at) => at.startsWith("@layer")))).toEqual([]);
-    expectScheme(findRule(rules, [], ":root"), "light");
-    expectScheme(
-      findRule(rules, ["@media (prefers-color-scheme: dark)"], ':root:not([data-color-scheme="light"])'),
-      "dark",
-    );
-    expectScheme(findRule(rules, [], ':root[data-color-scheme="dark"]'), "dark");
-    expect(rules).toHaveLength(3);
+  test("the template maps every color token for light and dark in one unlayered :root rule, as light-dark()", () => {
+    const root = findRule(rules, [], ":root");
+    expectScheme(schemeRule(root, "light"), "light");
+    expectScheme(schemeRule(root, "dark"), "dark");
+    expect(rules).toHaveLength(1);
   });
 
   // spec: UI-091

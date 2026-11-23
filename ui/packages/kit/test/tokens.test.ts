@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { type CssRule, cssFiles, findRule, KIT_SRC, parseCss } from "./support/css.ts";
+import { type CssRule, cssFiles, findRule, KIT_SRC, parseCss, schemeRule } from "./support/css.ts";
 import {
   COLOR_TOKENS,
   DENSITY_SIZES,
@@ -23,27 +23,33 @@ import {
 } from "./support/tokens.ts";
 
 const LAYER = "@layer omfp-tokens";
-const DARK_MEDIA = "@media (prefers-color-scheme: dark)";
 const TOKENS_CSS = join(KIT_SRC, "tokens.css");
 const rules = parseCss(readFileSync(TOKENS_CSS, "utf8"));
 
-const light = findRule(rules, [LAYER], ":root");
-const darkBySystem = findRule(rules, [LAYER, DARK_MEDIA], ':root:not([data-color-scheme="light"])');
-const darkForced = findRule(rules, [LAYER], ':root[data-color-scheme="dark"]');
+const root = findRule(rules, [LAYER], ":root");
+/** `:root` as each scheme resolves its `light-dark()` values. */
+const light = schemeRule(root, "light");
+const dark = schemeRule(root, "dark");
+const forcedLight = findRule(rules, [LAYER], ':root[data-color-scheme="light"]');
+const forcedDark = findRule(rules, [LAYER], ':root[data-color-scheme="dark"]');
 const scaled = findRule(rules, [LAYER], ":root, [data-density]");
 const compact = findRule(rules, [LAYER], '[data-density="compact"]');
 const normal = findRule(rules, [LAYER], '[data-density="normal"]');
 const fontFaces = rules.filter((rule) => rule.selector === "@font-face");
 
 /** The `/kit` gallery's matugen fixture (UI-173), which defines no status roles. */
-const forest = parseCss(readFileSync(join(KIT_SRC, "..", "..", "app", "src", "gallery", "matugen-forest.css"), "utf8"));
+const forest = findRule(
+  parseCss(readFileSync(join(KIT_SRC, "..", "..", "app", "src", "gallery", "matugen-forest.css"), "utf8")),
+  [],
+  ":root",
+);
 
 /** Name, omfp's base tokens, the theme's tokens (UI-136). */
 const STATUS_THEMES: readonly (readonly [string, CssRule, CssRule])[] = [
   ["Synth light", light, light],
-  ["Synth dark", darkForced, darkForced],
-  ["matugen forest light", light, findRule(forest, [], ":root")],
-  ["matugen forest dark", darkForced, findRule(forest, [], ':root[data-color-scheme="dark"]')],
+  ["Synth dark", dark, dark],
+  ["matugen forest light", light, schemeRule(forest, "light")],
+  ["matugen forest dark", dark, schemeRule(forest, "dark")],
 ];
 
 /** Where status text sits: the app, the left column and mode line, code and popovers (UI-130). */
@@ -146,7 +152,6 @@ describe("tokens.css", () => {
   // spec: UI-091, UI-125
   test("light (:root) defines every color and font token", () => {
     expect(missing(light, [...COLOR_TOKENS, ...FONT_TOKENS])).toEqual([]);
-    expect(light.declarations.get("color-scheme")).toBe("light");
   });
 
   // spec: UI-139
@@ -157,22 +162,19 @@ describe("tokens.css", () => {
   });
 
   // spec: UI-091, UI-139
-  test("dark is Synth dark, by prefers-color-scheme and by the data-color-scheme override alike", () => {
-    expect(
-      differing(darkForced, Object.fromEntries(COLOR_TOKENS.map((token) => [token, SYNTH[token]?.[1] ?? ""]))),
-    ).toEqual({});
-    expect([...darkBySystem.declarations]).toEqual([...darkForced.declarations]);
-    expect(darkForced.declarations.get("color-scheme")).toBe("dark");
+  test("dark is Synth dark, the light-dark() side the dark scheme picks", () => {
+    expect(differing(dark, Object.fromEntries(COLOR_TOKENS.map((token) => [token, SYNTH[token]?.[1] ?? ""])))).toEqual(
+      {},
+    );
   });
 
   // spec: UI-374
-  test("native controls follow the effective scheme: color-scheme per scheme, accent-color the primary role", () => {
-    expect(light.declarations.get("color-scheme")).toBe("light");
-    expect(light.declarations.get("accent-color")).toBe("var(--omfp-primary)");
-    expect(darkBySystem.declarations.get("color-scheme")).toBe("dark");
-    expect(darkForced.declarations.get("color-scheme")).toBe("dark");
-    // The forced light scheme keeps `:root`'s light even when the system is dark.
-    expect(darkBySystem.selector).toBe(':root:not([data-color-scheme="light"])');
+  test("native controls follow the effective scheme: the system's unless forced, accent-color the primary role", () => {
+    expect(root.declarations.get("color-scheme")).toBe("light dark");
+    expect(root.declarations.get("accent-color")).toBe("var(--omfp-primary)");
+    // The forced schemes set only `color-scheme`, which also picks every token's `light-dark()` side.
+    expect([...forcedLight.declarations]).toEqual([["color-scheme", "light"]]);
+    expect([...forcedDark.declarations]).toEqual([["color-scheme", "dark"]]);
     // Nothing below the root resets them, in the kit or the app.
     const others = [...cssFiles(KIT_SRC), ...cssFiles(join(KIT_SRC, "..", "..", "app", "src"))].filter(
       (file) => file !== TOKENS_CSS,
@@ -188,7 +190,7 @@ describe("tokens.css", () => {
 
   // spec: UI-091, UI-139
   test.each(["light", "dark"] as const)("text roles reach 4.5:1 contrast in %s", (scheme) => {
-    const rule = scheme === "light" ? light : darkForced;
+    const rule = scheme === "light" ? light : dark;
     const failing = TEXT_PAIRS.map(([text, background]) => ({
       pair: `${text} on ${background}`,
       ratio: contrast(value(rule, text), value(rule, background)),
@@ -293,21 +295,19 @@ describe("tokens.css", () => {
   test("radii, rules, surfaces, icons, focus and interactive states", () => {
     expect(differing(light, SHAPE_TOKENS)).toEqual({});
     expect(differing(light, SURFACE_TOKENS)).toEqual({});
-    expect(differing(darkForced, { "pop-bg": "var(--omfp-surface-container)" })).toEqual({});
+    expect(differing(dark, { ...SURFACE_TOKENS, "pop-bg": "var(--omfp-surface-container)" })).toEqual({});
   });
 
   // spec: UI-134, UI-135, UI-136
   test("gradients, ok and warn derive from the roles, with the end stop pulled toward on-surface", () => {
     expect(differing(light, DERIVED_TOKENS)).toEqual({});
-    const derived = Object.keys(DERIVED_TOKENS).map(prop);
-    expect([...darkForced.declarations.keys()].filter((name) => derived.includes(name))).toEqual([]);
+    expect(differing(dark, DERIVED_TOKENS)).toEqual({});
   });
 
   // spec: UI-736
   test("the search highlights derive from role pairs that reach AA, the same in light and dark", () => {
     expect(differing(light, SEARCH_TOKENS)).toEqual({});
-    const search = Object.keys(SEARCH_TOKENS).map(prop);
-    expect([...darkForced.declarations.keys()].filter((name) => search.includes(name))).toEqual([]);
+    expect(differing(dark, SEARCH_TOKENS)).toEqual({});
     const pairs = TEXT_PAIRS.map(([text, background]) => `${text} on ${background}`);
     expect(
       ["on-tertiary-container on tertiary-container", "on-primary on primary"].filter((pair) => !pairs.includes(pair)),
@@ -317,10 +317,7 @@ describe("tokens.css", () => {
   // spec: TRM-110
   test("the terminal's colors derive from the roles, black and white following the scheme, in every theme", () => {
     expect(differing(light, TERMINAL_TOKENS)).toEqual({});
-    expect(differing(darkForced, TERMINAL_DARK)).toEqual({});
-    expect([...darkForced.declarations.keys()].filter((name) => name.startsWith(prop("terminal-")))).toEqual(
-      Object.keys(TERMINAL_DARK).map(prop),
-    );
+    expect(differing(dark, { ...TERMINAL_TOKENS, ...TERMINAL_DARK })).toEqual({});
     // Built-in themes and skins set only roles, so the derivation reaches every one of them.
     const elsewhere = cssFiles(KIT_SRC)
       .filter((file) => file !== TOKENS_CSS)

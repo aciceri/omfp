@@ -53,11 +53,8 @@
     flex: 1 1 auto;
   }
 
-  .omfp-thread-header__session {
-    margin-inline-start: auto;
-  }
-
-  /* The state, the state-dependent action and `⋯` at the row's end (UI-482). */
+  /* The session, and the state, the state-dependent action and `⋯` (the process), at the row's end (UI-482). */
+  .omfp-thread-header__session,
   .omfp-thread-header__process {
     margin-inline-start: auto;
   }
@@ -823,7 +820,8 @@
     font-weight: var(--omfp-fw-medium);
   }
 
-  .omfp-ask__options {
+  .omfp-ask__options,
+  .omfp-form__field {
     display: flex;
     flex-direction: column;
     gap: var(--omfp-s1);
@@ -899,12 +897,6 @@
     max-inline-size: 100%;
     block-size: auto;
     align-self: flex-start;
-  }
-
-  .omfp-form__field {
-    display: flex;
-    flex-direction: column;
-    gap: var(--omfp-s1);
   }
 
   .omfp-form__group {

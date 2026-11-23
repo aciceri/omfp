@@ -36,14 +36,12 @@ Synth.
 ## How it overrides
 
 With the `matugen` theme the windows put the theme over Synth's tokens, which live in `@layer omfp-tokens`
-(`ui/packages/kit/src/tokens.css`); the template is unlayered, so its declarations always win. It uses the same selectors as the built-in themes, so the color-scheme switch (`:theme
-light|dark|system`) keeps working:
-
-| Rule | Scheme |
-| --- | --- |
-| `:root` | light (`{{colors.<name>.light.hex}}`) |
-| `@media (prefers-color-scheme: dark) { :root:not([data-color-scheme="light"]) }` | dark, following the system |
-| `:root[data-color-scheme="dark"]` | dark, forced |
+(`ui/packages/kit/src/tokens.css`); the template is unlayered, so its declarations always win. Like the built-in
+themes it is one `:root` rule whose roles are `light-dark({{colors.<name>.light.hex}}, {{colors.<name>.dark.hex}})`,
+so the color-scheme switch (`:theme light|dark|system`) keeps working: omfp sets `color-scheme` on the root (the
+system's, or the forced one), which picks the side. A hand-written theme may also put its dark values under
+`@media (prefers-color-scheme: dark) { :root:not([data-color-scheme="light"]) }` and
+`:root[data-color-scheme="dark"]` instead.
 
 Only the roles are needed: gradients, hover, selection, focus, diff and status colors are derived from them in the
 built-in tokens (UI-135, UI-136), so they follow the theme. Fonts, sizes, spacing, radii and density are not part of the

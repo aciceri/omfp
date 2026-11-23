@@ -99,3 +99,34 @@ export function findRule(rules: readonly CssRule[], at: readonly string[], selec
   if (rule === undefined) throw new Error("unreachable");
   return rule;
 }
+
+/** `value` with every `light-dark(light, dark)` replaced by its `scheme` side, as that scheme resolves it. */
+export function inScheme(value: string, scheme: "light" | "dark"): string {
+  const start = value.indexOf("light-dark(");
+  if (start < 0) return value;
+  const open = start + "light-dark(".length;
+  let depth = 0;
+  let comma = -1;
+  for (let index = open; index < value.length; index += 1) {
+    const char = value[index];
+    if (char === "(") depth += 1;
+    if (char === "," && depth === 0) comma = index;
+    if (char === ")") {
+      if (depth === 0) {
+        if (comma < 0) throw new Error(`light-dark() without two arguments: ${value}`);
+        const side = scheme === "light" ? value.slice(open, comma) : value.slice(comma + 1, index);
+        return inScheme(`${value.slice(0, start)}${side.trim()}${value.slice(index + 1)}`, scheme);
+      }
+      depth -= 1;
+    }
+  }
+  throw new Error(`unbalanced light-dark(): ${value}`);
+}
+
+/** `rule` with its declarations as `scheme` resolves them (see {@link inScheme}). */
+export function schemeRule(rule: CssRule, scheme: "light" | "dark"): CssRule {
+  return {
+    ...rule,
+    declarations: new Map([...rule.declarations].map(([name, value]) => [name, inScheme(value, scheme)])),
+  };
+}

@@ -2257,10 +2257,7 @@
     text-decoration-color: color-mix(in oklab, currentColor 45%, transparent);
   }
 
-  .omfp-todo__item[data-status="in_progress"] {
-    color: var(--omfp-primary);
-  }
-
+  .omfp-todo__item[data-status="in_progress"],
   .omfp-todo__item[data-status="in_progress"] .omfp-todo__mark {
     color: var(--omfp-primary);
   }

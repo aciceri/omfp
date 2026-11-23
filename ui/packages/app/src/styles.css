@@ -910,6 +910,12 @@
     font-size: var(--omfp-fs-md);
   }
 
+  /* The kit's viewers that fill their slot (ImageView, PdfView) have no height to fill in a card's body, which grows
+     with its content: there they take one of their own (UI-923). */
+  .omfp-card-widget :is(.omfp-image, .omfp-pdf) {
+    min-block-size: min(70vh, 36rem);
+  }
+
   /* A widget that failed to compile, load or render, or is missing (AGT-014): an error card in its place. */
   .omfp-widget__error {
     display: flex;

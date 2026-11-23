@@ -440,6 +440,33 @@ describe("transcript", () => {
     expect(markdown?.textContent).not.toBe("");
   });
 
+  // spec: UI-572
+  test("an image of the assistant's Markdown naming a file loads from the workspace's raw-file URL", () => {
+    const markdown = [
+      "![relative](out/map.png)",
+      "![absolute](/home/u/ws/out/map%20v2.png?x=1)",
+      "![remote](https://example.com/r.png)",
+      "![protocol relative](//cdn.example.com/x.png)",
+    ].join("\n\n");
+    renderThread(<TranscriptWidget />, [
+      {
+        kind: "history",
+        session: { session_id: "s", resumed: true },
+        messages: [
+          { role: "user", content: "show the map" },
+          { role: "assistant", content: [{ type: "text", text: markdown }] },
+        ],
+      },
+    ]);
+    const images = [...screen.getByTestId("markdown").querySelectorAll("img")];
+    expect(images.map((image) => [image.getAttribute("alt"), image.getAttribute("src")])).toEqual([
+      ["relative", "/files/test/01W/out/map.png"],
+      ["absolute", "/files/test/01W//home/u/ws/out/map%20v2.png"],
+      ["remote", "https://example.com/r.png"],
+      ["protocol relative", "//cdn.example.com/x.png"],
+    ]);
+  });
+
   // spec: UI-040, UI-042, UI-147
   test("streaming deltas update the reply in place while it is marked streaming", () => {
     const events = fixtureEvents("text_reply");

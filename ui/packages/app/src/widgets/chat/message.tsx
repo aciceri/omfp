@@ -8,6 +8,7 @@ import {
   ExitCode,
   Icon,
   Markdown,
+  type MarkdownImageProps,
   Message,
   StreamCaret,
   Thinking,
@@ -24,6 +25,7 @@ import {
   markdownChunks,
   OAuthCallbackField,
   strings,
+  useFileUrl,
   useOpenFile,
   useUrlActions,
 } from "omfp/sdk";
@@ -178,7 +180,7 @@ const BlockView = memo(function BlockView({
       return streaming ? (
         <StreamingMarkdown text={block.text} trail={last} onOpenPath={openPath} />
       ) : (
-        <Markdown text={block.text} data-testid="markdown" onOpenPath={openPath} />
+        <Markdown text={block.text} data-testid="markdown" onOpenPath={openPath} image={FileImage} absoluteImages />
       );
     case "thinking":
       return <ThinkingBlock cardKey={cardKey} text={block.text} live={streaming && last} />;
@@ -214,6 +216,17 @@ function MessageImage({ src }: { src: string }): ReactNode {
   );
 }
 
+/** An image of the reply's Markdown whose source is a file path (UI-572): loaded from the raw-file URL of the window's
+ * workspace, its alt text until that URL is known. */
+function FileImage({ path, alt, title }: MarkdownImageProps): ReactNode {
+  const url = useFileUrl(path);
+  return url === undefined ? (
+    <span data-testid="markdown-image-alt">{alt}</span>
+  ) : (
+    <img src={url} alt={alt} title={title} />
+  );
+}
+
 /** A Markdown chunk, parsed again only when its text changes. */
 const MarkdownChunk = memo(Markdown);
 
@@ -233,7 +246,7 @@ function StreamingMarkdown({
       {markdownChunks(markdown).map((chunk, index) => (
         // Chunks only change or grow at the end while streaming, so the index is a stable key.
         // biome-ignore lint/suspicious/noArrayIndexKey: see above
-        <MarkdownChunk key={index} text={chunk} onOpenPath={onOpenPath} />
+        <MarkdownChunk key={index} text={chunk} onOpenPath={onOpenPath} image={FileImage} absoluteImages />
       ))}
     </div>
   );

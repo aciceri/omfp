@@ -4,7 +4,15 @@ import remarkGfm from "remark-gfm";
 import { cx } from "./class.ts";
 import { Highlighted } from "./highlight.tsx";
 import { MermaidDiagram } from "./mermaid.tsx";
-import { linkReference, type OpenPath, PathLink, pathReference, relativeSource, resolvePath } from "./paths.tsx";
+import {
+  absoluteSource,
+  linkReference,
+  type OpenPath,
+  PathLink,
+  pathReference,
+  relativeSource,
+  resolvePath,
+} from "./paths.tsx";
 
 const REMARK_PLUGINS = [remarkGfm, remarkClosedMermaid];
 
@@ -131,24 +139,32 @@ function withPaths(onOpen: OpenPath, linkBase: string | undefined): Components {
   };
 }
 
-/** A Markdown image whose source is a relative file path (UI-562). */
+/** A Markdown image whose source is a file path (UI-562, UI-572). */
 export interface MarkdownImageProps {
-  /** The file's path, resolved against `linkBase`. */
+  /** The file's path: a relative source resolved against `linkBase`, an absolute one as written. */
   readonly path: string;
   readonly alt: string;
   readonly title: string | undefined;
 }
 
-/** `components` where relative images render with `Image` (UI-562); other images stay react-markdown's `<img>`. */
-function withImage(components: Components, Image: ComponentType<MarkdownImageProps>, linkBase: string): Components {
+/** `components` where relative images, and with `absolute` absolute ones, render with `Image` (UI-562, UI-572); other
+ * images stay react-markdown's `<img>`. */
+function withImage(
+  components: Components,
+  Image: ComponentType<MarkdownImageProps>,
+  linkBase: string,
+  absolute: boolean,
+): Components {
   return {
     ...components,
     img: ({ node: _node, ...props }) => {
-      const source = relativeSource(props.src);
-      if (source === undefined) {
+      const relative = relativeSource(props.src);
+      const path =
+        relative !== undefined ? resolvePath(linkBase, relative) : absolute ? absoluteSource(props.src) : undefined;
+      if (path === undefined) {
         return <img {...props} alt={props.alt ?? ""} />;
       }
-      return <Image path={resolvePath(linkBase, source)} alt={props.alt ?? ""} title={props.title} />;
+      return <Image path={path} alt={props.alt ?? ""} title={props.title} />;
     },
   };
 }
@@ -163,6 +179,9 @@ export interface MarkdownProps extends Omit<HTMLAttributes<HTMLDivElement>, "chi
   linkBase?: string | undefined;
   /** Renders the images whose source is a relative file path (UI-562); without it they are plain `<img>`s. */
   image?: ComponentType<MarkdownImageProps> | undefined;
+  /** `image` also renders the images whose source is an absolute file path (`/home/u/a.png`, UI-572), not a
+   * root-relative URL: for text where no page's root makes sense, such as an agent's reply. */
+  absoluteImages?: boolean | undefined;
 }
 
 /**
@@ -170,11 +189,19 @@ export interface MarkdownProps extends Omit<HTMLAttributes<HTMLDivElement>, "chi
  * drops it, and its URL filter removes `javascript:` links. Remote images and code-language classes are kept (UI-040).
  * The only markup that becomes DOM is a diagram's SVG, which Mermaid sanitizes (UI-982).
  */
-export function Markdown({ text, className, onOpenPath, linkBase, image, ...props }: MarkdownProps) {
+export function Markdown({
+  text,
+  className,
+  onOpenPath,
+  linkBase,
+  image,
+  absoluteImages = false,
+  ...props
+}: MarkdownProps) {
   const components = useMemo(() => {
     const linked = onOpenPath === undefined ? COMPONENTS : withPaths(onOpenPath, linkBase);
-    return image === undefined ? linked : withImage(linked, image, linkBase ?? "");
-  }, [onOpenPath, linkBase, image]);
+    return image === undefined ? linked : withImage(linked, image, linkBase ?? "", absoluteImages);
+  }, [onOpenPath, linkBase, image, absoluteImages]);
   return (
     <div {...props} className={cx("omfp-prose omfp-markdown", className)}>
       <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components}>

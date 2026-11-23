@@ -199,6 +199,7 @@ steps; the rows each journey cites specify the behavior.
 | E2E-78 | Word completion ghost text accepted with Tab (`e2e/tests/word_completion.rs`). |
 | E2E-79 | Closing a mounted tab writes `views.json` without it (`e2e/tests/mount.rs`). |
 | E2E-80 | A turn cut by a daemon restart shows the interruption notice with Resume (`e2e/tests/interrupted.rs`). |
+| E2E-81 | A card of `omfp:file` and a reply's Markdown image show a workspace image (`e2e/tests/cards.rs`). |
 
 ## Traceability
 

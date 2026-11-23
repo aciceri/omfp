@@ -1,8 +1,8 @@
 //! Cards in the chat (#229, E2E-77): a scripted agent draws a widget in the card of its own `omfp_card` call and waits
 //! for the user. The thread awaits the user while the card waits; the widget's `submit` and the card's Cancel answer
 //! the calls, and the agent reads the answers. Once the turn ends the cards collapse; opened again after a reload,
-//! the widget mounts from the call's arguments and draws its finished state. Takes `omfp-card-waiting.png`. Run with
-//! `just test-e2e`.
+//! the widget mounts from the call's arguments and draws its finished state. Takes `omfp-card-waiting.png`. A card of
+//! `omfp:file` and a Markdown reply show an image of the workspace (#294, #295, E2E-81). Run with `just test-e2e`.
 
 use e2e::Journey;
 use fake_llm::{Reply, Step, ToolCall};
@@ -120,4 +120,60 @@ async fn an_agent_waits_for_the_answer_of_a_widget_card_in_the_chat() -> anyhow:
     journey.screenshot("card-answered").await?;
     assert_eq!(journey.text(&done).await?, "Picked blue");
     journey.finish("cards").await
+}
+
+/// How tall the shown part of the image in `css` is, and its natural width (`0` until it loaded).
+const IMAGE_SIZE: &str = "const image = document.querySelector(arguments[0]); \
+    if (image === null) return null; \
+    const viewport = image.closest('.omfp-image__viewport') ?? image; \
+    return [Math.round(viewport.getBoundingClientRect().height), image.naturalWidth];";
+
+// spec: E2E-81, UI-923, UI-572
+#[tokio::test(flavor = "multi_thread")]
+async fn a_card_and_a_reply_show_an_image_of_the_workspace() -> anyhow::Result<()> {
+    let journey = Journey::start(vec![
+        Step::reply(Reply::tool_calls(vec![ToolCall::new(
+            "call_image",
+            "omfp_card",
+            json!({ "widget": "omfp:file", "title": "The icon", "props": { "path": "icon.png" } }),
+        )])),
+        Step::reply(Reply::text("Here it is again: ![the icon](icon.png)")),
+    ])
+    .await?;
+    journey.connected().await?;
+    let thread = journey.create_thread("image journey").await?;
+    let folder = journey.workspace_folder(&thread).await?;
+    std::fs::write(
+        folder.join("icon.png"),
+        include_bytes!("../../docs/brand/icon-32.png"),
+    )?;
+    journey.send("show me the icon").await?;
+
+    // The card's image viewer has a height of its own: the card's body, which grows with its content, gives it none.
+    let shown = format!("{} [data-testid=file-image] img", card("call_image"));
+    let [height, width] = journey
+        .until("the card's image", async |journey| {
+            let size = journey.eval(IMAGE_SIZE, vec![json!(shown)]).await?;
+            Ok(serde_json::from_value::<[u64; 2]>(size)
+                .ok()
+                .filter(|[_, width]| *width > 0))
+        })
+        .await?;
+    assert!(height >= 200, "the card's image is {height} px tall");
+    assert_eq!(width, 32);
+
+    // The reply's Markdown image names the same file: it loads from the daemon's raw-file route.
+    journey.reply("Here it is again").await?;
+    let inline = "[data-testid=markdown] img[alt='the icon']";
+    let [_, width] = journey
+        .until("the reply's image", async |journey| {
+            let size = journey.eval(IMAGE_SIZE, vec![json!(inline)]).await?;
+            Ok(serde_json::from_value::<[u64; 2]>(size)
+                .ok()
+                .filter(|[_, width]| *width > 0))
+        })
+        .await?;
+    assert_eq!(width, 32);
+    journey.screenshot("card-image").await?;
+    journey.finish("card-image").await
 }

@@ -96,6 +96,20 @@ export function relativeSource(src: string | undefined): string | undefined {
   if (src === undefined || src.startsWith("/") || src.startsWith("#") || SCHEME.test(src)) {
     return undefined;
   }
+  return decodedPath(src);
+}
+
+/** The file path of a Markdown image's source when it is absolute (`/home/u/a%20b.png`), without its query or
+ * fragment; never a protocol-relative URL (`//host/a.png`). */
+export function absoluteSource(src: string | undefined): string | undefined {
+  if (src === undefined || !src.startsWith("/") || src.startsWith("//")) {
+    return undefined;
+  }
+  return decodedPath(src);
+}
+
+/** `src` without its query or fragment, percent-decoded; `undefined` when that leaves nothing or it does not decode. */
+function decodedPath(src: string): string | undefined {
   const target = src.split(/[?#]/, 1)[0] ?? "";
   try {
     const decoded = decodeURI(target);

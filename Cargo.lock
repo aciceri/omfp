@@ -1089,7 +1089,6 @@ version = "0.4.2"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
- "clap",
  "fake-llm",
  "omfp",
  "omfp-core",
@@ -6632,10 +6631,8 @@ dependencies = [
  "omfp-core",
  "omfp-protocol",
  "regex",
- "serde",
  "serde_json",
  "tempfile",
- "toml 1.2.1+spec-1.1.0",
  "walkdir",
 ]
 

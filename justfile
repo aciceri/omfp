@@ -170,8 +170,8 @@ package:
     nix build --no-link .#omfp .#omfp-headless \
         ".#checks.$(nix eval --impure --raw --expr builtins.currentSystem).home-manager-module"
 
-# spec: ENV-061, ENV-062 — the Linux x86_64 download without Nix (the release workflow, ENV-060): `omfp`, the pinned
-# omp's release build and the web bundle as `omfp-<version>-linux-x86_64.tar.gz` in `out`
+# spec: ENV-061 — the Linux x86_64 download without Nix (the release workflow, ENV-060, checked as ENV-062 says):
+# `omfp`, the pinned omp's release build and the web bundle as `omfp-<version>-linux-x86_64.tar.gz` in `out`
 package-linux out="dist":
     contrib/release/package-linux.sh {{ quote(out) }}
 
@@ -180,8 +180,9 @@ package-linux out="dist":
 package-macos out="dist":
     contrib/release/package-macos.sh {{ quote(out) }}
 
-# spec: ENV-061, ENV-064, ENV-065 — the Linux desktop download without Nix (ENV-060): the Flatpak with the window, the
-# daemon, the web bundle and the pinned omp (run on the host), as `omfp-<version>-linux-x86_64.flatpak` in `out`
+# spec: ENV-061, ENV-064 — the Linux desktop download without Nix (ENV-060, checked as ENV-065 says): the Flatpak with
+# the window, the daemon, the web bundle and the pinned omp (run on the host), as
+# `omfp-<version>-linux-x86_64.flatpak` in `out`
 package-flatpak out="dist":
     contrib/release/package-flatpak.sh {{ quote(out) }}
 

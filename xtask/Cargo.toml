@@ -13,9 +13,7 @@ clap.workspace = true
 omfp-core.workspace = true
 omfp-protocol.workspace = true
 regex.workspace = true
-serde.workspace = true
 serde_json.workspace = true
-toml.workspace = true
 walkdir.workspace = true
 
 [dev-dependencies]

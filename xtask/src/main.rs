@@ -47,9 +47,6 @@ fn main() -> anyhow::Result<ExitCode> {
                 let files: Vec<&str> = files.iter().map(String::as_str).collect();
                 println!("{id:<8} {}", files.join(", "));
             }
-            for (milestone, ids) in &report.pending {
-                println!("pending in {milestone}: {}", ids.join(", "));
-            }
             for (id, places) in &report.not_run {
                 let places: Vec<&str> = places.iter().map(String::as_str).collect();
                 println!("not run: {id:<8} {}", places.join(", "));

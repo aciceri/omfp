@@ -18,7 +18,7 @@ async fn the_predictor_omp_relays_omps_word_completion() {
         .env
         .configure(&[], "spelling:\n  autocomplete: \"off\"\n")
         .unwrap();
-    let (daemon, _data) = omp_daemon(&harness, &["--no-title-generation"]).await;
+    let (daemon, data) = omp_daemon(&harness, &["--no-title-generation"]).await;
     let mut client = Client::hello(daemon.addr(), daemon.token().expose(), "test").await;
 
     let predicted = client

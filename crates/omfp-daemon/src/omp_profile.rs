@@ -4,6 +4,7 @@
 use std::ffi::OsString;
 use std::path::{Component, Path, PathBuf};
 
+use crate::config::DATA_DIR_VARIABLE;
 use crate::paths::DataDir;
 
 type Environment = Vec<(OsString, Option<OsString>)>;
@@ -71,6 +72,11 @@ pub fn environment(data: &DataDir, mut env: Environment) -> std::io::Result<Envi
     ] {
         set(key, root.join("xdg").join(category).into_os_string());
     }
+    // A thread's shell finds its daemon by this (`omfp daemon restart`), not by the profile's XDG_DATA_HOME (DMN-393).
+    set(
+        DATA_DIR_VARIABLE,
+        std::path::absolute(data.root())?.into_os_string(),
+    );
     Ok(env)
 }
 
@@ -78,7 +84,7 @@ pub fn environment(data: &DataDir, mut env: Environment) -> std::io::Result<Envi
 mod tests {
     use super::*;
 
-    // spec: ARC-021
+    // spec: ARC-021, DMN-393
     #[test]
     fn inherited_profile_and_directory_overrides_cannot_escape_the_profile() {
         let data = DataDir::new("/data/omfp");
@@ -125,6 +131,7 @@ mod tests {
             value("OPENAI_API_KEY"),
             Some("explicit-environment-key".into())
         );
+        assert_eq!(value("OMFP_DATA_DIR"), Some("/data/omfp".into()));
     }
 
     // spec: ARC-021

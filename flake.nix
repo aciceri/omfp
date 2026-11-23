@@ -47,6 +47,9 @@
     flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [ inputs.git-hooks.flakeModule ];
 
+      # ENV-066: `omfp daemon` as a systemd user service of home-manager.
+      flake.homeManagerModules.default = import ./nix/home-manager.nix { inherit (inputs) self; };
+
       systems = [
         "x86_64-linux"
         "aarch64-linux"
@@ -146,6 +149,12 @@
             omfp-headless = omfpPackage false;
             omfp-web = omfpWeb;
             default = config.packages.omfp;
+          };
+
+          # ENV-066: the home-manager module evaluates to the expected unit (built by `just package`).
+          checks.home-manager-module = pkgs.callPackage ./nix/home-manager-check.nix {
+            module = import ./nix/home-manager.nix { inherit (inputs) self; };
+            package = config.packages.omfp-headless;
           };
 
           formatter = pkgs.nixfmt;

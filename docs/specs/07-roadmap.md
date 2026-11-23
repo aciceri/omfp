@@ -477,6 +477,17 @@ progress and continue; any message to the thread clears the mark too. Left out: 
 themselves once the daemon is up (a setting), and a warning before a planned stop beyond the tray's Quit label, which
 already counts the running threads (UI-218). A daemon that dies without its shutdown (a crash, SIGKILL) marks nothing.
 
+The daemon as a supervised service (#282, DMN-390..DMN-394, ENV-066, ENV-067): `omfp daemon` appends its log to
+`daemon.log` whoever started it, each line once; `omfp daemon restart` makes the running daemon the new `omfp` in place
+(`SIGUSR2` and a request file, then `exec` after the shutdown: the same pid, environment, arguments and address), so it
+works from a thread's own shell and under systemd, while `omfp desktop` waits for the restarted daemon instead of
+starting one; the flake has a home-manager module and the Linux packages a systemd user unit (`Restart=on-failure`,
+`KillMode=mixed`). Chosen over a detached replacement process: the replacement would inherit the caller's environment
+(in a thread's shell, the omp profile's) and, under systemd, go down with the old daemon's unit. Left out: a NixOS
+module (NixOS's switch does not restart user units; `systemd.packages` picks up the unit), a launchd agent for macOS,
+and restarting a daemon older than this release (its `daemon.json` lacks `started`; the command says to stop and start
+it).
+
 ## M10 — Agent control (done)
 
 Scope: the rest of [08](08-agent-control.md) (D-17): every protocol method as an agent tool, plus `omfp_call`, through

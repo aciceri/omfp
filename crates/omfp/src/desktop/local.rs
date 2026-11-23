@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context as _, bail};
 use clap::Parser as _;
 use omfp_daemon::config::{Cli, Config, default_config_file};
-use omfp_daemon::paths::{create_private_dir, open_private_log};
+use omfp_daemon::paths::{DataDir, create_private_dir, open_private_log};
 
 use super::Env;
 
@@ -102,9 +102,11 @@ impl LocalDaemon {
 
     /// The address of the running daemon, after starting one in the background when none runs: on the configured
     /// address first, so the window's origin (and its `localStorage`) stays the same across restarts, else on a
-    /// random port (ARC-003).
+    /// random port (ARC-003). A daemon restarting in place is waited for, never replaced (DMN-392).
     pub fn find_or_start(&self) -> anyhow::Result<SocketAddr> {
-        if let Some(info) = omfp_daemon::discover(&self.data_dir)? {
+        if let Some(info) =
+            omfp_daemon::discover_through_restart(&self.data_dir, omfp_daemon::RESTART_DEADLINE)?
+        {
             note!(
                 "omfp desktop: found the daemon (pid {}) on {}",
                 info.pid,
@@ -138,7 +140,7 @@ impl LocalDaemon {
     }
 
     fn log(&self) -> PathBuf {
-        self.data_dir.join("daemon.log")
+        DataDir::new(&self.data_dir).daemon_log()
     }
 
     /// Starts `omfp daemon` detached (D-16): its own process group (no terminal signals), stdin `/dev/null`, output

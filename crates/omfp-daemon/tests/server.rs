@@ -13,7 +13,9 @@ use omfp_core::wire::{RpcAgentEvent, RpcNotification};
 use omfp_daemon::agent::{FakeLauncher, FakeReply, FakeRun};
 use omfp_daemon::config::{Cli, Config};
 use omfp_daemon::git::FakeGit;
-use omfp_daemon::{DaemonHandle, Ports, discover, start_with};
+use omfp_daemon::{
+    DaemonHandle, Ports, discover, discover_through_restart, restarting, start_with,
+};
 use omfp_protocol::{ServerFrame, TopicEvent};
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -473,6 +475,58 @@ fn a_stale_daemon_json_is_not_discovered() {
 
     assert_eq!(discover(dir.path()).unwrap(), None);
     assert_eq!(discover(&dir.path().join("missing")).unwrap(), None);
+}
+
+// spec: DMN-392, ARC-003
+#[tokio::test(flavor = "multi_thread")]
+async fn a_daemon_restarting_in_place_is_waited_for_not_replaced() {
+    let first = daemon(&[]).await;
+    let data_dir = first.dir.path().to_owned();
+    let before = discover(&data_dir).unwrap().expect("a running daemon");
+    assert!(before.started.is_some());
+
+    first.handle.shutdown_for_restart().await.unwrap();
+    // daemon.json stays, marked, while its process (this one) lives: no daemon to connect to, and none to start.
+    assert_eq!(discover(&data_dir).unwrap(), None);
+    assert!(restarting(&data_dir).unwrap());
+    let waiting = {
+        let data_dir = data_dir.clone();
+        std::thread::spawn(move || {
+            discover_through_restart(&data_dir, std::time::Duration::from_secs(60))
+        })
+    };
+    let fresh = ports(&data_dir, &FakeLauncher::new(), &Arc::new(FakeGit::new()));
+    let restarted = start_with(config(&data_dir, &[]), fresh).await.unwrap();
+    let found = tokio::task::spawn_blocking(move || waiting.join().unwrap())
+        .await
+        .unwrap()
+        .unwrap()
+        .expect("the restarted daemon");
+    assert_eq!(found.addr, restarted.addr());
+    assert_ne!(found.started, before.started);
+    assert!(!restarting(&data_dir).unwrap());
+    restarted.shutdown().await.unwrap();
+}
+
+// spec: DMN-392
+#[test]
+fn a_restart_mark_of_a_gone_process_is_stale() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut gone = std::process::Command::new("true").spawn().unwrap();
+    let pid = gone.id();
+    gone.wait().unwrap();
+    std::fs::write(
+        dir.path().join("daemon.json"),
+        format!(r#"{{"addr":"127.0.0.1:9","pid":{pid},"started":1,"restarting":true}}"#),
+    )
+    .unwrap();
+
+    assert!(!restarting(dir.path()).unwrap());
+    assert_eq!(
+        discover_through_restart(dir.path(), std::time::Duration::ZERO).unwrap(),
+        None
+    );
+    assert!(!restarting(&dir.path().join("missing")).unwrap());
 }
 
 // spec: ARC-004, ARC-005, ARC-001, ARC-011

@@ -14,6 +14,21 @@ The version's section is also the source of the GitHub release notes.
   ends with a notice saying the last turn was interrupted, with a Resume button (`:resume`) that restarts the agent and
   tells it to check what was in progress and continue. Any message you send clears the notice too. Agents see it as
   `interruptedAt` on the thread's summary and resume with `thread.resume` (#264).
+- `omfp daemon restart` restarts the running daemon onto the `omfp` you run it with, after an upgrade: the daemon
+  stops as on Quit (marking the turns it cuts) and becomes the new build in the same process, with its arguments,
+  environment and address, so open windows reconnect and `omfp desktop` waits for it instead of starting a daemon of
+  its own. It also works from the shell of one of omfp's own threads, which finds the daemon through `OMFP_DATA_DIR`,
+  and under systemd. A daemon of an earlier release cannot restart this way: stop it once and start it again (#282).
+- The daemon can run as a systemd user service: the flake's home-manager module
+  (`homeManagerModules.default`, `services.omfp.enable = true;`, optionally `tray = true;`) restarts it when it fails
+  and whenever the package changes, and the Linux Nix packages ship the unit as `lib/systemd/user/omfp.service`
+  (`contrib/systemd/omfp.service` elsewhere). See the overview's [Install](docs/overview.md#install) (#282).
+
+### Changed
+
+- The daemon writes its log to `<data-dir>/daemon.log` however it was started (from a terminal, the session's
+  autostart, a service), not only when `omfp desktop` starts it, besides stderr; the file no longer holds colour
+  escapes (#282).
 
 ### Changed
 

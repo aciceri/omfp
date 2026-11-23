@@ -39,6 +39,12 @@ impl DataDir {
         self.root.join("token")
     }
 
+    /// The daemon's log (DMN-390): `omfp daemon` appends to it whoever started it.
+    #[must_use]
+    pub fn daemon_log(&self) -> PathBuf {
+        self.root.join("daemon.log")
+    }
+
     /// Everything owned by one thread.
     #[must_use]
     pub fn thread(&self, thread_id: &str) -> PathBuf {

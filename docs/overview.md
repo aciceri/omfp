@@ -132,6 +132,42 @@ oh-my-pi, and you need git.
 To check a download, compare `shasum -a 256 <file>` (macOS) or `sha256sum <file>` (Linux) with its line in the
 release's `SHA256SUMS`.
 
+### Running the daemon as a service
+
+`omfp desktop` starts a daemon in the background when none runs, and it keeps running after the window closes. To
+have it started with your session and restarted when it fails, run it as a systemd user service (Linux):
+
+- **home-manager**: import the flake's module and enable it; it restarts the daemon whenever the package changes.
+
+  ```nix
+  imports = [ omfp.homeManagerModules.default ];
+  services.omfp = {
+    enable = true;
+    tray = true;            # in the system tray, with the graphical session (needs the `omfp` package)
+    # package = omfp.packages.${pkgs.system}.omfp-headless;   # a server: no window, no tray
+    # extraArgs = [ "--bind" "127.0.0.1:7421" ];
+  };
+  ```
+
+- **NixOS without home-manager**: `systemd.packages = [ omfp.packages.${pkgs.system}.omfp ];` and
+  `systemd.user.services.omfp.wantedBy = [ "default.target" ];`. A profile install: `systemctl --user link
+  ~/.nix-profile/lib/systemd/user/omfp.service && systemctl --user enable --now omfp`.
+- **Elsewhere**: copy [contrib/systemd/omfp.service](../contrib/systemd/omfp.service) to `~/.config/systemd/user/`,
+  put the path of your `omfp` in its `ExecStart` (in place of `@omfp@`), then `systemctl --user enable --now omfp`.
+
+The service runs with the user manager's environment: tools the agents need (language servers, CLIs) must be on its
+`PATH` (`systemctl --user show-environment`; `systemctl --user import-environment PATH` from your session, or
+`Environment=` in the unit). Whoever started it, the daemon appends its log to `daemon.log` in the data directory (and
+to stderr: the journal, for a service).
+
+**After an upgrade**, `omfp daemon restart` switches the running daemon to the `omfp` you run it with, in place: the
+daemon stops as on Quit (the turns it cuts get a Resume notice), then runs the new build in the same process, with the
+same arguments, environment and address, so open windows reconnect by themselves and `omfp desktop` waits for it
+instead of starting another daemon. It works from any shell, an omfp thread's own included (there `$OMFP_DATA_DIR`
+names the daemon's data directory), and under systemd (`systemctl --user restart omfp` restarts onto the unit's
+package instead). A daemon of a release before this command cannot restart this way: stop it once (the tray's Quit)
+and start it again.
+
 ## First run
 
 A fresh oh-my-pi is logged in nowhere, so no thread can start yet: the window welcomes you with **Log in to a

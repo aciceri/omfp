@@ -1,5 +1,9 @@
 //! Starting and stopping a daemon (02-daemon, "Startup and configuration"): in-process with [`start`] (DMN-004), or
-//! as `omfp daemon` with [`run`]; one daemon per data directory, published in `daemon.json` (DMN-007).
+//! as `omfp daemon` with [`run`]; one daemon per data directory, published in `daemon.json` (DMN-007); its log
+//! (DMN-390, [`log`]); restarting it in place (DMN-391, [`restart`]).
+
+mod log;
+mod restart;
 
 use std::ffi::OsString;
 use std::fs::{File, Permissions, TryLockError};
@@ -8,13 +12,18 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{Context, bail};
 use omfp_protocol::ThreadSummary;
+use rustix::io::Errno;
+use rustix::process::{Pid, test_kill_process};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
+
+pub use restart::{RESTART_DEADLINE, restart};
 
 use crate::agent::{AgentLauncher, OmpLauncher};
 use crate::config::{Cli, Config, default_config_file, web_bundle};
@@ -113,13 +122,22 @@ pub struct DaemonInfo {
     /// Address the daemon listens on.
     pub addr: SocketAddr,
     pub pid: u32,
+    /// When this daemon started (unix ms): a restart in place keeps the pid, not this (DMN-391). `None`: a daemon of
+    /// an omfp older than restarts in place, which `SIGUSR2` would kill.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started: Option<u64>,
+    /// The daemon is restarting in place (DMN-392): it no longer serves, and the restarted one writes this file anew.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub restarting: bool,
 }
 
 const INFO_FILE: &str = "daemon.json";
 const LOCK_FILE: &str = "daemon.lock";
+/// How often a client checks `daemon.json` while it waits for a daemon.
+const POLL: Duration = Duration::from_millis(25);
 
 /// The daemon running for `data_dir`, if any: `daemon.json` is read and trusted only while its daemon still holds
-/// the data directory's lock (the process is alive).
+/// the data directory's lock (the process is alive) and does not say it is restarting (DMN-392).
 pub fn discover(data_dir: &Path) -> std::io::Result<Option<DaemonInfo>> {
     let text = match std::fs::read_to_string(data_dir.join(INFO_FILE)) {
         Ok(text) => text,
@@ -130,9 +148,57 @@ pub fn discover(data_dir: &Path) -> std::io::Result<Option<DaemonInfo>> {
         // Nobody holds the lock: `daemon.json` is stale.
         return Ok(None);
     }
-    serde_json::from_str(&text)
-        .map(Some)
-        .map_err(std::io::Error::other)
+    let info: DaemonInfo = serde_json::from_str(&text).map_err(std::io::Error::other)?;
+    Ok((!info.restarting).then_some(info))
+}
+
+/// Whether the daemon of `data_dir` is restarting in place (DMN-392): `daemon.json` says so and its process lives
+/// (a daemon that died while restarting left a stale mark).
+pub fn restarting(data_dir: &Path) -> std::io::Result<bool> {
+    let text = match std::fs::read_to_string(data_dir.join(INFO_FILE)) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    let info: DaemonInfo = serde_json::from_str(&text).map_err(std::io::Error::other)?;
+    Ok(info.restarting && process_alive(info.pid))
+}
+
+/// [`discover`] through a restart in place (DMN-392): while the daemon restarts, waits (at most `deadline`) for the
+/// restarted one, so a client never starts a daemon of its own meanwhile.
+pub fn discover_through_restart(
+    data_dir: &Path,
+    deadline: Duration,
+) -> std::io::Result<Option<DaemonInfo>> {
+    let until = Instant::now() + deadline;
+    loop {
+        if let Some(info) = discover(data_dir)? {
+            return Ok(Some(info));
+        }
+        if !restarting(data_dir)? {
+            // The restarted daemon may have written daemon.json since.
+            return discover(data_dir);
+        }
+        if Instant::now() > until {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                format!(
+                    "the omfp daemon of {} did not restart in {} s",
+                    data_dir.display(),
+                    deadline.as_secs()
+                ),
+            ));
+        }
+        std::thread::sleep(POLL);
+    }
+}
+
+/// Whether the process `pid` exists (a zombie counts).
+fn process_alive(pid: u32) -> bool {
+    i32::try_from(pid)
+        .ok()
+        .and_then(Pid::from_raw)
+        .is_some_and(|pid| test_kill_process(pid) != Err(Errno::SRCH))
 }
 
 /// Whether a daemon holds the data directory's lock (DMN-007): its process is alive, even before it wrote
@@ -200,7 +266,8 @@ impl StopRequest {
 /// A running daemon.
 #[derive(Debug)]
 pub struct DaemonHandle {
-    addr: SocketAddr,
+    /// What `daemon.json` says.
+    info: DaemonInfo,
     token: Token,
     data_dir: PathBuf,
     supervisor: Supervisor,
@@ -219,7 +286,7 @@ impl DaemonHandle {
     /// The bound address.
     #[must_use]
     pub fn addr(&self) -> SocketAddr {
-        self.addr
+        self.info.addr
     }
 
     /// The access token clients present in `system.hello`.
@@ -237,7 +304,7 @@ impl DaemonHandle {
     /// The UI's URL without the token (a daemon on every interface is reached on loopback).
     #[must_use]
     pub fn base_url(&self) -> String {
-        let mut addr = self.addr;
+        let mut addr = self.info.addr;
         if addr.ip().is_unspecified() {
             addr.set_ip(IpAddr::V4(Ipv4Addr::LOCALHOST));
         }
@@ -286,6 +353,24 @@ impl DaemonHandle {
     /// Stops the daemon (DMN-005): connections close, every omp process, job and PTY stops (at most 10 s),
     /// `daemon.json` is removed and the data directory unlocked.
     pub async fn shutdown(self) -> anyhow::Result<()> {
+        self.close(false).await
+    }
+
+    /// Stops the daemon to restart it in place (DMN-391, DMN-392): first `daemon.json` says it restarts, so local
+    /// clients wait for the restarted daemon rather than start one of their own, then the shutdown of
+    /// [`Self::shutdown`], which leaves that file to the restarted daemon.
+    pub async fn shutdown_for_restart(self) -> anyhow::Result<()> {
+        let marked = DaemonInfo {
+            restarting: true,
+            ..self.info.clone()
+        };
+        if let Err(error) = write_info(&self.data_dir, &marked) {
+            warn!(%error, "cannot mark daemon.json as restarting");
+        }
+        self.close(true).await
+    }
+
+    async fn close(self, restarting: bool) -> anyhow::Result<()> {
         let _ = self.stop.send(true);
         self.terminals.shutdown();
         // No declared run starts or restarts while everything stops; the ends of the killed ones are recorded.
@@ -296,7 +381,8 @@ impl DaemonHandle {
             task.abort();
         }
         let served = self.server.await;
-        if let Err(error) = std::fs::remove_file(self.data_dir.join(INFO_FILE))
+        if !restarting
+            && let Err(error) = std::fs::remove_file(self.data_dir.join(INFO_FILE))
             && error.kind() != std::io::ErrorKind::NotFound
         {
             warn!(%error, "cannot remove daemon.json");
@@ -323,18 +409,25 @@ pub async fn start(mut config: Config) -> anyhow::Result<DaemonHandle> {
     start_with(config, ports).await
 }
 
+/// Creates the data directory private (DMN-180): the mode it had when it was open to other users.
+fn create_data_dir(data_dir: &Path) -> anyhow::Result<Option<u32>> {
+    create_private_dir(data_dir).with_context(|| format!("cannot create {}", data_dir.display()))
+}
+
+fn warn_opened(data_dir: &Path, mode: u32) {
+    warn!(
+        data_dir = %data_dir.display(),
+        mode = format_args!("{mode:o}"),
+        "the data directory was open to other users: its mode is now 0700 (DMN-180)"
+    );
+}
+
 /// Starts a daemon in-process on the given ports.
 #[allow(clippy::too_many_lines)] // Startup wires every part in order.
 pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHandle> {
     let data_dir = std::path::absolute(&config.data_dir)?;
-    if let Some(mode) = create_private_dir(&data_dir)
-        .with_context(|| format!("cannot create {}", data_dir.display()))?
-    {
-        warn!(
-            data_dir = %data_dir.display(),
-            mode = format_args!("{mode:o}"),
-            "the data directory was open to other users: its mode is now 0700 (DMN-180)"
-        );
+    if let Some(mode) = create_data_dir(&data_dir)? {
+        warn_opened(&data_dir, mode);
     }
     let lock = lock_data_dir(&data_dir)?;
     let data = DataDir::new(&data_dir);
@@ -446,14 +539,18 @@ pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHa
         .await
         .with_context(|| format!("cannot listen on {}", config.bind))?;
     let addr = listener.local_addr()?;
-    write_info(
-        &data_dir,
-        &DaemonInfo {
-            addr,
-            pid: std::process::id(),
-        },
-    )
-    .context("cannot write daemon.json")?;
+    let started = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |since| {
+            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+        });
+    let info = DaemonInfo {
+        addr,
+        pid: std::process::id(),
+        started: Some(started),
+        restarting: false,
+    };
+    write_info(&data_dir, &info).context("cannot write daemon.json")?;
 
     let (stop, stopping) = watch::channel(false);
     // Two secrets: a widget module's URL may show in an error report, which must not open the workspace's files.
@@ -487,7 +584,7 @@ pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHa
     });
     info!(%addr, data_dir = %data_dir.display(), "daemon listening");
     Ok(DaemonHandle {
-        addr,
+        info,
         token,
         data_dir,
         supervisor,
@@ -509,18 +606,9 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
 }
 
 /// [`run`] with `attach` called on the started daemon (`omfp daemon --tray`, DMN-128); what it returns lives until the
-/// daemon stops, which a [`StopRequest`] also triggers, and is dropped before the shutdown starts.
+/// daemon stops, which a [`StopRequest`] also triggers, and is dropped before the shutdown starts. The log goes to
+/// stderr and `daemon.log` (DMN-390); `SIGUSR2` with a restart request restarts the daemon in place (DMN-391).
 pub fn run_with<A>(mut cli: Cli, attach: impl FnOnce(&DaemonHandle) -> A) -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .with_writer(std::io::stderr)
-        // A started-from-a-terminal daemon outlives its terminal (DMN-355): a line that cannot be written is dropped.
-        // Left on, tracing-subscriber reports the failed write with `eprintln!`, which panics the task that logged.
-        .log_internal_errors(false)
-        .init();
     let xdg_config_home = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
     let home = std::env::var_os("HOME").map(PathBuf::from);
     cli.config = cli
@@ -538,24 +626,65 @@ pub fn run_with<A>(mut cli: Cli, attach: impl FnOnce(&DaemonHandle) -> A) -> any
     config.init_file = config
         .init_file
         .or_else(|| default_init_file(xdg_config_home, home));
-    tokio::runtime::Builder::new_multi_thread()
+    let data_dir = std::path::absolute(&config.data_dir)?;
+    let opened = create_data_dir(&data_dir)?;
+    let log = DataDir::new(&data_dir).daemon_log();
+    log::init(&log).with_context(|| format!("cannot open {}", log.display()))?;
+    if let Some(mode) = opened {
+        warn_opened(&data_dir, mode);
+    }
+    let configured_bind = config.bind;
+    let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
-        .build()?
-        .block_on(async {
-            let daemon = start(config).await?;
-            // Signals are caught before the URL is printed: whoever waits for it may stop the daemon at once.
-            let signal = signal_handler()?;
-            println!("{}", daemon.listening_line(std::io::stdout().is_terminal()));
-            let attached = attach(&daemon);
-            let requested = Arc::clone(&daemon.stop_request);
+        .build()?;
+    let outcome = runtime.block_on(async {
+        // Caught before daemon.json names this process: from then on `omfp daemon restart` may send it (DMN-394).
+        let mut restart_requests =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::user_defined2())?;
+        let daemon = start(config).await?;
+        // Signals are caught before the URL is printed: whoever waits for it may stop the daemon at once.
+        let signal = signal_handler()?;
+        tokio::pin!(signal);
+        println!("{}", daemon.listening_line(std::io::stdout().is_terminal()));
+        let attached = attach(&daemon);
+        let requested = Arc::clone(&daemon.stop_request);
+        let program = loop {
             tokio::select! {
-                result = signal => result?,
-                () = requested.notified() => info!("stop requested"),
+                result = &mut signal => {
+                    result?;
+                    break None;
+                }
+                () = requested.notified() => {
+                    info!("stop requested");
+                    break None;
+                }
+                _ = restart_requests.recv() => match restart::take_request(daemon.data_dir()) {
+                    Ok(program) => {
+                        info!(program = %program.display(), "restart requested");
+                        break Some(program);
+                    }
+                    Err(error) => warn!("restart signal ignored: {error:#}"),
+                },
             }
-            drop(attached);
+        };
+        drop(attached);
+        let Some(program) = program else {
             info!("shutting down");
-            daemon.shutdown().await
-        })
+            return daemon.shutdown().await.map(|()| None);
+        };
+        info!("shutting down to restart");
+        let args = restart::exec_args(std::env::args_os().skip(1), configured_bind, daemon.addr());
+        daemon.shutdown_for_restart().await?;
+        anyhow::Ok(Some((program, args)))
+    });
+    // Every task and thread of the runtime ends before the process does, or becomes the restarted daemon.
+    drop(runtime);
+    let Some((program, args)) = outcome? else {
+        return Ok(());
+    };
+    info!(program = %program.display(), "restarting");
+    Err(restart::exec(&program, &args))
+        .with_context(|| format!("cannot restart as {}", program.display()))
 }
 
 /// Installs the SIGINT/SIGTERM handlers now; the future ends at the first signal.

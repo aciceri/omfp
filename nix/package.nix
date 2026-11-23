@@ -33,7 +33,7 @@ let
   # to link from nixpkgs beyond the SDK), plus `Applications/omfp.app` around the wrapped binary.
   linuxDesktop = desktop && stdenv.hostPlatform.isLinux;
   darwinApp = desktop && stdenv.hostPlatform.isDarwin;
-  # The Rust workspace only: the UI, docs and fixtures do not change the binary.
+  # The Rust workspace, and the systemd user unit (ENV-067): the UI, docs and fixtures do not change the package.
   src = lib.fileset.toSource {
     root = ../.;
     fileset = lib.fileset.unions [
@@ -42,6 +42,7 @@ let
       ../crates
       ../xtask
       ../e2e
+      ../contrib/systemd
     ];
   };
 
@@ -146,11 +147,16 @@ rustPlatform.buildRustPackage {
   ];
 
   # DMN-008: the bundle is `web/` next to the executable; the wrappers keep `bin/` as the real binary's directory
-  # (`bin/.omfp-wrapped`). A symlink, which the wrappers do not try to wrap.
+  # (`bin/.omfp-wrapped`). A symlink, which the wrappers do not try to wrap. ENV-067: on Linux the systemd user unit,
+  # running this package's omfp.
   postInstall = ''
     mkdir -p "$out/share/omfp"
     ln -s ${web} "$out/share/omfp/web"
     ln -s ../share/omfp/web "$out/bin/web"
+  ''
+  + lib.optionalString stdenv.hostPlatform.isLinux ''
+    mkdir -p "$out/lib/systemd/user"
+    substitute contrib/systemd/omfp.service "$out/lib/systemd/user/omfp.service" --replace-fail @omfp@ "$out/bin/omfp"
   ''
   + lib.optionalString linuxDesktop ''
     install -Dm644 crates/omfp/icons/icon.png "$out/share/icons/hicolor/512x512/apps/omfp.png"

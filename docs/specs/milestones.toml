@@ -613,6 +613,14 @@ requirements = [
   "DMN-380",
   # The images of threads from before the isolated omp profile (#283)
   "DMN-385",
+  # The daemon as a supervised service: one log, restart in place, the home-manager module and user unit (#282)
+  "DMN-390",
+  "DMN-391",
+  "DMN-392",
+  "DMN-393",
+  "DMN-394",
+  "ENV-066",
+  "ENV-067",
 ]
 
 [M10]

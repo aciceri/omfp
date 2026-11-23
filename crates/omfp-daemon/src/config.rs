@@ -14,6 +14,10 @@ use crate::server::parse_origin;
 pub const DEFAULT_BIND: SocketAddr =
     SocketAddr::new(std::net::IpAddr::V4(Ipv4Addr::LOCALHOST), 7420);
 
+/// The variable naming the data directory of the daemon whose omp runs a process (DMN-393): every daemon-owned omp
+/// gets it, and with it the shells of a thread, where `omfp daemon restart` finds its daemon.
+pub const DATA_DIR_VARIABLE: &str = "OMFP_DATA_DIR";
+
 /// Command line of `omfp daemon`. Options left out come from the config file's `[daemon]` table, else their
 /// defaults (DMN-009).
 #[derive(Debug, Clone, PartialEq, Eq, Parser)]

@@ -61,6 +61,7 @@ links nixpkgs' sqlite where the dev build compiles rusqlite's bundled copy. Inst
 | `bin/omfp` | wrapper (wrapGAppsHook3 for `omfp` on Linux, makeWrapper for `omfp-headless`, a compiled makeBinaryWrapper on macOS) around `bin/.omfp-wrapped`, the real binary; a daemon `omfp desktop` starts in the background is `.omfp-wrapped` and inherits the wrapper's environment |
 | `bin/web` → `share/omfp/web` | the web bundle (`packages.omfp-web`), found next to the executable (DMN-008) |
 | `share/applications/omfp.desktop`, `share/icons/hicolor/512x512/apps/omfp.png` | desktop entry running `omfp desktop` (`omfp` on Linux only) |
+| `lib/systemd/user/omfp.service` | Linux (ENV-067): the systemd user unit running `bin/omfp daemon` |
 | `Applications/omfp.app` | macOS (`omfp` only, ENV-041): `Contents/Info.plist`, `Contents/Resources/omfp.icns`, `Contents/MacOS/omfp` (a binary wrapper running `bin/.omfp-wrapped desktop` with the same `PATH`), ad-hoc signed |
 
 | ID | Requirement |
@@ -70,6 +71,8 @@ links nixpkgs' sqlite where the dev build compiles rusqlite's bundled copy. Inst
 | ENV-032 | The wrapper MUST put the pinned omp (the `oh-my-pi` input's `omp`) first on `PATH` (DMN-006, DMN-001) and `gitMinimal` last, so the user's own git wins; no `omp` is installed into `bin/`, so the package does not shadow another omp in a profile. |
 | ENV-033 | `nix build .#omfp-headless` MUST build the daemon-only binary (no `desktop` feature, no WebKitGTK in its closure) with the same web bundle and `PATH`, for servers. |
 | ENV-034 | The flake's `nixConfig` MUST name the project's binary cache (`https://omfp.cachix.org`, key `omfp.cachix.org-1:WcxTiZMXSYmi9k6fxowUuIMmszu9aWymk2djl9kXjHc=`) as `extra-substituters`/`extra-trusted-public-keys`; Nix asks the user to accept it (or `--accept-flake-config`). |
+| ENV-066 | (M9, #282) The flake MUST export the home-manager module `homeManagerModules.default` (`nix/home-manager.nix`): `services.omfp.enable` runs `omfp daemon` as the systemd user service `omfp.service` (`package`, default the flake's `omfp`; `tray` adds `--tray` and ties the service to `graphical-session.target`, else it is wanted by `default.target`; `extraArgs`), with `Restart=on-failure` and `KillMode=mixed` (SIGTERM to the daemon alone, which stops its omp processes and jobs itself and marks the turns it cuts, DMN-005, DMN-370). A new package changes the unit's `ExecStart`, so home-manager's switch restarts the daemon onto it. `just package` evaluates the module against stand-ins for home-manager's options (`checks.<system>.home-manager-module`). |
+| ENV-067 | (M9, #282) On Linux the packages MUST ship the systemd user unit `lib/systemd/user/omfp.service`, made from `contrib/systemd/omfp.service` (its `@omfp@` replaced by the package's `bin/omfp`) with the settings of ENV-066, wanted by `default.target`: NixOS picks it up with `systemd.packages`, a profile with `systemctl --user link`; elsewhere the file is the template. |
 
 ### macOS (M11)
 

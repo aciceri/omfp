@@ -1,7 +1,7 @@
 //! The omfp daemon (`omfp daemon`), see docs/specs/02-daemon.md.
 //!
 //! [`start`] runs a daemon in-process (DMN-004); [`run`] is everything `omfp daemon` does; [`discover`] finds the
-//! daemon running for a data directory (DMN-007).
+//! daemon running for a data directory (DMN-007); [`restart`] restarts it in place (DMN-391).
 
 pub mod agent;
 pub mod agent_tools;
@@ -40,8 +40,8 @@ pub mod widgets;
 pub mod workspaces;
 
 pub use daemon::{
-    DaemonHandle, DaemonInfo, Ports, StopRequest, discover, lock_held, run, run_with, start,
-    start_with,
+    DaemonHandle, DaemonInfo, Ports, RESTART_DEADLINE, StopRequest, discover,
+    discover_through_restart, lock_held, restart, restarting, run, run_with, start, start_with,
 };
 
 /// Version string reported by `omfp --version`: daemon version plus the omp release it speaks to.

@@ -1,6 +1,6 @@
-//! The `omfp` binary (D-15): `omfp daemon` runs the daemon (02-daemon), `omfp theme set` sets the UI theme (UI-091),
-//! `omfp mcp config` prints the MCP client configuration (DMN-159), `omfp desktop` opens a desktop window (feature
-//! `desktop`, M7).
+//! The `omfp` binary (D-15): `omfp daemon` runs the daemon (02-daemon) and `omfp daemon restart` restarts it in place
+//! (DMN-391), `omfp theme set` sets the UI theme (UI-091), `omfp mcp config` prints the MCP client configuration
+//! (DMN-159), `omfp desktop` opens a desktop window (feature `desktop`, M7).
 
 use std::process::ExitCode;
 
@@ -23,7 +23,8 @@ struct Omfp {
 
 #[derive(Debug, Subcommand)]
 enum Command {
-    /// Runs the daemon: owns threads, workspaces and omp processes, serves the UI.
+    /// Runs the daemon: owns threads, workspaces and omp processes, serves the UI; `omfp daemon restart` restarts the
+    /// running one in place.
     Daemon(DaemonArgs),
     /// The UI theme of a daemon (UI-091).
     #[command(subcommand)]
@@ -38,7 +39,10 @@ enum Command {
 }
 
 #[derive(Debug, clap::Args)]
+#[command(args_conflicts_with_subcommands = true)]
 struct DaemonArgs {
+    #[command(subcommand)]
+    command: Option<DaemonCommand>,
     #[command(flatten)]
     cli: omfp_daemon::config::Cli,
     /// Shows the daemon in the system tray (a status notifier item) with its threads, a menu to open windows and to quit
@@ -46,6 +50,14 @@ struct DaemonArgs {
     #[cfg(feature = "desktop")]
     #[arg(long)]
     tray: bool,
+}
+
+#[derive(Debug, Subcommand)]
+enum DaemonCommand {
+    /// Restarts the running daemon of the data directory in place as this omfp executable (DMN-391): it stops as on
+    /// SIGTERM, marking the turns it cuts, and becomes this program with its own arguments, environment and address,
+    /// so open windows reconnect. Also from the shell of one of its threads.
+    Restart(omfp::restart::Args),
 }
 
 fn run_daemon(args: DaemonArgs) -> anyhow::Result<()> {
@@ -72,6 +84,10 @@ fn main() -> ExitCode {
         .get_matches_from(args);
     let omfp = Omfp::from_arg_matches(&matches).unwrap_or_else(|error| error.exit());
     match omfp.command {
+        Command::Daemon(DaemonArgs {
+            command: Some(DaemonCommand::Restart(args)),
+            ..
+        }) => report("omfp daemon restart", omfp::restart::run(&args).map(Some)),
         Command::Daemon(args) => report("omfp daemon", run_daemon(args).map(|()| None)),
         Command::Theme(command) => {
             report("omfp theme", block_on(omfp::theme::run(command)).map(Some))

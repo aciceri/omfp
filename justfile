@@ -163,10 +163,12 @@ check-workflow:
     bun .github/check-workflow.ts {{ quote(just_executable()) }}
     JUST={{ quote(just_executable()) }} bun test ./.github
 
-# spec: ENV-030, ENV-031, ENV-032, ENV-033, ENV-041 — the Nix packages: `omfp` (web bundle included, the pinned omp on
-# the wrapper's PATH; on macOS also `Applications/omfp.app`) and `omfp-headless` (without the desktop window)
+# spec: ENV-030, ENV-031, ENV-032, ENV-033, ENV-041, ENV-066, ENV-067 — the Nix packages: `omfp` (web bundle included,
+# the pinned omp on the wrapper's PATH; on macOS also `Applications/omfp.app`; on Linux the systemd user unit) and
+# `omfp-headless` (without the desktop window), and the unit the home-manager module asks for
 package:
-    nix build --no-link .#omfp .#omfp-headless
+    nix build --no-link .#omfp .#omfp-headless \
+        ".#checks.$(nix eval --impure --raw --expr builtins.currentSystem).home-manager-module"
 
 # spec: ENV-061, ENV-062 — the Linux x86_64 download without Nix (the release workflow, ENV-060): `omfp`, the pinned
 # omp's release build and the web bundle as `omfp-<version>-linux-x86_64.tar.gz` in `out`

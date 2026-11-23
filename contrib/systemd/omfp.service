@@ -1,0 +1,18 @@
+# omfp's daemon as a systemd user service (ENV-067). The Linux Nix packages install it as lib/systemd/user/omfp.service
+# with their own omfp in ExecStart (home-manager: the flake's module, ENV-066). Elsewhere copy it to
+# ~/.config/systemd/user/, put the path of your omfp in ExecStart, then `systemctl --user enable --now omfp`.
+# Upgrades: `omfp daemon restart` (in place, DMN-391) or `systemctl --user restart omfp`. The log is in the journal and
+# in <data-dir>/daemon.log (DMN-390).
+[Unit]
+Description=omfp daemon
+Documentation=https://github.com/aciceri/omfp
+
+[Service]
+ExecStart=@omfp@ daemon
+Restart=on-failure
+RestartSec=2
+# SIGTERM to the daemon alone: it stops its omp processes and jobs itself, marking the turns it cuts (DMN-005, DMN-370).
+KillMode=mixed
+
+[Install]
+WantedBy=default.target

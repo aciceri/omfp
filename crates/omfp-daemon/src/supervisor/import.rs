@@ -285,6 +285,7 @@ fn credential_store(
 #[derive(Debug)]
 enum CopyError {
     Sqlite(rusqlite::Error),
+    Io(std::io::Error),
     /// The store went away since it was found.
     Gone,
 }
@@ -293,6 +294,7 @@ impl std::fmt::Display for CopyError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Sqlite(error) => error.fmt(f),
+            Self::Io(error) => error.fmt(f),
             Self::Gone => f.write_str("it went away"),
         }
     }
@@ -301,6 +303,12 @@ impl std::fmt::Display for CopyError {
 impl From<rusqlite::Error> for CopyError {
     fn from(error: rusqlite::Error) -> Self {
         Self::Sqlite(error)
+    }
+}
+
+impl From<std::io::Error> for CopyError {
+    fn from(error: std::io::Error) -> Self {
+        Self::Io(error)
     }
 }
 
@@ -334,8 +342,10 @@ impl Snapshot {
     /// Copies the store at `store` into this snapshot's `agent.db` with `VACUUM INTO`, one read transaction of
     /// SQLite's own: it takes standalone omp's locks, replays its write-ahead log or rolls a hot journal back, and
     /// waits up to [`STORE_BUSY_TIMEOUT`] for its writers. The store is opened read-only when its directory is not
-    /// writable, else read-write, never created; SQLite may leave `-wal`/`-shm` files beside it. Never reads a
-    /// credential row; an error names the reason only.
+    /// writable, else read-write, never created; SQLite may leave `-wal`/`-shm` files beside it. In a directory it
+    /// cannot write, SQLite cannot build the index of a log without `-shm`; no writer can use that log then, so the
+    /// store and its log are copied into the snapshot first and read from there. Never reads a credential row; an
+    /// error names the reason only.
     fn copy(&self, store: &Path) -> Result<(), CopyError> {
         if !store.is_file() {
             return Err(CopyError::Gone);
@@ -343,12 +353,33 @@ impl Snapshot {
         let writable = store
             .parent()
             .is_some_and(|dir| nix::unistd::access(dir, nix::unistd::AccessFlags::W_OK).is_ok());
-        let mode = if writable {
+        let wal = store.with_file_name(format!("{STORE}-wal"));
+        let staged =
+            !writable && wal.is_file() && !store.with_file_name(format!("{STORE}-shm")).exists();
+        let source = if staged {
+            let staging = self.dir.join("source");
+            std::fs::create_dir(&staging)?;
+            std::fs::copy(store, staging.join(STORE))?;
+            std::fs::copy(&wal, staging.join(format!("{STORE}-wal")))?;
+            staging.join(STORE)
+        } else {
+            store.to_owned()
+        };
+        let mode = if writable || staged {
             OpenFlags::SQLITE_OPEN_READ_WRITE
         } else {
             OpenFlags::SQLITE_OPEN_READ_ONLY
         };
-        let db = Connection::open_with_flags(store, mode | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
+        let copied = self.vacuum(&source, mode);
+        if staged && let Some(staging) = source.parent() {
+            std::fs::remove_dir_all(staging)?;
+        }
+        copied
+    }
+
+    /// `VACUUM INTO` this snapshot's `agent.db` from the store at `source`.
+    fn vacuum(&self, source: &Path, mode: OpenFlags) -> Result<(), CopyError> {
+        let db = Connection::open_with_flags(source, mode | OpenFlags::SQLITE_OPEN_NO_MUTEX)?;
         db.busy_timeout(STORE_BUSY_TIMEOUT)?;
         let into = self.store();
         let into = into
@@ -809,6 +840,38 @@ mod tests {
         copied.unwrap();
         assert_eq!(after, before);
         assert_eq!(rows(&snapshot.store()), 2);
+    }
+
+    // spec: DMN-229
+    #[test]
+    fn a_write_ahead_log_without_its_index_in_a_directory_omfp_cannot_write_is_copied() {
+        use std::os::unix::fs::PermissionsExt;
+        if rustix::process::geteuid().is_root() {
+            // root writes whatever the mode says: nothing to check.
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let live = dir.path().join("live");
+        std::fs::create_dir(&live).unwrap();
+        let writer = wal_store(&live.join(STORE), 3);
+        // A restored backup: the store and its log, no `-shm`.
+        let standalone = standalone(dir.path());
+        for name in [STORE.to_owned(), format!("{STORE}-wal")] {
+            std::fs::copy(live.join(&name), standalone.join(&name)).unwrap();
+        }
+        drop(writer);
+        let before = listing(&standalone);
+        std::fs::set_permissions(&standalone, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        let snapshot = Snapshot::create(&dir.path().join("login")).unwrap();
+        let copied = snapshot.copy(&standalone.join(STORE));
+        let after = listing(&standalone);
+        std::fs::set_permissions(&standalone, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+        copied.unwrap();
+        assert_eq!(after, before);
+        assert_eq!(rows(&snapshot.store()), 3);
+        assert_eq!(listing(snapshot.dir()), [OsString::from(STORE)]);
     }
 
     // spec: DMN-229

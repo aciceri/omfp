@@ -1,5 +1,4 @@
-//! The activity log of agent-originated actions (DMN-160, migrations 8 and 9) and the prompt history (DMN-216,
-//! migration 10).
+//! The activity log of agent-originated actions (DMN-160) and the prompt history (DMN-216).
 
 use rusqlite::params;
 

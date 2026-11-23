@@ -1018,7 +1018,7 @@ impl Declared {
                 workspace_id: space.id.clone(),
                 job: Some(name.to_owned()),
                 trigger,
-                started_by: started_by.as_ref().map(created_by),
+                started_by,
                 thread_id: None,
                 command: entry.def.command.clone(),
                 started_at: self.inner.clock.now_ms(),
@@ -1710,7 +1710,7 @@ impl Declared {
             .and_then(|tail| serde_json::from_str(&tail).ok())
             .unwrap_or_default();
         let dropped = output.line_count.saturating_sub(lines.len() as u64);
-        let status = if run.status == "running" {
+        let status = if run.status == JobRunStatus::Running {
             JobStatus::Running
         } else {
             JobStatus::Exited {

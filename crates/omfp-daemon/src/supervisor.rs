@@ -108,7 +108,6 @@ const READ_ONLY_TOOLS: &[&str] = &[
     crate::agent_tools::checks::WIDGET_CHECK,
     crate::agent_tools::checks::VIEWS_ERRORS,
     crate::agent_tools::windows::WINDOWS,
-    crate::agent_tools::mounts::COMPONENT_LIST,
     crate::agent_tools::cards::CARD,
 ];
 

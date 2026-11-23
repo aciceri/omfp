@@ -20,8 +20,8 @@ something only the human UI can reach.
   never put the marker plus an ID inside a string literal). Deterministic and isolated tests
   only (TST-003): no sleeps (wait on conditions with timeouts), temporary directories only (never the user's), port 0,
   no network beyond loopback, no real models.
-- **Conventional Commits** (checked by commitizen in the commit-msg hook). Commits are SSH-signed with the user's key:
-  if signing fails, ask the user to load the key, never disable it.
+- **Conventional Commits** (checked by commitizen in the commit-msg hook). Commits are SSH-signed: if signing fails,
+  stop and tell the user, never disable it.
 - Prefer rebasing PR branches onto the latest `origin/master` rather than merging `master` into them. Keep rewritten
   commits signed; update a published branch with `git push --force-with-lease`, never plain `--force`, and wait for CI
   on the rebased head before merging the PR.

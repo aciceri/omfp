@@ -341,19 +341,24 @@ impl Snapshot {
 
     /// Copies the store at `store` into this snapshot's `agent.db` with `VACUUM INTO`, one read transaction of
     /// SQLite's own: it takes standalone omp's locks, replays its write-ahead log or rolls a hot journal back, and
-    /// waits up to [`STORE_BUSY_TIMEOUT`] for its writers. The store is opened read-only when its directory is not
-    /// writable, else read-write, never created; SQLite may leave `-wal`/`-shm` files beside it. In a directory it
-    /// cannot write, SQLite can neither build the index of a log without `-shm` nor roll a hot journal back, and no
-    /// writer can be using either there (it could not have created them), so the store and those files are copied
-    /// into the snapshot first and read from there. Never reads a credential row; an error names the reason only.
+    /// waits up to [`STORE_BUSY_TIMEOUT`] for its writers. The store is opened read-only when omfp cannot write its
+    /// directory or one of its files, else read-write, never created; SQLite may leave `-wal`/`-shm` files beside it.
+    /// Read-only, SQLite can neither build the index of a log without `-shm` nor roll a hot journal back, and no
+    /// writer can be using either then (it could not have created or written them), so the store and those files are
+    /// copied into the snapshot first and read from there. Never reads a credential row; an error names the reason
+    /// only.
     fn copy(&self, store: &Path) -> Result<(), CopyError> {
         if !store.is_file() {
             return Err(CopyError::Gone);
         }
-        let writable = store
-            .parent()
-            .is_some_and(|dir| nix::unistd::access(dir, nix::unistd::AccessFlags::W_OK).is_ok());
         let beside = |suffix: &str| store.with_file_name(format!("{STORE}{suffix}"));
+        let can_write =
+            |path: &Path| nix::unistd::access(path, nix::unistd::AccessFlags::W_OK).is_ok();
+        let writable = store.parent().is_some_and(can_write)
+            && ["", "-wal", "-journal", "-shm"]
+                .into_iter()
+                .map(&beside)
+                .all(|path| !path.exists() || can_write(&path));
         let staged = !writable
             && ((beside("-wal").is_file() && !beside("-shm").exists())
                 || beside("-journal").is_file());
@@ -886,13 +891,14 @@ mod tests {
     #[test]
     fn a_writer_that_died_mid_transaction_leaves_its_last_committed_state_in_the_copy() {
         use std::os::unix::fs::PermissionsExt;
-        // A directory omfp cannot write too, unless root, who writes whatever the mode says.
-        let read_only = if rustix::process::geteuid().is_root() {
-            vec![false]
+        // (files read-only, directory read-only): read-only cases only when not root, who writes whatever the mode
+        // says. A restored backup can have read-only files in a writable directory too.
+        let cases = if rustix::process::geteuid().is_root() {
+            vec![(false, false)]
         } else {
-            vec![false, true]
+            vec![(false, false), (true, true), (true, false)]
         };
-        for read_only in read_only {
+        for (files_read_only, dir_read_only) in cases {
             let dir = tempfile::tempdir().unwrap();
             let live = dir.path().join("live");
             std::fs::create_dir(&live).unwrap();
@@ -916,13 +922,14 @@ mod tests {
             }
             writer.execute_batch("ROLLBACK;").unwrap();
             drop(writer);
-            if read_only {
-                // A restored backup: read-only files in a read-only directory.
+            if files_read_only {
                 for name in [STORE.to_owned(), format!("{STORE}-journal")] {
                     let file = standalone.join(name);
                     std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o444))
                         .unwrap();
                 }
+            }
+            if dir_read_only {
                 std::fs::set_permissions(&standalone, std::fs::Permissions::from_mode(0o555))
                     .unwrap();
             }
@@ -943,7 +950,7 @@ mod tests {
             assert_eq!(
                 values,
                 [0],
-                "the last committed state, read-only: {read_only}"
+                "the last committed state, files read-only: {files_read_only}, directory read-only: {dir_read_only}"
             );
             assert_eq!(listing(snapshot.dir()), [OsString::from(STORE)]);
         }

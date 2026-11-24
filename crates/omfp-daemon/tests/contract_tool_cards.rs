@@ -8,6 +8,7 @@ mod common;
 use common::{Harness, Recorder, TIMEOUT, prompt, start};
 use fake_llm::{Matcher, Reply, Step, ToolCall};
 use omfp_core::{Resolution, ThreadEvent};
+use omfp_testkit::normalize_frame;
 use omp_rpc::{
     CancelUiResponse, ExtensionUiRequest, ExtensionUiResponse, LitTrue, RpcInbound, RpcNotification,
 };
@@ -498,10 +499,28 @@ async fn bash_tool_error() {
 
     let failed = ended(&events, "call_bash_1", true);
     assert_eq!(failed["details"]["exitCode"], 3, "{failed:#}");
-    assert_eq!(text(&failed), "oops\n\n\nCommand exited with code 3");
+    // omp puts a `Wall time: …` notice before the exit line once the call took 1 s or more, its shell's setup
+    // included, and says so in `details.wallTimeNoticeEmitted`: a loaded machine gets there even with this command.
+    let wall_time = if failed["details"]["wallTimeNoticeEmitted"] == true {
+        "Wall time: <duration>\n\n"
+    } else {
+        ""
+    };
+    let mut shown = failed.clone();
+    normalize_frame(&mut shown, "");
+    assert_eq!(
+        text(&shown),
+        format!("oops\n\n\n{wall_time}Command exited with code 3"),
+        "{failed:#}"
+    );
+    // Over RPC omp 19.1 runs a foreground call as a job (`bash.autoBackground`), which reports a failed command, output
+    // included, before the call ends: an update carrying the output comes however fast the command exits.
+    let updates = tool_frames(&events, "tool_execution_update", "call_bash_1");
     assert!(
-        !tool_frames(&events, "tool_execution_update", "call_bash_1").is_empty(),
-        "bash streams its output"
+        updates
+            .iter()
+            .any(|update| text(&update["partialResult"]).starts_with("oops\n")),
+        "bash streams its output: {updates:#?}"
     );
     finish(&harness, &recorder, "bash_tool_error");
 }

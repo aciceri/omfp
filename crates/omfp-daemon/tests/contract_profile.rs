@@ -61,16 +61,35 @@ async fn auth(harness: &Harness, env: &Environment, key: Option<&str>) -> Value 
     }
 }
 
+/// Hashes every file under `root`. omp may delete transient files (locks, temporaries) between listing a directory
+/// and reading an entry; such an entry no longer exists, so it is left out exactly as if it had never been listed.
+/// Any other I/O error still fails the test.
 fn snapshot(root: &Path) -> BTreeMap<std::path::PathBuf, [u8; 20]> {
+    fn vanished<T>(result: std::io::Result<T>) -> Option<T> {
+        match result {
+            Ok(value) => Some(value),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => panic!("snapshot: {error}"),
+        }
+    }
     fn visit(root: &Path, path: &Path, files: &mut BTreeMap<std::path::PathBuf, [u8; 20]>) {
-        for entry in std::fs::read_dir(path).unwrap() {
-            let path = entry.unwrap().path();
-            if path.is_dir() {
+        let Some(entries) = vanished(std::fs::read_dir(path)) else {
+            return;
+        };
+        for entry in entries {
+            let Some(entry) = vanished(entry) else {
+                continue;
+            };
+            let path = entry.path();
+            let Some(metadata) = vanished(std::fs::metadata(&path)) else {
+                continue;
+            };
+            if metadata.is_dir() {
                 visit(root, &path, files);
-            } else {
+            } else if let Some(contents) = vanished(std::fs::read(&path)) {
                 files.insert(
                     path.strip_prefix(root).unwrap().to_owned(),
-                    Sha1::digest(std::fs::read(path).unwrap()).into(),
+                    Sha1::digest(contents).into(),
                 );
             }
         }

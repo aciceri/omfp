@@ -1958,6 +1958,26 @@
     color: var(--omfp-on-surface-variant);
   }
 
+  /* TeX math (UI-850, UI-854): KaTeX's markup in the text's color (KaTeX's stylesheet sits in the sublayer
+     omfp-kit.katex, so these rules win); display math is a centered block that scrolls sideways when it is wider than
+     the text, like a table (UI-369). Prose may break anywhere, which would squeeze KaTeX's boxes. */
+  .omfp-math {
+    overflow-wrap: normal;
+  }
+
+  .omfp-math--display {
+    display: block;
+    max-inline-size: 100%;
+    margin-block: var(--omfp-md-block);
+    overflow-x: auto;
+    overflow-y: hidden;
+    text-align: center;
+  }
+
+  .omfp-math--display .katex-display {
+    margin: 0;
+  }
+
   /* Toasts (UI-160) */
   .omfp-toasts {
     position: fixed;

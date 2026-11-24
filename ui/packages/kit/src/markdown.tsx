@@ -3,6 +3,8 @@ import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown"
 import remarkGfm from "remark-gfm";
 import { cx } from "./class.ts";
 import { Highlighted } from "./highlight.tsx";
+import { remarkMath } from "./math/syntax.ts";
+import { MathFormula } from "./math.tsx";
 import { MermaidDiagram } from "./mermaid.tsx";
 import {
   absoluteSource,
@@ -14,9 +16,13 @@ import {
   resolvePath,
 } from "./paths.tsx";
 
-const REMARK_PLUGINS = [remarkGfm, remarkClosedMermaid];
+const REMARK_PLUGINS = [remarkGfm, remarkClosedFences, remarkMath];
 
 const FENCE_LANGUAGE = /(?:^|\s)language-(\S+)/;
+const MATH_CLASS = /(?:^|\s)math-(inline|display)(?:\s|$)/;
+
+/** The fences drawn only once their closing fence is parsed: diagrams (UI-981) and math (UI-850). */
+const DRAWN_FENCES: Readonly<Record<string, true>> = { mermaid: true, math: true };
 
 /** The fence language of a `<pre>`'s `<code>` child (its `language-*` class), if any. */
 function fenceLanguage(node: { children?: readonly unknown[] } | undefined): string | undefined {
@@ -36,7 +42,8 @@ interface FenceContext {
   stack: { type: string; lang?: string; data?: { hProperties?: Record<string, unknown> } }[];
 }
 
-function remarkClosedMermaid(this: {
+/** Marks the code of a closed `mermaid` or `math` fence `data-fence-closed`, so a streaming open one stays code. */
+function remarkClosedFences(this: {
   data(key: string): unknown;
   data(key: string, value: unknown): unknown;
 }) {
@@ -46,10 +53,10 @@ function remarkClosedMermaid(this: {
         // This hook runs for both fences; the default exit handler starts buffering after the opening one.
         if (!this.data.flowCodeInside) return;
         const code = this.stack.findLast((node) => node.type === "code");
-        if (code?.lang?.toLowerCase() !== "mermaid") return;
+        if (code === undefined || DRAWN_FENCES[code.lang?.toLowerCase() ?? ""] !== true) return;
         code.data ??= {};
         code.data.hProperties ??= {};
-        code.data.hProperties["data-mermaid-closed"] = true;
+        code.data.hProperties["data-fence-closed"] = true;
       },
     },
   };
@@ -58,24 +65,27 @@ function remarkClosedMermaid(this: {
   else this.data("fromMarkdownExtensions", [extension]);
 }
 
-/** A fenced code block, highlighted (UI-090); a closed `mermaid` block is drawn instead (UI-981). */
+/** A fenced code block, highlighted (UI-090); a closed `mermaid` block is drawn instead (UI-981), a closed `math` fence
+ * or `$$` block typeset (UI-850). */
 function FencedBlock({ node, className, ...props }: ComponentProps<"pre"> & ExtraProps) {
-  const language = fenceLanguage(node);
+  const fence = fenceLanguage(node);
+  const language = fence?.toLowerCase() ?? "";
   const code = node?.children[0];
-  if (
-    language?.toLowerCase() === "mermaid" &&
-    code?.type === "element" &&
-    code.properties["data-mermaid-closed"] === true
-  ) {
-    const source = code.children.map((child) => (child.type === "text" ? child.value : "")).join("");
-    return <MermaidDiagram source={source.replace(/\n$/, "")} />;
+  if (DRAWN_FENCES[language] === true && code?.type === "element" && code.properties["data-fence-closed"] === true) {
+    const text = code.children.map((child) => (child.type === "text" ? child.value : "")).join("");
+    const source = text.replace(/\n$/, "");
+    if (language === "math") {
+      return <MathFormula source={source} display />;
+    }
+    return <MermaidDiagram source={source} />;
   }
-  return <pre {...props} className={cx("omfp-code omfp-code--block", className)} data-lang={language} />;
+  return <pre {...props} className={cx("omfp-code omfp-code--block", className)} data-lang={fence} />;
 }
 
 /** Links open in a new tab without leaking the referrer; fenced code with a language is highlighted (UI-090), a closed
- * `mermaid` fence drawn (UI-981); a table sits in a region that scrolls sideways when it is wider than the text
- * (UI-369), focusable so the keyboard can scroll it; everything else keeps react-markdown's elements. */
+ * `mermaid` fence drawn (UI-981); math is typeset (UI-850); a table sits in a region that scrolls sideways when it is
+ * wider than the text (UI-369), focusable so the keyboard can scroll it; everything else keeps react-markdown's
+ * elements. */
 const COMPONENTS = {
   a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
   pre: FencedBlock,
@@ -86,6 +96,10 @@ const COMPONENTS = {
     </section>
   ),
   code: ({ node: _node, className, children, ...props }) => {
+    const math = MATH_CLASS.exec(className ?? "")?.[1];
+    if (math !== undefined && typeof children === "string") {
+      return <MathFormula source={children} display={math === "display"} />;
+    }
     const language = FENCE_LANGUAGE.exec(className ?? "")?.[1];
     return (
       <code {...props} className={className}>
@@ -170,7 +184,7 @@ function withImage(
 }
 
 export interface MarkdownProps extends Omit<HTMLAttributes<HTMLDivElement>, "children"> {
-  /** Markdown source (CommonMark + GFM). */
+  /** Markdown source (CommonMark + GFM, with TeX math, UI-850). */
   text: string;
   /** Opens a file path the text names (inline code or a relative link, UI-116); without it paths stay text. */
   onOpenPath?: OpenPath | undefined;
@@ -187,7 +201,8 @@ export interface MarkdownProps extends Omit<HTMLAttributes<HTMLDivElement>, "chi
 /**
  * Renders Markdown as prose (serif). Raw HTML in the source never becomes DOM: react-markdown without `rehype-raw`
  * drops it, and its URL filter removes `javascript:` links. Remote images and code-language classes are kept (UI-040).
- * The only markup that becomes DOM is a diagram's SVG, which Mermaid sanitizes (UI-982).
+ * The only markup that becomes DOM is a diagram's SVG, which Mermaid sanitizes (UI-982), and a formula's, which KaTeX
+ * writes from the TeX with untrusted commands off (UI-852).
  */
 export function Markdown({
   text,

@@ -1,7 +1,7 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.6.5/schema.json",
   "files": {
-    "includes": ["**", "!**/node_modules", "!packages/app/dist"]
+    "includes": ["**", "!**/node_modules", "!packages/app/dist", "!packages/kit/src/math/katex.css"]
   },
   "formatter": {
     "enabled": true,

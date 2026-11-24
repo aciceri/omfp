@@ -4,12 +4,13 @@
  * own and parsed again only while it changes — in practice the last one. A finished message is rendered whole.
  *
  * A chunk starts at a line that cannot belong to the block before it: an unindented line after a blank line, outside
- * a fenced code block, that does not continue a list or a block quote (`-`, `*`, `+`, `1.`, `1)`, `>`). Indented
- * lines (list item paragraphs, indented code) stay with what precedes them. A text with a link reference definition
- * is never split, since a definition applies to the whole document.
+ * a fenced code block or a `$$` math block (UI-850), that does not continue a list or a block quote (`-`, `*`, `+`,
+ * `1.`, `1)`, `>`). Indented lines (list item paragraphs, indented code) stay with what precedes them. A text with a
+ * link reference definition is never split, since a definition applies to the whole document.
  */
 
-const FENCE = /^ {0,3}(`{3,}|~{3,})/;
+/** A fence: backticks or tildes before an info string, or a line of two or more `$` alone. */
+const FENCE = /^ {0,3}(`{3,}|~{3,}|\${2,}(?=\s*$))/;
 const CONTINUES = /^(?:[-*+>]|\d{1,9}[.)])(?:\s|$)/;
 const DEFINITION = /^ {0,3}\[[^\]]+\]:/m;
 

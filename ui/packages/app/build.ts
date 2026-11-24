@@ -15,7 +15,9 @@
  * - `builtin-widgets/<name>/`: the source of each built-in widget as a copyable widget folder (AGT-021, DMN-087);
  * - `fonts/`: the bundled faces of the kit's tokens with their licences (UI-141);
  * - `pdfjs/`: pdf.js's worker (its legacy build, like the kit's `PdfView`) and the data files it fetches only when a
- *   document needs them — CMaps, the standard fonts, its wasm decoders, ICC profiles — with their licences (UI-543).
+ *   document needs them — CMaps, the standard fonts, its wasm decoders, ICC profiles — with their licences (UI-543);
+ * - `katex/`: KaTeX's fonts (`.woff2`, the first format its stylesheet offers), which the stylesheet (added by the
+ *   kit's math chunk) loads from `/katex/fonts/` when a formula uses them, with KaTeX's licence (UI-854).
  */
 import { copyFile, mkdir, readdir, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -141,9 +143,10 @@ for (const file of await readdir(fonts)) {
   await copyFile(join(fonts, file), join(outdir, "fonts", file));
 }
 
-// pdf.js is a dependency of the kit, where it resolves. Files, not a recursive copy: those of the Nix store are
-// read-only, and so would be the copied folders, which the next build could then not delete.
-const pdfjs = dirname(createRequire(join(root, "../kit/package.json")).resolve("pdfjs-dist/package.json"));
+// pdf.js and KaTeX are dependencies of the kit, where they resolve. Files, not a recursive copy: those of the Nix store
+// are read-only, and so would be the copied folders, which the next build could then not delete.
+const kitRequire = createRequire(join(root, "../kit/package.json"));
+const pdfjs = dirname(kitRequire.resolve("pdfjs-dist/package.json"));
 const pdfjsOut = join(outdir, "pdfjs");
 await mkdir(pdfjsOut);
 await copyFile(join(pdfjs, "legacy/build/pdf.worker.min.mjs"), join(pdfjsOut, "pdf.worker.min.mjs"));
@@ -153,6 +156,13 @@ for (const folder of ["cmaps", "standard_fonts", "wasm", "iccs"]) {
   for (const file of await readdir(join(pdfjs, folder))) {
     await copyFile(join(pdfjs, folder, file), join(pdfjsOut, folder, file));
   }
+}
+
+const katex = dirname(kitRequire.resolve("katex/package.json"));
+await mkdir(join(outdir, "katex/fonts"), { recursive: true });
+await copyFile(join(katex, "LICENSE"), join(outdir, "katex/LICENSE"));
+for (const file of (await readdir(join(katex, "dist/fonts"))).filter((name) => name.endsWith(".woff2"))) {
+  await copyFile(join(katex, "dist/fonts", file), join(outdir, "katex/fonts", file));
 }
 
 for (const { name, folder, part } of BUILTINS) {

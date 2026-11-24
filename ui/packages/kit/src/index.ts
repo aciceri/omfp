@@ -184,6 +184,7 @@ export {
   type ThreadState,
   useCountUp,
 } from "./marks.tsx";
+export { MathFormula, type MathFormulaProps } from "./math.tsx";
 export { MermaidDiagram, type MermaidDiagramProps } from "./mermaid.tsx";
 export { type MotionLevel, motionLevel, useMotionLevel } from "./motion.ts";
 export { type PathCompletion, PathField, type PathFieldProps, type PathSuggestion } from "./path-field.tsx";

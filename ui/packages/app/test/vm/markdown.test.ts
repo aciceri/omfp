@@ -28,6 +28,13 @@ describe("streaming Markdown chunks", () => {
     expect(markdownChunks(list)).toEqual([list]);
   });
 
+  // spec: UI-191, UI-850
+  test("blank lines inside a `$$` math block do not split; a `$$x$$` line opens no block", () => {
+    const math = "Intro\n\n$$\na\n\nb\n$$\n\nAfter";
+    expect(markdownChunks(math)).toEqual(["Intro\n\n", "$$\na\n\nb\n$$\n\n", "After"]);
+    expect(markdownChunks("$$x$$\n\nNext")).toEqual(["$$x$$\n\n", "Next"]);
+  });
+
   // spec: UI-191
   test("a text with a link reference definition stays whole", () => {
     const text = "See [the docs][docs].\n\nMore.\n\n[docs]: https://example.com";

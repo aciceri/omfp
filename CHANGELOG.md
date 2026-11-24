@@ -7,6 +7,15 @@ The version's section is also the source of the GitHub release notes.
 
 ## Unreleased
 
+### Added
+
+- TeX math: `$…$` in a reply, a subagent's output, a widget or a Markdown file preview is typeset with KaTeX, and
+  `$$…$$`, a block between `$$` lines or a ```` ```math ```` block as display math, in the theme's text color, a wide
+  formula scrolling sideways. `\textcolor`, `\colorbox` and `\fcolorbox` work; links and images in TeX do not. Prices
+  stay text (`$5 and $10`: a `$` opens math only before a non-space and closes it only after one), a block still
+  streaming stays code until it closes, and a formula KaTeX cannot parse shows its source in the theme's error color
+  with the reason as its tooltip. KaTeX's fonts ship with omfp (#293).
+
 ## 0.4.3 — 2026-11-23
 
 ### Added

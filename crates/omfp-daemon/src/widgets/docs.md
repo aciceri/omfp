@@ -750,8 +750,9 @@ scheme changes live; the colors you pass in `options.theme` win over them.
 | `Icon` | A decorative Lucide icon (`aria-hidden`; the control around it carries the name): `name` (`archive`, `check`, `circle-alert`, `copy`, `file`, `folder`, `inbox`, `play`, `plus`, `refresh-cw`, `search`, `x`, …). |
 | `Kbd` | A key chip: the key or sequence as lowercase words (`spc n`, `enter`) as children. |
 | `KeyHint` | A hint that only teaches keys, e.g. `<KeyHint><Kbd>esc</Kbd> cancel</KeyHint>`: hidden whole (chips, label, separator) on touch-only screens. Wrap every key hint in one; a `Kbd` that is the content (a key list) stays bare. |
-| `Markdown` | Renders Markdown text (no raw HTML): `text`. A closed ```` ```mermaid ```` fence is drawn as a diagram, as `MermaidDiagram` draws it. |
+| `Markdown` | Renders Markdown text (no raw HTML): `text`. A closed ```` ```mermaid ```` fence is drawn as a diagram, as `MermaidDiagram` draws it; TeX math (`$…$` inline, `$$…$$`, a `$$` block or a ```` ```math ```` fence as display) is typeset as `MathFormula` does. A single `$` opens math only before a non-space and closes it only after one, so prices stay text; `\$` is a dollar. |
 | `MermaidDiagram` | A Mermaid diagram drawn in the theme's colors, with a `Source` toggle: `source` (Mermaid's text). A source Mermaid cannot draw shows as code with Mermaid's reason. Loaded on first use. |
+| `MathFormula` | A TeX formula typeset by KaTeX in the text's color: `source` (the TeX, no delimiters), `display` (a centered block that scrolls sideways). Colors (`\textcolor`, `\colorbox`, `\fcolorbox`) work; links, URLs and images do not; a formula KaTeX cannot parse shows its source in the error color. Loaded on first use. |
 | `Code` | Code: `code`, `block`, `language` (a name or file extension; highlights a block). |
 | `Diff` | A unified patch (`git diff` output) as numbered lines: `patch`, `language` (highlighting). |
 | `languageOfPath` | `languageOfPath("src/lib.rs")` → `"rust"`: the language to pass to `Code` or `Diff`. |

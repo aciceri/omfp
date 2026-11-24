@@ -242,14 +242,25 @@ fn main() {
 \`\`\`
 `;
 
+/** TeX math (UI-850): inline and display, a color, prices that stay prose, and a formula KaTeX cannot parse. */
+const MATH = String.raw`Euler's identity $e^{i\pi} + 1 = 0$ sits in the text, while the $5 and $10 plans stay prices.
+
+$$
+\sum_{n=1}^{\infty} \frac{1}{n^2} = \textcolor{teal}{\frac{\pi^2}{6}}
+$$
+
+A formula KaTeX cannot parse shows its source: $\frac{1}{$.
+`;
+
 export function CodeDemo() {
   return (
-    <Section title="Code · prose" note="UI-166 · UI-144">
+    <Section title="Code · prose" note="UI-166 · UI-144 · UI-850">
       <Code block language="ts" code={'// the built-in palette\nconst theme = "synth";\nexport default theme;'} />
       <p className="omfp-prose omfp-gallery__prose">
         Inline code like <Code code="--omfp-grad" /> sits in prose at 0.82em.
       </p>
       <Markdown text={MARKDOWN} />
+      <Markdown text={MATH} />
     </Section>
   );
 }

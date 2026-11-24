@@ -1978,6 +1978,13 @@
     margin: 0;
   }
 
+  /* A formula wider than the text grows its box to the right instead of overflowing both sides of a centered line,
+     so scrolling reaches its start; a narrower one stays centered in the full width. */
+  .omfp-math--display .katex-display > .katex {
+    inline-size: max-content;
+    min-inline-size: 100%;
+  }
+
   /* Toasts (UI-160) */
   .omfp-toasts {
     position: fixed;

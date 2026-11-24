@@ -145,6 +145,10 @@ describe("math in Markdown", () => {
     expect(region.declarations.get("overflow-x")).toBe("auto");
     expect(region.declarations.get("max-inline-size")).toBe("100%");
     expect(region.declarations.get("text-align")).toBe("center");
+    // A formula wider than the region grows to the right from its start, so scrolling reaches all of it.
+    const formula = findRule(rules, ["@layer omfp-kit"], ".omfp-math--display .katex-display > .katex");
+    expect(formula.declarations.get("inline-size")).toBe("max-content");
+    expect(formula.declarations.get("min-inline-size")).toBe("100%");
     expect(findRule(rules, ["@layer omfp-kit"], ".omfp-math").declarations.has("color")).toBe(false);
   });
 

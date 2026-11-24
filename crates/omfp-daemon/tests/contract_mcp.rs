@@ -28,6 +28,17 @@ fn tool_result(request: &Value, call_id: &str) -> String {
         )
 }
 
+/// The JSON value a tool command printed, at the start of its `bash` result. omp may follow it with notices that depend
+/// on timing: `Wall time: …` once the call took 1 s, `Ran in a copy of the busy session shell; …` when it overlapped
+/// the other call of its turn.
+fn printed_json(result: &str) -> Value {
+    serde_json::Deserializer::from_str(result)
+        .into_iter::<Value>()
+        .next()
+        .and_then(Result::ok)
+        .unwrap_or_else(|| panic!("no JSON value at the start of: {result}"))
+}
+
 /// omp 19.1 mounts MCP tools as bash tool commands: the model runs one with its JSON arguments (`-j`) in a `bash` call.
 fn command_call(id: &str, tool: &str, arguments: &Value) -> ToolCall {
     let json = arguments.to_string();
@@ -120,8 +131,7 @@ async fn an_omp_outside_omfp_calls_omfp_call_through_mcp() {
         "the server's instructions:\n{system}"
     );
     let last = requests.last().unwrap();
-    let created: Value = serde_json::from_str(&tool_result(last, "create"))
-        .unwrap_or_else(|_| panic!("{}", tool_result(last, "create")));
+    let created = printed_json(&tool_result(last, "create"));
     assert_eq!(created["title"], "made over mcp");
     assert_eq!(
         created["provenance"],

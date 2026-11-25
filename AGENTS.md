@@ -86,15 +86,15 @@ omp is pinned in four places that must agree (checked by `cargo xtask check-vers
 tag, the `omp-rpc` git tag in `Cargo.toml`, `omfp_core::OMP_VERSION` and the release assets' tag in
 `contrib/release/omp.sha256`. To upgrade, follow the playbook in `docs/specs/01-dev-environment.md` (ENV-020).
 
-## omp facts (omp 19.1.0)
+## omp facts (omp 19.2.0)
 
 What you need before touching the code that talks to omp; details sit in the doc comment of the module handling each.
 
 - Launch with `omp --mode rpc-ui --session-dir <dir> --continue --add-dir …`: `--continue` resumes the newest session
-  of that directory whatever the cwd; `--add-dir` roots (and their `AGENTS.md`) are lost if the session is switched
-  later with `open_session` (S-07). omp reads project config from its cwd (the workspace folder), loads a repo's
-  `AGENTS.md` only for `--add-dir` roots, never resolves symlinked roots, and keeps roots saved in a session across a
-  restart without their flag: detach with `/remove-dir` (S-10).
+  of that directory that no other running omp has open, whatever the cwd; `--add-dir` roots (and their `AGENTS.md`)
+  are lost if the session is switched later with `open_session` (S-07). omp reads project config from its cwd (the
+  workspace folder), loads a repo's `AGENTS.md` only for `--add-dir` roots, never resolves symlinked roots, and keeps
+  roots saved in a session across a restart without their flag: detach with `/remove-dir` (S-10).
 - `/add-dir` and `/remove-dir` work over RPC as `prompt` (local command, no model turn) but are refused while the agent
   streams: the daemon syncs a busy thread's roots once its session settles.
 - `--append-system-prompt` disables every `APPEND_SYSTEM.md` (user and project); the daemon concatenates them.

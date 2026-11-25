@@ -3007,7 +3007,7 @@ dependencies = [
 [[package]]
 name = "omp-rpc"
 version = "0.1.0"
-source = "git+https://github.com/can1357/oh-my-pi?tag=v19.1.0#a7135b8f31826c878734388b648f52bed8da436e"
+source = "git+https://github.com/can1357/oh-my-pi?tag=v19.2.0#5c5ecb16fa4903c09a57a84983e482d9c9c2232e"
 dependencies = [
  "libc",
  "serde",

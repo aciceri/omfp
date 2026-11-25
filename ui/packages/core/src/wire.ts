@@ -1,5 +1,5 @@
 /**
- * The subset of omp's RPC wire types (omp-rpc `wire.rs`, omp 19.1.0) the reducer reads or keeps, in their JSON form.
+ * The subset of omp's RPC wire types (omp-rpc `wire.rs`, omp 19.2.0) the reducer reads or keeps, in their JSON form.
  *
  * omp-rpc has two kinds of records. Closed structs (events, UI requests) decode their declared fields and drop every
  * other key: the reducer keeps them through the decoders below, so they serialize like Rust. Open records (messages,

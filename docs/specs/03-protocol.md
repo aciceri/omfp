@@ -12,7 +12,7 @@ sequenceDiagram
   participant D as daemon
   C->>D: WS upgrade /api/ws (Origin checked)
   C->>D: {"type":"request","id":"1","method":"system.hello","params":{"token":"…","protocol":1,"client":"omfp/web"}}
-  D-->>C: {"type":"response","id":"1","ok":true,"result":{"protocol":1,"daemon":"0.1.0","omp":"19.1.0","warnings":[],"widgetBase":"/widgets/3f…","fileBase":"/files/a0…"}}
+  D-->>C: {"type":"response","id":"1","ok":true,"result":{"protocol":1,"daemon":"0.1.0","omp":"19.2.0","warnings":[],"widgetBase":"/widgets/3f…","fileBase":"/files/a0…"}}
   C->>D: subscribe index, thread/<id>, …
 ```
 

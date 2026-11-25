@@ -453,7 +453,7 @@ fn deltas_without_message_start_begin_a_streaming_message() {
 
 // spec: TST-010
 #[test]
-#[allow(clippy::large_stack_arrays)] // A handful of events, each as large as omp-rpc 19.1's biggest frame.
+#[allow(clippy::large_stack_arrays)] // A handful of events, each as large as omp-rpc 19.2's biggest frame.
 fn deltas_for_missing_or_mismatched_blocks_are_ignored() {
     let state = replay(&[
         message_start("m1", json!({ "role": "assistant", "content": [] })),
@@ -1319,7 +1319,7 @@ fn a_live_session_marks_where_the_voices_context_ends() {
 
 // spec: PRT-052, TST-010
 #[test]
-#[allow(clippy::large_stack_arrays)] // A handful of events, each as large as omp-rpc 19.1's biggest frame.
+#[allow(clippy::large_stack_arrays)] // A handful of events, each as large as omp-rpc 19.2's biggest frame.
 fn live_transcripts_keep_one_line_per_role_and_turn_until_final() {
     // The order of a real call (S-09): a user final can arrive after assistant partials.
     let state = replay(&[

@@ -210,9 +210,9 @@ exact omp version its client was built for.
 
 | Item | Where | Current |
 | --- | --- | --- |
-| omp binary | `flake.nix` → `inputs.oh-my-pi.url = "github:can1357/oh-my-pi/v19.1.0"` (locked rev `a7135b8f31826c878734388b648f52bed8da436e`) | 19.1.0 |
-| `omp-rpc` crate | workspace `Cargo.toml` → `omp-rpc = { git = "https://github.com/can1357/oh-my-pi", tag = "v19.1.0" }` | 19.1.0 |
-| Expected version in code | `omfp_core::OMP_VERSION` (DMN-001, contract tests) | `19.1.0` |
+| omp binary | `flake.nix` → `inputs.oh-my-pi.url = "github:can1357/oh-my-pi/v19.2.0"` (locked rev `5c5ecb16fa4903c09a57a84983e482d9c9c2232e`) | 19.2.0 |
+| `omp-rpc` crate | workspace `Cargo.toml` → `omp-rpc = { git = "https://github.com/can1357/oh-my-pi", tag = "v19.2.0" }` | 19.2.0 |
+| Expected version in code | `omfp_core::OMP_VERSION` (DMN-001, contract tests) | `19.2.0` |
 | Rust | `rust-toolchain.toml` | 1.99.1 |
 
 | ID | Requirement |

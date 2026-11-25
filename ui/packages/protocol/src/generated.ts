@@ -54,7 +54,7 @@ export type AnswerWindowParams = {
 
 /**
  * omp's `--approval-mode` (`tools.approvalMode`): which tool calls omp asks the user to approve (DMN-074, DMN-210).
- * omp 19.1.0 exits at startup on any other value.
+ * omp 19.2.0 exits at startup on any other value.
  */
 export type ApprovalMode =
   /** Runs read tools; asks before write and exec tools. */
@@ -932,7 +932,7 @@ export type LiveStarted = {
 };
 
 /**
- * A realtime voice of omp's live sessions (PRT-228, UI-999): the voices omp 19.1.0's Codex-backed realtime sessions
+ * A realtime voice of omp's live sessions (PRT-228, UI-999): the voices omp 19.2.0's Codex-backed realtime sessions
  * accept (`packages/coding-agent/src/live/voices.ts`; omp's `live.voice` takes any name for other endpoints), named as
  * omp names them; `sol` is omp's default. Any other name does not decode.
  */

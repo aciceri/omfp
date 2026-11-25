@@ -181,10 +181,10 @@ describe("edit card", () => {
   });
 
   // spec: UI-055, UI-051
-  test("recorded: a preview's error shows as such while the call runs; once it ended, its result replaces the preview", () => {
+  test("recorded: omp's preview shows while the call runs; once it ended, its result replaces the preview", () => {
+    // omp 19.2 previews a refused edit's diff while it streams and reports the refusal with the result only.
     const edit = view(streaming("edit_tool_calls", "call_edit_2"), "edit");
-    expect(edit.preview.map((file) => [file.path, file.diff])).toEqual([["src/lib.rs", undefined]]);
-    expect(edit.preview[0]?.error).toContain("is not from this session");
+    expect(edit.preview.map((file) => [file.path, file.error])).toEqual([["src/lib.rs", undefined]]);
     expect(view(card("edit_tool_calls", "call_edit_2"), "edit").preview).toEqual([]);
     expect(view(card("edit_tool_calls", "call_edit_1"), "edit").preview).toEqual([]);
   });
@@ -764,7 +764,7 @@ describe("lsp card", () => {
   });
 
   // spec: UI-919
-  test("a symbol rename: its old and new names, each file's edits and the total, as omp 19.1.0 words them", () => {
+  test("a symbol rename: its old and new names, each file's edits and the total, as omp 19.2.0 words them", () => {
     // `textDocument/rename` answered with a `changes` map, previewed (`formatWorkspaceEdit`: `N edit`/`N edits`) and
     // applied (`applyWorkspaceEdit`: `Applied N edit(s) to`); `symbol` names the old name, `#N` its occurrence.
     const args = { action: "rename", file: "src/lib.rs", line: 3, symbol: "add#2", new_name: "sum" };

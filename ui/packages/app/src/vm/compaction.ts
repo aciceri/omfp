@@ -6,7 +6,7 @@
 import { isObject } from "../sdk/json.ts";
 
 /**
- * omp 19.1.0's one-off `/compact` modes (`session/compact-modes.ts`), each a compaction method; its fourth mode,
+ * omp 19.2.0's one-off `/compact` modes (`session/compact-modes.ts`), each a compaction method; its fourth mode,
  * `handoff`, runs in the background while the turn goes on and is not offered here. omp's RPC `compact`
  * (`thread.compact`) takes none: a mode reaches omp only through its `/compact` builtin sent as a prompt.
  */

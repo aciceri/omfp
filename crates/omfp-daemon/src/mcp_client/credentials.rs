@@ -1,5 +1,5 @@
 //! omp's MCP OAuth credentials in its `agent.db` (DMN-352, DMN-353): the daemon reads the login omp made for a
-//! server and refreshes it the way omp 19.1.0 does (`mcp/oauth-credentials.ts`, `ai/src/auth/refresh.ts`): under the
+//! server and refreshes it the way omp 19.2.0 does (`mcp/oauth-credentials.ts`, `ai/src/auth/refresh.ts`): under the
 //! row's lease in `auth_credential_refresh_leases`, written back by compare-and-set, so a thread's omp and the daemon
 //! never spend each other's rotated refresh tokens. The database's own triggers bump `auth_change_revision`, which
 //! tells running omp processes the row changed.
@@ -204,7 +204,7 @@ fn text(fields: &Map<String, Value>, key: &str) -> Option<String> {
 
 /// Where a refresh goes (omp's `selectMcpOAuthRefreshMaterial`): the credential's own fields when it carries a
 /// `tokenUrl`, else the entry's `auth` block (credentials minted before omp stored them); the scope the grant holds
-/// always comes from the credential (omp 19.1, `refreshManagedMcpOAuthCredential`).
+/// always comes from the credential (omp 19.2, `refreshManagedMcpOAuthCredential`).
 struct Material {
     token_url: String,
     client_id: Option<String>,
@@ -575,7 +575,7 @@ pub(super) mod tests {
 
     use super::*;
 
-    /// The tables of omp 19.1.0's `agent.db` the daemon touches, with omp's revision trigger on credential updates.
+    /// The tables of omp 19.2.0's `agent.db` the daemon touches, with omp's revision trigger on credential updates.
     pub(in crate::mcp_client) const SCHEMA: &str = "
         CREATE TABLE auth_credentials (
             id INTEGER PRIMARY KEY AUTOINCREMENT, provider TEXT NOT NULL, credential_type TEXT NOT NULL,

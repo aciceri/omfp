@@ -299,10 +299,10 @@ describe("edit card", () => {
 
   // spec: UI-055
   test("a preview's error shows as such; several files each under their path", () => {
-    const refused = show(streaming("edit_tool_calls", "call_edit_2"));
-    expect(byTestId(refused, "tool-preview-error").textContent).toContain("is not from this session");
-    expect(within(refused).queryByTestId("tool-error")).toBeNull();
-    expect(within(refused).queryByTestId("tool-preview-file")).toBeNull();
+    const single = show(streaming("edit_tool_calls", "call_edit_2"));
+    expect(within(single).queryByTestId("tool-preview-error")).toBeNull();
+    expect(within(single).queryByTestId("tool-error")).toBeNull();
+    expect(within(single).queryByTestId("tool-preview-file")).toBeNull();
     cleanup();
     const run: ToolRun = {
       tool_call_id: "c-files",

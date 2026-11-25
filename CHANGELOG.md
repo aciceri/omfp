@@ -7,6 +7,15 @@ The version's section is also the source of the GitHub release notes.
 
 ## Unreleased
 
+### Changed
+
+- omfp now runs omp 19.2.0 (was 19.1.0).
+
+### Fixed
+
+- Live voice speaks the agent's answer as soon as the agent ends its turn, also while subagents or background jobs are
+  still running; before, the voice stayed on "working" until the last of them finished (#276, fixed in omp 19.2.0).
+
 ## 0.4.5 — 2026-11-25
 
 ### Changed

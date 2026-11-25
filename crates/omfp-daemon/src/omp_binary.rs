@@ -42,7 +42,7 @@ fn is_executable(path: &Path) -> bool {
     }
 }
 
-/// The version in `omp --version` output (`omp/19.1.0` → `19.1.0`).
+/// The version in `omp --version` output (`omp/19.2.0` → `19.2.0`).
 #[must_use]
 pub fn parse_version(output: &str) -> Option<String> {
     let line = output.lines().next()?.trim();

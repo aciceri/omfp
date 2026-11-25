@@ -1,4 +1,4 @@
-//! The omp answering the composer's word completions (DMN-360..DMN-363). omp 19.1.0 offers its TUI's word
+//! The omp answering the composer's word completions (DMN-360..DMN-363). omp 19.2.0 offers its TUI's word
 //! autocomplete over RPC (`predict_word`, `predict_word_feedback`): every omp relays them to one shared predictor of
 //! its agent directory (the `predict` unit of omp's per-user daemon), which reads omp's `spelling.autocomplete`
 //! setting, learns from the profile's prompt history and Claude Code's and Codex's, and answers within milliseconds

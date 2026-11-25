@@ -1,7 +1,7 @@
 //! The first omp of a profile starts alone (DMN-913).
 //!
 //! omp creates the schema of its `agent.db` with a check, then a create (`AgentStorage#initializeSchema`, omp
-//! 19.1.0: `PRAGMA table_info(settings)`, then `CREATE TABLE settings` without `IF NOT EXISTS`), outside any
+//! 19.2.0: `PRAGMA table_info(settings)`, then `CREATE TABLE settings` without `IF NOT EXISTS`), outside any
 //! transaction. Two omps starting at once on a profile without that table can both find none, and the second exits
 //! at startup with `SQLiteError: … table settings already exists`. Until an omp run of an agent directory has got
 //! past its startup in this daemon, [`FirstStart`] runs that directory's omp invocations one at a time; afterwards

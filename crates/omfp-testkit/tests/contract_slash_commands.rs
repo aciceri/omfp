@@ -12,7 +12,7 @@ use fake_llm::{FakeLlm, Reply, Script, Step};
 use omfp_testkit::{DenyProxy, FAKE_MODEL, OmpEnv, OmpSession, require_pinned_omp};
 use omp_rpc::{GetAvailableCommandsCommand, PromptCommand, SlashCommandSource};
 
-/// omp 19.1.0's builtins with a text-mode handler, in its order, each with its aliases.
+/// omp 19.2.0's builtins with a text-mode handler, in its order, each with its aliases.
 const RPC_BUILTINS: &[(&str, &[&str])] = &[
     ("security", &[]),
     ("model", &["models"]),

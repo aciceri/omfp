@@ -492,7 +492,7 @@ fn parse_lease(stdout: &[u8], session_id: &str) -> Result<Lease, StartError> {
     })
 }
 
-/// omp's `compact` with the deadline omp-rpc 19.1.0 gives `navigate_tree`, whose branch summary is the same kind of
+/// omp's `compact` with the deadline omp-rpc 19.2.0 gives `navigate_tree`, whose branch summary is the same kind of
 /// model call (DMN-910): the generated `CompactCommand` declares none, so the client's 30 s default would fail a
 /// manual compaction's call while omp still summarizes.
 #[derive(Serialize)]

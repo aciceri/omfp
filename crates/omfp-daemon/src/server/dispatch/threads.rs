@@ -32,7 +32,7 @@ fn images(images: Vec<ImageContent>) -> Option<Vec<ImageContent>> {
     (!images.is_empty()).then_some(images)
 }
 
-/// omp's selector for a thinking level: omp 19.1's `set_thinking_level` takes `ConfiguredThinkingLevel`, the levels
+/// omp's selector for a thinking level: omp 19.2's `set_thinking_level` takes `ConfiguredThinkingLevel`, the levels
 /// plus `auto`, which the protocol does not offer.
 fn configured(level: ThinkingLevel) -> ConfiguredThinkingLevel {
     match level {

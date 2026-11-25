@@ -631,7 +631,7 @@ export function toolView(
         line: num(input.line),
         symbol,
         result: answer === undefined ? undefined : lspResult(action, answer, { symbol, newName: str(input.new_name) }),
-        // omp 19.1: "No language server handles .txt files", "… found for this file", "… servers configured".
+        // omp 19.2: "No language server handles .txt files", "… found for this file", "… servers configured".
         noServer: answer?.includes("No language server") === true,
       };
     }

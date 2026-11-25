@@ -225,7 +225,7 @@ async fn approval_requested_and_granted() {
 // spec: TST-012, DMN-050, DMN-055
 #[tokio::test(flavor = "multi_thread")]
 async fn ask_answered() {
-    // omp 19.1's `ask` sends its whole HTML form as one `form` request: context, a radio group, a checkbox group
+    // omp 19.2's `ask` sends its whole HTML form as one `form` request: context, a radio group, a checkbox group
     // with a free "Other" answer, a required text field and a number.
     let form = r#"<form>
   <p>The service stores <strong>orders</strong> and needs a database.</p>

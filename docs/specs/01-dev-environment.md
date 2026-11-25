@@ -232,9 +232,10 @@ exact omp version its client was built for.
    `contrib/release/omp.sha256` to the new tag and the hashes of its `SHA256SUMS.txt` (ENV-061).
 5. Re-record contract fixtures (`OMFP_RECORD_FIXTURES=1 just test-contract`) and review their diff: new event kinds,
    renamed fields, changed tool argument shapes (TST-012, UI-051).
-6. Re-sync the vendored live prompt `crates/omfp-daemon/src/live_instructions.txt` from omp's
-   `packages/coding-agent/src/live/prompts/live-instructions.md` and update the version named in
-   `crates/omfp-daemon/src/live_context.rs` (DMN-105).
+6. Diff omp's live prompts (`packages/coding-agent/src/live/prompts/`) and live controller
+   (`packages/coding-agent/src/live/controller.ts`): omfp's own live prompt `crates/omfp-daemon/src/live_instructions.txt`
+   keeps omp's terms for the delegation protocol (DMN-115), and omfp's extension marks omp's `live-delegation`
+   requests (DMN-116).
 7. Check that the daemon's MCP client still matches omp's credential store and refresh (DMN-352, DMN-353): diff
    `packages/ai/src/auth/sqlite-credential-store.ts`, `packages/ai/src/auth/refresh.ts` and
    `packages/coding-agent/src/mcp/oauth-credentials.ts` (`contract_mcp_servers` fails when the schema moves).

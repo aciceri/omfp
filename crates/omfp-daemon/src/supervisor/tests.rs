@@ -174,7 +174,7 @@ async fn a_prompt_on_a_stopped_thread_starts_omp_and_reduces_the_recorded_turn()
     assert_eq!(seq, u64::try_from(recorded.len()).unwrap());
 }
 
-// spec: DMN-030, DMN-029, DMN-060, ARC-008, AGT-024, DMN-107
+// spec: DMN-030, DMN-029, DMN-060, ARC-008, AGT-024, DMN-107, DMN-116
 #[tokio::test]
 async fn omp_starts_in_its_workspace_folder_with_one_add_dir_per_repository() {
     let agent_dir = tempfile::tempdir().unwrap();
@@ -239,7 +239,17 @@ async fn omp_starts_in_its_workspace_folder_with_one_add_dir_per_repository() {
         Some(h.data.omp_extension().as_path()),
         "the daemon's omp extension root ships the widget-builder agent"
     );
-    assert_eq!(launch.spec.env, [("OMFP_TEST".into(), Some("1".into()))]);
+    assert_eq!(
+        launch.spec.env,
+        [
+            ("OMFP_TEST".into(), Some("1".into())),
+            (
+                "OMFP_LIVE_TRANSCRIPT".into(),
+                Some(h.data.thread_live_transcript(&id).into_os_string())
+            ),
+        ],
+        "the configured overrides, then the live transcript file for omfp's extension"
+    );
     assert_eq!(launch.tools, [OPEN_FILE, NOTIFY, SET_THREAD_TITLE]);
     // The session is stored once omp opened it (DMN-032), and its roots are the flags (DMN-029).
     assert!(h.threads.get(&id).unwrap().omp_session_id.is_some());
@@ -2139,7 +2149,7 @@ async fn live_connect_sends_the_live_prompt_with_the_threads_conversation() {
         ))]
     );
     let sent = instructions[0].as_deref().unwrap();
-    assert!(sent.starts_with("You: omp Live, realtime voice surface"));
+    assert!(sent.starts_with("You: omp Live, the realtime voice between"));
     assert!(sent.contains("Thread title: Login bug"));
     assert!(sent.contains(
         "User: why does {{default \"\" \"{{\"}}login}} fail?\n\nAssistant: The token was stale."
@@ -2603,6 +2613,50 @@ async fn a_live_session_nobody_talks_to_ends() {
     })
     .await;
     assert_eq!(live_stops(&h), 1);
+}
+
+// spec: DMN-116
+#[tokio::test]
+async fn the_live_transcript_file_holds_what_was_said_until_the_session_ends() {
+    let h = harness(|_| {});
+    let id = h.thread();
+    let path = h.data.thread_live_transcript(&id);
+    h.launcher
+        .script_live(crate::agent::FakeLive::connect(Vec::new()));
+    h.supervisor
+        .live_connect(&id, owner(1), OFFER.into(), None)
+        .await
+        .unwrap();
+    h.wait(&id, "the listening phase", |state| {
+        live_phase(state) == Some("listening")
+    })
+    .await;
+    let actor = h.supervisor.lookup(&id).unwrap();
+    let say = |role, turn, text: &str, last| {
+        h.supervisor.push(
+            &actor,
+            ThreadEvent::Omp {
+                frame: crate::agent::live_transcript(role, turn, text, last),
+            },
+        );
+    };
+
+    say(omp_rpc::LiveRole::User, 1, "Run the", false);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "User: Run the");
+    say(omp_rpc::LiveRole::User, 1, "Run the tests.", true);
+    say(omp_rpc::LiveRole::Assistant, 1, "On it.", true);
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "User: Run the tests.\nVoice: On it."
+    );
+
+    h.supervisor.push(
+        &actor,
+        ThreadEvent::Omp {
+            frame: crate::agent::live_end(None),
+        },
+    );
+    assert!(!path.exists(), "no later request gets this session's words");
 }
 
 // spec: DMN-114

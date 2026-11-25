@@ -18,6 +18,11 @@ The version's section is also the source of the GitHub release notes.
   job and Stop ends it. Without queued messages Abort still ends it with the turn.
 - Middle-click a thread in the left list now archives it, as its `×` does, instead of deleting it; on an archived
   thread it still deletes.
+- Live voice acts as a relay between you and the thread's agent: it forwards everything but small talk to the agent,
+  in your own words and also when in doubt, instead of answering, refusing or claiming work itself, and may name the
+  agent when it reports back. It replaces omp's live prompt, which presented the voice and the agent as one assistant.
+- The agent knows when a request comes from live voice: each one reaches it marked as relayed by the voice model, with
+  the transcript of the voice conversation so far, so it sees what you actually said and not only the voice's wording.
 
 ### Fixed
 

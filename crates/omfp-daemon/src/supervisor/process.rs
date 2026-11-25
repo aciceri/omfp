@@ -92,7 +92,18 @@ impl Supervisor {
             )),
             extension: Some(data.omp_extension()),
             stderr_log: data.thread_log(&actor.id),
-            env: self.inner.config.omp_env.clone(),
+            // The running live session's transcript, for omfp's extension (DMN-116); after the configured overrides.
+            env: self
+                .inner
+                .config
+                .omp_env
+                .iter()
+                .cloned()
+                .chain([(
+                    crate::voice_log::TRANSCRIPT_ENV.into(),
+                    Some(data.thread_live_transcript(&actor.id).into_os_string()),
+                )])
+                .collect(),
         };
         Ok((thread, spec, recorded, add_dirs))
     }

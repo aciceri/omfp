@@ -1347,6 +1347,15 @@ impl Supervisor {
             ThreadEvent::Omp { frame: RpcNotification::AvailableCommandsUpdate(update) }
                 if update.commands.iter().any(|command| command.name == crate::voice_log::COMMAND)
         );
+        // What was said changed, or a session started or ended: the agent gets it with the next request the voice
+        // delegates (DMN-116).
+        let transcript_changed = matches!(
+            &event,
+            ThreadEvent::LiveSession { .. }
+                | ThreadEvent::Omp {
+                    frame: RpcNotification::LiveTranscript(_) | RpcNotification::LiveEnd(_),
+                }
+        );
         if let ThreadEvent::Omp { frame } = &event {
             match frame {
                 // Read-only tools cannot change files: skip the `git status` of a full scan after them (DMN-023).
@@ -1394,6 +1403,9 @@ impl Supervisor {
         let before = actor.status();
         actor.log.push(event);
         actor.touch();
+        if transcript_changed {
+            self.keep_live_transcript(actor);
+        }
         let after = actor.status();
         if after != before {
             let _ = self.inner.changes.send(actor.id.clone());
@@ -1424,6 +1436,21 @@ impl Supervisor {
             let supervisor = self.clone();
             let id = actor.id.clone();
             tokio::spawn(async move { supervisor.record_voice(&id).await });
+        }
+    }
+
+    /// Writes what was said in the thread's live session to the file omfp's omp extension reads (DMN-116).
+    fn keep_live_transcript(&self, actor: &Actor) {
+        let lines = actor.log.with_state(|state| {
+            state
+                .live
+                .as_ref()
+                .map(|live| live.transcript.clone())
+                .unwrap_or_default()
+        });
+        let path = self.inner.data.thread_live_transcript(&actor.id);
+        if let Err(error) = crate::voice_log::write_transcript(&path, &lines) {
+            warn!(thread = %actor.id, %error, "cannot write the live transcript");
         }
     }
 }

@@ -16,7 +16,7 @@ import { type CardStatus, type ToolCard, toolCard } from "../../../src/vm/tool.t
 import type { MessageView } from "../../../src/vm/transcript.ts";
 import { MessageRow, ToolCardView } from "../../../src/widgets/chat/message.tsx";
 import { type Clock, ClockContext } from "../../../src/widgets/chat/state.ts";
-import { card, cards, lspCard, streaming } from "../../support/cards.ts";
+import { card, cards, composingCard, lspCard, streaming } from "../../support/cards.ts";
 import { repo, thread, workspace } from "../../support/fixtures.ts";
 import { renderWithHost, testHost } from "../../support/host.tsx";
 import { fixtureEvents, isFrame } from "./fixtures.ts";
@@ -282,9 +282,7 @@ describe("edit card", () => {
   // spec: UI-054, UI-055, UI-056, UI-116
   test("while the model writes it, before omp's first preview: the edit as written, its path not opening yet", () => {
     const partialArgs = '{"input": "[src/lib.rs#72CA]\\nPUT 4.=4:\\n+    left.sat';
-    const element = show(
-      toolCard("c-edit", { type: "toolCall", name: "edit", arguments: {}, partialArgs }, undefined, undefined, undefined),
-    );
+    const element = show(composingCard("edit", partialArgs, "c-edit"));
     expect([element.dataset.status, element.dataset.omfpPath]).toEqual(["composing", undefined]);
     expect(byTestId(element, "toggle").getAttribute("aria-expanded")).toBe("true");
     expect(byTestId(element, "tool-path").textContent).toBe("src/lib.rs");
@@ -601,9 +599,17 @@ describe("code-intelligence cards", () => {
 });
 
 describe("todo card", () => {
-  // spec: UI-050, UI-051
-  test("streaming: no list yet; success: the checklist", async () => {
-    expect(texts(await open(streaming("todo_tool_calls", "call_todo_1")), "todo-task")).toEqual([]);
+  // spec: UI-050, UI-051, UI-054
+  test("streaming: the tasks the call gives, pending; success: the checklist", async () => {
+    const live = await open(streaming("todo_tool_calls", "call_todo_1"));
+    expect(
+      within(live)
+        .getAllByTestId("todo-task")
+        .map((task) => [task.dataset.status, task.textContent]),
+    ).toEqual([
+      ["pending", "●Read the codepending"],
+      ["pending", "●Fix the bugpending"],
+    ]);
     cleanup();
     const element = await open(card("todo_tool_calls", "call_todo_3"));
     expect(

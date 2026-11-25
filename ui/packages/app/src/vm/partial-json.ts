@@ -153,13 +153,13 @@ class PartialJson {
       if (stop[0] === '"') {
         return { value, complete: true };
       }
-      const escape = text[this.at];
+      const escaped = text[this.at];
       let unescaped: string | undefined;
-      if (escape === "u") {
+      if (escaped === "u") {
         const hex = text.slice(this.at + 1, this.at + 5);
         unescaped = /^[0-9a-fA-F]{4}$/.test(hex) ? String.fromCharCode(Number.parseInt(hex, 16)) : undefined;
-      } else if (escape !== undefined) {
-        unescaped = ESCAPES[escape];
+      } else if (escaped !== undefined) {
+        unescaped = ESCAPES[escaped];
       }
       if (unescaped === undefined) {
         // An escape cut by the end of the text, or not JSON: the string ends before it.
@@ -167,7 +167,7 @@ class PartialJson {
         return { value, complete: false };
       }
       value += unescaped;
-      this.at += escape === "u" ? 5 : 1;
+      this.at += escaped === "u" ? 5 : 1;
     }
   }
 

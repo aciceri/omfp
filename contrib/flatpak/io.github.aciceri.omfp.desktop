@@ -1,8 +1,10 @@
 [Desktop Entry]
 Type=Application
 Name=omfp
+GenericName=Coding agent
 Comment=Web and desktop GUI for the omp coding agent
 Exec=omfp desktop
 Icon=io.github.aciceri.omfp
 Categories=Development;
+Keywords=AI;agent;coding;LLM;oh-my-pi;
 Terminal=false

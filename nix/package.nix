@@ -139,10 +139,18 @@ rustPlatform.buildRustPackage {
     (makeDesktopItem {
       name = "omfp";
       desktopName = "omfp";
+      genericName = "Coding agent";
       comment = "Web and desktop GUI for the omp coding agent";
       exec = "omfp desktop";
       icon = "omfp";
       categories = [ "Development" ];
+      keywords = [
+        "AI"
+        "agent"
+        "coding"
+        "LLM"
+        "oh-my-pi"
+      ];
     })
   ];
 

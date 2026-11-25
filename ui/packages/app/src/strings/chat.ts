@@ -1,5 +1,8 @@
 /** Texts of the conversation widgets (`omfp:chat`, transcript, interactions, composer). */
 
+/** What a bounded body or list counts, singular and plural (UI-935). */
+export type Noun = readonly [one: string, many: string];
+
 export const chat = {
   noThread: "Select a thread, or create one.",
   loading: "Loading the thread…",
@@ -82,9 +85,28 @@ export const chat = {
     directory: "Directory listing",
     in: (scope: string) => `in ${scope}`,
     truncated: "Results were cut.",
-    /** The collapsed `write` content's expander (UI-053). */
-    moreLines: (count: number) => `… ${count} more ${count === 1 ? "line" : "lines"}`,
-    fewerLines: "Show fewer lines",
+    /**
+     * A long body's or list's preview expander (`… 3 more files`), what a live window or an output's preview leaves
+     * above (`… 3 earlier lines`), and what the expanded body's control says (UI-935), each counting a `nouns` entry.
+     */
+    more: (count: number, [one, many]: Noun) => `… ${count} more ${count === 1 ? one : many}`,
+    earlier: (count: number, [one, many]: Noun) => `… ${count} earlier ${count === 1 ? one : many}`,
+    fewer: ([, many]: Noun) => `Show fewer ${many}`,
+    nouns: {
+      line: ["line", "lines"],
+      file: ["file", "files"],
+      match: ["match", "matches"],
+      link: ["link", "links"],
+      location: ["location", "locations"],
+      diagnostic: ["diagnostic", "diagnostics"],
+      symbol: ["symbol", "symbols"],
+      action: ["code action", "code actions"],
+      question: ["question", "questions"],
+      agent: ["subagent", "subagents"],
+      task: ["task", "tasks"],
+    } satisfies Readonly<Record<string, Noun>>,
+    /** The accessible name of a long body's window or expanded body, which takes the focus to scroll (UI-935). */
+    bodyLabel: "Card content",
     noMatch: "No match",
     todoStatus: {
       pending: "pending",
@@ -110,9 +132,6 @@ export const chat = {
     notApplied: "Preview: nothing was changed",
     /** A symbol rename whose call named no old name (UI-919). */
     renamedTo: "renamed to",
-    /** A long list of changed files' expander (UI-919). */
-    moreFiles: (count: number) => `… ${count} more ${count === 1 ? "file" : "files"}`,
-    fewerFiles: "Show fewer files",
     /** The subject of an `omfp_card` call without a title nor a widget reference (UI-920). */
     card: "card",
     /** The Cancel of a waiting card, outside its widget (UI-922). */

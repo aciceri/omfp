@@ -2,7 +2,8 @@
  * The bodies of the specialized tool cards (UI-050): what `toolView` read from a call, rendered per tool. Failed calls
  * show omp's error first (UI-052); code is highlighted when its language is known (UI-090); the code-intelligence
  * tools' paths open their files at their lines (UI-916..UI-919). While the model writes a call's arguments the card
- * shows them as they are, but nothing acts on them: no path opens and no widget mounts (UI-054, UI-056).
+ * shows them as they are, but nothing acts on them: no path opens and no widget mounts (UI-054, UI-056). Long bodies
+ * (diffs, code, commands, outputs, pages, JSON) stay bounded (UI-935, `BoundedBody`).
  */
 
 import {
@@ -11,6 +12,7 @@ import {
   Button,
   Code,
   Diff,
+  type DiffLine,
   languageOfPath,
   Markdown,
   PathLink,
@@ -19,29 +21,43 @@ import {
   type Tone,
 } from "omfp/kit";
 import {
+  AGENT_ITEMS,
+  ANSWER_LINES,
   type AstMatch,
-  ansiRuns,
+  ansiLines,
+  BODY_LINES,
+  bodyCut,
   type CardImage,
   CardScope,
   CardWidget,
   type Diagnostic,
+  diffCut,
   type EditedFile,
   type EditPreviewFile,
+  LIST_ITEMS,
+  LOCATION_ITEMS,
   type LspResult,
+  liveBody,
+  MATCH_ITEMS,
   type OpenFileOptions,
+  QUESTION_ITEMS,
+  READ_LINES,
   repoPath,
   type SubagentRun,
   strings,
   type TodoPhase,
   type ToolCard,
   type ToolView,
+  textLines,
+  todoShown,
   useAnswer,
   useCurrentWorkspaceId,
   useOpenFile,
   useReportError,
   useWorkspaces,
 } from "omfp/sdk";
-import { Fragment, type ReactNode, useMemo, useState } from "react";
+import { Fragment, type ReactNode, useMemo } from "react";
+import { BoundedBody, BoundedList, LiveWindow } from "./bounded.tsx";
 import { useImageViewer } from "./image-viewer.tsx";
 
 const text = strings.chat.tool;
@@ -177,54 +193,99 @@ function Subject({ children }: { children: ReactNode }): ReactNode {
   );
 }
 
-/** Command output with its ANSI colors and attributes as theme classes. */
-function AnsiOutput({ output }: { output: string }): ReactNode {
-  const runs = useMemo(() => ansiRuns(output), [output]);
+/** Command output with its ANSI colors and attributes as theme classes; bounded, its preview its last lines (UI-935). */
+function AnsiOutput({ output, live }: { output: string; live: boolean }): ReactNode {
+  const lines = useMemo(() => ansiLines(output), [output]);
   return (
-    <pre className="omfp-code omfp-code--block omfp-tool-card__output" data-testid="tool-output">
-      {runs.map((run, index) =>
-        run.style.length === 0 ? (
-          run.text
-        ) : (
-          // biome-ignore lint/suspicious/noArrayIndexKey: runs of one output never move
-          <span key={index} className={run.style.map((name) => `omfp-ansi-${name}`).join(" ")}>
-            {run.text}
-          </span>
-        ),
+    <BoundedBody
+      total={lines.length}
+      live={live}
+      cut={bodyCut(lines.length, BODY_LINES, "tail")}
+      render={(start, end) => (
+        <pre className="omfp-code omfp-code--block" data-testid="tool-output">
+          <code>
+            {lines.slice(start, end).map((runs, offset) => {
+              const line = start + offset;
+              return (
+                <Fragment key={line}>
+                  {line > start && "\n"}
+                  {runs.map((run, index) =>
+                    run.style.length === 0 ? (
+                      run.text
+                    ) : (
+                      // biome-ignore lint/suspicious/noArrayIndexKey: runs of one line never move
+                      <span key={index} className={run.style.map((name) => `omfp-ansi-${name}`).join(" ")}>
+                        {run.text}
+                      </span>
+                    ),
+                  )}
+                </Fragment>
+              );
+            })}
+            {end === lines.length && output.endsWith("\n") && "\n"}
+          </code>
+        </pre>
       )}
-    </pre>
+    />
   );
 }
 
-/** Lines of a `write`'s content shown while it is collapsed (UI-053). */
-const WRITE_PREVIEW_LINES = 6;
-
-/** A `write`'s content: its first lines, expandable to the whole content (UI-053). */
-function WriteContent({ content, language }: { content: string; language: string | undefined }): ReactNode {
-  const [expanded, setExpanded] = useState(false);
-  const lines = content.split("\n");
-  if (lines.at(-1) === "") {
-    lines.pop();
-  }
-  const hidden = lines.length - WRITE_PREVIEW_LINES;
-  const shown = expanded || hidden <= 0 ? content : lines.slice(0, WRITE_PREVIEW_LINES).join("\n");
+/**
+ * A text body (`write` content, card and widget code, a command, a page, a file, JSON) highlighted, bounded (UI-935):
+ * its preview shows `limit` lines.
+ */
+function BoundedCode({
+  code,
+  language,
+  live,
+  limit = BODY_LINES,
+  "data-testid": testId,
+}: {
+  code: string;
+  language?: string | undefined;
+  live: boolean;
+  limit?: number;
+  "data-testid": string;
+}): ReactNode {
+  const lines = useMemo(() => textLines(code), [code]);
   return (
-    <>
-      <div className="omfp-tool-card__preview" data-cut={!expanded && hidden > 0}>
-        <Code code={shown} block language={language} data-testid="tool-content" />
-      </div>
-      {hidden > 0 && (
-        <Button
-          size="sm"
-          variant="quiet"
-          aria-expanded={expanded}
-          data-testid="tool-more"
-          onPress={() => setExpanded((open) => !open)}
-        >
-          {expanded ? text.fewerLines : text.moreLines(hidden)}
-        </Button>
+    <BoundedBody
+      total={lines.length}
+      live={live}
+      cut={bodyCut(lines.length, limit)}
+      render={(start, end) => (
+        <Code
+          code={start === 0 && end === lines.length ? code : lines.slice(start, end).join("\n")}
+          block
+          language={language}
+          data-testid={testId}
+        />
       )}
-    </>
+    />
+  );
+}
+
+/** A diff, bounded: its preview its first lines and hunks (UI-935). */
+function BoundedDiff({
+  lines,
+  language,
+  live,
+}: {
+  lines: readonly DiffLine[];
+  language: string | undefined;
+  live: boolean;
+}): ReactNode {
+  const cut = useMemo(() => diffCut(lines), [lines]);
+  const preview = useMemo(() => (cut === undefined ? lines : lines.slice(cut.start, cut.end)), [lines, cut]);
+  return (
+    <BoundedBody
+      total={lines.length}
+      live={live}
+      cut={cut}
+      render={(start, end) => (
+        <Diff lines={end - start === lines.length ? lines : preview} language={language} data-testid="tool-diff" />
+      )}
+    />
   );
 }
 
@@ -234,20 +295,21 @@ function WriteContent({ content, language }: { content: string; language: string
  */
 export function ToolBody({ threadId, card }: { threadId: string; card: ToolCard }): ReactNode {
   const { view } = card;
+  const live = liveBody(card);
   switch (view.kind) {
     case "bash":
       return (
         <>
           <div className="omfp-tool-card__section">
             {view.cwd !== undefined && <p className="omfp-tool-card__meta">{text.cwd(view.cwd)}</p>}
-            <Code code={view.command} block language="bash" data-testid="tool-command" />
+            <BoundedCode code={view.command} language="bash" live={live} data-testid="tool-command" />
           </div>
           <BoxRule label={text.output} />
           <div className="omfp-tool-card__section">
             {view.output === undefined || view.output === "" ? (
               <p className="omfp-tool-card__meta">{text.noOutput}</p>
             ) : (
-              <AnsiOutput output={view.output} />
+              <AnsiOutput output={view.output} live={live} />
             )}
           </div>
         </>
@@ -256,13 +318,13 @@ export function ToolBody({ threadId, card }: { threadId: string; card: ToolCard 
       return (
         <>
           <div className="omfp-tool-card__section">
-            <Code code={card.args} block data-testid="tool-args" />
+            <BoundedCode code={card.args} live={live} data-testid="tool-args" />
           </div>
           {card.result !== undefined && (
             <>
               <BoxRule label={text.result} />
               <div className="omfp-tool-card__section">
-                <Code code={card.result} block data-testid="tool-result" />
+                <BoundedCode code={card.result} live={live} data-testid="tool-result" />
               </div>
             </>
           )}
@@ -294,6 +356,7 @@ function ToolSection({
   view: Exclude<ToolView, { kind: "bash" | "generic" }>;
 }): ReactNode {
   const openFile = useOpenFile();
+  const live = liveBody(card);
   switch (view.kind) {
     case "read":
       return (
@@ -304,10 +367,11 @@ function ToolSection({
             </p>
           )}
           {card.status !== "failed" && view.content !== undefined && (
-            <Code
+            <BoundedCode
               code={view.content}
-              block
               language={view.directory ? undefined : view.language}
+              live={live}
+              limit={READ_LINES}
               data-testid="tool-content"
             />
           )}
@@ -320,13 +384,13 @@ function ToolSection({
             {view.url}
           </a>
           {card.status !== "failed" && view.content !== undefined && (
-            <Code code={view.content} block language="markdown" data-testid="tool-content" />
+            <BoundedCode code={view.content} language="markdown" live={live} data-testid="tool-content" />
           )}
         </>
       );
     case "edit":
       if (view.diff !== undefined) {
-        return <Diff lines={view.diff} language={view.language} data-testid="tool-diff" />;
+        return <BoundedDiff lines={view.diff} language={view.language} live={live} />;
       }
       if (view.preview.length > 0) {
         return <EditPreview files={view.preview} />;
@@ -335,12 +399,16 @@ function ToolSection({
         view.input !== undefined && (
           <>
             <h3>{text.edit}</h3>
-            <Code code={view.input} block data-testid="tool-input" />
+            <BoundedCode code={view.input} live={live} data-testid="tool-input" />
           </>
         )
       );
     case "write":
-      return view.content !== undefined && <WriteContent content={view.content} language={view.language} />;
+      return (
+        view.content !== undefined && (
+          <BoundedCode code={view.content} language={view.language} live={live} data-testid="tool-content" />
+        )
+      );
     case "search":
       return (
         <>
@@ -352,19 +420,30 @@ function ToolSection({
             (view.files.length === 0 ? (
               <p className="omfp-tool-card__meta">{text.noMatch}</p>
             ) : (
-              <ul className="omfp-tool-card__files">
-                {view.files.map((file) => (
-                  <li key={file.path} data-testid="tool-file">
-                    <div className="omfp-tool-card__file">
-                      <PathLink reference={{ path: file.path, line: undefined }} onOpen={(ref) => openFile(ref.path)}>
-                        <FilePath path={file.path} />
-                      </PathLink>
-                      {file.count !== undefined && <Badge>{file.count}</Badge>}
-                    </div>
-                    {file.matches.length > 0 && <Matches path={file.path} matches={file.matches} />}
-                  </li>
-                ))}
-              </ul>
+              <BoundedList
+                items={view.files}
+                limit={LIST_ITEMS}
+                noun={text.nouns.file}
+                live={live}
+                render={(files) => (
+                  <ul className="omfp-tool-card__files">
+                    {files.map((file) => (
+                      <li key={file.path} data-testid="tool-file">
+                        <div className="omfp-tool-card__file">
+                          <PathLink
+                            reference={{ path: file.path, line: undefined }}
+                            onOpen={(ref) => openFile(ref.path)}
+                          >
+                            <FilePath path={file.path} />
+                          </PathLink>
+                          {file.count !== undefined && <Badge>{file.count}</Badge>}
+                        </div>
+                        {file.matches.length > 0 && <Matches path={file.path} matches={file.matches} />}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              />
             ))}
           {view.truncated && <p className="omfp-tool-card__meta">{text.truncated}</p>}
         </>
@@ -379,21 +458,29 @@ function ToolSection({
           {card.status === "succeeded" && view.files.length === 0 && (
             <p className="omfp-tool-card__meta">{text.noMatch}</p>
           )}
-          <ul className="omfp-tool-card__files">
-            {view.files.map((file) => (
-              <li key={file.path} data-testid="tool-file">
-                <div className="omfp-tool-card__file">
-                  <LineLink path={file.path} line={file.diff[0]?.oldLine ?? file.diff[0]?.newLine}>
-                    <FilePath path={file.path} />
-                  </LineLink>
-                  {file.count !== undefined && <Badge>{file.count}</Badge>}
-                </div>
-                {file.diff.length > 0 && (
-                  <Diff lines={file.diff} language={languageOfPath(file.path)} data-testid="tool-diff" />
-                )}
-              </li>
-            ))}
-          </ul>
+          <BoundedList
+            items={view.files}
+            limit={LIST_ITEMS}
+            noun={text.nouns.file}
+            live={live}
+            render={(files) => (
+              <ul className="omfp-tool-card__files">
+                {files.map((file) => (
+                  <li key={file.path} data-testid="tool-file">
+                    <div className="omfp-tool-card__file">
+                      <LineLink path={file.path} line={file.diff[0]?.oldLine ?? file.diff[0]?.newLine}>
+                        <FilePath path={file.path} />
+                      </LineLink>
+                      {file.count !== undefined && <Badge>{file.count}</Badge>}
+                    </div>
+                    {file.diff.length > 0 && (
+                      <BoundedDiff lines={file.diff} language={languageOfPath(file.path)} live={live} />
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          />
           {view.truncated && <p className="omfp-tool-card__meta">{text.truncated}</p>}
         </>
       );
@@ -424,44 +511,75 @@ function ToolSection({
           {card.status === "succeeded" && view.links.length === 0 && (
             <p className="omfp-tool-card__meta">{text.noLinks}</p>
           )}
-          <ul className="omfp-tool-card__links">
-            {view.links.map((link) => (
-              <li key={link.url} data-testid="tool-link">
-                <a href={link.url} target="_blank" rel="noreferrer">
-                  {link.title}
-                </a>
-                <span className="omfp-tool-card__meta">{link.url}</span>
-                {link.snippet !== "" && <span>{link.snippet}</span>}
-              </li>
-            ))}
-          </ul>
+          <BoundedList
+            items={view.links}
+            limit={LIST_ITEMS}
+            noun={text.nouns.link}
+            live={live}
+            render={(links) => (
+              <ul className="omfp-tool-card__links">
+                {links.map((link) => (
+                  <li key={link.url} data-testid="tool-link">
+                    <a href={link.url} target="_blank" rel="noreferrer">
+                      {link.title}
+                    </a>
+                    <span className="omfp-tool-card__meta">{link.url}</span>
+                    {link.snippet !== "" && (
+                      <span className="omfp-tool-card__snippet" data-testid="tool-snippet">
+                        {link.snippet}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          />
         </>
       );
     case "ask":
       return (
-        <dl className="omfp-tool-card__answers">
-          {view.questions.map((question) => (
-            <div key={question.question} data-testid="ask-question">
-              <dt>{question.question}</dt>
-              {question.answer !== undefined && (
-                <dd data-testid="ask-answer">{question.answer === "" ? text.noAnswer : question.answer}</dd>
-              )}
-            </div>
-          ))}
-        </dl>
+        <BoundedList
+          items={view.questions}
+          limit={QUESTION_ITEMS}
+          noun={text.nouns.question}
+          live={live}
+          render={(questions) => (
+            <dl className="omfp-tool-card__answers">
+              {questions.map((question) => (
+                <div key={question.question} data-testid="ask-question">
+                  <dt>{question.question}</dt>
+                  {question.answer !== undefined && (
+                    <dd data-testid="ask-answer">{question.answer === "" ? text.noAnswer : question.answer}</dd>
+                  )}
+                </div>
+              ))}
+            </dl>
+          )}
+        />
       );
     case "task":
+      // The subagents are a fixed list: capped, never a following window; a running one's output is (UI-935).
       return (
-        <ul className="omfp-tool-card__agents">
-          {view.agents.map((agent) => (
-            <Subagent key={agent.name} agent={agent} />
-          ))}
-        </ul>
+        <BoundedList
+          items={view.agents}
+          limit={AGENT_ITEMS}
+          noun={text.nouns.agent}
+          live={false}
+          render={(agents) => (
+            <ul className="omfp-tool-card__agents">
+              {agents.map((agent) => (
+                <Subagent key={agent.name} agent={agent} />
+              ))}
+            </ul>
+          )}
+        />
       );
     case "card":
       // The widget mounts once the call's arguments are complete; until then its code shows as it is written (UI-056).
       return card.status === "composing" ? (
-        view.code !== undefined && <WriteContent content={view.code} language="tsx" />
+        view.code !== undefined && (
+          <BoundedCode code={view.code} language="tsx" live={live} data-testid="tool-content" />
+        )
       ) : (
         <CardSection threadId={threadId} toolCallId={card.toolCallId} view={view} />
       );
@@ -471,12 +589,17 @@ function ToolSection({
       return (
         <>
           {view.code !== undefined ? (
-            <WriteContent content={view.code} language="tsx" />
+            <BoundedCode code={view.code} language="tsx" live={live} data-testid="tool-content" />
           ) : (
             view.reference !== undefined && <p className="omfp-tool-card__meta">{view.reference}</p>
           )}
           {view.props !== undefined && (
-            <Code code={JSON.stringify(view.props, null, 2)} block language="json" data-testid="tool-props" />
+            <BoundedCode
+              code={JSON.stringify(view.props, null, 2)}
+              language="json"
+              live={live}
+              data-testid="tool-props"
+            />
           )}
           {card.status === "succeeded" && card.result !== undefined && (
             <p className="omfp-tool-card__meta" data-testid="tool-result">
@@ -490,31 +613,42 @@ function ToolSection({
 
 /**
  * omp's preview of an `edit` while the model writes it and it runs (UI-055): each file's diff so far, or why it does
- * not apply; with several files, or a moved one, each under its path.
+ * not apply; with several files, or a moved one, each under its path. It shows in a live window following its last
+ * lines (UI-935), each file's name and error counting as one line.
  */
 function EditPreview({ files }: { files: readonly EditPreviewFile[] }): ReactNode {
   const named = files.length > 1 || files.some((file) => file.rename !== undefined);
-  return files.map((file) => (
-    <Fragment key={file.path}>
-      {named && (
-        <div className="omfp-tool-card__file" data-testid="tool-preview-file">
-          <FilePath path={file.path} />
-          {file.rename !== undefined && (
-            <>
-              {" → "}
-              <FilePath path={file.rename} />
-            </>
-          )}
-        </div>
-      )}
-      {file.error !== undefined && (
-        <div className="omfp-tool-card__error" data-testid="tool-preview-error">
-          {file.error}
-        </div>
-      )}
-      {file.diff !== undefined && <Diff lines={file.diff} language={file.language} data-testid="tool-diff" />}
-    </Fragment>
-  ));
+  const total = files.reduce(
+    (sum, file) => sum + (named ? 1 : 0) + (file.error === undefined ? 0 : 1) + (file.diff?.length ?? 0),
+    0,
+  );
+  return (
+    <LiveWindow total={total}>
+      <div className="omfp-tool-card__preview">
+        {files.map((file) => (
+          <Fragment key={file.path}>
+            {named && (
+              <div className="omfp-tool-card__file" data-testid="tool-preview-file">
+                <FilePath path={file.path} />
+                {file.rename !== undefined && (
+                  <>
+                    {" → "}
+                    <FilePath path={file.rename} />
+                  </>
+                )}
+              </div>
+            )}
+            {file.error !== undefined && (
+              <div className="omfp-tool-card__error" data-testid="tool-preview-error">
+                {file.error}
+              </div>
+            )}
+            {file.diff !== undefined && <Diff lines={file.diff} language={file.language} data-testid="tool-diff" />}
+          </Fragment>
+        ))}
+      </div>
+    </LiveWindow>
+  );
 }
 
 type CardView = Extract<ToolView, { kind: "card" }>;
@@ -574,27 +708,35 @@ function CardCancel({ title }: { title: string }): ReactNode {
 
 /**
  * An `ast_grep` file's matches (UI-916): each match's first line opens the file there, its code is highlighted in the
- * file's language, its metavariable captures under it.
+ * file's language, its metavariable captures under it. A long list shows its first matches (UI-935).
  */
 function Matches({ path, matches }: { path: string; matches: readonly AstMatch[] }): ReactNode {
   const language = languageOfPath(path);
   return (
-    <ol className="omfp-tool-card__matches">
-      {matches.map((match, index) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: a result's matches never move
-        <li key={index} data-testid="tool-match">
-          <LineLink path={path} line={match.line} data-testid="tool-match-line">
-            {match.line}
-          </LineLink>
-          <Code code={match.code} block language={language} data-testid="tool-match-code" />
-          {match.captures !== undefined && (
-            <p className="omfp-tool-card__meta omfp-tool-card__captures" data-testid="tool-match-captures">
-              {match.captures}
-            </p>
-          )}
-        </li>
-      ))}
-    </ol>
+    <BoundedList
+      items={matches}
+      limit={MATCH_ITEMS}
+      noun={text.nouns.match}
+      live={false}
+      render={(shown) => (
+        <ol className="omfp-tool-card__matches">
+          {shown.map((match, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: a result's matches never move
+            <li key={index} data-testid="tool-match">
+              <LineLink path={path} line={match.line} data-testid="tool-match-line">
+                {match.line}
+              </LineLink>
+              <Code code={match.code} block language={language} data-testid="tool-match-code" />
+              {match.captures !== undefined && (
+                <p className="omfp-tool-card__meta omfp-tool-card__captures" data-testid="tool-match-captures">
+                  {match.captures}
+                </p>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+    />
   );
 }
 
@@ -621,13 +763,10 @@ function Location({ path, line, column }: { path: string; line: number; column?:
   );
 }
 
-/** Files of a long list of changed files shown until it is expanded (UI-919). */
-const FILES_SHOWN = 8;
-
 /**
  * Files a workspace edit or an applied rewrite changed, each opening against `HEAD` (UI-917, UI-919); with `preview`,
  * the files an edit that was not applied would change, each opening as it is (the call's file at the call's line). A
- * long list shows its first files, expandable to all of them.
+ * long list shows its first files, expandable to all of them (UI-935).
  */
 function ChangedFiles({
   files,
@@ -637,45 +776,38 @@ function ChangedFiles({
   preview?: { readonly file: string | undefined; readonly line: number | undefined } | undefined;
 }): ReactNode {
   const openFile = useOpenFile();
-  const [expanded, setExpanded] = useState(false);
   if (files.length === 0) {
     return null;
   }
-  const hidden = files.length - FILES_SHOWN;
   return (
-    <>
-      <ul className="omfp-tool-card__files">
-        {(expanded || hidden <= 0 ? files : files.slice(0, FILES_SHOWN)).map((file) => (
-          <li key={file.path} data-testid="tool-file">
-            <div className="omfp-tool-card__file">
-              {file.removed ? (
-                <FilePath path={file.path} />
-              ) : (
-                <PathLink
-                  reference={{ path: file.path, line: file.path === preview?.file ? preview.line : undefined }}
-                  diff={preview === undefined}
-                  onOpen={(ref) => openFile(ref.path, preview === undefined ? { diff: true } : { line: ref.line })}
-                >
+    <BoundedList
+      items={files}
+      limit={LIST_ITEMS}
+      noun={text.nouns.file}
+      live={false}
+      render={(shown) => (
+        <ul className="omfp-tool-card__files">
+          {shown.map((file) => (
+            <li key={file.path} data-testid="tool-file">
+              <div className="omfp-tool-card__file">
+                {file.removed ? (
                   <FilePath path={file.path} />
-                </PathLink>
-              )}
-              <span className="omfp-tool-card__meta">{file.note}</span>
-            </div>
-          </li>
-        ))}
-      </ul>
-      {hidden > 0 && (
-        <Button
-          size="sm"
-          variant="quiet"
-          aria-expanded={expanded}
-          data-testid="tool-more"
-          onPress={() => setExpanded((open) => !open)}
-        >
-          {expanded ? text.fewerFiles : text.moreFiles(hidden)}
-        </Button>
+                ) : (
+                  <PathLink
+                    reference={{ path: file.path, line: file.path === preview?.file ? preview.line : undefined }}
+                    diff={preview === undefined}
+                    onOpen={(ref) => openFile(ref.path, preview === undefined ? { diff: true } : { line: ref.line })}
+                  >
+                    <FilePath path={file.path} />
+                  </PathLink>
+                )}
+                <span className="omfp-tool-card__meta">{file.note}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
       )}
-    </>
+    />
   );
 }
 
@@ -720,12 +852,20 @@ function LspAnswer({ result, call }: { result: LspResult; call: Extract<ToolView
       return (
         <>
           {result.diagnostics.length > 0 && (
-            <ul className="omfp-tool-card__diagnostics">
-              {result.diagnostics.map((diagnostic, index) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: an answer's diagnostics never move
-                <DiagnosticRow key={index} diagnostic={diagnostic} />
-              ))}
-            </ul>
+            <BoundedList
+              items={result.diagnostics}
+              limit={LIST_ITEMS}
+              noun={text.nouns.diagnostic}
+              live={false}
+              render={(diagnostics) => (
+                <ul className="omfp-tool-card__diagnostics">
+                  {diagnostics.map((diagnostic, index) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: an answer's diagnostics never move
+                    <DiagnosticRow key={index} diagnostic={diagnostic} />
+                  ))}
+                </ul>
+              )}
+            />
           )}
           {result.clean && (
             <p className="omfp-tool-card__meta" data-testid="lsp-clean">
@@ -741,21 +881,29 @@ function LspAnswer({ result, call }: { result: LspResult; call: Extract<ToolView
           <p className="omfp-tool-card__meta" data-testid="tool-total">
             {result.title}
           </p>
-          <ul className="omfp-tool-card__locations">
-            {result.locations.map((location) => (
-              <li key={`${location.path}:${location.line}:${location.column}`} data-testid="lsp-location-item">
-                <Location path={location.path} line={location.line} column={location.column} />
-                {location.context.length > 0 && (
-                  <Code
-                    code={location.context.map((line) => line.text).join("\n")}
-                    block
-                    language={languageOfPath(location.path)}
-                    data-testid="lsp-context"
-                  />
-                )}
-              </li>
-            ))}
-          </ul>
+          <BoundedList
+            items={result.locations}
+            limit={LOCATION_ITEMS}
+            noun={text.nouns.location}
+            live={false}
+            render={(locations) => (
+              <ul className="omfp-tool-card__locations">
+                {locations.map((location) => (
+                  <li key={`${location.path}:${location.line}:${location.column}`} data-testid="lsp-location-item">
+                    <Location path={location.path} line={location.line} column={location.column} />
+                    {location.context.length > 0 && (
+                      <Code
+                        code={location.context.map((line) => line.text).join("\n")}
+                        block
+                        language={languageOfPath(location.path)}
+                        data-testid="lsp-context"
+                      />
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          />
           <Notes notes={result.notes} />
         </>
       );
@@ -765,23 +913,31 @@ function LspAnswer({ result, call }: { result: LspResult; call: Extract<ToolView
           <p className="omfp-tool-card__meta" data-testid="tool-total">
             {result.title}
           </p>
-          <ul className="omfp-tool-card__symbols">
-            {result.symbols.map((symbol, index) => (
-              <li
-                // biome-ignore lint/suspicious/noArrayIndexKey: an answer's symbols never move
-                key={index}
-                data-testid="lsp-symbol"
-                style={{ paddingInlineStart: `${symbol.depth}rem` }}
-              >
-                <span className="omfp-tool-card__symbol">{symbol.name}</span>
-                {symbol.path !== undefined && (
-                  <LineLink path={symbol.path} line={symbol.line} data-testid="lsp-symbol-line">
-                    {result.workspace && <FilePath path={symbol.path} />}:{symbol.line}
-                  </LineLink>
-                )}
-              </li>
-            ))}
-          </ul>
+          <BoundedList
+            items={result.symbols}
+            limit={LIST_ITEMS}
+            noun={text.nouns.symbol}
+            live={false}
+            render={(symbols) => (
+              <ul className="omfp-tool-card__symbols">
+                {symbols.map((symbol, index) => (
+                  <li
+                    // biome-ignore lint/suspicious/noArrayIndexKey: an answer's symbols never move
+                    key={index}
+                    data-testid="lsp-symbol"
+                    style={{ paddingInlineStart: `${symbol.depth}rem` }}
+                  >
+                    <span className="omfp-tool-card__symbol">{symbol.name}</span>
+                    {symbol.path !== undefined && (
+                      <LineLink path={symbol.path} line={symbol.line} data-testid="lsp-symbol-line">
+                        {result.workspace && <FilePath path={symbol.path} />}:{symbol.line}
+                      </LineLink>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          />
         </>
       );
     case "edits":
@@ -831,43 +987,86 @@ function LspAnswer({ result, call }: { result: LspResult; call: Extract<ToolView
           <p className="omfp-tool-card__meta" data-testid="tool-total">
             {result.title}
           </p>
-          <ol className="omfp-tool-card__actions">
-            {result.actions.map((action) => (
-              <li key={action.index} data-testid="lsp-action">
-                <span className="omfp-tool-card__meta">{action.index}</span>
-                <Badge>{action.kind}</Badge>
-                <span>{action.title}</span>
-              </li>
-            ))}
-          </ol>
+          <BoundedList
+            items={result.actions}
+            limit={LIST_ITEMS}
+            noun={text.nouns.action}
+            live={false}
+            render={(actions) => (
+              <ol className="omfp-tool-card__actions">
+                {actions.map((action) => (
+                  <li key={action.index} data-testid="lsp-action">
+                    <span className="omfp-tool-card__meta">{action.index}</span>
+                    <Badge>{action.kind}</Badge>
+                    <span>{action.title}</span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          />
         </>
       );
-    case "hover":
-      return <Markdown text={result.markdown} data-testid="lsp-hover" />;
+    case "hover": {
+      const lines = textLines(result.markdown);
+      return (
+        <BoundedBody
+          total={lines.length}
+          live={false}
+          cut={bodyCut(lines.length, ANSWER_LINES)}
+          render={(start, end) => (
+            <Markdown
+              text={end - start === lines.length ? result.markdown : lines.slice(start, end).join("\n")}
+              data-testid="lsp-hover"
+            />
+          )}
+        />
+      );
+    }
     case "text":
-      return <Code code={result.text} block data-testid="tool-result" />;
+      return <BoundedCode code={result.text} live={false} limit={ANSWER_LINES} data-testid="tool-result" />;
   }
 }
 
-/** A todo tool's phases (UI-163): the kit's todo list per phase, named when there are several. */
+/**
+ * A todo tool's phases (UI-163): the kit's todo list per phase, named when there are several. A long phase shows its
+ * tasks in progress and those around them (`todoShown`), the rest on demand (UI-935).
+ */
 function TodoPhases({ phases }: { phases: readonly TodoPhase[] }): ReactNode {
-  return phases.map((phase) => (
-    <section key={phase.name} aria-label={phase.name}>
-      {phases.length > 1 && <h3>{phase.name}</h3>}
-      <TodoList
-        className="omfp-tool-card__todo"
-        itemTestId="todo-task"
-        items={phase.tasks.map((task) => ({
-          text: task.content,
-          status: task.status,
-          statusLabel: text.todoStatus[task.status] ?? task.status,
-        }))}
-      />
-    </section>
-  ));
+  return phases.map((phase) => {
+    const items = phase.tasks.map((task) => ({
+      text: task.content,
+      status: task.status,
+      statusLabel: text.todoStatus[task.status] ?? task.status,
+    }));
+    const shown = todoShown(phase.tasks.map((task) => task.status));
+    return (
+      <section key={phase.name} aria-label={phase.name}>
+        {phases.length > 1 && <h3>{phase.name}</h3>}
+        <BoundedBody
+          total={items.length}
+          live={false}
+          cut={shown === undefined || shown.length >= items.length ? undefined : { start: 0, end: shown.length }}
+          noun={text.nouns.task}
+          render={(start, end) => (
+            <TodoList
+              className="omfp-tool-card__todo"
+              itemTestId="todo-task"
+              items={
+                end - start === items.length || shown === undefined
+                  ? items
+                  : shown.flatMap((index) => items.slice(index, index + 1))
+              }
+            />
+          )}
+        />
+      </section>
+    );
+  });
 }
 
+/** A `task`'s subagent: its head, its assignment, its output (live in a following window while it runs, UI-935). */
 function Subagent({ agent }: { agent: SubagentRun }): ReactNode {
+  const lines = textLines(agent.output ?? "");
   return (
     <li className="omfp-tool-card__agent" data-testid="subagent" data-status={agent.status}>
       <div className="omfp-tool-card__agent-head">
@@ -888,9 +1087,16 @@ function Subagent({ agent }: { agent: SubagentRun }): ReactNode {
         </p>
       )}
       {agent.output !== undefined && (
-        <p className="omfp-tool-card__agent-output" data-testid="subagent-output">
-          {agent.output}
-        </p>
+        <BoundedBody
+          total={lines.length}
+          live={agent.status === "running"}
+          cut={bodyCut(lines.length)}
+          render={(start, end) => (
+            <p className="omfp-tool-card__agent-output" data-testid="subagent-output">
+              {end - start === lines.length ? agent.output : lines.slice(start, end).join("\n")}
+            </p>
+          )}
+        />
       )}
     </li>
   );

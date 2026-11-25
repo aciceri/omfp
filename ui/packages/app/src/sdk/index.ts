@@ -13,9 +13,30 @@
 // `omfp/sdk` like any agent widget.
 export { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 export { keyLabel } from "../keymap/keymap.ts";
+export type { Noun } from "../strings/chat.ts";
 export { strings } from "../strings/index.ts";
-export { type AnsiRun, ansiRuns } from "../vm/ansi.ts";
+export { type AnsiRun, ansiLines, ansiRuns } from "../vm/ansi.ts";
 export { type BackgroundRow, type BackgroundSections, type JobTimes, lastOutputLine } from "../vm/background.ts";
+export {
+  AGENT_ITEMS,
+  ANSWER_LINES,
+  BODY_LINES,
+  bodyCut,
+  type Cut,
+  diffCut,
+  earlierLines,
+  follows,
+  LIST_ITEMS,
+  LOCATION_ITEMS,
+  liveBody,
+  MATCH_ITEMS,
+  QUESTION_ITEMS,
+  READ_LINES,
+  textLines,
+  todoShown,
+  type WindowScroll,
+  wheelScrolls,
+} from "../vm/bounded.ts";
 export { type BrowserScreenshot, type BrowserTab, type BrowserView, browserView } from "../vm/browser.ts";
 export {
   type ChangedFile,

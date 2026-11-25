@@ -113,20 +113,39 @@ impl Supervisor {
                 heard: Instant::now(),
             });
         }
-        let (process, title) = async {
+        let (process, title, about) = async {
             let process = self.ensure_running(&actor).await?;
-            Ok::<_, SupervisorError>((process, self.thread(id).await?.title))
+            let id = id.to_owned();
+            let (thread, view) = self
+                .stores(move |inner| {
+                    let thread = inner.threads.get(&id)?;
+                    let (view, _) = inner.workspaces.rescan(&thread.workspace_id)?;
+                    Ok::<_, SupervisorError>((thread, view))
+                })
+                .await?;
+            let about = crate::live_context::About {
+                workspace: view.workspace.name,
+                folder: view.workspace.path,
+                repositories: view
+                    .repos
+                    .into_iter()
+                    .filter(|repo| !repo.is_root)
+                    .map(|repo| repo.name)
+                    .collect(),
+                model: thread.model,
+            };
+            Ok::<_, SupervisorError>((process, thread.title, about))
         }
         .await
         .inspect_err(|_| {
             actor.release_voice(slot);
         })?;
-        // The realtime model knows only its instructions, so they carry the thread's conversation (DMN-105) and the
-        // conversations of ended sessions not in it yet (DMN-113).
+        // The realtime model knows only its instructions, so they carry where it runs (DMN-117), the thread's
+        // conversation (DMN-105) and the conversations of ended sessions not in it yet (DMN-113).
         let spoken = lock(&actor.voice_logs).clone();
-        let instructions = actor
-            .log
-            .with_state(|state| crate::live_context::live_instructions(&title, state, &spoken));
+        let instructions = actor.log.with_state(|state| {
+            crate::live_context::live_instructions(&title, &about, state, &spoken)
+        });
         self.push(&actor, ThreadEvent::LiveSession { owner: Some(owner) });
         self.watch_silence(&actor, slot);
         let call = call(instructions);

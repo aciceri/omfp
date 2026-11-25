@@ -83,6 +83,23 @@ impl Harness {
         (view.workspace.id, view.workspace.path)
     }
 
+    /// What the live instructions of thread `id` say about where it runs (DMN-117).
+    fn about(&self, id: &str) -> crate::live_context::About {
+        let thread = self.threads.get(id).unwrap();
+        let (view, _) = self.workspaces.rescan(&thread.workspace_id).unwrap();
+        crate::live_context::About {
+            workspace: view.workspace.name,
+            folder: view.workspace.path,
+            repositories: view
+                .repos
+                .into_iter()
+                .filter(|repo| !repo.is_root)
+                .map(|repo| repo.name)
+                .collect(),
+            model: thread.model,
+        }
+    }
+
     /// A fake repository outside every workspace.
     fn external_repo(&self, name: &str) -> PathBuf {
         let path = self.dir.path().join("src").join(name);
@@ -2106,11 +2123,13 @@ async fn live_connect_starts_omp_records_the_owner_and_relays_the_answer() {
     assert_eq!(live.transcript.len(), 2);
 }
 
-// spec: DMN-105
+// spec: DMN-105, DMN-117
 #[tokio::test]
 async fn live_connect_sends_the_live_prompt_with_the_threads_conversation() {
     let h = harness(|_| {});
-    let (ws, _) = h.workspace();
+    let (ws, folder) = h.workspace();
+    std::fs::create_dir_all(folder.join("api")).unwrap();
+    h.git.add_repo(&folder.join("api"), "main");
     let id = h
         .threads
         .create(NewThread::new("Login bug", ws))
@@ -2140,16 +2159,24 @@ async fn live_connect_sends_the_live_prompt_with_the_threads_conversation() {
         })
         .collect();
     let state = h.log(&id).await.with_state(Clone::clone);
+    let about = h.about(&id);
+    assert_eq!(about.repositories, ["api"]);
     assert_eq!(
         instructions,
         vec![Some(crate::live_context::live_instructions(
             "Login bug",
+            &about,
             &state,
             &[]
         ))]
     );
     let sent = instructions[0].as_deref().unwrap();
     assert!(sent.starts_with("You: omp Live, the realtime voice between"));
+    assert!(sent.contains(&format!(
+        "Workspace: {} (folder {})\nRepositories: api\n</about>",
+        about.workspace,
+        folder.display()
+    )));
     assert!(sent.contains("Thread title: Login bug"));
     assert!(sent.contains(
         "User: why does {{default \"\" \"{{\"}}login}} fail?\n\nAssistant: The token was stale."
@@ -2733,6 +2760,7 @@ async fn live_start_starts_omp_records_the_owner_and_relays_the_voice() {
         live_starts(&h.launcher.process(0)),
         vec![Some(crate::live_context::live_instructions(
             "t",
+            &h.about(&id),
             &state,
             &[]
         ))]

@@ -40,9 +40,9 @@ pub fn user_append(workspace: &Path, agent_dir: Option<&Path>) -> Option<String>
     (!text.is_empty()).then(|| text.to_owned())
 }
 
-/// Where widgets live and what they may import, shared by the widgets note and the `widget-builder` agent so the two
-/// never drift: `root` prefixes the workspace paths (`<workspace>/` for the main agent, empty for the subagent, whose
-/// cwd is the workspace folder).
+/// Where widgets live, what they may import and that they must work on phones ([`MOBILE_RULE`]), shared by the widgets
+/// note and the `widget-builder` agent so the two never drift: `root` prefixes the workspace paths (`<workspace>/` for
+/// the main agent, empty for the subagent, whose cwd is the workspace folder).
 fn widget_facts(root: &str) -> String {
     format!(
         "- Workspace widgets: {root}.omfp/widgets/<name>/index.tsx, used as `./widgets/<name>`; a folder named like a \
@@ -54,7 +54,8 @@ fn widget_facts(root: &str) -> String {
          <datalist>: their popups use the platform's look, not the theme.\n\
          - useJob(command) runs `sh -c <command>` in the workspace folder (not a repository) with the daemon's \
          environment: no login shell, no dev shell (write `nix develop -c …` yourself), no timeout. For a command built \
-         from input, pass `useJob(command, {{ key }})` so every run replaces the last. Details: omfp://docs/widgets (Jobs)."
+         from input, pass `useJob(command, {{ key }})` so every run replaces the last. Details: omfp://docs/widgets (Jobs).\n\
+         - {MOBILE_RULE}"
     )
 }
 
@@ -90,6 +91,15 @@ pub const VERIFY_LOOP: &str = "Verify in the user's window: write → omfp_widge
     no view shows out of sight) → omfp_windows (each window's views and where each comes from, added commands, \
     errors) → omfp_window_run { command: \"view.switch\", args: [\"<view>\"] } to show a view → omfp_windows again \
     for its errors.";
+
+/// The phone rule (AGT-084, AGT-029), word for word in the widgets note, the `widget-builder` agent and
+/// `omfp://docs/widgets`: what agents build shows on phones too, where the widget check does not look by itself.
+pub const MOBILE_RULE: &str = "Phones too: every view, widget, init-file view and card must also work in the \
+    `narrow` (frame under 1100 px) and `mobile` (under 700 px, or a phone held sideways: one area at a time, the mode \
+    line at the top) layouts. Read FRAME_LAYOUT (useWindowState) and give way: stack instead of columns, no fixed \
+    widths or wide tables (wrap, or scroll inside the widget), touch-sized controls, no action reachable only by \
+    hover. The check renders in the focused window's layout only: check the result at a phone width too (a window \
+    under 700 px wide, or ask the user to look on their phone).";
 
 /// The widgets note (AGT-024): where the views manifest and the workspace's widgets live, the host URIs of the
 /// built-in sources, what a widget may import, the rules for the `main` slot, placing a widget and checking it, where
@@ -379,7 +389,7 @@ mod tests {
                 .join(" ")
         };
         let docs = plain(crate::widgets::DOCS);
-        for rule in [MAIN_SLOT_RULE, PLACEMENT_RULE, VERIFY_LOOP] {
+        for rule in [MAIN_SLOT_RULE, PLACEMENT_RULE, VERIFY_LOOP, MOBILE_RULE] {
             assert_eq!(note.matches(rule).count(), 1, "{rule:?} once in: {note}");
             assert!(
                 docs.contains(&plain(rule)),
@@ -425,6 +435,31 @@ mod tests {
         }
     }
 
+    // spec: AGT-084, AGT-029
+    #[test]
+    fn the_note_and_the_builder_ask_for_widgets_that_work_and_are_checked_on_phones() {
+        let note = widgets_note(Path::new("/ws"));
+        for text in [note, widget_builder_definition()] {
+            assert_eq!(text.matches(MOBILE_RULE).count(), 1, "once in: {text}");
+        }
+        for rule in [
+            "every view, widget, init-file view and card",
+            "`narrow`",
+            "`mobile`",
+            "Read FRAME_LAYOUT",
+            "stack instead of columns",
+            "no fixed widths",
+            "touch-sized controls",
+            "no action reachable only by hover",
+            "check the result at a phone width",
+        ] {
+            assert!(
+                MOBILE_RULE.contains(rule),
+                "{rule:?} missing: {MOBILE_RULE}"
+            );
+        }
+    }
+
     // spec: AGT-029
     #[test]
     fn the_widget_builder_is_a_background_smol_agent_carrying_the_widgets_facts() {
@@ -465,6 +500,7 @@ mod tests {
             "until it is clean",
             "Never edit .omfp/views.json",
             "short summary naming the widget (`./widgets/<name>`) and its props",
+            MOBILE_RULE,
             EXAMPLE,
         ] {
             assert!(body.contains(rule), "{rule:?} missing: {body}");

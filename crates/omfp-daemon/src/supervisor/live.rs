@@ -126,12 +126,7 @@ impl Supervisor {
             let about = crate::live_context::About {
                 workspace: view.workspace.name,
                 folder: view.workspace.path,
-                repositories: view
-                    .repos
-                    .into_iter()
-                    .filter(|repo| !repo.is_root)
-                    .map(|repo| repo.name)
-                    .collect(),
+                repositories: view.repos.into_iter().map(|repo| repo.name).collect(),
                 model: thread.model,
             };
             Ok::<_, SupervisorError>((process, thread.title, about))

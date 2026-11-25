@@ -109,3 +109,25 @@ export function ansiRuns(text: string): AnsiRun[] {
   push(text.length);
   return runs;
 }
+
+/**
+ * The styled runs of `text` line by line, so a slice of its lines keeps the styles set before it (UI-935); a trailing
+ * newline ends the last line rather than starting an empty one.
+ */
+export function ansiLines(text: string): AnsiRun[][] {
+  const lines: AnsiRun[][] = [[]];
+  for (const run of ansiRuns(text)) {
+    for (const [index, part] of run.text.split("\n").entries()) {
+      if (index > 0) {
+        lines.push([]);
+      }
+      if (part !== "") {
+        lines.at(-1)?.push({ text: part, style: run.style });
+      }
+    }
+  }
+  if (lines.length > 1 && lines.at(-1)?.length === 0) {
+    lines.pop();
+  }
+  return lines;
+}

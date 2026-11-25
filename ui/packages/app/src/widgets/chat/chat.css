@@ -383,7 +383,7 @@
   /* Code in a section is flat, like the kit's code right in a card's body: the card's border and labelled rules
      frame it (UI-187); so are an `ast_grep` match's and an `lsp` location's source (UI-916, UI-919). */
   .omfp-tool-card__section > .omfp-code--block,
-  .omfp-tool-card__preview > .omfp-code--block,
+  .omfp-bounded__body > .omfp-code--block,
   .omfp-tool-card__matches .omfp-code--block,
   .omfp-tool-card__locations .omfp-code--block {
     padding: var(--omfp-s1) 0;
@@ -421,13 +421,54 @@
     background: color-mix(in oklab, var(--omfp-error) 11%, transparent);
   }
 
-  .omfp-tool-card__output {
-    max-block-size: 24em;
+  /* A long body (UI-935): live, a window about 12 code lines tall following its newest lines, what is above counted
+     over it; settled, its preview fading out where it is cut (at its top for an output's end), expanded, the whole
+     body scrolling inside the card at most about a viewport tall. Never anchored: the window scrolls itself. */
+  .omfp-bounded {
+    display: flex;
+    flex-direction: column;
+    gap: var(--omfp-s1);
+    min-inline-size: 0;
   }
 
-  /* A collapsed `write` shows its first lines fading out (UI-053). */
-  .omfp-tool-card__preview[data-cut="true"] .omfp-code--block {
-    mask-image: linear-gradient(to bottom, var(--omfp-on-surface) 55%, transparent);
+  .omfp-bounded > .omfp-button {
+    align-self: flex-start;
+  }
+
+  .omfp-bounded__body {
+    min-inline-size: 0;
+    overflow-anchor: none;
+  }
+
+  .omfp-bounded[data-live="true"] > .omfp-bounded__body {
+    max-block-size: calc(12 * var(--omfp-lh-code) * var(--omfp-fs-code) + var(--omfp-s4));
+    overflow-y: auto;
+  }
+
+  .omfp-bounded[data-expanded="true"] > .omfp-bounded__body {
+    max-block-size: max(16rem, calc(100dvh - 12rem));
+    overflow-y: auto;
+  }
+
+  .omfp-bounded[data-cut="true"] > .omfp-bounded__body {
+    mask-image: linear-gradient(to bottom, var(--omfp-on-surface) 80%, transparent);
+  }
+
+  .omfp-bounded[data-cut="true"][data-tail="true"] > .omfp-bounded__body {
+    mask-image: linear-gradient(to top, var(--omfp-on-surface) 80%, transparent);
+  }
+
+  .omfp-bounded__marker {
+    margin: 0;
+    font-size: var(--omfp-fs-2xs);
+    color: var(--omfp-on-surface-variant);
+  }
+
+  /* An edit's preview (UI-055): each file's name, error and diff. */
+  .omfp-tool-card__preview {
+    display: flex;
+    flex-direction: column;
+    gap: var(--omfp-s2);
   }
 
   .omfp-tool-card__section > .omfp-button {

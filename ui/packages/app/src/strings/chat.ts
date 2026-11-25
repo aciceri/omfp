@@ -82,8 +82,9 @@ export const chat = {
     directory: "Directory listing",
     in: (scope: string) => `in ${scope}`,
     truncated: "Results were cut.",
-    /** The collapsed `write` content's expander (UI-053). */
+    /** A long body's preview expander, and how many lines a live window or an output's preview leaves above (UI-935). */
     moreLines: (count: number) => `… ${count} more ${count === 1 ? "line" : "lines"}`,
+    earlierLines: (count: number) => `… ${count} earlier ${count === 1 ? "line" : "lines"}`,
     fewerLines: "Show fewer lines",
     noMatch: "No match",
     todoStatus: {

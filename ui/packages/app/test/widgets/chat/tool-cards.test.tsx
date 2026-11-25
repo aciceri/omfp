@@ -6,8 +6,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { replay, type ToolRun } from "@omfp/core";
-import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
+import { type JsonObject, replay, type ToolRun } from "@omfp/core";
+import type { DiffLine } from "@omfp/kit";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { type ReactNode, useState } from "react";
 import { findRule, parseCss } from "../../../../kit/test/support/css.ts";
@@ -18,7 +19,7 @@ import { MessageRow, ToolCardView } from "../../../src/widgets/chat/message.tsx"
 import { type Clock, ClockContext } from "../../../src/widgets/chat/state.ts";
 import { card, cards, composingCard, lspCard, streaming } from "../../support/cards.ts";
 import { repo, thread, workspace } from "../../support/fixtures.ts";
-import { renderWithHost, testHost } from "../../support/host.tsx";
+import { renderWithHost, type TestHost, testHost } from "../../support/host.tsx";
 import { fixtureEvents, isFrame } from "./fixtures.ts";
 import { ManualClock } from "./harness.tsx";
 
@@ -29,16 +30,22 @@ afterEach(cleanup);
 /** The host of the last {@link show}. */
 let shownHost: OmfpHost | undefined;
 
-/** Renders `toolCard` in workspace `w1` (folder `/work/w1`, whose repository `src` holds the fixtures' files). */
-function show(toolCard: ToolCard, clock?: Clock): HTMLElement {
+/** A test host showing thread `t1` of workspace `w1` (folder `/work/w1`, whose repository `src` holds the fixtures). */
+function threadHost(): TestHost {
   const test = testHost();
-  shownHost = test.host;
   test.client.connected();
   test.client.index({
     workspaces: [workspace("w1", [{ ...repo("w1", "src", "main"), kind: "clone" }])],
     threads: [thread("t1", "cards", "w1")],
   });
   test.host.window.set(SELECTED_THREAD, "t1");
+  return test;
+}
+
+/** Renders `toolCard` in thread `t1` of {@link threadHost}. */
+function show(toolCard: ToolCard, clock?: Clock): HTMLElement {
+  const test = threadHost();
+  shownHost = test.host;
   const card = <ToolCardView threadId="t1" cardKey={toolCard.toolCallId} card={toolCard} />;
   renderWithHost(clock === undefined ? card : <ClockContext value={clock}>{card}</ClockContext>, test);
   test.flush();
@@ -323,14 +330,7 @@ describe("edit card", () => {
 
   // spec: UI-695, UI-055
   test("an explicit collapse of a live edit wins when the card settles", async () => {
-    const test = testHost();
-    test.client.connected();
-    test.client.index({
-      workspaces: [workspace("w1", [{ ...repo("w1", "src", "main"), kind: "clone" }])],
-      threads: [thread("t1", "cards", "w1")],
-    });
-    test.host.window.set(SELECTED_THREAD, "t1");
-    renderWithHost(<EditLifecycleCard />, test);
+    renderWithHost(<EditLifecycleCard />, threadHost());
     expect(screen.getByTestId("tool-diff").textContent).toContain("left.saturating_add(right)");
     await userEvent.click(screen.getByTestId("toggle"));
     expect(screen.queryByTestId("tool-diff")).toBeNull();
@@ -375,18 +375,55 @@ describe("write card", () => {
     await waitFor(() => expect(content.querySelector(".hljs-section")?.textContent).toBe("# Notes"));
   });
 
-  // spec: UI-053
-  test("long content: the first 6 lines, then the whole content on demand", async () => {
+  // spec: UI-053, UI-935
+  test("long content: the first 12 lines, then the whole content on demand, scrolling inside the card", async () => {
     const recorded = card("write_tool_calls", "call_write_1");
-    const content = `${Array.from({ length: 9 }, (_, at) => `line ${at + 1}`).join("\n")}\n`;
+    const content = numbered(20);
     const element = await open({ ...recorded, view: { ...recorded.view, content } as ToolCard["view"] });
-    expect(byTestId(element, "tool-content").textContent).toBe("line 1\nline 2\nline 3\nline 4\nline 5\nline 6");
+    expect(byTestId(element, "tool-content").textContent).toBe(numbered(12).trimEnd());
     const more = byTestId(element, "tool-more");
-    expect([more.textContent, more.getAttribute("aria-expanded")]).toEqual(["… 3 more lines", "false"]);
+    expect([more.textContent, more.getAttribute("aria-expanded")]).toEqual(["… 8 more lines", "false"]);
     await userEvent.click(more);
     expect(byTestId(element, "tool-content").textContent).toBe(content);
+    expect(element.querySelector(".omfp-bounded")?.getAttribute("data-expanded")).toBe("true");
     await userEvent.click(byTestId(element, "tool-more"));
-    expect(byTestId(element, "tool-content").textContent).toEndWith("line 6");
+    expect(byTestId(element, "tool-content").textContent).toEndWith("line 12");
+    // happy-dom lays nothing out: the rules themselves are checked. Live, about 12 code lines; expanded, about a
+    // viewport; both scroll inside the card.
+    const chat = parseCss(readFileSync(join(import.meta.dir, "../../../src/widgets/chat/chat.css"), "utf8"));
+    const rule = (selector: string) => findRule(chat, ["@layer omfp-widgets"], selector).declarations;
+    const live = rule('.omfp-bounded[data-live="true"] > .omfp-bounded__body');
+    const expanded = rule('.omfp-bounded[data-expanded="true"] > .omfp-bounded__body');
+    expect([live.get("overflow-y"), expanded.get("overflow-y")]).toEqual(["auto", "auto"]);
+    expect(live.get("max-block-size")).toStartWith("calc(12 * var(--omfp-lh-code) * var(--omfp-fs-code)");
+    expect(expanded.get("max-block-size")).toContain("100dvh");
+  });
+
+  // spec: UI-053, UI-695, UI-935
+  test("live: a window following the last lines written; scrolled up it stops following until back at its end", async () => {
+    renderWithHost(<GrowingWrite />, threadHost());
+    const box = screen.getByTestId("tool-window");
+    expect(screen.getByTestId("tool-content").textContent).toBe(numbered(30));
+    expect(box.dataset.following).toBe("true");
+    expect(screen.getByTestId("tool-earlier").textContent).toBe("… 18 earlier lines");
+    expect(screen.queryByTestId("tool-more")).toBeNull();
+    // Laid out 1000px tall in a 100px window, then scrolled up by the user.
+    Object.defineProperty(box, "scrollHeight", { configurable: true, value: 1000 });
+    Object.defineProperty(box, "clientHeight", { configurable: true, value: 100 });
+    box.scrollTop = 100;
+    fireEvent.scroll(box);
+    expect(box.dataset.following).toBe("false");
+    expect(screen.getByTestId("tool-earlier").textContent).toBe("… 3 earlier lines");
+    await userEvent.click(screen.getByTestId("grow"));
+    expect(screen.getByTestId("tool-content").textContent).toBe(numbered(40));
+    expect([box.dataset.following, box.scrollTop]).toEqual(["false", 100]);
+    // Back at its end, it follows what is written next.
+    box.scrollTop = 900;
+    fireEvent.scroll(box);
+    expect(box.dataset.following).toBe("true");
+    Object.defineProperty(box, "scrollHeight", { configurable: true, value: 1500 });
+    await userEvent.click(screen.getByTestId("grow"));
+    expect([box.dataset.following, box.scrollTop]).toEqual(["true", 1500]);
   });
 
   // spec: UI-053
@@ -400,6 +437,117 @@ describe("write card", () => {
     expect(byTestId(show(card("write_tool_calls", "call_write_2")), "tool-error").textContent).toContain("EISDIR");
   });
 });
+
+describe("bounded bodies", () => {
+  // spec: UI-935
+  test("a long output: its last 12 lines once ended, the earlier ones on demand; live, a following window", async () => {
+    const output = numbered(30);
+    const view: ToolCard["view"] = {
+      kind: "bash",
+      command: "seq 30",
+      cwd: undefined,
+      output,
+      exitCode: 0,
+      background: undefined,
+    };
+    const element = await open({ ...card("bash_tool_call", "call_bash_1"), view });
+    const earlier = byTestId(element, "tool-more");
+    expect([earlier.textContent, earlier.getAttribute("aria-expanded")]).toEqual(["… 18 earlier lines", "false"]);
+    // Its control is above the output it extends.
+    const after = earlier.compareDocumentPosition(byTestId(element, "tool-output"));
+    expect(after & Node.DOCUMENT_POSITION_FOLLOWING).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(byTestId(element, "tool-output").textContent).toBe(output.split("\n").slice(18).join("\n"));
+    await userEvent.click(earlier);
+    expect(byTestId(element, "tool-output").textContent).toBe(output);
+    cleanup();
+    const live = await open({ ...streaming("bash_tool_call", "call_bash_1"), view });
+    expect(byTestId(live, "tool-output").closest("[data-testid=tool-window]")).not.toBeNull();
+    expect(byTestId(live, "tool-output").textContent).toBe(output);
+    expect(byTestId(live, "tool-earlier").textContent).toBe("… 18 earlier lines");
+    expect(within(live).queryByTestId("tool-more")).toBeNull();
+  });
+
+  // spec: UI-935, UI-055
+  test("an edit: live, its preview in a following window; once ended, its first 40 lines, the rest on demand", async () => {
+    const lines: DiffLine[] = [
+      { kind: "hunk", text: "@@ -1,0 +1,60 @@" },
+      ...Array.from({ length: 60 }, (_, at) => ({
+        kind: "add" as const,
+        text: `let x${at} = ${at};`,
+        newLine: at + 1,
+      })),
+    ];
+    const live = streaming("edit_tool_calls", "call_edit_1");
+    const preview = [{ path: "src/lib.rs", rename: undefined, diff: lines, error: undefined, language: "rust" }];
+    const element = show({ ...live, view: { ...live.view, preview } as ToolCard["view"] });
+    expect(byTestId(element, "tool-diff").closest("[data-testid=tool-window]")).not.toBeNull();
+    expect(byTestId(element, "tool-diff").querySelectorAll("tr").length).toBe(61);
+    expect(byTestId(element, "tool-earlier").textContent).toBe("… 49 earlier lines");
+    cleanup();
+    const done = card("edit_tool_calls", "call_edit_1");
+    const settled = await open({ ...done, view: { ...done.view, diff: lines } as ToolCard["view"] });
+    expect(byTestId(settled, "tool-diff").querySelectorAll("tr").length).toBe(40);
+    const more = byTestId(settled, "tool-more");
+    expect(more.textContent).toBe("… 21 more lines");
+    await userEvent.click(more);
+    expect(byTestId(settled, "tool-diff").querySelectorAll("tr").length).toBe(61);
+  });
+
+  // spec: UI-935
+  test("a fetched page, a fallback card's arguments and result, a mount's props: their first 12 lines once ended", async () => {
+    const page = card("web_tool_calls", "call_read_1");
+    const fetched = await open({ ...page, view: { ...page.view, content: numbered(20) } as ToolCard["view"] });
+    expect(byTestId(fetched, "tool-content").textContent).toBe(numbered(12).trimEnd());
+    expect(byTestId(fetched, "tool-more").textContent).toBe("… 8 more lines");
+    cleanup();
+    const fields = Object.fromEntries(Array.from({ length: 20 }, (_, at) => [`field${at}`, at]));
+    const ended = (name: string, args: JsonObject, answer: string): ToolCard => {
+      const run: ToolRun = {
+        tool_call_id: `c-${name}`,
+        tool_name: name,
+        args,
+        intent: null,
+        status: "succeeded",
+        partial_result: null,
+        preview: null,
+        result: { content: [{ type: "text", text: answer }] },
+        background: null,
+      };
+      return toolCard(`c-${name}`, undefined, run, undefined, undefined);
+    };
+    const generic = ended("custom_tool", fields, numbered(20));
+    const fallback = await open(generic);
+    expect(texts(fallback, "tool-more")).toEqual([
+      text.moreLines(generic.args.split("\n").length - 12),
+      text.moreLines(8),
+    ]);
+    expect(byTestId(fallback, "tool-result").textContent).toBe(numbered(12).trimEnd());
+    cleanup();
+    const update = await open(ended("omfp_ui_update", { id: "board", props: fields }, 'Updated "board".'));
+    // 20 props and the braces: 22 lines.
+    expect(byTestId(update, "tool-more").textContent).toBe("… 10 more lines");
+  });
+});
+
+/** `count` numbered lines (`line 1`, …), each ending with a newline. */
+function numbered(count: number): string {
+  return Array.from({ length: count }, (_, at) => `line ${at + 1}\n`).join("");
+}
+
+/** A live `write` of 30 lines written on, 10 more on each click of `grow`, so its window is checked across updates. */
+function GrowingWrite() {
+  const [lines, setLines] = useState(30);
+  const live = streaming("write_tool_calls", "call_write_1");
+  const current: ToolCard = { ...live, view: { ...live.view, content: numbered(lines) } as ToolCard["view"] };
+  return (
+    <>
+      <button type="button" data-testid="grow" onClick={() => setLines((count) => count + 10)}>
+        grow
+      </button>
+      <ToolCardView threadId="t1" cardKey={current.toolCallId} card={current} />
+    </>
+  );
+}
 
 describe("search cards", () => {
   // spec: UI-050, UI-051

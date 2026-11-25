@@ -2,7 +2,8 @@
  * The bodies of the specialized tool cards (UI-050): what `toolView` read from a call, rendered per tool. Failed calls
  * show omp's error first (UI-052); code is highlighted when its language is known (UI-090); the code-intelligence
  * tools' paths open their files at their lines (UI-916..UI-919). While the model writes a call's arguments the card
- * shows them as they are, but nothing acts on them: no path opens and no widget mounts (UI-054, UI-056).
+ * shows them as they are, but nothing acts on them: no path opens and no widget mounts (UI-054, UI-056). Long bodies
+ * (diffs, code, commands, outputs, pages, JSON) stay bounded (UI-935, `BoundedBody`).
  */
 
 import {
@@ -11,6 +12,7 @@ import {
   Button,
   Code,
   Diff,
+  type DiffLine,
   languageOfPath,
   Markdown,
   PathLink,
@@ -20,14 +22,17 @@ import {
 } from "omfp/kit";
 import {
   type AstMatch,
-  ansiRuns,
+  ansiLines,
+  bodyCut,
   type CardImage,
   CardScope,
   CardWidget,
   type Diagnostic,
+  diffCut,
   type EditedFile,
   type EditPreviewFile,
   type LspResult,
+  liveBody,
   type OpenFileOptions,
   repoPath,
   type SubagentRun,
@@ -35,6 +40,7 @@ import {
   type TodoPhase,
   type ToolCard,
   type ToolView,
+  textLines,
   useAnswer,
   useCurrentWorkspaceId,
   useOpenFile,
@@ -42,6 +48,7 @@ import {
   useWorkspaces,
 } from "omfp/sdk";
 import { Fragment, type ReactNode, useMemo, useState } from "react";
+import { BoundedBody, LiveWindow } from "./bounded.tsx";
 import { useImageViewer } from "./image-viewer.tsx";
 
 const text = strings.chat.tool;
@@ -177,54 +184,94 @@ function Subject({ children }: { children: ReactNode }): ReactNode {
   );
 }
 
-/** Command output with its ANSI colors and attributes as theme classes. */
-function AnsiOutput({ output }: { output: string }): ReactNode {
-  const runs = useMemo(() => ansiRuns(output), [output]);
+/** Command output with its ANSI colors and attributes as theme classes; bounded, its preview its last lines (UI-935). */
+function AnsiOutput({ output, live }: { output: string; live: boolean }): ReactNode {
+  const lines = useMemo(() => ansiLines(output), [output]);
   return (
-    <pre className="omfp-code omfp-code--block omfp-tool-card__output" data-testid="tool-output">
-      {runs.map((run, index) =>
-        run.style.length === 0 ? (
-          run.text
-        ) : (
-          // biome-ignore lint/suspicious/noArrayIndexKey: runs of one output never move
-          <span key={index} className={run.style.map((name) => `omfp-ansi-${name}`).join(" ")}>
-            {run.text}
-          </span>
-        ),
+    <BoundedBody
+      total={lines.length}
+      live={live}
+      cut={bodyCut(lines.length, "tail")}
+      render={(start, end) => (
+        <pre className="omfp-code omfp-code--block" data-testid="tool-output">
+          <code>
+            {lines.slice(start, end).map((runs, offset) => {
+              const line = start + offset;
+              return (
+                <Fragment key={line}>
+                  {line > start && "\n"}
+                  {runs.map((run, index) =>
+                    run.style.length === 0 ? (
+                      run.text
+                    ) : (
+                      // biome-ignore lint/suspicious/noArrayIndexKey: runs of one line never move
+                      <span key={index} className={run.style.map((name) => `omfp-ansi-${name}`).join(" ")}>
+                        {run.text}
+                      </span>
+                    ),
+                  )}
+                </Fragment>
+              );
+            })}
+            {end === lines.length && output.endsWith("\n") && "\n"}
+          </code>
+        </pre>
       )}
-    </pre>
+    />
   );
 }
 
-/** Lines of a `write`'s content shown while it is collapsed (UI-053). */
-const WRITE_PREVIEW_LINES = 6;
-
-/** A `write`'s content: its first lines, expandable to the whole content (UI-053). */
-function WriteContent({ content, language }: { content: string; language: string | undefined }): ReactNode {
-  const [expanded, setExpanded] = useState(false);
-  const lines = content.split("\n");
-  if (lines.at(-1) === "") {
-    lines.pop();
-  }
-  const hidden = lines.length - WRITE_PREVIEW_LINES;
-  const shown = expanded || hidden <= 0 ? content : lines.slice(0, WRITE_PREVIEW_LINES).join("\n");
+/** A text body (`write` content, card and widget code, a command, a page, JSON) highlighted, bounded (UI-935). */
+function BoundedCode({
+  code,
+  language,
+  live,
+  "data-testid": testId,
+}: {
+  code: string;
+  language?: string | undefined;
+  live: boolean;
+  "data-testid": string;
+}): ReactNode {
+  const lines = useMemo(() => textLines(code), [code]);
   return (
-    <>
-      <div className="omfp-tool-card__preview" data-cut={!expanded && hidden > 0}>
-        <Code code={shown} block language={language} data-testid="tool-content" />
-      </div>
-      {hidden > 0 && (
-        <Button
-          size="sm"
-          variant="quiet"
-          aria-expanded={expanded}
-          data-testid="tool-more"
-          onPress={() => setExpanded((open) => !open)}
-        >
-          {expanded ? text.fewerLines : text.moreLines(hidden)}
-        </Button>
+    <BoundedBody
+      total={lines.length}
+      live={live}
+      cut={bodyCut(lines.length)}
+      render={(start, end) => (
+        <Code
+          code={start === 0 && end === lines.length ? code : lines.slice(start, end).join("\n")}
+          block
+          language={language}
+          data-testid={testId}
+        />
       )}
-    </>
+    />
+  );
+}
+
+/** A diff, bounded: its preview its first lines and hunks (UI-935). */
+function BoundedDiff({
+  lines,
+  language,
+  live,
+}: {
+  lines: readonly DiffLine[];
+  language: string | undefined;
+  live: boolean;
+}): ReactNode {
+  const cut = useMemo(() => diffCut(lines), [lines]);
+  const preview = useMemo(() => (cut === undefined ? lines : lines.slice(cut.start, cut.end)), [lines, cut]);
+  return (
+    <BoundedBody
+      total={lines.length}
+      live={live}
+      cut={cut}
+      render={(start, end) => (
+        <Diff lines={end - start === lines.length ? lines : preview} language={language} data-testid="tool-diff" />
+      )}
+    />
   );
 }
 
@@ -234,20 +281,21 @@ function WriteContent({ content, language }: { content: string; language: string
  */
 export function ToolBody({ threadId, card }: { threadId: string; card: ToolCard }): ReactNode {
   const { view } = card;
+  const live = liveBody(card);
   switch (view.kind) {
     case "bash":
       return (
         <>
           <div className="omfp-tool-card__section">
             {view.cwd !== undefined && <p className="omfp-tool-card__meta">{text.cwd(view.cwd)}</p>}
-            <Code code={view.command} block language="bash" data-testid="tool-command" />
+            <BoundedCode code={view.command} language="bash" live={live} data-testid="tool-command" />
           </div>
           <BoxRule label={text.output} />
           <div className="omfp-tool-card__section">
             {view.output === undefined || view.output === "" ? (
               <p className="omfp-tool-card__meta">{text.noOutput}</p>
             ) : (
-              <AnsiOutput output={view.output} />
+              <AnsiOutput output={view.output} live={live} />
             )}
           </div>
         </>
@@ -256,13 +304,13 @@ export function ToolBody({ threadId, card }: { threadId: string; card: ToolCard 
       return (
         <>
           <div className="omfp-tool-card__section">
-            <Code code={card.args} block data-testid="tool-args" />
+            <BoundedCode code={card.args} live={live} data-testid="tool-args" />
           </div>
           {card.result !== undefined && (
             <>
               <BoxRule label={text.result} />
               <div className="omfp-tool-card__section">
-                <Code code={card.result} block data-testid="tool-result" />
+                <BoundedCode code={card.result} live={live} data-testid="tool-result" />
               </div>
             </>
           )}
@@ -294,6 +342,7 @@ function ToolSection({
   view: Exclude<ToolView, { kind: "bash" | "generic" }>;
 }): ReactNode {
   const openFile = useOpenFile();
+  const live = liveBody(card);
   switch (view.kind) {
     case "read":
       return (
@@ -320,13 +369,13 @@ function ToolSection({
             {view.url}
           </a>
           {card.status !== "failed" && view.content !== undefined && (
-            <Code code={view.content} block language="markdown" data-testid="tool-content" />
+            <BoundedCode code={view.content} language="markdown" live={live} data-testid="tool-content" />
           )}
         </>
       );
     case "edit":
       if (view.diff !== undefined) {
-        return <Diff lines={view.diff} language={view.language} data-testid="tool-diff" />;
+        return <BoundedDiff lines={view.diff} language={view.language} live={live} />;
       }
       if (view.preview.length > 0) {
         return <EditPreview files={view.preview} />;
@@ -335,12 +384,16 @@ function ToolSection({
         view.input !== undefined && (
           <>
             <h3>{text.edit}</h3>
-            <Code code={view.input} block data-testid="tool-input" />
+            <BoundedCode code={view.input} live={live} data-testid="tool-input" />
           </>
         )
       );
     case "write":
-      return view.content !== undefined && <WriteContent content={view.content} language={view.language} />;
+      return (
+        view.content !== undefined && (
+          <BoundedCode code={view.content} language={view.language} live={live} data-testid="tool-content" />
+        )
+      );
     case "search":
       return (
         <>
@@ -389,7 +442,7 @@ function ToolSection({
                   {file.count !== undefined && <Badge>{file.count}</Badge>}
                 </div>
                 {file.diff.length > 0 && (
-                  <Diff lines={file.diff} language={languageOfPath(file.path)} data-testid="tool-diff" />
+                  <BoundedDiff lines={file.diff} language={languageOfPath(file.path)} live={live} />
                 )}
               </li>
             ))}
@@ -461,7 +514,9 @@ function ToolSection({
     case "card":
       // The widget mounts once the call's arguments are complete; until then its code shows as it is written (UI-056).
       return card.status === "composing" ? (
-        view.code !== undefined && <WriteContent content={view.code} language="tsx" />
+        view.code !== undefined && (
+          <BoundedCode code={view.code} language="tsx" live={live} data-testid="tool-content" />
+        )
       ) : (
         <CardSection threadId={threadId} toolCallId={card.toolCallId} view={view} />
       );
@@ -471,12 +526,17 @@ function ToolSection({
       return (
         <>
           {view.code !== undefined ? (
-            <WriteContent content={view.code} language="tsx" />
+            <BoundedCode code={view.code} language="tsx" live={live} data-testid="tool-content" />
           ) : (
             view.reference !== undefined && <p className="omfp-tool-card__meta">{view.reference}</p>
           )}
           {view.props !== undefined && (
-            <Code code={JSON.stringify(view.props, null, 2)} block language="json" data-testid="tool-props" />
+            <BoundedCode
+              code={JSON.stringify(view.props, null, 2)}
+              language="json"
+              live={live}
+              data-testid="tool-props"
+            />
           )}
           {card.status === "succeeded" && card.result !== undefined && (
             <p className="omfp-tool-card__meta" data-testid="tool-result">
@@ -490,31 +550,42 @@ function ToolSection({
 
 /**
  * omp's preview of an `edit` while the model writes it and it runs (UI-055): each file's diff so far, or why it does
- * not apply; with several files, or a moved one, each under its path.
+ * not apply; with several files, or a moved one, each under its path. It shows in a live window following its last
+ * lines (UI-935), each file's name and error counting as one line.
  */
 function EditPreview({ files }: { files: readonly EditPreviewFile[] }): ReactNode {
   const named = files.length > 1 || files.some((file) => file.rename !== undefined);
-  return files.map((file) => (
-    <Fragment key={file.path}>
-      {named && (
-        <div className="omfp-tool-card__file" data-testid="tool-preview-file">
-          <FilePath path={file.path} />
-          {file.rename !== undefined && (
-            <>
-              {" → "}
-              <FilePath path={file.rename} />
-            </>
-          )}
-        </div>
-      )}
-      {file.error !== undefined && (
-        <div className="omfp-tool-card__error" data-testid="tool-preview-error">
-          {file.error}
-        </div>
-      )}
-      {file.diff !== undefined && <Diff lines={file.diff} language={file.language} data-testid="tool-diff" />}
-    </Fragment>
-  ));
+  const total = files.reduce(
+    (sum, file) => sum + (named ? 1 : 0) + (file.error === undefined ? 0 : 1) + (file.diff?.length ?? 0),
+    0,
+  );
+  return (
+    <LiveWindow total={total}>
+      <div className="omfp-tool-card__preview">
+        {files.map((file) => (
+          <Fragment key={file.path}>
+            {named && (
+              <div className="omfp-tool-card__file" data-testid="tool-preview-file">
+                <FilePath path={file.path} />
+                {file.rename !== undefined && (
+                  <>
+                    {" → "}
+                    <FilePath path={file.rename} />
+                  </>
+                )}
+              </div>
+            )}
+            {file.error !== undefined && (
+              <div className="omfp-tool-card__error" data-testid="tool-preview-error">
+                {file.error}
+              </div>
+            )}
+            {file.diff !== undefined && <Diff lines={file.diff} language={file.language} data-testid="tool-diff" />}
+          </Fragment>
+        ))}
+      </div>
+    </LiveWindow>
+  );
 }
 
 type CardView = Extract<ToolView, { kind: "card" }>;

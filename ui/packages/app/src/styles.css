@@ -38,14 +38,16 @@
 
   /* Frame. */
   /* The app fills the window and never scrolls it: an entrance that starts below the window (the mode pill's) would
-   * otherwise flash a window scrollbar that shifts every column while it plays. On a phone it is as tall as the visual
-   * viewport (`--vvh`), so the composer stays above the keyboard (UI-205). */
+   * otherwise flash a window scrollbar that shifts every column while it plays. Its overflow is clipped, not hidden,
+   * so it is no scroll container either: a focus or `scrollIntoView` that misses the scroll area around its target
+   * cannot scroll the whole frame out of view (UI-967). On a phone it is as tall as the visual viewport (`--vvh`), so
+   * the composer stays above the keyboard (UI-205). */
   .omfp-app {
     display: flex;
     flex-direction: column;
     block-size: var(--vvh, 100%);
     min-block-size: 0;
-    overflow: hidden;
+    overflow: clip;
   }
 
   /* A phone (UI-205): touch targets of at least `--omfp-touch`, a narrower gutter. */

@@ -53,12 +53,14 @@ export function SummaryRow({
   const lineage = forkLineage(thread, useThreads());
   // A thread a declared job made says so in its tooltip (UI-746).
   const job = threadJob(thread);
+  // The row's `×` and a middle click: archive a live thread, delete an archived one (UI-026).
+  const close = () => void (archived ? actions.remove(thread.id) : actions.archive(thread.id));
   const middleClick = (event: MouseEvent) => {
     if (event.button === 1) {
-      // Prevent autoscroll on press; delete only on release, without selecting the thread.
+      // Prevent autoscroll on press; close only on release, without selecting the thread.
       event.preventDefault();
       if (event.type === "auxclick") {
-        void actions.remove(thread.id);
+        close();
       }
     }
   };
@@ -137,7 +139,7 @@ export function SummaryRow({
           )}
         </>
       }
-      onDelete={() => void (archived ? actions.remove(thread.id) : actions.archive(thread.id))}
+      onDelete={close}
       deleteLabel={archived ? text.deleteThread(title) : text.archiveThread(title)}
       deleteProps={{
         "data-testid": archived ? "row-delete-thread" : "row-archive-thread",

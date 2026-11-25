@@ -209,8 +209,14 @@ describe("omfp:threads", () => {
     expect(host.window.get(SELECTED_THREAD)).toBe("t3");
     await user.click(archived.getByTestId("unarchive-thread"));
     expect(client.callsTo("threads.unarchive").map((call) => call.params)).toEqual([{ threadId: "t3" }]);
-    await user.click(archived.getByTestId("row-delete-thread"));
+    await user.pointer({ target: archived.getByTestId("thread-row"), keys: "[MouseMiddle]" });
     expect(client.callsTo("threads.delete").map((call) => call.params)).toEqual([{ threadId: "t3" }]);
+    await user.click(archived.getByTestId("row-delete-thread"));
+    expect(client.callsTo("threads.delete").map((call) => call.params)).toEqual([
+      { threadId: "t3" },
+      { threadId: "t3" },
+    ]);
+    expect(client.callsTo("threads.archive")).toHaveLength(0);
   });
 
   // spec: UI-020, UI-026, UI-740
@@ -404,7 +410,7 @@ describe("omfp:threads", () => {
   });
 
   // spec: UI-026
-  test.each(["t1", "t2"])("middle-click deletes %s without selecting it and clears only its draft", async (id) => {
+  test.each(["t1", "t2"])("middle-click archives %s without selecting it and clears only its draft", async (id) => {
     const { client, host, user } = setup();
     act(() => {
       host.window.set(SELECTED_THREAD, "t1");
@@ -419,7 +425,7 @@ describe("omfp:threads", () => {
     }
     await user.pointer({ target, keys: "[MouseMiddle]" });
     unsubscribe();
-    expect(client.callsTo("threads.delete").map((call) => call.params)).toEqual([{ threadId: id }]);
+    expect(client.callsTo("threads.archive").map((call) => call.params)).toEqual([{ threadId: id }]);
     expect(host.window.get(SELECTED_THREAD)).toBe(id === "t1" ? undefined : "t1");
     expect(selection).toEqual(id === "t1" ? [undefined] : []);
     expect(host.window.get(draftKey(id)).text).toBe("");
@@ -429,11 +435,11 @@ describe("omfp:threads", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(client.callsTo("thread.abort")).toHaveLength(0);
     expect(client.callsTo("thread.stop")).toHaveLength(0);
-    expect(client.callsTo("threads.archive")).toHaveLength(0);
+    expect(client.callsTo("threads.delete")).toHaveLength(0);
   });
 
   // spec: UI-026
-  test("only middle-click is handled: its press prevents autoscroll, its release deletes once", async () => {
+  test("only middle-click is handled: its press prevents autoscroll, its release archives once", async () => {
     const { client, host, user } = setup();
     const [first, second] = screen.getAllByTestId("thread-row");
     if (first === undefined || second === undefined) {
@@ -442,16 +448,16 @@ describe("omfp:threads", () => {
     await user.click(first);
     await user.pointer({ target: second, keys: "[MouseRight]" });
     expect(host.window.get(SELECTED_THREAD)).toBe("t1");
-    expect(client.callsTo("threads.delete")).toHaveLength(0);
+    expect(client.callsTo("threads.archive")).toHaveLength(0);
     for (const button of [0, 2]) {
       expect(fireEvent.mouseDown(second, { button, cancelable: true })).toBe(true);
       expect(fireEvent(second, new MouseEvent("auxclick", { button, bubbles: true, cancelable: true }))).toBe(true);
     }
     const title = second.querySelector(".omfp-row__title") ?? second;
     expect(fireEvent.mouseDown(title, { button: 1, cancelable: true })).toBe(false);
-    expect(client.callsTo("threads.delete")).toHaveLength(0);
+    expect(client.callsTo("threads.archive")).toHaveLength(0);
     expect(fireEvent(title, new MouseEvent("auxclick", { button: 1, bubbles: true, cancelable: true }))).toBe(false);
-    expect(client.callsTo("threads.delete").map((call) => call.params)).toEqual([{ threadId: "t2" }]);
+    expect(client.callsTo("threads.archive").map((call) => call.params)).toEqual([{ threadId: "t2" }]);
     expect(host.window.get(SELECTED_THREAD)).toBe("t1");
   });
 

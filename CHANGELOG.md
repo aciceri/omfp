@@ -30,6 +30,12 @@ The version's section is also the source of the GitHub release notes.
   controls, and check the result at a phone width, since the widget check renders only in the focused window's layout.
   The widgets note, the `widget-builder` agent and `omfp://docs/widgets` say so in the same words (#305).
 
+### Fixed
+
+- An `ask` form whose first control is a radio or a checkbox, shown at the end of a long chat, no longer scrolls the
+  whole window out of view with the boring skin or with motion off: the chat scrolls to the form and its first control
+  takes the focus, and the window's frame never scrolls (#310).
+
 ## 0.4.3 — 2026-11-23
 
 ### Added

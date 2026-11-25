@@ -877,9 +877,12 @@
     outline: none;
   }
 
-  /* Checkbox and radio (UI-153) */
+  /* Checkbox and radio (UI-153). Each is the containing block of React Aria's visually hidden input, which sits
+     absolutely at its static place: with no positioned ancestor up to the frame, focusing an input low in a scrolled
+     list would scroll the frame instead of the list (UI-967). */
   .omfp-checkbox,
   .omfp-radio {
+    position: relative;
     display: inline-flex;
     align-items: center;
     gap: var(--omfp-s2);

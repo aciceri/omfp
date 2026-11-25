@@ -253,6 +253,20 @@ describe("kit styles", () => {
     expect(hidden.declarations.get("clip-path")).toBe("inset(50%)");
   });
 
+  // spec: UI-967
+  test("a checkbox or radio holds its visually hidden input, so focusing it scrolls only the list it sits in", () => {
+    // React Aria's input is absolutely positioned at its static place: its control must be its containing block.
+    const control = findRule(kitRules, [LAYER], ".omfp-checkbox, .omfp-radio");
+    expect(control.declarations.get("position")).toBe("relative");
+  });
+
+  // spec: UI-967
+  test("the app frame clips its overflow instead of hiding it, so no focus or scrollIntoView can scroll it", () => {
+    const appRules = parseCss(readFileSync(join(APP_SRC, "styles.css"), "utf8"));
+    const app = findRule(appRules, ["@layer omfp-widgets"], ".omfp-app");
+    expect(app.declarations.get("overflow")).toBe("clip");
+  });
+
   // spec: UI-118
   test("CodeMirror scrolls in a layout root sized by its container; omfp:changes' text-sized diff opts out", () => {
     const view = findRule(kitRules, [LAYER], ".omfp-code-editor__view, .omfp-code-diff__view");

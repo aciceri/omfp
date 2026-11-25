@@ -4,6 +4,8 @@
 //! headless Chromium and in `WebKitGTK`, the engine of `omfp desktop`: text deltas at a model's rate
 //! grow a long last message while the user scrolls up with the wheel, `PageUp`, and a scrollbar drag. The view must
 //! stay where the user scrolled to and unpinned; `End` pins it again and the growth then keeps the bottom in view.
+//! Focusing low in a long list scrolls that list, never the window (UI-967): a thread row low in the left column, and
+//! the first radio of an `ask` form at the end of a long transcript (UI-070).
 //!
 //! Chromium gets a touchpad's many small wheel deltas and a mouse wheel's few notches from WebDriver's wheel input
 //! source. `WebKitGTK`'s `WebKitWebDriver` dispatches those wheel events without scrolling, so the `WebKitGTK` case
@@ -177,15 +179,15 @@ async fn stays_at(
     Ok(())
 }
 
-/// Creates a thread in a new workspace through the protocol and starts its omp (the launcher's next run plays it);
-/// returns its id.
-async fn create_thread(journey: &Journey) -> anyhow::Result<String> {
+/// Creates a thread in a new workspace `workspace` through the protocol and starts its omp (the launcher's next run in
+/// `workspaces/<workspace>` plays it); returns its id.
+async fn create_thread(journey: &Journey, workspace: &str) -> anyhow::Result<String> {
     let mut connection = journey.connect().await?;
     let thread = connection
         .call::<ThreadsCreate>(CreateThreadParams {
             title: None,
             workspace: ThreadWorkspace::New(CreateWorkspaceParams {
-                name: Some("scroll".to_owned()),
+                name: Some(workspace.to_owned()),
                 link: None,
             }),
             model: None,
@@ -211,7 +213,7 @@ async fn scrolling_up_while_a_tool_streams_output_stays_where_the_user_scrolled(
         journey.data_dir().join("workspaces/scroll"),
         FakeRun::fresh().with_history(history()),
     );
-    let thread = create_thread(&journey).await?;
+    let thread = create_thread(&journey, "scroll").await?;
     journey.click(&row(&thread)).await?;
     journey.opened(&thread).await?;
 
@@ -633,7 +635,7 @@ async fn scrolling_up_while_a_reply_streams_stays_where_the_user_scrolled() -> a
         journey.data_dir().join("workspaces/scroll"),
         FakeRun::fresh().with_history(history()),
     );
-    let thread = create_thread(&journey).await?;
+    let thread = create_thread(&journey, "scroll").await?;
     journey.click(&row(&thread)).await?;
     journey.opened(&thread).await?;
     scroll_up_while_a_reply_streams(
@@ -661,7 +663,7 @@ async fn scrolling_up_while_a_reply_streams_stays_where_the_user_scrolled_in_web
         FakeRun::fresh().with_history(history()),
     );
     journey.connected().await?;
-    let thread = create_thread(&journey).await?;
+    let thread = create_thread(&journey, "scroll").await?;
     let webkit = WebKitDriver::start().await?;
     let driver = webkit.session().await?;
     driver.goto(journey.daemon().url()).await?;
@@ -822,7 +824,7 @@ async fn a_long_reply_is_read_by_keyboard_before_the_focus_moves_on() -> anyhow:
         journey.data_dir().join("workspaces/scroll"),
         FakeRun::fresh().with_history(long_reply_history()),
     );
-    let thread = create_thread(&journey).await?;
+    let thread = create_thread(&journey, "scroll").await?;
     journey.click(&row(&thread)).await?;
     journey.opened(&thread).await?;
     journey
@@ -1000,4 +1002,108 @@ async fn selecting_a_thread_low_in_a_long_left_column_never_scrolls_the_window()
     );
 
     journey.finish("a long left column").await
+}
+
+/// The `ask` form of #310: context, then a radio group, so its first control sits low in the card.
+const ASK_FORM: &str = r#"<form>
+<p>The migration is done. The service could also sit behind the shared proxy (<code>services.proxy.credentialsFile</code> + its URL and key among the upstreams), but:</p>
+<ul>
+<li>the shared proxy has no read authentication: every peer on the private network could download the private build outputs by knowing their hash. The basic auth of the upstream cache is exactly what keeps them private.</li>
+<li>the proxy has <code>tokenFile</code> (a Bearer token for reads), but the client never sends Bearer tokens to substituters: unusable.</li>
+<li>Pro: the other host gets it without its own credentials file, and the archives stay cached on the server.</li>
+</ul>
+<fieldset>
+<legend>Where should it go?</legend>
+<label><input type="radio" name="where" value="direct" checked> Directly on the server (as it is now)</label>
+<label><input type="radio" name="where" value="proxy"> Behind the shared proxy, accepting the exposure to the peers</label>
+</fieldset>
+</form>"#;
+
+const FORM_CARD: &str = "[data-testid=interaction][data-kind=form]";
+
+/// Where the frame sits: `[scrollTop of the app, the window's scrollY, the shell's top]`.
+const FRAME: &str = "return [document.querySelector('[data-testid=app]').scrollTop, scrollY,
+document.querySelector('[data-testid=shell]').getBoundingClientRect().top];";
+
+// spec: UI-070, UI-967
+#[tokio::test(flavor = "multi_thread")]
+async fn an_ask_form_at_the_end_of_a_long_transcript_scrolls_the_transcript_never_the_frame()
+-> anyhow::Result<()> {
+    let launcher = FakeLauncher::new();
+    let journey = Journey::start_fake(launcher.clone()).await?;
+    // Neither the boring skin nor motion `none` animates the card, whose leftover transform once kept the form's
+    // hidden inputs inside the transcript by accident (QA: #310).
+    for (skin, motion) in [("boring", "full"), ("crush", "none")] {
+        std::fs::write(
+            journey.config_file(),
+            format!("[ui]\nskin = \"{skin}\"\nmotion = \"{motion}\"\n"),
+        )?;
+        journey
+            .until(&format!("skin {skin} at motion {motion}"), async |page| {
+                let applied = (
+                    page.attr("html", "data-skin").await?,
+                    page.attr("html", "data-motion").await?,
+                );
+                Ok((applied == (Some(skin.to_owned()), Some(motion.to_owned()))).then_some(()))
+            })
+            .await?;
+        let workspace = format!("ask-{skin}-{motion}");
+        launcher.push_run_for(
+            journey.data_dir().join("workspaces").join(&workspace),
+            FakeRun::fresh().with_history(history()),
+        );
+        let thread = create_thread(&journey, &workspace).await?;
+        journey.click(&row(&thread)).await?;
+        journey.opened(&thread).await?;
+        journey
+            .until("a transcript several windows tall", async |page| {
+                let tall = page
+                    .eval(
+                        "const t = document.querySelector(arguments[0]);
+                         return t.scrollHeight > 3 * t.clientHeight;",
+                        vec![json!(TRANSCRIPT)],
+                    )
+                    .await?;
+                Ok((tall == json!(true)).then_some(()))
+            })
+            .await?;
+        let [_, _, shell_top]: [f64; 3] =
+            serde_json::from_value(journey.eval(FRAME, Vec::new()).await?)?;
+
+        // The agent asks: the form's first radio takes the focus, and the transcript scrolls it into its view.
+        journey
+            .fake_process(&launcher, &thread)
+            .await?
+            .emit(vec![frame(&json!({
+                "type": "extension_ui_request", "method": "form", "id": format!("form-{skin}"),
+                "html": ASK_FORM,
+            }))]);
+        journey
+            .until("the form's first radio focused in the transcript's view", async |page| {
+                let shown = page
+                    .eval(
+                        "const input = document.activeElement;
+                         if (!input || !input.matches(arguments[0] + ' input[type=radio]')) return false;
+                         const r = input.getBoundingClientRect();
+                         const t = document.querySelector(arguments[1]).getBoundingClientRect();
+                         return r.top >= t.top && r.bottom <= t.bottom;",
+                        vec![json!(FORM_CARD), json!(TRANSCRIPT)],
+                    )
+                    .await?;
+                Ok((shown == json!(true)).then_some(()))
+            })
+            .await?;
+        let [app_top, scroll_y, shell_after]: [f64; 3] =
+            serde_json::from_value(journey.eval(FRAME, Vec::new()).await?)?;
+        assert!(
+            app_top.abs() < 0.5 && scroll_y.abs() < 0.5 && (shell_after - shell_top).abs() < 0.5,
+            "at skin {skin}, motion {motion}, the frame never scrolls: app scrollTop {app_top}, \
+             scrollY {scroll_y}, shell top {shell_top} -> {shell_after}"
+        );
+        journey.screenshot(&format!("ask-form-{skin}")).await?;
+    }
+
+    journey
+        .finish("an ask form at the end of a long transcript")
+        .await
 }

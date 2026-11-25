@@ -2,12 +2,13 @@
  * A long tool-card body kept bounded (UI-935). Live, a window about `BODY_LINES` tall that follows the newest lines,
  * "… N earlier lines" above it; scrolled up by the user it stops following, and follows again once scrolled back to
  * its end. Settled, its preview (`cut`) and a control expanding it to the whole body, which scrolls inside the card at
- * most about a viewport tall; an output's preview is its end, its control above it.
+ * most about a viewport tall; an output's preview is its end, its control above it. The window and the expanded body
+ * take the focus and scroll themselves on the arrow and paging keys, which never reach the transcript around them.
  */
 
 import { Button } from "omfp/kit";
-import { type Cut, earlierLines, follows, strings, type WindowScroll } from "omfp/sdk";
-import { type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { type Cut, earlierLines, follows, keyScrollTop, strings, type WindowScroll } from "omfp/sdk";
+import { type KeyboardEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
 
 const text = strings.chat.tool;
 
@@ -40,7 +41,7 @@ function scrollOf(element: HTMLElement): WindowScroll {
  * edit preview's file names).
  */
 export function LiveWindow({ total, children }: { total: number; children: ReactNode }): ReactNode {
-  const box = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLElement>(null);
   // Where the window last scrolled itself: a scroll elsewhere is the user's.
   const written = useRef(0);
   const [following, setFollowing] = useState(true);
@@ -75,23 +76,43 @@ export function LiveWindow({ total, children }: { total: number; children: React
           {text.earlierLines(earlier)}
         </p>
       )}
-      <div
+      <section
         ref={box}
         className="omfp-bounded__body"
+        aria-label={text.bodyLabel}
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region must be focusable to scroll by keyboard.
+        tabIndex={0}
         data-testid="tool-window"
         data-following={following}
         onScroll={onScroll}
+        onKeyDown={scrollByKey}
       >
         {children}
-      </div>
+      </section>
     </div>
   );
+}
+
+/**
+ * The paging keys scroll a focused body itself (WebKitGTK scrolls no focused scroller on them), and neither they nor
+ * the arrows reach the transcript, which would scroll or unpin itself instead (UI-092).
+ */
+function scrollByKey(event: KeyboardEvent<HTMLElement>): void {
+  const box = event.currentTarget;
+  const top = keyScrollTop(event.key, box.scrollTop, box.clientHeight, box.scrollHeight);
+  if (top !== undefined) {
+    event.preventDefault();
+    box.scrollTop = top;
+  }
+  if (top !== undefined || event.key === "ArrowUp" || event.key === "ArrowDown") {
+    event.stopPropagation();
+  }
 }
 
 /** A settled body: its preview, expandable to the whole body; the whole body when it fits. */
 function Preview({ total, cut, render }: Omit<BoundedBodyProps, "live">): ReactNode {
   const [expanded, setExpanded] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLElement>(null);
   const tail = cut !== undefined && cut.start > 0;
   // An output's whole body opens at its end, where its preview was.
   useLayoutEffect(() => {
@@ -117,9 +138,20 @@ function Preview({ total, cut, render }: Omit<BoundedBodyProps, "live">): ReactN
   return (
     <div className="omfp-bounded" data-cut={!expanded} data-tail={tail} data-expanded={expanded}>
       {tail && toggle}
-      <div ref={box} className="omfp-bounded__body">
-        {expanded ? render(0, total) : render(cut.start, cut.end)}
-      </div>
+      {expanded ? (
+        <section
+          ref={box}
+          className="omfp-bounded__body"
+          aria-label={text.bodyLabel}
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region must be focusable to scroll by keyboard.
+          tabIndex={0}
+          onKeyDown={scrollByKey}
+        >
+          {render(0, total)}
+        </section>
+      ) : (
+        <div className="omfp-bounded__body">{render(cut.start, cut.end)}</div>
+      )}
       {!tail && toggle}
     </div>
   );

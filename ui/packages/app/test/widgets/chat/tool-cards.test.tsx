@@ -386,6 +386,9 @@ describe("write card", () => {
     await userEvent.click(more);
     expect(byTestId(element, "tool-content").textContent).toBe(content);
     expect(element.querySelector(".omfp-bounded")?.getAttribute("data-expanded")).toBe("true");
+    // The expanded body takes the focus to scroll by keyboard.
+    const body = within(element).getByRole("region", { name: text.bodyLabel });
+    expect([body.tabIndex, body.contains(byTestId(element, "tool-content"))]).toEqual([0, true]);
     await userEvent.click(byTestId(element, "tool-more"));
     expect(byTestId(element, "tool-content").textContent).toEndWith("line 12");
     // happy-dom lays nothing out: the rules themselves are checked. Live, about 12 code lines; expanded, about a
@@ -439,6 +442,39 @@ describe("write card", () => {
 });
 
 describe("bounded bodies", () => {
+  // spec: UI-935
+  test("a live window takes the focus and scrolls on the paging keys, which never reach the transcript", async () => {
+    const outside: string[] = [];
+    const listen = (event: KeyboardEvent) => outside.push(event.key);
+    document.addEventListener("keydown", listen);
+    try {
+      renderWithHost(<GrowingWrite />, threadHost());
+      const box = screen.getByTestId("tool-window");
+      const region = within(screen.getByTestId("tool-card")).getByRole("region", { name: text.bodyLabel });
+      expect([region.dataset.testid, box.tabIndex]).toEqual(["tool-window", 0]);
+      Object.defineProperty(box, "scrollHeight", { configurable: true, value: 1000 });
+      Object.defineProperty(box, "clientHeight", { configurable: true, value: 100 });
+      // Laid out, at its end: it scrolls itself there.
+      box.scrollTop = 900;
+      fireEvent.scroll(box);
+      box.focus();
+      await userEvent.keyboard("{Home}");
+      expect(box.scrollTop).toBe(0);
+      fireEvent.scroll(box);
+      expect(box.dataset.following).toBe("false");
+      await userEvent.keyboard("{PageDown}");
+      expect(box.scrollTop).toBeGreaterThan(0);
+      await userEvent.keyboard("{End}");
+      expect(box.scrollTop).toBe(900);
+      fireEvent.scroll(box);
+      expect(box.dataset.following).toBe("true");
+      await userEvent.keyboard("{ArrowUp}");
+      expect(outside).toEqual([]);
+    } finally {
+      document.removeEventListener("keydown", listen);
+    }
+  });
+
   // spec: UI-935
   test("a long output: its last 12 lines once ended, the earlier ones on demand; live, a following window", async () => {
     const output = numbered(30);

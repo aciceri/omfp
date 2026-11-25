@@ -86,6 +86,8 @@ export const chat = {
     moreLines: (count: number) => `… ${count} more ${count === 1 ? "line" : "lines"}`,
     earlierLines: (count: number) => `… ${count} earlier ${count === 1 ? "line" : "lines"}`,
     fewerLines: "Show fewer lines",
+    /** The accessible name of a long body's window or expanded body, which takes the focus to scroll (UI-935). */
+    bodyLabel: "Card content",
     noMatch: "No match",
     todoStatus: {
       pending: "pending",

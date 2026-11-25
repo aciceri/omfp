@@ -8,40 +8,33 @@ import { INDEX_TOPIC } from "@omfp/protocol";
 import { useEffect, useLayoutEffect } from "react";
 import { MAIN_SLOT } from "../view/layout.ts";
 import { keepListedTabs } from "../vm/tab-choices.ts";
-import { activeView, adoptView, chooseView as choose, keepListed } from "../vm/view-choices.ts";
-import { currentWorkspaceId, useCurrentWorkspaceId } from "./actions.ts";
+import { activeView, chooseView as choose, keepListed } from "../vm/view-choices.ts";
+import { useCurrentWorkspaceId } from "./actions.ts";
 import { useWindowState } from "./hooks.ts";
 import { type OmfpHost, useHost } from "./host.tsx";
 import { PENDING_TAB, SELECTED_THREAD, SHOWN_VIEW, TAB_CHOICES, VIEW_CHOICES } from "./keys.ts";
 import { selectTab } from "./tab-choices.ts";
 
 /** The id among `viewIds` (the current workspace's views) this window shows for the selected thread (else the draft
- * thread): the thread's view, else the one last chosen in its workspace, else `undefined` (the default view). */
+ * thread): the thread's view, else `undefined` (the workspace's default view). */
 export function useActiveView(viewIds: readonly string[]): string | undefined {
   const [choices] = useWindowState(VIEW_CHOICES);
   const [selected] = useWindowState(SELECTED_THREAD);
-  return activeView(choices, selected, useCurrentWorkspaceId(), viewIds);
+  return activeView(choices, selected, viewIds);
 }
 
-/** Switches this window to `viewId`: the selected thread's view (none: the draft thread's) and its workspace's last
- * chosen. */
+/** Switches this window to `viewId`: the selected thread's view (none: the draft thread's). */
 export function chooseView(host: OmfpHost, viewId: string): void {
   const selected = host.window.get(SELECTED_THREAD);
-  host.window.set(VIEW_CHOICES, (choices) => choose(choices, selected, currentWorkspaceId(host), viewId));
+  host.window.set(VIEW_CHOICES, (choices) => choose(choices, selected, viewId));
 }
 
 /**
- * Keeps {@link VIEW_CHOICES} up to date, for the frame: a thread shown for the first time takes the view last chosen
- * in its workspace, and the threads and workspaces the live index no longer lists (deleted) are dropped, from
- * {@link TAB_CHOICES} too (UI-372).
+ * Keeps {@link VIEW_CHOICES} up to date, for the frame: the threads the live index no longer lists (deleted) are
+ * dropped, with their tabs and those of the workspaces it no longer lists from {@link TAB_CHOICES} (UI-372).
  */
 export function useViewChoicesUpkeep(): void {
   const host = useHost();
-  const [selected] = useWindowState(SELECTED_THREAD);
-  const workspaceId = useCurrentWorkspaceId();
-  useEffect(() => {
-    host.window.set(VIEW_CHOICES, (choices) => adoptView(choices, selected, workspaceId));
-  }, [host, selected, workspaceId]);
   useEffect(() => {
     const prune = () => {
       const snapshot = host.frames.getSnapshot();
@@ -49,10 +42,10 @@ export function useViewChoicesUpkeep(): void {
         return;
       }
       const { threads, workspaces } = snapshot.index;
-      host.window.set(VIEW_CHOICES, (choices) => keepListed(choices, threads, workspaces));
-      // A thread just created is selected, with its draft's tabs, before the index may list it.
+      // A thread just created is selected, with its draft's view and tabs, before the index may list it.
       const selectedThread = host.window.get(SELECTED_THREAD);
       const kept = { has: (id: string) => id === selectedThread || threads.has(id) };
+      host.window.set(VIEW_CHOICES, (choices) => keepListed(choices, kept));
       host.window.set(TAB_CHOICES, (choices) => keepListedTabs(choices, kept, workspaces));
     };
     prune();

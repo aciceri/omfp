@@ -120,7 +120,7 @@ describe("tabs per thread", () => {
     await click(user, SIDE_TABS, "Changes");
     expect([shownView(), selectedOf(MAIN), selectedOf(SIDE_TABS)]).toEqual(["work", "a.rs", "Changes"]);
 
-    // Thread B, never shown: the view last chosen in the workspace with the first tabs; the file stays open there.
+    // Thread B, never shown: the default view with the first tabs; the file stays open there.
     select(test, "t2");
     expect([shownView(), selectedOf(MAIN), selectedOf(SIDE_TABS)]).toEqual(["work", "Chat", "Workspace"]);
     expect(tabsOf(MAIN).map((tab) => tab.textContent)).toEqual(["Chat", "a.rs"]);

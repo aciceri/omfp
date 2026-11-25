@@ -14,6 +14,7 @@ import { Toasts } from "../../src/frame/status.tsx";
 import {
   chooseView,
   currentWorkspaceId,
+  DRAFT_MESSAGE,
   DRAFT_THREAD,
   ERRORS,
   FOCUS_COMPOSER,
@@ -27,6 +28,7 @@ import {
   reportError,
   SELECTED_THREAD,
   SUCCESSES,
+  threadActions,
   useCommand,
   useNotify,
   type WidgetComponent,
@@ -1203,10 +1205,7 @@ describe("views of the current workspace", () => {
     expect(screen.getAllByTestId("view-picker-option").map((option) => option.dataset.id)).toEqual(["lean"]);
     await user.keyboard("{Enter}");
     expect(shown()).toBe("lean");
-    expect(host.window.get(VIEW_CHOICES)).toEqual({
-      threads: [{ threadId: "t1", viewId: "lean" }],
-      workspaces: { w1: "lean" },
-    });
+    expect(host.window.get(VIEW_CHOICES)).toEqual({ threads: [{ threadId: "t1", viewId: "lean" }] });
   });
 
   // spec: UI-302, UI-431
@@ -1273,7 +1272,6 @@ describe("views of the current workspace", () => {
         { threadId: "t1", viewId: "review" },
         { threadId: "t2", viewId: "lean" },
       ],
-      workspaces: { w1: "lean" },
     });
     cleanup();
 
@@ -1284,7 +1282,7 @@ describe("views of the current workspace", () => {
   });
 
   // spec: UI-367
-  test("each thread keeps its view; a thread shown for the first time takes its workspace's last; workspaces keep their own", async () => {
+  test("each thread keeps its view; a thread never shown and a new thread's draft open on the default view; the thread created from the draft keeps the draft's view", async () => {
     const test = inWorkspace({ manifest: MANIFEST });
     const { client, flush, host, user } = test;
     client.indexEvents(
@@ -1296,9 +1294,9 @@ describe("views of the current workspace", () => {
     // The tab switches the selected thread's view.
     await user.click(screen.getAllByTestId("mode-view")[1] ?? document.body);
     expect(shownView()).toBe("review");
-    // Another thread of the workspace, never shown: the workspace's last view; `:view` switches it alone.
+    // Another thread of the workspace, never shown: the default view; `:view` switches it alone.
     select(test, "t2");
-    expect(shownView()).toBe("review");
+    expect(shownView()).toBe("work");
     press(":");
     await user.type(screen.getByTestId("command-line-input"), "view lean{Enter}");
     expect(shownView()).toBe("lean");
@@ -1306,47 +1304,60 @@ describe("views of the current workspace", () => {
     expect(shownView()).toBe("review");
     select(test, "t2");
     expect(shownView()).toBe("lean");
-    // A new thread takes the view last chosen in its workspace and keeps it when other threads switch.
     select(test, "t3");
-    expect(shownView()).toBe("lean");
+    expect(shownView()).toBe("work");
+    // New thread from a thread on another view: the draft opens on the default view.
     select(test, "t1");
+    act(() => host.commands.run("thread.new"));
+    flush();
+    expect([host.window.get(SELECTED_THREAD), host.window.get(DRAFT_THREAD)?.workspaceId]).toEqual([undefined, "w1"]);
+    expect(shownView()).toBe("work");
+    // A view chosen on the draft is its own; the thread created from it keeps it.
     press("]");
     press("v");
-    expect(shownView()).toBe("work");
-    select(test, "t3");
     expect(shownView()).toBe("lean");
-    // Another workspace starts on its default view and keeps its own choice; its draft thread shows it too.
+    act(() => host.window.set(DRAFT_MESSAGE, { ...host.window.get(DRAFT_MESSAGE), text: "hello" }));
+    // Back to the kept draft from another thread: its own view still.
+    select(test, "t1");
+    expect(shownView()).toBe("review");
+    act(() => host.commands.run("thread.new"));
+    flush();
+    expect(shownView()).toBe("lean");
+    let sent: Promise<boolean> = Promise.resolve(false);
+    act(() => {
+      sent = threadActions(host).sendDraft();
+    });
+    // Reopening the draft while it is being created keeps its view for the created thread.
+    act(() => host.commands.run("thread.new"));
+    await act(async () => {
+      client.callsTo("threads.create")[0]?.resolve(thread("t9", "", "w1"));
+      await sent;
+    });
+    flush();
+    expect(host.window.get(SELECTED_THREAD)).toBe("t9");
+    // The window shows the created thread's workspace once the index lists it (UI-100).
+    client.indexEvents({ kind: "thread_upserted", thread: thread("t9", "", "w1") });
+    client.views("w1", { manifest: MANIFEST });
+    flush();
+    expect(shownView()).toBe("lean");
+    // Back to the thread the draft was opened from: its own view.
+    select(test, "t1");
+    expect(shownView()).toBe("review");
+    // The next draft opens on the default view again.
+    act(() => host.commands.run("thread.new"));
+    flush();
+    expect(shownView()).toBe("work");
+    select(test, "t9");
+    expect(shownView()).toBe("lean");
+    // Another workspace starts on its default view.
     select(test, "t4");
     client.views("w2", { manifest: MANIFEST });
     flush();
     expect(shownView()).toBe("work");
-    act(() => host.commands.run("view.switch", ["review"]));
-    expect(shownView()).toBe("review");
-    act(() => {
-      host.window.set(SELECTED_THREAD, undefined);
-      host.window.set(DRAFT_THREAD, { workspaceId: "w2" });
-    });
-    flush();
-    expect(shownView()).toBe("review");
-    // The draft's switch is its workspace's last view, which the next new thread there takes.
-    press("[");
-    press("v");
-    expect(shownView()).toBe("lean");
-    select(test, "t4");
-    expect(shownView()).toBe("review");
-    client.indexEvents({ kind: "thread_upserted", thread: thread("t5", "next", "w2") });
-    flush();
-    select(test, "t5");
-    expect(shownView()).toBe("lean");
-    select(test, "t1");
-    client.views("w1", { manifest: MANIFEST });
-    flush();
-    expect(shownView()).toBe("work");
-    expect(host.window.get(VIEW_CHOICES).workspaces).toEqual({ w1: "work", w2: "lean" });
   });
 
   // spec: UI-367
-  test("a thread whose view is gone shows its workspace's last view, else the default, and gets it back", () => {
+  test("a thread whose view is gone shows the default view and gets its own back", () => {
     const test = inWorkspace({ manifest: MANIFEST });
     const { client, flush, host } = test;
     act(() => host.commands.run("view.switch", ["review"]));
@@ -1358,8 +1369,6 @@ describe("views of the current workspace", () => {
       flush();
     };
     manifest({ work: MANIFEST.views.work, lean: MANIFEST.views.lean });
-    expect(shownView()).toBe("lean");
-    manifest({ work: MANIFEST.views.work });
     expect(shownView()).toBe("work");
     manifest(MANIFEST.views);
     expect(shownView()).toBe("review");
@@ -1368,7 +1377,7 @@ describe("views of the current workspace", () => {
   });
 
   // spec: UI-367
-  test("the views of threads and workspaces the index no longer lists are dropped", () => {
+  test("the views of threads the index no longer lists are dropped", () => {
     const test = inWorkspace({ manifest: MANIFEST });
     const { client, flush, host } = test;
     act(() => host.commands.run("view.switch", ["review"]));
@@ -1377,13 +1386,10 @@ describe("views of the current workspace", () => {
     select(test, undefined);
     client.indexEvents({ kind: "thread_removed", threadId: "t1" });
     flush();
-    expect(host.window.get(VIEW_CHOICES)).toEqual({
-      threads: [{ threadId: "t2", viewId: "lean" }],
-      workspaces: { w1: "lean" },
-    });
+    expect(host.window.get(VIEW_CHOICES)).toEqual({ threads: [{ threadId: "t2", viewId: "lean" }] });
     client.indexEvents({ kind: "thread_removed", threadId: "t2" }, { kind: "workspace_removed", workspaceId: "w1" });
     flush();
-    expect(host.window.get(VIEW_CHOICES)).toEqual({ threads: [], workspaces: {} });
+    expect(host.window.get(VIEW_CHOICES)).toEqual({ threads: [] });
   });
 
   // spec: UI-102, AGT-011

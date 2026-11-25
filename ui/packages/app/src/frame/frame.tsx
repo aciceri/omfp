@@ -129,7 +129,7 @@ export function Frame({
     const used = init.views !== undefined && init.views.manifest === manifest ? init.views.views : undefined;
     return withInitPanels(used === undefined ? own : { ...used, error: own.error }, init.panels);
   }, [manifest, manifestError, init]);
-  // The selected thread's view, else its workspace's last chosen, else the default (UI-367).
+  // The selected thread's (else the draft thread's) view, else the default (UI-367).
   useViewChoicesUpkeep();
   const viewIds = views.views.map((candidate) => candidate.id);
   const active = useActiveView(viewIds);

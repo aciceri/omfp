@@ -100,13 +100,13 @@ It also names the node in `omfp_widget_check`'s report. Built-ins keep no stored
   an unmount to reset state. A third view pushes out the least recently shown one; views of another workspace and
   views removed from `views.json` are unmounted.
 - The window remembers the view per thread and survives reloads (kept in the browser's `localStorage`): selecting a
-  thread shows the view last used with it; a thread never shown before (and a new thread being started) gets the view
-  last chosen in its workspace in this window, else the default view: `views.json`'s `default` (else its first id).
-  While the workspace has no view of the remembered id, the workspace's last chosen view shows, else the default; the
-  choice comes back with the view. Every switch (tab, `:view`, keys, an init file's `omfp.run("view.switch", [id])`)
-  is the selected thread's and its workspace's last chosen. Init files keep the default when they use or transform
-  views: a view `views.add` adds never becomes the default by itself, only `views.withDefault(id)` changes it (see
-  Views of init files).
+  thread shows the view last used with it; a thread never shown before in this window, and the draft of a new thread,
+  open on the default view: `views.json`'s `default` (else its first id). A view chosen on the draft is its own, and
+  the thread created from it keeps it. While the workspace has no view of the remembered id, the default view shows;
+  the choice comes back with the view. Every switch (tab, `:view`, keys, an init file's `omfp.run("view.switch",
+  [id])`) is the selected thread's (else the draft's). Init files keep the default when they use or transform views: a
+  view `views.add` adds never becomes the default by itself, only `views.withDefault(id)` changes it (see Views of
+  init files).
 - Splitters between the cells of a `row` or `col` resize them for this window only (a double click goes back to the
   layout's `sizes`); nothing the user does by hand rewrites `views.json` except `:widget add <reference>`, which adds
   a widget (built-in, `./widgets/<name>`) to the current view as the last tab of its `tabs` with
@@ -485,7 +485,7 @@ export default function Tests({ command = "make test" }: { command?: string }) {
 | `useConnection()` | The connection status. |
 | `useWindowState(key)` | Window-local state; `SELECTED_THREAD` is the thread this window shows. |
 | `useCurrentWorkspaceId()` | The workspace this window works in: the selected thread's, else the draft thread's. |
-| `useActiveView(viewIds)`, `chooseView(host, viewId)` | The id among the current workspace's view ids this window shows for the selected thread (its own, else its workspace's last chosen; `undefined`: the default view), and switching it (`host` from `useHost()`), as `:view <id>` does. |
+| `useActiveView(viewIds)`, `chooseView(host, viewId)` | The id among the current workspace's view ids this window shows for the selected thread, else the draft (its own; `undefined`: the default view), and switching it (`host` from `useHost()`), as `:view <id>` does. |
 | `useHost()` | The window's host (`client`, `window` store, `commands`, …): the `host` that `chooseView`, `requestLogin(host, providerId?)` and `registerCommand(host, command)` take; widgets otherwise use the hooks. |
 | `useThreadActions()` | `select`, `rename`, `archive`, `stop`, `restart`, … for threads; `sendDraft()` creates the draft thread with its message, `startDraftLive()` creates it (the message, if any, as its first) and starts a live session on it, the microphone opened first; `compact(threadId, instructions?, mode?)` has omp compact the thread's context (as `:compact` does, `instructions` the focus of its summary, `mode` one of omp's `soft`, `remote`, `snapcompact`) with a success toast, refused while the thread works, and resolves to whether omp compacted. |
 | `useCommand(command)` | Registers a `:` command or key binding target while mounted: `{ id, title, description?, aliases?, scope?, args?, enabled?, run(args) }` (`description` shows in `:describe-command`, `args(before)` completes the argument being typed, `enabled()` returning `false` hides it). With `scope`, it answers only while the focus is inside an element of that scope (`SCOPE_ATTRIBUTE`), before a global command of the same id. |

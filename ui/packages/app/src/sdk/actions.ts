@@ -13,6 +13,7 @@ import { expandPastes } from "../vm/paste.ts";
 import { adoptDraft, dropDraft } from "../vm/tab-choices.ts";
 import { displayTitle } from "../vm/threads.ts";
 import { messageEntryId } from "../vm/tree.ts";
+import { adoptDraftView, dropDraftView } from "../vm/view-choices.ts";
 import { currentWorkspaceId as workspaceOf } from "../vm/workspaces.ts";
 import { useThreadSummary, useWindowState } from "./hooks.ts";
 import { type OmfpHost, useHost } from "./host.tsx";
@@ -23,6 +24,7 @@ import {
   DRAFT_CREATING,
   DRAFT_MESSAGE,
   DRAFT_THREAD,
+  type DraftThread,
   draftKey,
   ERRORS,
   FOCUS_COMPOSER,
@@ -31,6 +33,7 @@ import {
   SELECTED_THREAD,
   SUCCESSES,
   TAB_CHOICES,
+  VIEW_CHOICES,
 } from "./keys.ts";
 
 export interface ThreadActions {
@@ -224,11 +227,12 @@ function forget(host: OmfpHost, threadId: string): void {
   window.reset(draftKey(threadId));
 }
 
-/** Drops the draft thread with its message and the tabs it selected (UI-372). */
+/** Drops the draft thread with its message, the tabs it selected (UI-372) and the view chosen on it (UI-367). */
 function discardDraft(host: OmfpHost): void {
   const draft = host.window.get(DRAFT_THREAD);
   host.window.set(DRAFT_THREAD, undefined);
   host.window.reset(DRAFT_MESSAGE);
+  host.window.set(VIEW_CHOICES, dropDraftView);
   if (draft !== undefined) {
     host.window.set(TAB_CHOICES, (choices) => dropDraft(choices, draft.workspaceId));
   }
@@ -264,8 +268,9 @@ async function createFromDraft(
       ...(draft.model === undefined ? {} : { model: draft.model }),
     });
     created?.(thread.id);
-    // The thread keeps the tabs its draft selected (UI-372).
+    // The thread keeps the tabs its draft selected (UI-372) and the view chosen on it (UI-367).
     window.set(TAB_CHOICES, (choices) => adoptDraft(choices, draft.workspaceId, thread.id));
+    adoptView(host, draft, thread.id);
     if (window.get(DRAFT_THREAD)?.workspaceId === draft.workspaceId) {
       discardDraft(host);
     }
@@ -278,6 +283,7 @@ async function createFromDraft(
       if (typeof threadId === "string" && threadId.trim() !== "") {
         window.set(draftKey(threadId), message);
         window.set(TAB_CHOICES, (choices) => adoptDraft(choices, draft.workspaceId, threadId));
+        adoptView(host, draft, threadId);
         if (window.get(DRAFT_THREAD) === draft) {
           discardDraft(host);
         }
@@ -289,6 +295,14 @@ async function createFromDraft(
     return undefined;
   } finally {
     window.set(DRAFT_CREATING, false);
+  }
+}
+
+/** Gives `threadId` the view chosen on `draft`, while the window's draft is still that workspace's: reopening it
+ * meanwhile (a new object, for the focus) keeps its view (UI-367). */
+function adoptView(host: OmfpHost, draft: DraftThread, threadId: string): void {
+  if (host.window.get(DRAFT_THREAD)?.workspaceId === draft.workspaceId) {
+    host.window.set(VIEW_CHOICES, (choices) => adoptDraftView(choices, threadId, choices.draft));
   }
 }
 
@@ -371,8 +385,13 @@ export function threadActions(host: OmfpHost): ThreadActions {
       window.set(SELECTED_THREAD, threadId);
     },
     openDraft: (workspaceId) => {
+      const current = window.get(DRAFT_THREAD);
+      // A new draft opens on the default view; returning to the workspace's draft keeps the view chosen on it (UI-367).
+      if (current?.workspaceId !== workspaceId) {
+        window.set(VIEW_CHOICES, dropDraftView);
+      }
       // A new object each time: the draft's composer takes the focus again.
-      window.set(DRAFT_THREAD, { ...window.get(DRAFT_THREAD), workspaceId });
+      window.set(DRAFT_THREAD, { ...current, workspaceId });
       window.set(SELECTED_THREAD, undefined);
     },
     discardDraft: () => discardDraft(host),

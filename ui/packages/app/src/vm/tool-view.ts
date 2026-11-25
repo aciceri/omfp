@@ -172,6 +172,8 @@ export type ToolView =
       readonly reference: string | undefined;
       /** The widget's source when given inline, shown as it is written (UI-054). */
       readonly code: string | undefined;
+      /** The props it sets (`omfp_ui_update` merges them, a `null` deleting one). */
+      readonly props: Readonly<Record<string, unknown>> | undefined;
     };
 
 /** Where the answer of a card stands (UI-921), what `useAnswer().state` says. */
@@ -440,8 +442,8 @@ const SHOWN_ARGUMENTS: Readonly<Record<string, readonly string[]>> = {
   web_search: ["query"],
   ask: ["html"],
   omfp_card: ["widget", "code", "props", "title"],
-  omfp_ui_mount: ["id", "widget", "code"],
-  omfp_ui_update: ["id", "code"],
+  omfp_ui_mount: ["id", "widget", "code", "props"],
+  omfp_ui_update: ["id", "code", "props"],
 };
 
 /** The arguments of a call of tool `name` its card shows elsewhere than the header's summary; `undefined` if none. */
@@ -698,7 +700,13 @@ export function toolView(
     }
     case "omfp_ui_mount":
     case "omfp_ui_update":
-      return { kind: "mount", id: str(input.id) ?? "", reference: str(input.widget), code: str(input.code) };
+      return {
+        kind: "mount",
+        id: str(input.id) ?? "",
+        reference: str(input.widget),
+        code: str(input.code),
+        props: isRecord(input.props) ? input.props : undefined,
+      };
     default:
       return { kind: "generic" };
   }

@@ -719,6 +719,24 @@ describe("widget mount card", () => {
     expect(byTestId(element, "tool-subject").textContent).toBe("chart");
     expect(byTestId(element, "tool-result").textContent).toBe(answer);
   });
+
+  // spec: UI-050
+  test("an update shows the props it sets", async () => {
+    const run: ToolRun = {
+      tool_call_id: "c-update",
+      tool_name: "omfp_ui_update",
+      args: { id: "board", props: { rows: 2, title: null } },
+      intent: null,
+      status: "succeeded",
+      partial_result: null,
+      preview: null,
+      result: { content: [{ type: "text", text: 'Updated "board".' }] },
+      background: null,
+    };
+    const element = await open(toolCard("c-update", undefined, run, undefined, undefined));
+    expect(byTestId(element, "tool-subject").textContent).toBe("board");
+    expect(byTestId(element, "tool-props").textContent).toBe('{\n  "rows": 2,\n  "title": null\n}');
+  });
 });
 
 describe("result images", () => {

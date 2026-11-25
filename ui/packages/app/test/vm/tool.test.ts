@@ -104,6 +104,7 @@ describe("tool cards", () => {
       id: "chart",
       reference: undefined,
       code: "export default",
+      props: undefined,
     });
     const form = '{"html": "<form><fieldset><legend>Which database?</legend></fieldset><fieldset><legend>Whi';
     expect(composing("ask", form)).toEqual({

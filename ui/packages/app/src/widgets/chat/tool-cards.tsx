@@ -466,13 +466,17 @@ function ToolSection({
         <CardSection threadId={threadId} toolCallId={card.toolCallId} view={view} />
       );
     case "mount":
-      // The mounted widget's code as it is written (UI-054), else its reference; then what the daemon answered.
+      // The mounted widget's code as it is written (UI-054), else its reference; the props it sets; then what the
+      // daemon answered.
       return (
         <>
           {view.code !== undefined ? (
             <WriteContent content={view.code} language="tsx" />
           ) : (
             view.reference !== undefined && <p className="omfp-tool-card__meta">{view.reference}</p>
+          )}
+          {view.props !== undefined && (
+            <Code code={JSON.stringify(view.props, null, 2)} block language="json" data-testid="tool-props" />
           )}
           {card.status === "succeeded" && card.result !== undefined && (
             <p className="omfp-tool-card__meta" data-testid="tool-result">

@@ -102,7 +102,8 @@ What you need before touching the code that talks to omp; details sit in the doc
   text; refusals of announced commands come as `command_output`.
 - Run lifecycle: `agent_end` with `isTerminal: false` is a pause; every run ends with exactly one terminal
   `agent_end`; `session_settled` follows it. The reducer reads busy/settled from `agent_start`/`session_settled` only,
-  never `agent_end`.
+  never `agent_end`. `abort_and_restore_queue` with a non-empty queue detaches the running `bash`/`eval`, which goes on
+  as a background job instead of being killed with the turn.
 - The `ask` tool sends its whole HTML `<form>` as one `form` UI request; the host answers `{ data }` or cancels, and omp
   fails the whole call on an invalid reply with no second round, so the window validates first (UI-074).
 - `--approval-mode` takes `always-ask`, `always-ask-cached`, `write` or `yolo` only. On a bad flag value, no usable

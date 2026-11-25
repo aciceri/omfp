@@ -2,7 +2,8 @@
 //! for the user. The thread awaits the user while the card waits; the widget's `submit` and the card's Cancel answer
 //! the calls, and the agent reads the answers. Once the turn ends the cards collapse; opened again after a reload,
 //! the widget mounts from the call's arguments and draws its finished state. Takes `omfp-card-waiting.png`. A card of
-//! `omfp:file` and a Markdown reply show an image of the workspace (#294, #295, E2E-81). Run with `just test-e2e`.
+//! `omfp:file` and a Markdown reply show an image of the workspace (#294, #295, E2E-81); a card of `omfp:terminal`
+//! keeps one height (E2E-82). Run with `just test-e2e`.
 
 use e2e::Journey;
 use fake_llm::{Reply, Step, ToolCall};
@@ -176,4 +177,69 @@ async fn a_card_and_a_reply_show_an_image_of_the_workspace() -> anyhow::Result<(
     assert_eq!(width, 32);
     journey.screenshot("card-image").await?;
     journey.finish("card-image").await
+}
+
+/// A card's terminal emulator after 30 more frames: `[height before, height after, min(70vh, 36rem)]` in px.
+const TERMINAL_HEIGHTS: &str = "const host = document.querySelector(arguments[0]); \
+    if (host === null) return null; \
+    const before = host.getBoundingClientRect().height; \
+    const rem = parseFloat(getComputedStyle(document.documentElement).fontSize); \
+    const expected = Math.min(innerHeight * 0.7, 36 * rem); \
+    return new Promise((resolve) => { \
+      const step = (left) => left === 0 \
+        ? resolve([before, host.getBoundingClientRect().height, expected].map(Math.round)) \
+        : requestAnimationFrame(() => step(left - 1)); \
+      step(30); \
+    });";
+
+// spec: E2E-82, UI-923
+#[tokio::test(flavor = "multi_thread")]
+async fn a_card_terminal_keeps_one_height() -> anyhow::Result<()> {
+    let journey = Journey::start(vec![
+        Step::reply(Reply::tool_calls(vec![ToolCall::new(
+            "call_terminal",
+            "omfp_card",
+            json!({
+                "widget": "omfp:terminal",
+                "title": "A shell",
+                "props": { "command": "printf 'ready\\r\\n'; exec cat" }
+            }),
+        )])),
+        Step::reply(Reply::text("The terminal is open.")),
+    ])
+    .await?;
+    journey.connected().await?;
+    journey.create_thread("card terminal journey").await?;
+
+    // The emulator fits its rows to its height: a height that came from those rows would grow with every fit once the
+    // padding around them is taller than a row, as it is at a roomy density.
+    journey
+        .eval(
+            "document.documentElement.style.setProperty('--omfp-density', '2');",
+            Vec::new(),
+        )
+        .await?;
+    journey.send("open a terminal").await?;
+    journey.reply("The terminal is open.").await?;
+    let emulator = format!(
+        "{} [data-testid=card-widget] .omfp-terminal-emulator",
+        card("call_terminal")
+    );
+    let xterm = format!("{emulator} .xterm");
+    journey
+        .until("the card's terminal output", async |page| {
+            Ok(page.text(&xterm).await?.contains("ready").then_some(()))
+        })
+        .await?;
+    let heights = journey
+        .eval(TERMINAL_HEIGHTS, vec![json!(emulator)])
+        .await?;
+    let [before, after, expected] = serde_json::from_value::<[i64; 3]>(heights)?;
+    assert_eq!(
+        (before, after),
+        (expected, expected),
+        "the card's terminal height"
+    );
+    journey.screenshot("card-terminal").await?;
+    journey.finish("card-terminal").await
 }

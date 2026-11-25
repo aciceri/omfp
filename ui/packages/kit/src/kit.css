@@ -4597,7 +4597,10 @@
     }
   }
 
+  /* xterm.js's fit sizes the rows from this box's height: the size containment keeps the rows it draws from feeding
+     that height back, so a box whose height comes from its content (a card's body) cannot grow with every fit. */
   .omfp-terminal-emulator {
+    contain: size;
     min-block-size: 8rem;
     overflow: hidden;
   }

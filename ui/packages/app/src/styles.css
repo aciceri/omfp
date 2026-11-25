@@ -2452,3 +2452,9 @@
   block-size: 100%;
   inline-size: 100%;
 }
+
+/* A card's body grows with its content, so its terminal gets a height of its own, as the viewers do (UI-923); unlayered
+   like the rules above, which it overrides. */
+.omfp-card-widget .omfp-terminal-emulator {
+  block-size: min(70vh, 36rem);
+}

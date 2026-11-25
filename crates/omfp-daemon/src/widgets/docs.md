@@ -165,10 +165,10 @@ Content that should stay belongs in a mount instead (`omfp_ui_mount`).
   a one-file component (default export) that the daemon compiles at the call: a compile error is the tool's error
   (`card.tsx:line:column: message`). Only `react`, `react-dom`, `omfp/sdk` and `omfp/kit` can be imported, no
   relative file. `props` are the component's props, `title` the card's title.
-- Without `wait` the tool answers `{"status":"shown"}` at once and the card stays live, e.g. a terminal:
-  `useTerminal(command)` with `TerminalEmulator`, or a file you made: `omfp:file { path }` shows an image or a PDF
-  at a height of its own. An image in your reply's Markdown shows too when its source is a file path
-  (`![map](out/map.png)`, relative to the workspace folder, or absolute).
+- Without `wait` the tool answers `{"status":"shown"}` at once and the card stays live, e.g. a terminal
+  (`omfp:terminal { command }`, or `useTerminal(command)` with `TerminalEmulator`) or a file you made
+  (`omfp:file { path }` shows an image or a PDF): both take a height of their own. An image in your reply's Markdown
+  shows too when its source is a file path (`![map](out/map.png)`, relative to the workspace folder, or absolute).
 - With `wait: true` the tool waits for the user's answer: the widget calls `submit(value)` (any JSON) or `cancel()`
   of `useAnswer()`, and the tool answers `{"status":"submitted","value":…}` or `{"status":"cancelled"}`. With
   `timeoutSeconds` it answers `{"status":"timeout"}` once they passed. Meanwhile the thread needs the user, as with

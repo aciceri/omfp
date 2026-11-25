@@ -7,6 +7,8 @@ The version's section is also the source of the GitHub release notes.
 
 ## Unreleased
 
+## 0.4.5 — 2026-11-25
+
 ### Changed
 
 - Every tool card keeps a long body or list bounded, as omp's terminal UI does: while a call is written or runs, its

@@ -614,9 +614,10 @@ describe("bounded bodies", () => {
     const element = await open({ ...grep, view: { ...grep.view, files } as ToolCard["view"] });
     expect([texts(element, "tool-file").length, texts(element, "tool-match").length]).toEqual([8, 6]);
     expect(texts(element, "tool-more")).toEqual([text.more(2, text.nouns.match), text.more(2, text.nouns.file)]);
+    // The file's matches expanded first stay expanded when the files are.
     const [moreMatches, moreFiles] = within(element).getAllByTestId("tool-more");
-    await userEvent.click(moreFiles as HTMLElement);
     await userEvent.click(moreMatches as HTMLElement);
+    await userEvent.click(moreFiles as HTMLElement);
     expect([texts(element, "tool-file").length, texts(element, "tool-match").length]).toEqual([10, 8]);
   });
 

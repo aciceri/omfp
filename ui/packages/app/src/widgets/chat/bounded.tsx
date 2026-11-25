@@ -206,21 +206,17 @@ function Preview({ total, cut, render, noun = text.nouns.line }: Omit<BoundedBod
   return (
     <div className="omfp-bounded" data-cut={!expanded} data-tail={tail} data-expanded={expanded}>
       {tail && toggle}
-      {expanded ? (
-        <section
-          ref={box}
-          className="omfp-bounded__body"
-          aria-label={text.bodyLabel}
-          // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region must be focusable to scroll by keyboard.
-          tabIndex={0}
-          onKeyDown={scrollByKey}
-          onWheel={keepWheel}
-        >
-          {render(0, total)}
-        </section>
-      ) : (
-        <div className="omfp-bounded__body">{render(cut.start, cut.end)}</div>
-      )}
+      {/* One element whether expanded or not, so what the body holds (a nested list's toggle, a live window) stays. */}
+      <section
+        ref={box}
+        className="omfp-bounded__body"
+        aria-label={expanded ? text.bodyLabel : undefined}
+        tabIndex={expanded ? 0 : undefined}
+        onKeyDown={expanded ? scrollByKey : undefined}
+        onWheel={expanded ? keepWheel : undefined}
+      >
+        {expanded ? render(0, total) : render(cut.start, cut.end)}
+      </section>
       {!tail && toggle}
     </div>
   );

@@ -7,6 +7,8 @@ The version's section is also the source of the GitHub release notes.
 
 ## Unreleased
 
+## 0.4.4 — 2026-11-25
+
 ### Added
 
 - TeX math: `$…$` in a reply, a subagent's output, a widget or a Markdown file preview is typeset with KaTeX, and

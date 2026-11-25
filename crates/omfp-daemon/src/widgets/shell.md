@@ -54,8 +54,8 @@ The bar at the bottom of the view area, like vim's:
 - the selected thread's title and state;
 - the **view tabs**, when the current workspace has several views: `Default · Review · Ops` by title, the current
   one highlighted; a click switches the selected thread's view. Each thread keeps its view in this window across
-  reloads; a thread shown for the first time (or a new thread being started) gets the view last chosen in its
-  workspace, else the default view, as does a thread whose view the workspace no longer has. Switching back to one of
+  reloads; a thread shown for the first time, a new thread's draft and a thread whose view the workspace no longer has
+  show the default view, and a thread created from a draft keeps the view chosen on it. Switching back to one of
   the last 3 views shown in the workspace shows it at once as it was left (its widgets' content, typed text and the
   focus), then updates it;
 - at the right end the newest **notice** (`◆ title body`, `+n` when more wait): a thread that needs the user, failed

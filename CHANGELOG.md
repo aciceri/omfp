@@ -29,6 +29,10 @@ The version's section is also the source of the GitHub release notes.
   window: read `FRAME_LAYOUT`, stack instead of columns, avoid fixed widths and hover-only actions, use touch-sized
   controls, and check the result at a phone width, since the widget check renders only in the focused window's layout.
   The widgets note, the `widget-builder` agent and `omfp://docs/widgets` say so in the same words (#305).
+- New thread (`Space n`, `Alt-n`, `:new`, the left column's button) always opens the draft on the workspace's default
+  view, instead of the view last chosen in the workspace; a view chosen on the draft stays with the thread created
+  from it. A thread never shown in the window, or whose view is gone, shows the default view too: the window no
+  longer keeps a last chosen view per workspace (#307).
 
 ### Fixed
 

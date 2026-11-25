@@ -55,10 +55,10 @@ export const COLOR_SCHEME = windowKey<ColorScheme>("colorScheme", "system", (sto
 );
 
 /**
- * The views this window chose (UI-302, UI-367): per thread the view last shown with it, per workspace the view last
- * chosen in it. Kept in `localStorage`, so a reload (and the next window) shows each thread with its view; read it with
- * `useActiveView`, change it with `chooseView`. The window-wide choice of earlier versions (`omfp.activeView`) is not
- * carried over.
+ * The views this window chose (UI-302, UI-367): per thread the view last shown with it, and the view chosen on the
+ * draft thread. Kept in `localStorage`, so a reload (and the next window) shows each thread with its view; read it with
+ * `useActiveView`, change it with `chooseView`. The window-wide choice of earlier versions (`omfp.activeView`) and the
+ * per-workspace one are not carried over.
  */
 export const VIEW_CHOICES = windowKey<ViewChoices>("viewChoices", NO_VIEW_CHOICES, decodeViewChoices);
 

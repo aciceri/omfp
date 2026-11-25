@@ -23,6 +23,8 @@ The version's section is also the source of the GitHub release notes.
   agent when it reports back. It replaces omp's live prompt, which presented the voice and the agent as one assistant.
 - The agent knows when a request comes from live voice: each one reaches it marked as relayed by the voice model, with
   the transcript of the voice conversation so far, so it sees what you actually said and not only the voice's wording.
+- Live voice knows where it runs: what it is (OpenAI's realtime voice inside omfp), the thread's workspace, its
+  repositories and the agent's model, also on a new thread; before, it would say it was ChatGPT running in the cloud.
 
 ### Fixed
 

@@ -42,15 +42,74 @@ const INSTRUCTION: &str = "The conversation of this thread so far, oldest first 
 /// helper returns the string literal, so this renders as `{{`.
 const ESCAPED_BRACES: &str = r#"{{default "" "{{"}}"#;
 
-/// The `instructions` of `live_connect`: omfp's prompt (DMN-115), then the thread context when the thread has a
-/// conversation; `spoken` are the conversations of ended sessions not in the thread yet (DMN-113).
+/// Where the voice runs (DMN-117): the thread's workspace and its agent's model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct About {
+    pub workspace: String,
+    pub folder: std::path::PathBuf,
+    /// The workspace's repositories, by name.
+    pub repositories: Vec<String>,
+    /// The thread's chosen `provider/id`, if any.
+    pub model: Option<String>,
+}
+
+/// The `instructions` of `live_connect`: omfp's prompt (DMN-115), what the voice is and where it runs (DMN-117), then
+/// the thread context when the thread has a conversation; `spoken` are the conversations of ended sessions not in the
+/// thread yet (DMN-113).
 #[must_use]
-pub fn live_instructions(title: &str, state: &ThreadState, spoken: &[Spoken]) -> String {
-    let prompt = format!("{}\n", PROMPT.trim_end());
+pub fn live_instructions(
+    title: &str,
+    about: &About,
+    state: &ThreadState,
+    spoken: &[Spoken],
+) -> String {
+    let prompt = format!("{}\n{}", PROMPT.trim_end(), about_section(about, state));
     match thread_context(title, state, spoken, CONVERSATION_CAP) {
         Some(context) => format!("{prompt}{context}"),
         None => prompt,
     }
+}
+
+/// The `<about>` section (DMN-117): omfp, the voice and the agent, the workspace with its repositories, and the agent's
+/// model (the thread's choice, else the one of its last answer). Every `{{` is escaped for omp's renderer.
+fn about_section(about: &About, state: &ThreadState) -> String {
+    let model = about.model.clone().or_else(|| {
+        state
+            .transcript
+            .iter()
+            .rev()
+            .find_map(|entry| match &entry.message {
+                AgentMessage::Assistant(assistant) => match (&assistant.provider, &assistant.model)
+                {
+                    (Some(provider), Some(model)) => Some(format!("{provider}/{model}")),
+                    (None, Some(model)) => Some(model.clone()),
+                    _ => None,
+                },
+                _ => None,
+            })
+    });
+    let repositories = if about.repositories.is_empty() {
+        "none".to_owned()
+    } else {
+        about.repositories.join(", ")
+    };
+    let model = model
+        .map(|model| format!("Agent model: {model}\n"))
+        .unwrap_or_default();
+    let section = format!(
+        "\n<about>\n\
+         You run inside omfp, the user's app (desktop, web and phone) for the omp coding agent; omfp's daemon runs on \
+         the user's own computer. You are OpenAI's realtime voice model, reached through omp's live mode: you have no \
+         files, tools or memory beyond this conversation and what the agent reports. The agent is omp on that \
+         computer, working in this thread's workspace with its own model: it reads and changes files, runs commands \
+         and tools, and reaches the user's notes and data from there.\n\
+         Workspace: {} (folder {})\n\
+         Repositories: {repositories}\n\
+         {model}</about>\n",
+        about.workspace,
+        about.folder.display(),
+    );
+    escape(&section)
 }
 
 /// The thread context section: the title if any, how to use the conversation, the summary of a compaction, and the
@@ -689,7 +748,16 @@ mod tests {
         assert_eq!(section.replace(ESCAPED_BRACES, "").matches("{{").count(), 0);
     }
 
-    // spec: DMN-105
+    fn about() -> About {
+        About {
+            workspace: "omfp".into(),
+            folder: "/home/u/ws".into(),
+            repositories: vec!["api".into(), "web".into()],
+            model: None,
+        }
+    }
+
+    // spec: DMN-105, DMN-117
     #[test]
     fn without_a_conversation_there_is_no_section() {
         assert_eq!(
@@ -704,25 +772,67 @@ mod tests {
             None
         );
         assert_eq!(
-            live_instructions("Title", &thinking_only, &[]),
-            format!("{}\n", PROMPT.trim_end())
+            live_instructions("Title", &about(), &thinking_only, &[]),
+            format!(
+                "{}\n{}",
+                PROMPT.trim_end(),
+                about_section(&about(), &thinking_only)
+            ),
+            "a new thread still says where the voice runs"
         );
     }
 
-    // spec: DMN-105, DMN-115
+    // spec: DMN-105, DMN-115, DMN-117
     #[test]
-    fn the_instructions_are_omfps_prompt_then_the_section() {
+    fn the_instructions_are_omfps_prompt_the_about_section_then_the_thread() {
         let state = state(&[user("hi")]);
 
-        let instructions = live_instructions("", &state, &[]);
+        let instructions = live_instructions("", &about(), &state, &[]);
 
         assert_eq!(
             instructions,
             format!(
-                "{}\n{}",
+                "{}\n{}{}",
                 PROMPT.trim_end(),
+                about_section(&about(), &state),
                 thread_context("", &state, &[], CONVERSATION_CAP).unwrap()
             )
+        );
+    }
+
+    // spec: DMN-117
+    #[test]
+    fn the_about_section_names_omfp_the_workspace_and_the_agents_model() {
+        let answered = state(&[
+            json!({ "role": "assistant", "provider": "anthropic", "model": "claude-x",
+            "content": [{ "type": "text", "text": "ok" }] }),
+        ]);
+
+        let section = about_section(&about(), &answered);
+
+        assert!(section.starts_with("\n<about>\nYou run inside omfp, the user's app"));
+        assert!(section.contains("You are OpenAI's realtime voice model"));
+        assert!(section.ends_with(
+            "Workspace: omfp (folder /home/u/ws)\nRepositories: api, web\nAgent model: anthropic/claude-x\n</about>\n"
+        ));
+        let chosen = About {
+            model: Some("openai/gpt-y".into()),
+            repositories: Vec::new(),
+            ..about()
+        };
+        assert!(
+            about_section(&chosen, &answered)
+                .ends_with("Repositories: none\nAgent model: openai/gpt-y\n</about>\n"),
+            "the thread's choice wins"
+        );
+        assert!(!about_section(&about(), &ThreadState::default()).contains("Agent model"));
+        let braces = About {
+            workspace: "{{x}}".into(),
+            ..about()
+        };
+        assert!(
+            about_section(&braces, &ThreadState::default())
+                .contains(r#"Workspace: {{default "" "{{"}}x}}"#)
         );
     }
 

@@ -98,11 +98,11 @@ fn about_section(about: &About, state: &ThreadState) -> String {
         .unwrap_or_default();
     let section = format!(
         "\n<about>\n\
-         You run inside omfp, the user's app (desktop, web and phone) for the omp coding agent; omfp's daemon runs on \
-         the user's own computer. You are OpenAI's realtime voice model, reached through omp's live mode: you have no \
-         files, tools or memory beyond this conversation and what the agent reports. The agent is omp on that \
-         computer, working in this thread's workspace with its own model: it reads and changes files, runs commands \
-         and tools, and reaches the user's notes and data from there.\n\
+         You are omfp's voice. omfp is the user's app (desktop, web and phone) for the omp coding agent, and omfp's \
+         daemon, omp and the agent all run on the user's own computer; only your speech model is OpenAI's, reached \
+         through omp's live mode. You have no files, tools or memory beyond this conversation and what the agent \
+         reports. The agent is omp on that computer, working in this thread's workspace with its own model: it reads \
+         and changes files, runs commands and tools, and reaches the user's notes and data from there.\n\
          Workspace: {} (folder {})\n\
          Repositories: {repositories}\n\
          {model}</about>\n",
@@ -810,8 +810,8 @@ mod tests {
 
         let section = about_section(&about(), &answered);
 
-        assert!(section.starts_with("\n<about>\nYou run inside omfp, the user's app"));
-        assert!(section.contains("You are OpenAI's realtime voice model"));
+        assert!(section.starts_with("\n<about>\nYou are omfp's voice. omfp is the user's app"));
+        assert!(section.contains("only your speech model is OpenAI's"));
         assert!(section.ends_with(
             "Workspace: omfp (folder /home/u/ws)\nRepositories: api, web\nAgent model: anthropic/claude-x\n</about>\n"
         ));
@@ -840,9 +840,10 @@ mod tests {
     #[test]
     fn the_prompt_makes_the_voice_a_relay_that_forwards() {
         assert!(PROMPT.starts_with(
-            "You: omp Live, the realtime voice between {{firstName}} (OS account: {{username}}) and their \
-             coding agent. You are a relay, not the assistant doing the work"
+            "You: omfp's voice, the realtime voice between {{firstName}} (OS account: {{username}}) and their \
+             coding agent, omp, which runs on their own computer. You are a relay, not the assistant doing the work"
         ));
+        assert!(PROMPT.contains("NEVER introduce yourself as ChatGPT"));
         assert!(PROMPT.contains("- In doubt, forward."));
         assert!(PROMPT.contains("NEVER answer that you do not know, say no, or ask the user back"));
         // omp's delegation protocol, in its own terms.

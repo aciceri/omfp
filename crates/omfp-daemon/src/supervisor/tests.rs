@@ -90,12 +90,7 @@ impl Harness {
         crate::live_context::About {
             workspace: view.workspace.name,
             folder: view.workspace.path,
-            repositories: view
-                .repos
-                .into_iter()
-                .filter(|repo| !repo.is_root)
-                .map(|repo| repo.name)
-                .collect(),
+            repositories: view.repos.into_iter().map(|repo| repo.name).collect(),
             model: thread.model,
         }
     }
@@ -2128,8 +2123,9 @@ async fn live_connect_starts_omp_records_the_owner_and_relays_the_answer() {
 async fn live_connect_sends_the_live_prompt_with_the_threads_conversation() {
     let h = harness(|_| {});
     let (ws, folder) = h.workspace();
-    std::fs::create_dir_all(folder.join("api")).unwrap();
-    h.git.add_repo(&folder.join("api"), "main");
+    // The folder is a repository of its own (Codex's case): it is the workspace's one repository.
+    h.git.add_repo(&folder, "main");
+    let root = folder.file_name().unwrap().to_string_lossy().into_owned();
     let id = h
         .threads
         .create(NewThread::new("Login bug", ws))
@@ -2160,7 +2156,7 @@ async fn live_connect_sends_the_live_prompt_with_the_threads_conversation() {
         .collect();
     let state = h.log(&id).await.with_state(Clone::clone);
     let about = h.about(&id);
-    assert_eq!(about.repositories, ["api"]);
+    assert_eq!(about.repositories, std::slice::from_ref(&root));
     assert_eq!(
         instructions,
         vec![Some(crate::live_context::live_instructions(
@@ -2171,9 +2167,9 @@ async fn live_connect_sends_the_live_prompt_with_the_threads_conversation() {
         ))]
     );
     let sent = instructions[0].as_deref().unwrap();
-    assert!(sent.starts_with("You: omp Live, the realtime voice between"));
+    assert!(sent.starts_with("You: omfp's voice, the realtime voice between"));
     assert!(sent.contains(&format!(
-        "Workspace: {} (folder {})\nRepositories: api\n</about>",
+        "Workspace: {} (folder {})\nRepositories: {root}\n</about>",
         about.workspace,
         folder.display()
     )));

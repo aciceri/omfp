@@ -139,18 +139,20 @@ describe("edit card", () => {
     const edit = view(running, "edit");
     expect([edit.path, edit.diff, edit.language]).toEqual(["src/lib.rs", undefined, "rust"]);
     expect(edit.input).toContain("PUT 4.=4:");
-    expect(edit.preview).toEqual([
-      {
-        path: "src/lib.rs",
-        rename: undefined,
-        diff: [
-          { kind: "del", text: "    left + right", oldLine: 4 },
-          { kind: "add", text: "    left.saturating_add(right)", newLine: 4 },
-        ],
-        error: undefined,
-        language: "rust",
-      },
+    // omp previews as much of the edit as its preview worker had parsed (omp 19.2 stops previewing once the edit
+    // applies), so the recorded preview's added line is the edit's own line or a prefix of it.
+    const [file] = edit.preview;
+    expect([edit.preview.length, file?.path, file?.rename, file?.error, file?.language]).toEqual([
+      1,
+      "src/lib.rs",
+      undefined,
+      undefined,
+      "rust",
     ]);
+    expect(file?.diff?.[0]).toEqual({ kind: "del", text: "    left + right", oldLine: 4 });
+    for (const row of file?.diff?.slice(1) ?? []) {
+      expect([row.kind, row.newLine, "    left.saturating_add(right)".startsWith(row.text)]).toEqual(["add", 4, true]);
+    }
   });
 
   // spec: UI-054, UI-055, UI-051
@@ -182,9 +184,10 @@ describe("edit card", () => {
 
   // spec: UI-055, UI-051
   test("recorded: omp's preview shows while the call runs; once it ended, its result replaces the preview", () => {
-    // omp 19.2 previews a refused edit's diff while it streams and reports the refusal with the result only.
+    // A refused edit: omp 19.2 previews its diff while it streams; the refusal comes with the result, or with omp's
+    // final preview when that runs before the edit applies.
     const edit = view(streaming("edit_tool_calls", "call_edit_2"), "edit");
-    expect(edit.preview.map((file) => [file.path, file.error])).toEqual([["src/lib.rs", undefined]]);
+    expect(edit.preview.map((file) => file.path)).toEqual(["src/lib.rs"]);
     expect(view(card("edit_tool_calls", "call_edit_2"), "edit").preview).toEqual([]);
     expect(view(card("edit_tool_calls", "call_edit_1"), "edit").preview).toEqual([]);
   });

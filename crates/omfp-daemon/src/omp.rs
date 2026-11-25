@@ -99,17 +99,22 @@ impl LaunchSpec {
         let stderr = crate::paths::open_private_log(&self.stderr_log)?;
         let mut command = Command::new(&self.program);
         command.args(self.args()).current_dir(&self.cwd);
-        // omp 19 leaves tool-call intents out of RPC sessions unless `tools.intentTracing` is configured (sdk.ts,
-        // `intentTracingActive`); the tool cards and subagent rows show them (DMN-030), so a thread asks for them
-        // unless the daemon's own environment or an override decides.
-        if std::env::var_os(INTENT_TRACING).is_none() {
-            command.env(INTENT_TRACING, "1");
-        }
         for (key, value) in &self.env {
             match value {
                 Some(value) => command.env(key, value),
                 None => command.env_remove(key),
             };
+        }
+        // omp 19 leaves tool-call intents out of RPC sessions unless `tools.intentTracing` is configured (sdk.ts,
+        // `intentTracingActive`); the tool cards and subagent rows show them (DMN-030), so a thread asks for them
+        // unless the value omp gets is already decided: an override's, else the daemon's own environment's. An
+        // override that removes the variable (an isolated environment dropping every `PI_*`) decides nothing.
+        let decided = match command.get_envs().find(|(key, _)| *key == INTENT_TRACING) {
+            Some((_, value)) => value.is_some(),
+            None => std::env::var_os(INTENT_TRACING).is_some(),
+        };
+        if !decided {
+            command.env(INTENT_TRACING, "1");
         }
         // On the host when the daemon runs in Flatpak (ENV-064).
         let mut command = crate::flatpak::on_host(command);
@@ -532,6 +537,27 @@ mod tests {
             .last()
             .map(|(_, value)| value);
         assert_eq!(last, Some(Some("0".as_ref())));
+    }
+
+    // spec: DMN-030
+    #[test]
+    fn an_override_removing_the_variable_still_asks_for_intents() {
+        // Whatever the daemon's own environment holds: an isolated omp environment removes every `PI_*` variable.
+        let root = tempfile::tempdir().unwrap();
+        let mut spec = spec();
+        spec.cwd = root.path().join("workspace");
+        spec.session_dir = root.path().join("sessions");
+        spec.stderr_log = root.path().join("logs/omp.log");
+        spec.env = vec![(INTENT_TRACING.into(), None)];
+
+        let command = spec.command().unwrap();
+
+        let last = command
+            .get_envs()
+            .filter(|(key, _)| *key == INTENT_TRACING)
+            .last()
+            .map(|(_, value)| value);
+        assert_eq!(last, Some(Some("1".as_ref())));
     }
 
     // spec: DMN-040, DMN-042, UI-043

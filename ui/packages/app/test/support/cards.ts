@@ -109,3 +109,11 @@ export function omfpCard(args: JsonObject, status: ToolRun["status"], answer?: s
   };
   return toolCard(id, undefined, run, undefined, undefined);
 }
+
+/**
+ * The card of a call of tool `name` whose arguments the model is still writing (UI-054): omp's block carries `{}` as
+ * its `arguments` beside the text so far, `partialArgs`, and no run started yet.
+ */
+export function composingCard(name: string, partialArgs: string, id = "call_composing"): ToolCard {
+  return toolCard(id, { type: "toolCall", id, name, arguments: {}, partialArgs }, undefined, undefined, undefined);
+}

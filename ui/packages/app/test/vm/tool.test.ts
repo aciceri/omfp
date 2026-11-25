@@ -34,32 +34,121 @@ describe("tool cards", () => {
     }
   });
 
-  // spec: UI-050
-  test("while streaming the fallback card shows the partial argument text", () => {
+  // spec: UI-050, UI-054
+  test("while streaming the fallback card shows the arguments parsed so far, in its body and its header", () => {
     const card = toolCard(
       "c1",
-      { type: "toolCall", name: "eval", partialArgs: '{"code": "1 +' },
+      { type: "toolCall", name: "eval", arguments: {}, partialArgs: '{"code": "1 +' },
       undefined,
       undefined,
       undefined,
     );
     expect(card.status).toBe("composing");
-    expect(card.args).toBe('{"code": "1 +');
-    expect(card.summary).toBe('{"code": "1 +');
+    expect(card.args).toBe('{\n  "code": "1 +"\n}');
+    expect(card.summary).toBe("code: 1 +");
   });
 
-  // spec: UI-050
-  test("while streaming a specialized card keeps the partial arguments out of its header", () => {
+  // spec: UI-050, UI-054
+  test("while streaming a specialized card shows its subject and body as written, its intent as the summary", () => {
+    const partialArgs = '{"i": "Writing the notes", "path": "a.md", "content": "Marker';
     const card = toolCard(
       "c1",
-      { type: "toolCall", name: "write", partialArgs: '{"path": "a.md", "content": "Marker' },
+      { type: "toolCall", name: "write", arguments: {}, partialArgs },
       undefined,
       undefined,
       undefined,
     );
-    expect(card.status).toBe("composing");
-    expect(card.args).toBe('{"path": "a.md", "content": "Marker');
-    expect(card.summary).toBe("");
+    expect([card.status, card.summary]).toEqual(["composing", "Writing the notes"]);
+    expect(card.view).toEqual({ kind: "write", path: "a.md", content: "Marker", language: "markdown" });
+    expect(JSON.parse(card.args)).toEqual({ path: "a.md", content: "Marker" });
+    // Once the arguments ended (`toolcall_end`), before the run starts: the complete ones, the same intent.
+    const ended = toolCard(
+      "c1",
+      {
+        type: "toolCall",
+        name: "write",
+        arguments: { i: "Writing the notes", path: "a.md", content: "Marker\n" },
+        partialArgs: '{"i": "Writing the notes", "path": "a.md", "content": "Marker\\n"}',
+      },
+      undefined,
+      undefined,
+      undefined,
+    );
+    expect([ended.status, ended.summary]).toEqual(["pending", "Writing the notes"]);
+    expect(ended.view).toEqual({ kind: "write", path: "a.md", content: "Marker\n", language: "markdown" });
+  });
+
+  // spec: UI-054
+  test("each specialized card grows from the arguments written so far", () => {
+    const composing = (name: string, partialArgs: string) => {
+      const card = toolCard(
+        "c1",
+        { type: "toolCall", name, arguments: {}, partialArgs },
+        undefined,
+        undefined,
+        undefined,
+      );
+      expect(card.status).toBe("composing");
+      return card.view;
+    };
+    expect(composing("bash", '{"command": "git sta')).toMatchObject({ kind: "bash", command: "git sta" });
+    expect(composing("read", '{"path": "src/li')).toMatchObject({ kind: "read", path: "src/li" });
+    expect(composing("grep", '{"pattern": "fn ma')).toMatchObject({ kind: "search", query: "fn ma" });
+    expect(composing("omfp_card", '{"title": "Load", "code": "export default () =>')).toMatchObject({
+      kind: "card",
+      title: "Load",
+      code: "export default () =>",
+    });
+    expect(composing("omfp_ui_mount", '{"id": "chart", "code": "export default')).toEqual({
+      kind: "mount",
+      id: "chart",
+      reference: undefined,
+      code: "export default",
+      props: undefined,
+    });
+    const form = '{"html": "<form><fieldset><legend>Which database?</legend></fieldset><fieldset><legend>Whi';
+    expect(composing("ask", form)).toEqual({
+      kind: "ask",
+      questions: [{ question: "Which database?", answer: undefined }],
+    });
+    expect(composing("todo", '{"op": "init", "items": ["Read the code", "Fix the b')).toEqual({
+      kind: "todo",
+      op: "init",
+      phases: [
+        {
+          name: "Tasks",
+          tasks: [
+            { content: "Read the code", status: "pending" },
+            { content: "Fix the b", status: "pending" },
+          ],
+        },
+      ],
+    });
+    expect(composing("task", '{"tasks": [{"name": "Scout", "agent": "scout", "task": "Find the par')).toMatchObject({
+      kind: "task",
+      agents: [{ name: "Scout", agent: "scout", task: "Find the par", status: "pending" }],
+    });
+  });
+
+  // spec: UI-054
+  test("a long argument text is parsed again only once it grew by a 32nd; the complete arguments replace it at once", () => {
+    const head = '{"path": "big.md", "content": "';
+    const body = "x".repeat(4096);
+    const content = (partialArgs: string, args: Record<string, string> = {}) => {
+      const card = toolCard(
+        "c-long",
+        { type: "toolCall", name: "write", arguments: args, partialArgs },
+        undefined,
+        undefined,
+        undefined,
+      );
+      return card.view.kind === "write" ? card.view.content?.length : undefined;
+    };
+    expect(content(head + body)).toBe(4096);
+    // 4227 characters, 100 more than the last parse: under a 32nd (132), that parse stands.
+    expect(content(head + body + "y".repeat(100))).toBe(4096);
+    expect(content(head + body + "y".repeat(200))).toBe(4296);
+    expect(content(`${head}${body}y"}`, { path: "big.md", content: `${body}y` })).toBe(4097);
   });
 
   // spec: UI-050

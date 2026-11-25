@@ -15,6 +15,13 @@ The version's section is also the source of the GitHub release notes.
   stay text (`$5 and $10`: a `$` opens math only before a non-space and closes it only after one), a block still
   streaming stays code until it closes, and a formula KaTeX cannot parse shows its source in the theme's error color
   with the reason as its tooltip. KaTeX's fonts ship with omfp (#293).
+- Tool calls show live while the model writes them: a card fills in from the arguments written so far (the file of a
+  `read`, `edit` or `write`, a `write`'s content, a `bash` command, the code of a card or a widget mount, an `ask`'s
+  questions, the items of a `todo`, a `task`'s assignments) instead of staying empty until they are complete, and an
+  `edit` shows omp's preview of its diff as it grows, or why it does not apply, so you can abort a bad edit before it
+  lands. Nothing acts on arguments still being written: their paths open and a card's widget mounts once they are
+  complete. A widget mount (`omfp_ui_mount`, `omfp_ui_update`) has its own card, with the mount id and the widget's
+  code (#308).
 
 ### Changed
 

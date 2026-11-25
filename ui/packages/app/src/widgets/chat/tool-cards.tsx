@@ -1,7 +1,8 @@
 /**
  * The bodies of the specialized tool cards (UI-050): what `toolView` read from a call, rendered per tool. Failed calls
  * show omp's error first (UI-052); code is highlighted when its language is known (UI-090); the code-intelligence
- * tools' paths open their files at their lines (UI-916..UI-919).
+ * tools' paths open their files at their lines (UI-916..UI-919). While the model writes a call's arguments the card
+ * shows them as they are, but nothing acts on them: no path opens and no widget mounts (UI-054, UI-056).
  */
 
 import {
@@ -25,6 +26,7 @@ import {
   CardWidget,
   type Diagnostic,
   type EditedFile,
+  type EditPreviewFile,
   type LspResult,
   type OpenFileOptions,
   repoPath,
@@ -39,7 +41,7 @@ import {
   useReportError,
   useWorkspaces,
 } from "omfp/sdk";
-import { type ReactNode, useMemo, useState } from "react";
+import { Fragment, type ReactNode, useMemo, useState } from "react";
 import { useImageViewer } from "./image-viewer.tsx";
 
 const text = strings.chat.tool;
@@ -91,9 +93,13 @@ function oneFile(path: string | undefined): path is string {
 
 /**
  * Where a card's path opens (UI-116): `read` at its first line, `edit` and `write` against `HEAD`, an `lsp` call's file
- * at its line.
+ * at its line; nowhere while the model still writes the arguments, whose path may be cut short (UI-056).
  */
-export function fileTarget(view: ToolView): { path: string; open: OpenFileOptions } | undefined {
+export function fileTarget(card: ToolCard): { path: string; open: OpenFileOptions } | undefined {
+  const { view } = card;
+  if (card.status === "composing") {
+    return undefined;
+  }
   switch (view.kind) {
     case "read":
       return view.directory ? undefined : { path: view.path, open: { line: view.line } };
@@ -108,15 +114,16 @@ export function fileTarget(view: ToolView): { path: string; open: OpenFileOption
   }
 }
 
-/** What the call is about, shown in the card's header: its command, file, query or URL. */
-export function ToolSubject({ view }: { view: ToolView }): ReactNode {
+/** What the call is about, shown in the card's header: its command, file, query, URL or mount. */
+export function ToolSubject({ card }: { card: ToolCard }): ReactNode {
+  const { view } = card;
   switch (view.kind) {
     case "bash":
       return <Subject>{view.command}</Subject>;
     case "read":
     case "write":
     case "edit":
-      return view.path === undefined ? null : <FilePath path={view.path} open={fileTarget(view)?.open} />;
+      return view.path === undefined ? null : <FilePath path={view.path} open={fileTarget(card)?.open} />;
     case "fetch":
       return <Subject>{view.url}</Subject>;
     case "search":
@@ -128,8 +135,10 @@ export function ToolSubject({ view }: { view: ToolView }): ReactNode {
       return <Subject>{view.label ?? view.action}</Subject>;
     case "card":
       return <Subject>{cardTitle(view)}</Subject>;
+    case "mount":
+      return <Subject>{view.id}</Subject>;
     case "lsp":
-      return <LspSubject view={view} />;
+      return <LspSubject view={view} target={fileTarget(card)} />;
     case "task":
       return <Subject>{view.agents.map((agent) => agent.name).join(", ")}</Subject>;
     default:
@@ -137,9 +146,14 @@ export function ToolSubject({ view }: { view: ToolView }): ReactNode {
   }
 }
 
-/** An `lsp` call's subject: its action, then its file (opening at its line) or `*`, its line and its symbol. */
-function LspSubject({ view }: { view: Extract<ToolView, { kind: "lsp" }> }): ReactNode {
-  const target = fileTarget(view);
+/** An `lsp` call's subject: its action, then its file (opening at `target`) or `*`, its line and its symbol. */
+function LspSubject({
+  view,
+  target,
+}: {
+  view: Extract<ToolView, { kind: "lsp" }>;
+  target: { path: string; open: OpenFileOptions } | undefined;
+}): ReactNode {
   return (
     <span className="omfp-tool-card__target">
       <Subject>{view.action}</Subject>
@@ -311,9 +325,13 @@ function ToolSection({
         </>
       );
     case "edit":
-      return view.diff !== undefined ? (
-        <Diff lines={view.diff} language={view.language} data-testid="tool-diff" />
-      ) : (
+      if (view.diff !== undefined) {
+        return <Diff lines={view.diff} language={view.language} data-testid="tool-diff" />;
+      }
+      if (view.preview.length > 0) {
+        return <EditPreview files={view.preview} />;
+      }
+      return (
         view.input !== undefined && (
           <>
             <h3>{text.edit}</h3>
@@ -441,8 +459,62 @@ function ToolSection({
         </ul>
       );
     case "card":
-      return <CardSection threadId={threadId} toolCallId={card.toolCallId} view={view} />;
+      // The widget mounts once the call's arguments are complete; until then its code shows as it is written (UI-056).
+      return card.status === "composing" ? (
+        view.code !== undefined && <WriteContent content={view.code} language="tsx" />
+      ) : (
+        <CardSection threadId={threadId} toolCallId={card.toolCallId} view={view} />
+      );
+    case "mount":
+      // The mounted widget's code as it is written (UI-054), else its reference; the props it sets; then what the
+      // daemon answered.
+      return (
+        <>
+          {view.code !== undefined ? (
+            <WriteContent content={view.code} language="tsx" />
+          ) : (
+            view.reference !== undefined && <p className="omfp-tool-card__meta">{view.reference}</p>
+          )}
+          {view.props !== undefined && (
+            <Code code={JSON.stringify(view.props, null, 2)} block language="json" data-testid="tool-props" />
+          )}
+          {card.status === "succeeded" && card.result !== undefined && (
+            <p className="omfp-tool-card__meta" data-testid="tool-result">
+              {card.result}
+            </p>
+          )}
+        </>
+      );
   }
+}
+
+/**
+ * omp's preview of an `edit` while the model writes it and it runs (UI-055): each file's diff so far, or why it does
+ * not apply; with several files, or a moved one, each under its path.
+ */
+function EditPreview({ files }: { files: readonly EditPreviewFile[] }): ReactNode {
+  const named = files.length > 1 || files.some((file) => file.rename !== undefined);
+  return files.map((file) => (
+    <Fragment key={file.path}>
+      {named && (
+        <div className="omfp-tool-card__file" data-testid="tool-preview-file">
+          <FilePath path={file.path} />
+          {file.rename !== undefined && (
+            <>
+              {" → "}
+              <FilePath path={file.rename} />
+            </>
+          )}
+        </div>
+      )}
+      {file.error !== undefined && (
+        <div className="omfp-tool-card__error" data-testid="tool-preview-error">
+          {file.error}
+        </div>
+      )}
+      {file.diff !== undefined && <Diff lines={file.diff} language={file.language} data-testid="tool-diff" />}
+    </Fragment>
+  ));
 }
 
 type CardView = Extract<ToolView, { kind: "card" }>;

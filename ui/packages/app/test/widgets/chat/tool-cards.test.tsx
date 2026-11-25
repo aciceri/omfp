@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { replay } from "@omfp/core";
+import { replay, type ToolRun } from "@omfp/core";
 import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { type ReactNode, useState } from "react";
@@ -16,7 +16,7 @@ import { type CardStatus, type ToolCard, toolCard } from "../../../src/vm/tool.t
 import type { MessageView } from "../../../src/vm/transcript.ts";
 import { MessageRow, ToolCardView } from "../../../src/widgets/chat/message.tsx";
 import { type Clock, ClockContext } from "../../../src/widgets/chat/state.ts";
-import { card, cards, lspCard, streaming } from "../../support/cards.ts";
+import { card, cards, composingCard, lspCard, streaming } from "../../support/cards.ts";
 import { repo, thread, workspace } from "../../support/fixtures.ts";
 import { renderWithHost, testHost } from "../../support/host.tsx";
 import { fixtureEvents, isFrame } from "./fixtures.ts";
@@ -267,15 +267,61 @@ describe("fetch card", () => {
 });
 
 describe("edit card", () => {
-  // spec: UI-050, UI-051, UI-695
-  test("streaming: the file and the edit as written are open without another click", () => {
+  // spec: UI-050, UI-051, UI-055, UI-695
+  test("streaming: the file and omp's preview of the diff are open without another click", () => {
     const element = show(streaming("edit_tool_calls", "call_edit_1"));
     expect(byTestId(element, "toggle").getAttribute("aria-expanded")).toBe("true");
     expect(byTestId(element, "tool-path").textContent).toBe("src/lib.rs");
-    expect(byTestId(element, "tool-input").textContent).toContain("left.saturating_add(right)");
+    const diff = byTestId(element, "tool-diff");
+    expect([...diff.querySelectorAll("[data-kind=add]")].map((row) => row.textContent)).toEqual([
+      "4+    left.saturating_add(right)",
+    ]);
+    expect(within(element).queryByTestId("tool-input")).toBeNull();
   });
 
-  // spec: UI-695
+  // spec: UI-054, UI-055, UI-056, UI-116
+  test("while the model writes it, before omp's first preview: the edit as written, its path not opening yet", () => {
+    const partialArgs = '{"input": "[src/lib.rs#72CA]\\nPUT 4.=4:\\n+    left.sat';
+    const element = show(composingCard("edit", partialArgs, "c-edit"));
+    expect([element.dataset.status, element.dataset.omfpPath]).toEqual(["composing", undefined]);
+    expect(byTestId(element, "toggle").getAttribute("aria-expanded")).toBe("true");
+    expect(byTestId(element, "tool-path").textContent).toBe("src/lib.rs");
+    expect(within(element).queryByTestId("tool-path-open")).toBeNull();
+    expect(byTestId(element, "tool-input").textContent).toBe("[src/lib.rs#72CA]\nPUT 4.=4:\n+    left.sat");
+  });
+
+  // spec: UI-055
+  test("a preview's error shows as such; several files each under their path", () => {
+    const refused = show(streaming("edit_tool_calls", "call_edit_2"));
+    expect(byTestId(refused, "tool-preview-error").textContent).toContain("is not from this session");
+    expect(within(refused).queryByTestId("tool-error")).toBeNull();
+    expect(within(refused).queryByTestId("tool-preview-file")).toBeNull();
+    cleanup();
+    const run: ToolRun = {
+      tool_call_id: "c-files",
+      tool_name: "edit",
+      args: { input: "[src/a.rs#1A2B]\nPUT 1.=1:\n+new\n" },
+      intent: null,
+      status: "running",
+      partial_result: null,
+      preview: {
+        files: [
+          { path: "src/a.rs", diff: "-1|old\n+1|new" },
+          { path: "src/b.rs", rename: "src/c.rs", error: "No line 9 in src/b.rs" },
+        ],
+        generation: 2,
+        streaming: false,
+      },
+      result: null,
+      background: null,
+    };
+    const element = show(toolCard("c-files", undefined, run, undefined, undefined));
+    expect(texts(element, "tool-preview-file")).toEqual(["src/a.rs", "src/b.rs → src/c.rs"]);
+    expect(within(element).getAllByTestId("tool-diff").length).toBe(1);
+    expect(texts(element, "tool-preview-error")).toEqual(["No line 9 in src/b.rs"]);
+  });
+
+  // spec: UI-695, UI-055
   test("an explicit collapse of a live edit wins when the card settles", async () => {
     const test = testHost();
     test.client.connected();
@@ -285,9 +331,9 @@ describe("edit card", () => {
     });
     test.host.window.set(SELECTED_THREAD, "t1");
     renderWithHost(<EditLifecycleCard />, test);
-    expect(screen.getByTestId("tool-input").textContent).toContain("left.saturating_add(right)");
+    expect(screen.getByTestId("tool-diff").textContent).toContain("left.saturating_add(right)");
     await userEvent.click(screen.getByTestId("toggle"));
-    expect(screen.queryByTestId("tool-input")).toBeNull();
+    expect(screen.queryByTestId("tool-diff")).toBeNull();
     await userEvent.click(screen.getByTestId("settle-card"));
     expect(screen.getByTestId("toggle").getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByTestId("tool-diff")).toBeNull();
@@ -553,9 +599,17 @@ describe("code-intelligence cards", () => {
 });
 
 describe("todo card", () => {
-  // spec: UI-050, UI-051
-  test("streaming: no list yet; success: the checklist", async () => {
-    expect(texts(await open(streaming("todo_tool_calls", "call_todo_1")), "todo-task")).toEqual([]);
+  // spec: UI-050, UI-051, UI-054
+  test("streaming: the tasks the call gives, pending; success: the checklist", async () => {
+    const live = await open(streaming("todo_tool_calls", "call_todo_1"));
+    expect(
+      within(live)
+        .getAllByTestId("todo-task")
+        .map((task) => [task.dataset.status, task.textContent]),
+    ).toEqual([
+      ["pending", "●Read the codepending"],
+      ["pending", "●Fix the bugpending"],
+    ]);
     cleanup();
     const element = await open(card("todo_tool_calls", "call_todo_3"));
     expect(
@@ -639,6 +693,55 @@ describe("task card", () => {
     const element = show(card("task_tool_call", "call_task_2"));
     expect(byTestId(element, "tool-error").textContent).toContain('Unknown agent "no-such-agent"');
     expect(byTestId(element, "subagent").dataset.status).toBe("failed");
+  });
+});
+
+describe("widget mount card", () => {
+  // spec: UI-054, UI-695
+  test("while the model writes a mount, its id and code show as written, open; once mounted, the daemon's answer", async () => {
+    const partialArgs = '{"id": "chart", "code": "export default function Chart() {';
+    const call = { type: "toolCall" as const, name: "omfp_ui_mount", arguments: {}, partialArgs };
+    const live = show(toolCard("c-mount", call, undefined, undefined, undefined));
+    expect([live.dataset.status, live.dataset.view]).toEqual(["composing", "mount"]);
+    expect(byTestId(live, "toggle").getAttribute("aria-expanded")).toBe("true");
+    expect(byTestId(live, "tool-subject").textContent).toBe("chart");
+    expect(byTestId(live, "tool-content").textContent).toBe("export default function Chart() {");
+    cleanup();
+    const answer = 'Mounted ./widgets/chart as "chart" in the side tabs; open windows show it now.';
+    const run: ToolRun = {
+      tool_call_id: "c-mounted",
+      tool_name: "omfp_ui_mount",
+      args: { id: "chart", widget: "./widgets/chart", place: "side_tab" },
+      intent: null,
+      status: "succeeded",
+      partial_result: null,
+      preview: null,
+      result: { content: [{ type: "text", text: answer }] },
+      background: null,
+    };
+    const mounted = toolCard("c-mounted", undefined, run, undefined, undefined);
+    expect(mounted.summary).toBe("place: side_tab");
+    const element = await open(mounted);
+    expect(byTestId(element, "tool-subject").textContent).toBe("chart");
+    expect(byTestId(element, "tool-result").textContent).toBe(answer);
+  });
+
+  // spec: UI-050
+  test("an update shows the props it sets", async () => {
+    const run: ToolRun = {
+      tool_call_id: "c-update",
+      tool_name: "omfp_ui_update",
+      args: { id: "board", props: { rows: 2, title: null } },
+      intent: null,
+      status: "succeeded",
+      partial_result: null,
+      preview: null,
+      result: { content: [{ type: "text", text: 'Updated "board".' }] },
+      background: null,
+    };
+    const element = await open(toolCard("c-update", undefined, run, undefined, undefined));
+    expect(byTestId(element, "tool-subject").textContent).toBe("board");
+    expect(byTestId(element, "tool-props").textContent).toBe('{\n  "rows": 2,\n  "title": null\n}');
   });
 });
 

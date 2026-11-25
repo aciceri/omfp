@@ -1,12 +1,14 @@
 /**
  * Tool cards (UI-050): name, one-line argument summary, status, duration, and expandable pretty JSON arguments and
  * text result, and the result's images (UI-472); tools with a recorded shape add their specialized view
- * (`tool-view.ts`). Failed tools are distinct and expanded by default (UI-052).
+ * (`tool-view.ts`). Failed tools are distinct and expanded by default (UI-052). While the model writes a call's
+ * arguments, its card is built from the arguments parsed so far (UI-054), re-parsed only once the text grew enough.
  */
 
 import type { JobState, JsonValue, ToolCall, ToolResultMessage, ToolRun, UserContent } from "@omfp/core";
 import { isObject } from "../sdk/json.ts";
 import { strings } from "../strings/index.ts";
+import { parsePartialJson } from "./partial-json.ts";
 import {
   deviceCall,
   quietFailure,
@@ -23,6 +25,14 @@ const SUMMARY_CHARS = 96;
 const SUBJECT_CHARS = 80;
 /** The arguments naming what a call works on, by preference: the subject of its images' alt text. */
 const SUBJECT_KEYS = ["path", "url", "file", "command", "code", "query", "pattern"] as const;
+/** omp's tool-call intent field (`INTENT_FIELD`), which it splits off the arguments it runs the tool with. */
+const INTENT_FIELD = "i";
+/** Below this many characters of argument text, every delta re-parses it (UI-054). */
+const REPARSE_ALWAYS = 2048;
+/** Calls whose last parse is kept: the ones being written, and a few before them. */
+const PARSES_KEPT = 16;
+/** Characters of the parsed text checked against the next text: the cache's key is only the call's id. */
+const HEAD_CHARS = 64;
 
 /** `text` with whitespace runs collapsed to one space, cut to `max` characters with an ellipsis. */
 export function oneLine(text: string, max: number): string {
@@ -50,7 +60,7 @@ export interface ToolCard {
   readonly status: CardStatus;
   /** Milliseconds from the end of the calling message to the result, when both carry timestamps. */
   readonly durationMs: number | undefined;
-  /** Pretty JSON, or the partial argument text while composing. */
+  /** Pretty JSON, of the arguments parsed so far while composing (UI-054); their text when it holds no object. */
   readonly args: string;
   /** Text parts of the result (or of the latest partial result), else its pretty JSON. */
   readonly result: string | undefined;
@@ -72,23 +82,26 @@ export interface CardImage extends ResultImage {
 export type Turn = "open" | "latest" | "past";
 
 /**
- * Failed cards and live file mutations start open; successful history starts collapsed (UI-052, UI-695). A card of
- * `omfp_card` is open while it runs and while no user message follows its message (`turn` not `past`); a waiting
- * card only while its thread still works on that turn (`open`), so an answered question makes way (UI-922). Otherwise
- * collapsed, failed or not.
+ * Failed cards and live file mutations (an `edit`, a `write`, a widget mount's code) start open; successful history
+ * starts collapsed (UI-052, UI-695). A card of `omfp_card` is open while it runs and while no user message follows its
+ * message (`turn` not `past`); a waiting card only while its thread still works on that turn (`open`), so an answered
+ * question makes way (UI-922). Otherwise collapsed, failed or not.
  */
 export function expandedByDefault(card: ToolCard, turn: Turn = "past"): boolean {
   const active = card.status === "composing" || card.status === "pending" || card.status === "running";
   if (card.view.kind === "card") {
     return active || turn === "open" || (turn === "latest" && !card.view.wait);
   }
-  return card.status === "failed" || (active && (card.view.kind === "edit" || card.view.kind === "write"));
+  const mutation = card.view.kind === "edit" || card.view.kind === "write" || card.view.kind === "mount";
+  return card.status === "failed" || (active && mutation);
 }
 
 /**
  * The card of one tool call. `call` is the assistant's tool-call block (absent when only the run is known), `run` the
  * execution tracked by the reducer, `result` the transcript's tool result message, `calledAt` the calling message's
  * completion timestamp. A `bash` call running one tool command (or an 18.x `write` to an `xd://` device) is the card of that tool (UI-915).
+ * While the model writes the arguments, the block's `arguments` are `{}` (or missing) beside their text so far
+ * (`partialArgs`): the card is built from that text, parsed (UI-054).
  */
 export function toolCard(
   toolCallId: string,
@@ -99,21 +112,29 @@ export function toolCard(
 ): ToolCard {
   const called = call?.name ?? run?.tool_name ?? result?.toolName ?? strings.chat.tool.fallbackName;
   const partial = call?.partialArgs;
-  // omp's own copy of the arguments (defaults filled in, its `i` intent field split off) once the run started.
-  const written: JsonValue | undefined = run?.args ?? call?.arguments ?? undefined;
-  const intent = call?.intent ?? run?.intent ?? undefined;
+  // `arguments` with a key are complete: `toolcall_end` carries them; omp's frames carry `{}` while they are written.
+  const complete = Object.keys(call?.arguments ?? {}).length > 0;
+  const composing = (run?.args ?? null) === null && partial !== undefined && !complete;
+  const streamed = composing ? streamedArguments(toolCallId, partial) : undefined;
+  // The arguments parsed so far, else omp's own copy once the run started (defaults filled in, its `i` intent field
+  // split off), else the call's.
+  const written: unknown = streamed?.args ?? run?.args ?? call?.arguments ?? undefined;
+  // Between the end of the arguments and the start of the run, the intent is still in the arguments' `i` field.
+  const intentField = isObject(written) ? written[INTENT_FIELD] : undefined;
+  const intent =
+    call?.intent ?? run?.intent ?? streamed?.intent ?? (typeof intentField === "string" ? intentField : undefined);
   const finishedAt = result?.timestamp;
   const value = run?.result ?? run?.partial_result ?? null;
   const returned = toolOutput(value ?? result);
-  const device = deviceCall(called, written, partial, returned);
+  const device = deviceCall(called, written, returned);
   const name = device?.name ?? called;
   const args: unknown = device === undefined ? written : device.args;
   const output = device === undefined ? returned : device.output;
   const job = run?.background ?? null;
   // A background job's state is the card's (UI-270): the call itself ended when the job started.
-  const status =
-    job === null ? statusOf(partial !== undefined && written === undefined, run, result) : JOB_STATUS[job.state];
-  const summary = summaryOf(name, intent, args, partial);
+  const status = job === null ? statusOf(composing, run, result) : JOB_STATUS[job.state];
+  const summary = summaryOf(name, intent, args);
+  const ended = status === "succeeded" || status === "failed";
   return {
     toolCallId,
     name,
@@ -128,7 +149,12 @@ export function toolCard(
       job === null && calledAt !== undefined && finishedAt !== undefined && calledAt > 0 && finishedAt >= calledAt
         ? finishedAt - calledAt
         : undefined,
-    args: args !== undefined ? prettyJson(args) : (partial ?? "{}"),
+    args:
+      args === undefined
+        ? (partial ?? "{}")
+        : streamed !== undefined && args === streamed.args
+          ? streamed.json
+          : prettyJson(args),
     // A tool command's card shows the tool's output, without the exit line of the `bash` call that ran it.
     result:
       job === null
@@ -137,8 +163,61 @@ export function toolCard(
           : resultOf(run, result)
         : (job.output ?? undefined),
     images: cardImages(output?.images ?? [], name, subjectOf(args) ?? summary),
-    view: toolView(name, args, output, status === "succeeded", job, status === "succeeded" || status === "failed"),
+    // omp's preview of the call (an `edit`'s diff) stands for its result until the call ends (UI-055).
+    view: toolView(name, args, output, status === "succeeded", job, ended, ended ? null : (run?.preview ?? null)),
   };
+}
+
+/** A call's arguments parsed from their text so far (UI-054). */
+interface StreamedArguments {
+  /** Length of the text parsed, and its first characters. */
+  readonly length: number;
+  readonly head: string;
+  /** The arguments without omp's intent field, which is `intent`. */
+  readonly args: Readonly<Record<string, unknown>>;
+  readonly intent: string | undefined;
+  /** `args` as pretty JSON. */
+  readonly json: string;
+}
+
+/** The last parse of the arguments of the calls being written, by call id, oldest first. */
+const STREAMED = new Map<string, StreamedArguments>();
+
+/**
+ * The arguments of call `toolCallId` parsed from their text so far, `partial` (UI-054). Like omp's
+ * `parseStreamingJsonThrottled`, a long text is parsed again only once it grew by a 32nd since its last parse, so
+ * writing a long body costs a bounded number of parses; a short one is parsed on every delta.
+ */
+function streamedArguments(toolCallId: string, partial: string): StreamedArguments {
+  const last = STREAMED.get(toolCallId);
+  if (
+    last !== undefined &&
+    partial.length >= REPARSE_ALWAYS &&
+    partial.length >= last.length &&
+    partial.length - last.length < partial.length >> 5 &&
+    partial.startsWith(last.head)
+  ) {
+    return last;
+  }
+  const parsed = parsePartialJson(partial);
+  const object: Readonly<Record<string, unknown>> = isObject(parsed) ? parsed : {};
+  const { [INTENT_FIELD]: intent, ...args } = object;
+  const next: StreamedArguments = {
+    length: partial.length,
+    head: partial.slice(0, HEAD_CHARS),
+    args,
+    intent: typeof intent === "string" ? intent : undefined,
+    json: prettyJson(args),
+  };
+  STREAMED.delete(toolCallId);
+  STREAMED.set(toolCallId, next);
+  for (const oldest of STREAMED.keys()) {
+    if (STREAMED.size <= PARSES_KEPT) {
+      break;
+    }
+    STREAMED.delete(oldest);
+  }
+  return next;
 }
 
 /** The first argument of {@link SUBJECT_KEYS} that is a string, on one line. */
@@ -168,17 +247,13 @@ const JOB_STATUS: Readonly<Record<JobState, CardStatus>> = {
 
 /**
  * The header's one-line summary: the intent, else the arguments the card does not show elsewhere (`shownArguments`),
- * else, while the model writes the arguments of a tool without a specialized subject, their partial text.
+ * those parsed so far while the model writes them (UI-054).
  */
-function summaryOf(name: string, intent: string | undefined, args: unknown, partial: string | undefined): string {
+function summaryOf(name: string, intent: string | undefined, args: unknown): string {
   if (intent !== undefined) {
     return oneLine(intent, SUMMARY_CHARS);
   }
-  const shown = shownArguments(name);
-  if (isObject(args)) {
-    return summarize(args, shown ?? []);
-  }
-  return partial === undefined || shown !== undefined ? "" : oneLine(partial, SUMMARY_CHARS);
+  return isObject(args) ? summarize(args, shownArguments(name) ?? []) : "";
 }
 
 function resultOf(run: ToolRun | undefined, result: ToolResultMessage | undefined): string | undefined {
@@ -189,6 +264,7 @@ function resultOf(run: ToolRun | undefined, result: ToolResultMessage | undefine
   return result?.content === undefined ? undefined : userContentText(result.content);
 }
 
+/** `composing` while the model writes the arguments, even once omp sent a preview of the call (a pending run). */
 function statusOf(composing: boolean, run: ToolRun | undefined, result: ToolResultMessage | undefined): CardStatus {
   if (run?.status === "failed" || result?.isError === true) {
     return "failed";
@@ -199,7 +275,7 @@ function statusOf(composing: boolean, run: ToolRun | undefined, result: ToolResu
   if (run?.status === "running") {
     return "running";
   }
-  return run === undefined && composing ? "composing" : "pending";
+  return composing ? "composing" : "pending";
 }
 
 /** `key: value` of the scalar arguments but `omitted`, by key, on one line. */

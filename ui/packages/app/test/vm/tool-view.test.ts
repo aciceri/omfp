@@ -4,7 +4,8 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { type JsonObject, replay, type ToolRun } from "@omfp/core";
+import { type JsonObject, replay, type ThreadEvent, type ToolRun } from "@omfp/core";
+import { isObject } from "../../src/sdk/json.ts";
 import { astMatches } from "../../src/vm/code-intel.ts";
 import { expandedByDefault, type ToolCard, toolCard } from "../../src/vm/tool.ts";
 import { deviceCall, ompDiffLines, quietFailure, repoPath, type ToolView, toolView } from "../../src/vm/tool-view.ts";
@@ -15,6 +16,17 @@ import { fixtureEvents, isFrame } from "../widgets/chat/fixtures.ts";
 function view<K extends ToolView["kind"]>(found: ToolCard, kind: K): Extract<ToolView, { kind: K }> {
   expect(found.view.kind).toBe(kind);
   return found.view as Extract<ToolView, { kind: K }>;
+}
+
+/** The `toolcall_end` of call `id`: the model finished writing its arguments. */
+function argumentsEnd(id: string): (event: ThreadEvent) => boolean {
+  return (event) => {
+    if (event.kind !== "omp" || !isFrame("message_update", "toolcall_end")(event) || !isObject(event.frame)) {
+      return false;
+    }
+    const update = event.frame.assistantMessageEvent;
+    return isObject(update) && isObject(update.toolCall) && update.toolCall.id === id;
+  };
 }
 
 describe("bash card", () => {
@@ -120,13 +132,106 @@ describe("fetch card (read of a URL)", () => {
 });
 
 describe("edit card", () => {
-  // spec: UI-050, UI-051
-  test("streaming: the target file from the edit's header and the edit itself", () => {
+  // spec: UI-050, UI-051, UI-055
+  test("streaming: the target file from the edit's header, the edit itself and omp's preview of its diff", () => {
     const running = streaming("edit_tool_calls", "call_edit_1");
     expect(running.status).toBe("running");
     const edit = view(running, "edit");
     expect([edit.path, edit.diff, edit.language]).toEqual(["src/lib.rs", undefined, "rust"]);
     expect(edit.input).toContain("PUT 4.=4:");
+    expect(edit.preview).toEqual([
+      {
+        path: "src/lib.rs",
+        rename: undefined,
+        diff: [
+          { kind: "del", text: "    left + right", oldLine: 4 },
+          { kind: "add", text: "    left.saturating_add(right)", newLine: 4 },
+        ],
+        error: undefined,
+        language: "rust",
+      },
+    ]);
+  });
+
+  // spec: UI-054, UI-055, UI-051
+  test("recorded: while the model writes the edit, the file and the edit so far; the arguments' end keeps them", () => {
+    const events = fixtureEvents("edit_tool_calls");
+    const end = events.findIndex(argumentsEnd("call_edit_1"));
+    const at = (count: number) => {
+      const found = cards(replay(events.slice(0, count))).find((candidate) => candidate.toolCallId === "call_edit_1");
+      if (found === undefined) {
+        throw new Error(`no edit card after ${count} events`);
+      }
+      return found;
+    };
+    // Three deltas before the end: the text stops inside the edit's body; no preview from omp yet.
+    const composing = at(end - 3);
+    expect([composing.status, composing.summary]).toEqual(["composing", "Saturating the addition"]);
+    expect(view(composing, "edit")).toMatchObject({
+      path: "src/lib.rs",
+      preview: [],
+      input: "[src/lib.rs#72CA]\nPUT 4.=4:\n+    left.saturati",
+    });
+    const written = at(end + 1);
+    expect([written.status, written.summary]).toEqual(["pending", "Saturating the addition"]);
+    expect(view(written, "edit")).toMatchObject({
+      path: "src/lib.rs",
+      input: "[src/lib.rs#72CA]\nPUT 4.=4:\n+    left.saturating_add(right)\n",
+    });
+  });
+
+  // spec: UI-055, UI-051
+  test("recorded: a preview's error shows as such while the call runs; once it ended, its result replaces the preview", () => {
+    const edit = view(streaming("edit_tool_calls", "call_edit_2"), "edit");
+    expect(edit.preview.map((file) => [file.path, file.diff])).toEqual([["src/lib.rs", undefined]]);
+    expect(edit.preview[0]?.error).toContain("is not from this session");
+    expect(view(card("edit_tool_calls", "call_edit_2"), "edit").preview).toEqual([]);
+    expect(view(card("edit_tool_calls", "call_edit_1"), "edit").preview).toEqual([]);
+  });
+
+  // spec: UI-055
+  test("a preview of several files shows each; its first path heads the card until the edit names one", () => {
+    const run: ToolRun = {
+      tool_call_id: "c-preview",
+      tool_name: "edit",
+      args: null,
+      intent: null,
+      status: "pending",
+      partial_result: null,
+      preview: {
+        files: [
+          { path: "src/a.rs", diff: "-1|old\n+1|new", firstChangedLine: 1, op: "update" },
+          { path: "src/b.rs", rename: "src/c.rs", error: "No line 9 in src/b.rs" },
+        ],
+        generation: 3,
+        streaming: true,
+      },
+      result: null,
+      background: null,
+    };
+    const call = { type: "toolCall" as const, name: "edit", arguments: {}, partialArgs: '{"input": "[src/a' };
+    const composing = toolCard("c-preview", call, run, undefined, undefined);
+    expect(composing.status).toBe("composing");
+    expect(view(composing, "edit")).toEqual({
+      kind: "edit",
+      path: "src/a.rs",
+      diff: undefined,
+      preview: [
+        {
+          path: "src/a.rs",
+          rename: undefined,
+          diff: [
+            { kind: "del", text: "old", oldLine: 1 },
+            { kind: "add", text: "new", newLine: 1 },
+          ],
+          error: undefined,
+          language: "rust",
+        },
+        { path: "src/b.rs", rename: "src/c.rs", diff: undefined, error: "No line 9 in src/b.rs", language: "rust" },
+      ],
+      input: "[src/a",
+      language: "rust",
+    });
   });
 
   // spec: UI-050, UI-051
@@ -230,7 +335,7 @@ describe("tool commands", () => {
     const args = { action: "diagnostics", file: "src/a.ts" };
     const inner = { action: "diagnostics", serverName: "tsserver", success: true };
     const output = bash([{ tool: "lsp", mode: "execute", exitCode: 0, args, inner }]);
-    expect(deviceCall("bash", { command: "lsp diagnostics src/a.ts" }, undefined, output)).toEqual({
+    expect(deviceCall("bash", { command: "lsp diagnostics src/a.ts" }, output)).toEqual({
       name: "lsp",
       args,
       output: { text: "out", images: [], details: inner },
@@ -238,7 +343,7 @@ describe("tool commands", () => {
     });
     // The exit line `bash` appends to a failed command is the bash call's, not the tool's.
     const failed = { ...output, text: "Path not found: missing\n\n\nCommand exited with code 1" };
-    expect(deviceCall("bash", { command: "lsp diagnostics missing" }, undefined, failed)?.output?.text).toBe(
+    expect(deviceCall("bash", { command: "lsp diagnostics missing" }, failed)?.output?.text).toBe(
       "Path not found: missing",
     );
   });
@@ -263,12 +368,19 @@ describe("tool commands", () => {
     expect(toolCard("call_grep", undefined, run(0), undefined, undefined).status).toBe("succeeded");
   });
 
-  // spec: UI-915, UI-051
+  // spec: UI-915, UI-051, UI-054
   test("recorded: while the model writes the command it is a bash call; the dispatch in its result makes it the tool's", () => {
     const events = fixtureEvents("code_intel_tool_calls");
     const end = events.findIndex(isFrame("message_update", "toolcall_end"));
     const [composing] = cards(replay(events.slice(0, end)));
-    expect([composing?.toolCallId, composing?.name]).toEqual(["call_ast_grep_1", "bash"]);
+    expect([composing?.toolCallId, composing?.name, composing?.summary]).toEqual([
+      "call_ast_grep_1",
+      "bash",
+      "Finding the functions",
+    ]);
+    expect(composing === undefined ? undefined : view(composing, "bash").command).toBe(
+      `ast_grep -j '{"pat":"pub fn $NAME($$$ARGS) -> $RET { $$$BODY }","path":"src"}'`,
+    );
     const running = streaming("code_intel_tool_calls", "call_ast_grep_1");
     expect([running.name, running.status, running.summary]).toEqual(["ast_grep", "running", "Finding the functions"]);
     expect(JSON.parse(running.args)).toEqual({ pat: "pub fn $NAME($$$ARGS) -> $RET { $$$BODY }", path: "src" });
@@ -282,11 +394,11 @@ describe("tool commands", () => {
     const run = { command: "lsp diagnostics a.ts; ast_grep x" };
     const lsp = { tool: "lsp", mode: "execute", exitCode: 0, args: {}, inner: {} };
     const grep = { tool: "ast_grep", mode: "execute", exitCode: 0, args: {}, inner: {} };
-    expect(deviceCall("bash", run, undefined, bash([lsp, grep]))).toBeUndefined();
-    expect(deviceCall("bash", run, undefined, bash([{ tool: "lsp", mode: "help", exitCode: 0 }]))).toBeUndefined();
-    expect(deviceCall("bash", run, undefined, bash([]))).toBeUndefined();
-    expect(deviceCall("bash", run, undefined, { text: "out", images: [], details: {} })).toBeUndefined();
-    expect(deviceCall("bash", run, undefined, undefined)).toBeUndefined();
+    expect(deviceCall("bash", run, bash([lsp, grep]))).toBeUndefined();
+    expect(deviceCall("bash", run, bash([{ tool: "lsp", mode: "help", exitCode: 0 }]))).toBeUndefined();
+    expect(deviceCall("bash", run, bash([]))).toBeUndefined();
+    expect(deviceCall("bash", run, { text: "out", images: [], details: {} })).toBeUndefined();
+    expect(deviceCall("bash", run, undefined)).toBeUndefined();
   });
 });
 
@@ -304,31 +416,29 @@ describe("xd:// device calls (sessions recorded by omp 18.x)", () => {
     expect(view(device, "lsp").file).toBe("src/lib.rs");
   });
 
-  // spec: UI-915
-  test("while the model writes the arguments the device is known from the path; other writes stay writes", () => {
-    const partial = '{"path":"xd://lsp","content":"{\\"action\\":\\"dia';
-    expect(deviceCall("write", undefined, partial, undefined)).toEqual({
+  // spec: UI-915, UI-054
+  test("while the model writes the arguments the device is known from the path parsed so far; other writes stay writes", () => {
+    const partialArgs = '{"path":"xd://lsp","content":"{\\"action\\":\\"dia';
+    const partial = toolCard(
+      "call_device_partial",
+      { type: "toolCall", name: "write", arguments: {}, partialArgs },
+      undefined,
+      undefined,
+      undefined,
+    );
+    expect([partial.name, partial.status, partial.view.kind]).toEqual(["lsp", "composing", "lsp"]);
+    expect(deviceCall("write", { path: "xd://lsp", content: '{"action":"dia' }, undefined)).toEqual({
       name: "lsp",
       args: undefined,
       output: undefined,
     });
-    expect(deviceCall("write", { path: "notes.md", content: "{}" }, undefined, undefined)).toBeUndefined();
-    expect(deviceCall("write", { path: "xd://lsp/actions", content: "{}" }, undefined, undefined)).toBeUndefined();
-    expect(deviceCall("read", { path: "xd://lsp" }, undefined, undefined)).toBeUndefined();
+    expect(deviceCall("write", { path: "notes.md", content: "{}" }, undefined)).toBeUndefined();
+    expect(deviceCall("write", { path: "xd://lsp/actions", content: "{}" }, undefined)).toBeUndefined();
+    expect(deviceCall("read", { path: "xd://lsp" }, undefined)).toBeUndefined();
     // A device without a specialized card (an MCP tool) keeps the fallback card, with its own arguments.
-    const mcp = deviceCall(
-      "write",
-      { path: "xd://mcp__docs_search", content: '{"q":"tool cards"}' },
-      undefined,
-      undefined,
-    );
+    const mcp = deviceCall("write", { path: "xd://mcp__docs_search", content: '{"q":"tool cards"}' }, undefined);
     expect(mcp).toEqual({ name: "mcp__docs_search", args: { q: "tool cards" }, output: undefined });
     expect(toolView("mcp__docs_search", mcp?.args, undefined, false).kind).toBe("generic");
-  });
-
-  // spec: UI-915
-  test("while streaming, the call's arguments are `{}` beside the partial text, and the path names the device", () => {
-    expect(deviceCall("write", {}, '{"content":"{}","path":"xd://lsp"', undefined)?.name).toBe("lsp");
   });
 });
 
@@ -727,11 +837,44 @@ describe("lsp card", () => {
 });
 
 describe("todo card", () => {
-  // spec: UI-050, UI-051
-  test("streaming: no list until omp answers", () => {
+  // spec: UI-050, UI-051, UI-054
+  test("streaming: until omp answers, the tasks the call gives, pending", () => {
     const running = streaming("todo_tool_calls", "call_todo_1");
     expect(running.status).toBe("running");
-    expect(view(running, "todo")).toEqual({ kind: "todo", op: "init", phases: [] });
+    expect(view(running, "todo")).toEqual({
+      kind: "todo",
+      op: "init",
+      phases: [
+        {
+          name: "Tasks",
+          tasks: [
+            { content: "Read the code", status: "pending" },
+            { content: "Fix the bug", status: "pending" },
+          ],
+        },
+      ],
+    });
+  });
+
+  // spec: UI-054
+  test("an init's phases (`list`) or an append's items, as omp reads them; other calls, or ended ones, list none", () => {
+    const phases = (args: JsonObject, ended = false) => {
+      const shown = toolView("todo", args, undefined, false, null, ended);
+      return shown.kind === "todo" ? shown.phases : undefined;
+    };
+    const list = [
+      { phase: "Build", items: ["Compile"] },
+      { phase: "", items: ["Ship"] },
+    ];
+    expect(phases({ op: "init", list, items: [] })).toEqual([
+      { name: "Build", tasks: [{ content: "Compile", status: "pending" }] },
+      { name: "Tasks", tasks: [{ content: "Ship", status: "pending" }] },
+    ]);
+    expect(phases({ op: "append", phase: "Build", items: ["Test"] })).toEqual([
+      { name: "Build", tasks: [{ content: "Test", status: "pending" }] },
+    ]);
+    expect(phases({ op: "done", task: "Compile" })).toEqual([]);
+    expect(phases({ op: "init", items: ["Compile"] }, true)).toEqual([]);
   });
 
   // spec: UI-050, UI-051

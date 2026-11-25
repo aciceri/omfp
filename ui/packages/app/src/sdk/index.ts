@@ -269,6 +269,7 @@ export {
   type AnswerState,
   type AstEditFile,
   type CardAnswerView,
+  type EditPreviewFile,
   type RepoPath,
   repoPath,
   type SearchFile,

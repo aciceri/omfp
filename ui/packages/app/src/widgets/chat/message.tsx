@@ -310,7 +310,7 @@ export function ToolCardView({
 }) {
   const [expanded, setExpanded] = useExpanded(cardKey, expandedByDefault(card, turn));
   // `:open` on the focused card opens its file (UI-116).
-  const target = fileTarget(card.view);
+  const target = fileTarget(card);
   const exitCode = card.view.kind === "bash" ? card.view.exitCode : undefined;
   const selector = grouped && card.view.kind === "read" ? card.view.selector : undefined;
   return (
@@ -334,10 +334,10 @@ export function ToolCardView({
         arg={
           <>
             {selector === undefined ? (
-              <ToolSubject view={card.view} />
+              <ToolSubject card={card} />
             ) : (
               <span className="omfp-tool-card__target">
-                <ToolSubject view={card.view} />
+                <ToolSubject card={card} />
                 <span className="omfp-tool-card__selector" data-testid="tool-selector">
                   :{selector}
                 </span>

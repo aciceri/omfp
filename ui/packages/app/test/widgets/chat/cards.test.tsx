@@ -25,7 +25,7 @@ import type { WidgetRegistry } from "../../../src/view/resolve.ts";
 import type { Turn as CardTurn, ToolCard } from "../../../src/vm/tool.ts";
 import { TranscriptWidget } from "../../../src/widgets/chat/index.ts";
 import { ToolCardView } from "../../../src/widgets/chat/message.tsx";
-import { omfpCard } from "../../support/cards.ts";
+import { composingCard, omfpCard } from "../../support/cards.ts";
 import { thread, workspace } from "../../support/fixtures.ts";
 import { FakeClient, renderWithHost, type TestHost, testHost } from "../../support/host.tsx";
 import { fixtureEvents, isFrame } from "./fixtures.ts";
@@ -198,6 +198,20 @@ describe("cards in the chat", () => {
     ]);
     expect(error.textContent).toContain("Unexpected end of file");
     expect(test.urls).toEqual([]);
+  });
+
+  // spec: UI-054, UI-056, UI-920
+  test("while the model writes a card's arguments, its code shows as written and no widget compiles or mounts", () => {
+    const test = setup();
+    const code = "export default function Card() { return";
+    show(test, [composingCard("omfp_card", `{"title": "Greeting", "code": "${code}`)]);
+    expect([toolCard().dataset.status, within(toolCard()).getByTestId("tool-subject").textContent]).toEqual([
+      "composing",
+      "Greeting",
+    ]);
+    expect(within(toolCard()).getByTestId("tool-content").textContent).toBe(code);
+    expect(within(toolCard()).queryByTestId("card-widget")).toBeNull();
+    expect(test.client.callsTo("widgets.compile")).toEqual([]);
   });
 });
 

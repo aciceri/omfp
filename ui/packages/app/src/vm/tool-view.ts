@@ -3,7 +3,9 @@
  * from the pinned omp (`fixtures/threads/<omp>/*tool_call*.jsonl`, `crates/omfp-daemon/tests/contract_tool_cards.rs`).
  * Tools without a recorded shape keep the fallback card (`generic`). omp's discoverable tools run as tool commands
  * inside a `bash` call (`lsp diagnostics src/a.ts`), and ran as `xd://` devices in omp 18.x (a `write` of their JSON
- * arguments to `xd://<tool>`): `deviceCall` turns such a call back into one of the tool (UI-915).
+ * arguments to `xd://<tool>`): `deviceCall` turns such a call back into one of the tool (UI-915). While the model
+ * writes a call's arguments, its view is built from those parsed so far (UI-054); an `edit` shows omp's diff preview
+ * until its result (UI-055).
  */
 
 import type { BackgroundJob, JobState } from "@omfp/core";
@@ -81,6 +83,8 @@ export type ToolView =
       readonly path: string | undefined;
       /** The change omp applied (`details.diff`). */
       readonly diff: readonly DiffLine[] | undefined;
+      /** omp's preview of the change while the call is written and runs, each file's diff or error (UI-055). */
+      readonly preview: readonly EditPreviewFile[];
       /** The edit as the agent wrote it (shown while it runs and when it failed). */
       readonly input: string | undefined;
       readonly language: string | undefined;
@@ -159,6 +163,15 @@ export type ToolView =
       readonly title: string | undefined;
       readonly wait: boolean;
       readonly answer: CardAnswerView;
+    }
+  | {
+      readonly kind: "mount";
+      /** The mount id of an `omfp_ui_mount` or `omfp_ui_update` call. */
+      readonly id: string;
+      /** The widget reference it mounts, as given. */
+      readonly reference: string | undefined;
+      /** The widget's source when given inline, shown as it is written (UI-054). */
+      readonly code: string | undefined;
     };
 
 /** Where the answer of a card stands (UI-921), what `useAnswer().state` says. */
@@ -189,6 +202,16 @@ export interface AstEditFile {
   readonly path: string;
   readonly count: number | undefined;
   readonly diff: readonly DiffLine[];
+}
+
+/** A file of omp's preview of an `edit` (`tool_stream_update`, UI-055): its diff so far, or why it does not apply. */
+export interface EditPreviewFile {
+  readonly path: string;
+  /** The path it moves to. */
+  readonly rename: string | undefined;
+  readonly diff: readonly DiffLine[] | undefined;
+  readonly error: string | undefined;
+  readonly language: string | undefined;
 }
 
 /** An image of a tool result (`{ type: "image", data, mimeType }`): base64 `data` of type `mime`. */
@@ -284,33 +307,23 @@ export interface DeviceCall {
 
 /** `xd://<tool>`: a device's URL (`xd://<tool>/<topic>` is a doc topic, read only). */
 const DEVICE_URL = /^xd:\/\/([\w.-]+)$/;
-/** The `path` of a `write` whose arguments the model is still writing. */
-const PARTIAL_PATH = /"path"\s*:\s*"(xd:\/\/[^"]*)"/;
 
 /**
  * The tool call a `bash` call or a `write` to `xd://<tool>` runs (UI-915); `undefined` for any other call.
  * omp 19 runs its discoverable tools (`lsp`, `ast_grep`, `ast_edit`, MCP tools, …) as commands in a `bash` call and
  * lists the dispatches in the result's `details.toolCommands`: a call whose result holds exactly one `execute` dispatch
  * is that tool's (several dispatches, help only or no details yet stay a bash card). omp 18.x mounted them as devices
- * the model wrote JSON arguments to; sessions recorded by it still replay so. `partial` is the argument text the model
- * is writing.
+ * the model wrote JSON arguments to; sessions recorded by it still replay so. `args` are the call's arguments, those
+ * parsed so far while the model writes them (UI-054).
  */
-export function deviceCall(
-  name: string,
-  args: unknown,
-  partial: string | undefined,
-  output: ToolOutput | undefined,
-): DeviceCall | undefined {
+export function deviceCall(name: string, args: unknown, output: ToolOutput | undefined): DeviceCall | undefined {
   if (name === "bash") {
     return commandCall(output);
   }
   if (name !== "write") {
     return undefined;
   }
-  // While the model writes them, the call's arguments are `{}` beside the partial text: the path is in the text.
-  const path =
-    (isRecord(args) ? str(args.path) : undefined) ??
-    (partial === undefined ? undefined : PARTIAL_PATH.exec(partial)?.[1]);
+  const path = isRecord(args) ? str(args.path) : undefined;
   const device = path === undefined ? undefined : DEVICE_URL.exec(path)?.[1];
   if (device === undefined) {
     return undefined;
@@ -411,7 +424,8 @@ function askQuestions(html: string): string[] {
 
 /**
  * The arguments a specialized card shows outside its header's argument summary: its subject (command, path, query,
- * pattern) and the text of its body (a write's content, an edit's input, the questions of an ask's form).
+ * pattern) and the text of its body (a write's content, an edit's input, the questions of an ask's form, a mount's
+ * code).
  */
 const SHOWN_ARGUMENTS: Readonly<Record<string, readonly string[]>> = {
   bash: ["command"],
@@ -426,6 +440,8 @@ const SHOWN_ARGUMENTS: Readonly<Record<string, readonly string[]>> = {
   web_search: ["query"],
   ask: ["html"],
   omfp_card: ["widget", "code", "props", "title"],
+  omfp_ui_mount: ["id", "widget", "code"],
+  omfp_ui_update: ["id", "code"],
 };
 
 /** The arguments of a call of tool `name` its card shows elsewhere than the header's summary; `undefined` if none. */
@@ -438,11 +454,12 @@ function plural(count: number, one: string, many: string): string {
 }
 
 /**
- * The specialized view of a call of tool `name`. `args` are its arguments (or `undefined` while the model writes them),
- * `output` the result once it ended or the latest partial result while it runs, `succeeded` whether it ended without
- * an error (a `bash` that did so without an exit code in its details exited 0; an aborted one has none), `job` the
- * background job the call became (a `bash` then shows the job's output and exit code, a completed job exited 0),
- * `ended` whether the call ended (succeeded or failed).
+ * The specialized view of a call of tool `name`. `args` are its arguments (those parsed so far while the model writes
+ * them, UI-054), `output` the result once it ended or the latest partial result while it runs, `succeeded` whether it
+ * ended without an error (a `bash` that did so without an exit code in its details exited 0; an aborted one has none),
+ * `job` the background job the call became (a `bash` then shows the job's output and exit code, a completed job exited
+ * 0), `ended` whether the call ended (succeeded or failed), `preview` omp's latest `tool_stream_update` of a call not
+ * ended (an `edit`'s diff preview, UI-055).
  */
 export function toolView(
   name: string,
@@ -451,6 +468,7 @@ export function toolView(
   succeeded: boolean,
   job: BackgroundJob | null = null,
   ended = false,
+  preview: unknown = null,
 ): ToolView {
   const input = isRecord(args) ? args : {};
   const details = output?.details ?? {};
@@ -505,12 +523,14 @@ export function toolView(
     }
     case "edit": {
       const edit = str(input.input);
-      const path = str(input.path) ?? editPath(edit);
+      const files = editPreview(preview);
+      const path = str(input.path) ?? editPath(edit) ?? files[0]?.path;
       const diff = str(details.diff);
       return {
         kind: "edit",
         path,
         diff: diff === undefined || diff === "" ? undefined : ompDiffLines(diff),
+        preview: files,
         input: edit,
         language: path === undefined ? undefined : languageOfPath(path),
       };
@@ -613,18 +633,24 @@ export function toolView(
         noServer: answer?.includes("No language server") === true,
       };
     }
-    case "todo":
+    case "todo": {
+      const phases = records(details.phases);
       return {
         kind: "todo",
         op: str(input.op) ?? "",
-        phases: records(details.phases).map((phase) => ({
-          name: str(phase.name) ?? "",
-          tasks: records(phase.tasks).map((task) => ({
-            content: str(task.content) ?? "",
-            status: str(task.status) ?? "pending",
-          })),
-        })),
+        // Until omp answers, the tasks the call gives, as they are written (UI-054).
+        phases:
+          phases.length === 0 && !ended
+            ? writtenTodo(input)
+            : phases.map((phase) => ({
+                name: str(phase.name) ?? "",
+                tasks: records(phase.tasks).map((task) => ({
+                  content: str(task.content) ?? "",
+                  status: str(task.status) ?? "pending",
+                })),
+              })),
       };
+    }
     case "web_search": {
       const response = isRecord(details.response) ? details.response : {};
       return {
@@ -670,9 +696,52 @@ export function toolView(
         answer: cardAnswer(wait, ended, succeeded, output?.text),
       };
     }
+    case "omfp_ui_mount":
+    case "omfp_ui_update":
+      return { kind: "mount", id: str(input.id) ?? "", reference: str(input.widget), code: str(input.code) };
     default:
       return { kind: "generic" };
   }
+}
+
+/** The files of omp's latest preview of an `edit` (`{ files: [{ path, diff?, error?, rename? }], … }`, UI-055). */
+function editPreview(preview: unknown): EditPreviewFile[] {
+  return records(isRecord(preview) ? preview.files : undefined).flatMap((file) => {
+    const path = str(file.path);
+    const diff = str(file.diff);
+    return path === undefined
+      ? []
+      : [
+          {
+            path,
+            rename: str(file.rename),
+            diff: diff === undefined || diff === "" ? undefined : ompDiffLines(diff),
+            error: str(file.error),
+            language: languageOfPath(path),
+          },
+        ];
+  });
+}
+
+/** omp's phase of a `todo` list given without one. */
+const UNNAMED_PHASE = "Tasks";
+
+/**
+ * The tasks a `todo` call's `init` or `append` gives, pending, by phase: its `list` of `{ phase, items }`, else its
+ * flat `items` in `phase`, as omp reads them.
+ */
+function writtenTodo(input: Readonly<Record<string, unknown>>): TodoPhase[] {
+  if (input.op !== "init" && input.op !== "append") {
+    return [];
+  }
+  const tasks = (items: unknown): TodoTask[] =>
+    list(items).flatMap((item) => (typeof item === "string" ? [{ content: item, status: "pending" }] : []));
+  const phases = records(input.list);
+  const given =
+    phases.length > 0
+      ? phases.map((phase) => ({ name: str(phase.phase) || UNNAMED_PHASE, tasks: tasks(phase.items) }))
+      : [{ name: str(input.phase) || UNNAMED_PHASE, tasks: tasks(input.items) }];
+  return given.filter((phase) => phase.tasks.length > 0);
 }
 
 const NO_ANSWER: CardAnswerView = { state: "none", value: undefined };

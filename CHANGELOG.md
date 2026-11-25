@@ -16,6 +16,13 @@ The version's section is also the source of the GitHub release notes.
   streaming stays code until it closes, and a formula KaTeX cannot parse shows its source in the theme's error color
   with the reason as its tooltip. KaTeX's fonts ship with omfp (#293).
 
+### Changed
+
+- Agents building views, widgets, init-file views and cards are told they must also work on a phone and in a narrow
+  window: read `FRAME_LAYOUT`, stack instead of columns, avoid fixed widths and hover-only actions, use touch-sized
+  controls, and check the result at a phone width, since the widget check renders only in the focused window's layout.
+  The widgets note, the `widget-builder` agent and `omfp://docs/widgets` say so in the same words (#305).
+
 ## 0.4.3 — 2026-11-23
 
 ### Added

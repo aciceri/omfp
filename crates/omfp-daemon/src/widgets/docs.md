@@ -408,6 +408,15 @@ again for its errors. Step by step:
    and/or a built-in theme). It never runs code: an unknown command, a disabled one or a failure comes back as the
    tool's error.
 5. `omfp_windows` again (or `omfp_views_errors`) for the errors of what it shows now; fix and repeat.
+6. Phones: those steps see only the layout of the window that renders; check the `narrow` and `mobile` layouts too, as
+   below.
+
+Phones too: every view, widget, init-file view and card must also work in the `narrow` (frame under 1100 px) and
+`mobile` (under 700 px, or a phone held sideways: one area at a time, the mode line at the top) layouts. Read
+`FRAME_LAYOUT` (`useWindowState`) and give way: stack instead of columns, no fixed widths or wide tables (wrap, or
+scroll inside the widget), touch-sized controls, no action reachable only by hover. The check renders in the focused
+window's layout only: check the result at a phone width too (a window under 700 px wide, or ask the user to look on
+their phone).
 
 Over the protocol the same steps are `windows.list`, `windows.state`, `windows.run` and `windows.check_widget`.
 

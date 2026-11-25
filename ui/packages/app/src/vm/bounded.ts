@@ -88,6 +88,17 @@ export function follows(following: boolean, scroll: WindowScroll, written: numbe
 }
 
 /**
+ * Whether a wheel turn of `deltaY` scrolls a body scrolled to `scroll` itself: it does unless the body is already at
+ * its edge that way, where the wheel goes on to scroll the page around it.
+ */
+export function wheelScrolls(scroll: WindowScroll, deltaY: number): boolean {
+  if (deltaY < 0) {
+    return scroll.top > 0;
+  }
+  return deltaY > 0 && scroll.top + scroll.client < scroll.height - 1;
+}
+
+/**
  * The lines of a live window's `total` above what it shows: estimated from where it is scrolled once it is laid out,
  * else every line before its last `BODY_LINES`.
  */

@@ -476,6 +476,29 @@ describe("bounded bodies", () => {
   });
 
   // spec: UI-935
+  test("a wheel turn a window scrolls itself never reaches the transcript; at its edge it goes on", () => {
+    const outside: number[] = [];
+    const listen = (event: WheelEvent) => outside.push(event.deltaY);
+    document.addEventListener("wheel", listen);
+    try {
+      renderWithHost(<GrowingWrite />, threadHost());
+      const box = screen.getByTestId("tool-window");
+      Object.defineProperty(box, "scrollHeight", { configurable: true, value: 1000 });
+      Object.defineProperty(box, "clientHeight", { configurable: true, value: 100 });
+      box.scrollTop = 900;
+      // Up from its end, the window scrolls: the transcript neither sees it nor unpins.
+      fireEvent.wheel(box, { deltaY: -40 });
+      // Down at its end, and up at its top, the turn goes on to the transcript.
+      fireEvent.wheel(box, { deltaY: 40 });
+      box.scrollTop = 0;
+      fireEvent.wheel(box, { deltaY: -40 });
+      expect(outside).toEqual([40, -40]);
+    } finally {
+      document.removeEventListener("wheel", listen);
+    }
+  });
+
+  // spec: UI-935
   test("a long output: its last 12 lines once ended, the earlier ones on demand; live, a following window", async () => {
     const output = numbered(30);
     const view: ToolCard["view"] = {

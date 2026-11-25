@@ -13,6 +13,7 @@ import {
   follows,
   liveBody,
   textLines,
+  wheelScrolls,
 } from "../../src/vm/bounded.ts";
 import { card, composingCard, streaming } from "../support/cards.ts";
 
@@ -75,6 +76,16 @@ describe("bounded bodies", () => {
     // The user scrolled it up: it stops, and stays stopped while the content grows.
     expect(follows(true, { top: 400, height: 1200, client: 100 }, 900)).toBe(false);
     expect(follows(false, { top: 400, height: 1400, client: 100 }, 900)).toBe(false);
+  });
+
+  // spec: UI-935
+  test("a wheel turn stays in a body it scrolls; at its edge that way it goes on to the page", () => {
+    const middle = { top: 400, height: 1000, client: 100 };
+    expect([wheelScrolls(middle, -40), wheelScrolls(middle, 40), wheelScrolls(middle, 0)]).toEqual([true, true, false]);
+    expect(wheelScrolls({ top: 0, height: 1000, client: 100 }, -40)).toBe(false);
+    expect(wheelScrolls({ top: 900, height: 1000, client: 100 }, 40)).toBe(false);
+    // A body that fits scrolls nothing.
+    expect(wheelScrolls({ top: 0, height: 80, client: 100 }, 40)).toBe(false);
   });
 
   // spec: UI-935

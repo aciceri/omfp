@@ -3,12 +3,13 @@
  * "… N earlier lines" above it; scrolled up by the user it stops following, and follows again once scrolled back to
  * its end. Settled, its preview (`cut`) and a control expanding it to the whole body, which scrolls inside the card at
  * most about a viewport tall; an output's preview is its end, its control above it. The window and the expanded body
- * take the focus and scroll themselves on the arrow and paging keys, which never reach the transcript around them.
+ * take the focus and scroll themselves on the arrow and paging keys, which never reach the transcript around them; nor
+ * does a wheel turn they scroll themselves, so the transcript stays pinned (UI-092).
  */
 
 import { Button } from "omfp/kit";
-import { type Cut, earlierLines, follows, keyScrollTop, strings, type WindowScroll } from "omfp/sdk";
-import { type KeyboardEvent, type ReactNode, useLayoutEffect, useRef, useState } from "react";
+import { type Cut, earlierLines, follows, keyScrollTop, strings, type WindowScroll, wheelScrolls } from "omfp/sdk";
+import { type KeyboardEvent, type ReactNode, useLayoutEffect, useRef, useState, type WheelEvent } from "react";
 
 const text = strings.chat.tool;
 
@@ -86,6 +87,7 @@ export function LiveWindow({ total, children }: { total: number; children: React
         data-following={following}
         onScroll={onScroll}
         onKeyDown={scrollByKey}
+        onWheel={keepWheel}
       >
         {children}
       </section>
@@ -105,6 +107,16 @@ function scrollByKey(event: KeyboardEvent<HTMLElement>): void {
     box.scrollTop = top;
   }
   if (top !== undefined || event.key === "ArrowUp" || event.key === "ArrowDown") {
+    event.stopPropagation();
+  }
+}
+
+/**
+ * A wheel turn a body scrolls itself stays there: the transcript would take it as the user scrolling the conversation
+ * up and stop following it. At the body's edge the turn goes on, scrolling the transcript as usual.
+ */
+function keepWheel(event: WheelEvent<HTMLElement>): void {
+  if (!event.ctrlKey && wheelScrolls(scrollOf(event.currentTarget), event.deltaY)) {
     event.stopPropagation();
   }
 }
@@ -146,6 +158,7 @@ function Preview({ total, cut, render }: Omit<BoundedBodyProps, "live">): ReactN
           // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region must be focusable to scroll by keyboard.
           tabIndex={0}
           onKeyDown={scrollByKey}
+          onWheel={keepWheel}
         >
           {render(0, total)}
         </section>

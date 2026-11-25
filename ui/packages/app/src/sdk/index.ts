@@ -25,6 +25,7 @@ export {
   liveBody,
   textLines,
   type WindowScroll,
+  wheelScrolls,
 } from "../vm/bounded.ts";
 export { type BrowserScreenshot, type BrowserTab, type BrowserView, browserView } from "../vm/browser.ts";
 export {

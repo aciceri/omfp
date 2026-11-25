@@ -4,6 +4,8 @@ import { describe, expect, test } from "bun:test";
 import type { DiffLine } from "@omfp/kit";
 import { ansiLines } from "../../src/vm/ansi.ts";
 import {
+  AGENT_ITEMS,
+  ANSWER_LINES,
   BODY_LINES,
   bodyCut,
   DIFF_HUNKS,
@@ -11,8 +13,14 @@ import {
   diffCut,
   earlierLines,
   follows,
+  LIST_ITEMS,
+  LOCATION_ITEMS,
   liveBody,
+  MATCH_ITEMS,
+  QUESTION_ITEMS,
+  READ_LINES,
   textLines,
+  todoShown,
   wheelScrolls,
 } from "../../src/vm/bounded.ts";
 import { card, composingCard, streaming } from "../support/cards.ts";
@@ -27,8 +35,9 @@ function diff(hunks: number, lines: number): DiffLine[] {
 
 describe("bounded bodies", () => {
   // spec: UI-935
-  test("omp's limits: 12 lines, a diff's 40 lines and 8 hunks", () => {
-    expect([BODY_LINES, DIFF_LINES, DIFF_HUNKS]).toEqual([12, 40, 8]);
+  test("omp's limits: 12 lines, a diff's 40 lines and 8 hunks, a read's 10 lines, each list's items", () => {
+    expect([BODY_LINES, DIFF_LINES, DIFF_HUNKS, READ_LINES, ANSWER_LINES]).toEqual([12, 40, 8, 10, 4]);
+    expect([LIST_ITEMS, MATCH_ITEMS, LOCATION_ITEMS, QUESTION_ITEMS, AGENT_ITEMS]).toEqual([8, 6, 2, 3, 4]);
   });
 
   // spec: UI-935
@@ -52,10 +61,30 @@ describe("bounded bodies", () => {
   });
 
   // spec: UI-935
-  test("a settled body's preview: its first 12 lines, an output's last 12; none when it fits", () => {
+  test("a settled body's preview: its first lines or items, an output's last ones; none when it fits", () => {
     expect(bodyCut(12)).toBeUndefined();
     expect(bodyCut(30)).toEqual({ start: 0, end: 12 });
-    expect(bodyCut(30, "tail")).toEqual({ start: 18, end: 30 });
+    expect(bodyCut(30, BODY_LINES, "tail")).toEqual({ start: 18, end: 30 });
+    expect(bodyCut(3, LOCATION_ITEMS)).toEqual({ start: 0, end: 2 });
+  });
+
+  // spec: UI-935
+  test("a long todo phase shows its tasks in progress, the open ones after them and the last one closed", () => {
+    const statuses = (done: number, open: number) => [
+      ...Array.from({ length: done }, () => "completed"),
+      ...Array.from({ length: open }, () => "pending"),
+    ];
+    expect(todoShown(statuses(2, 6))).toBeUndefined();
+    // Nothing open: the first 8.
+    expect(todoShown(statuses(10, 0))).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    // Five done, then a task in progress and ten pending: the last done, the active one and the next seven.
+    const working = statuses(5, 11);
+    working[5] = "in_progress";
+    expect(todoShown(working)).toEqual([4, 5, 6, 7, 8, 9, 10, 11, 12]);
+    // A task in progress far down is always shown, ahead of the pending ones before it.
+    const late = statuses(0, 12);
+    late[11] = "in_progress";
+    expect(todoShown(late)).toEqual([11]);
   });
 
   // spec: UI-935

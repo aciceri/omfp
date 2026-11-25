@@ -8,13 +8,24 @@
  */
 
 import { Button } from "omfp/kit";
-import { type Cut, earlierLines, follows, keyScrollTop, strings, type WindowScroll, wheelScrolls } from "omfp/sdk";
+import {
+  BODY_LINES,
+  bodyCut,
+  type Cut,
+  earlierLines,
+  follows,
+  keyScrollTop,
+  type Noun,
+  strings,
+  type WindowScroll,
+  wheelScrolls,
+} from "omfp/sdk";
 import { type KeyboardEvent, type ReactNode, useLayoutEffect, useRef, useState, type WheelEvent } from "react";
 
 const text = strings.chat.tool;
 
 export interface BoundedBodyProps {
-  /** The body's lines. */
+  /** The body's lines, or a list's items. */
   readonly total: number;
   /** Whether the call is live (`liveBody`): the body shows in a window following its newest lines. */
   readonly live: boolean;
@@ -22,14 +33,49 @@ export interface BoundedBodyProps {
   readonly cut: Cut | undefined;
   /** The body's lines `[start, end)`. */
   readonly render: (start: number, end: number) => ReactNode;
+  /** What its controls count: lines unless it is a list. */
+  readonly noun?: Noun | undefined;
+  /** How many a live window shows before counting earlier ones, until it is laid out: `BODY_LINES` by default. */
+  readonly limit?: number | undefined;
 }
 
 /** A long body: a live window while the call is live, else its settled preview. */
-export function BoundedBody({ total, live, cut, render }: BoundedBodyProps): ReactNode {
+export function BoundedBody({ total, live, cut, render, noun, limit }: BoundedBodyProps): ReactNode {
   return live ? (
-    <LiveWindow total={total}>{render(0, total)}</LiveWindow>
+    <LiveWindow total={total} noun={noun} limit={limit}>
+      {render(0, total)}
+    </LiveWindow>
   ) : (
-    <Preview total={total} cut={cut} render={render} />
+    <Preview total={total} cut={cut} render={render} noun={noun} />
+  );
+}
+
+/**
+ * A list of `items` bounded as a body (UI-935): live, in a window following its newest items; settled, its first
+ * `limit` and a control showing the rest. `render` lays out the items shown.
+ */
+export function BoundedList<T>({
+  items,
+  limit,
+  noun,
+  live,
+  render,
+}: {
+  items: readonly T[];
+  limit: number;
+  noun: Noun;
+  live: boolean;
+  render: (shown: readonly T[]) => ReactNode;
+}): ReactNode {
+  return (
+    <BoundedBody
+      total={items.length}
+      live={live}
+      cut={bodyCut(items.length, limit)}
+      noun={noun}
+      limit={limit}
+      render={(start, end) => render(start === 0 && end === items.length ? items : items.slice(start, end))}
+    />
   );
 }
 
@@ -38,15 +84,25 @@ function scrollOf(element: HTMLElement): WindowScroll {
 }
 
 /**
- * A live body of `total` lines in a window following its newest lines; `children` may hold more than the lines (an
- * edit preview's file names).
+ * A live body of `total` lines (or items, `noun`) in a window following its newest ones; `children` may hold more than
+ * the lines (an edit preview's file names).
  */
-export function LiveWindow({ total, children }: { total: number; children: ReactNode }): ReactNode {
+export function LiveWindow({
+  total,
+  noun = text.nouns.line,
+  limit = BODY_LINES,
+  children,
+}: {
+  total: number;
+  noun?: Noun | undefined;
+  limit?: number | undefined;
+  children: ReactNode;
+}): ReactNode {
   const box = useRef<HTMLElement>(null);
   // Where the window last scrolled itself: a scroll elsewhere is the user's.
   const written = useRef(0);
   const [following, setFollowing] = useState(true);
-  const [earlier, setEarlier] = useState(() => earlierLines(total, { top: 0, height: 0, client: 0 }));
+  const [earlier, setEarlier] = useState(() => earlierLines(total, { top: 0, height: 0, client: 0 }, limit));
   // After every render, since the body may have grown: back to its end while following, then what is above.
   useLayoutEffect(() => {
     const element = box.current;
@@ -59,7 +115,7 @@ export function LiveWindow({ total, children }: { total: number; children: React
       written.current = element.scrollTop;
     }
     setFollowing(follow);
-    setEarlier(earlierLines(total, scrollOf(element)));
+    setEarlier(earlierLines(total, scrollOf(element), limit));
   });
   const onScroll = () => {
     const element = box.current;
@@ -68,13 +124,13 @@ export function LiveWindow({ total, children }: { total: number; children: React
     }
     const scroll = scrollOf(element);
     setFollowing((was) => follows(was, scroll, written.current));
-    setEarlier(earlierLines(total, scroll));
+    setEarlier(earlierLines(total, scroll, limit));
   };
   return (
     <div className="omfp-bounded" data-live="true">
       {earlier > 0 && (
         <p className="omfp-bounded__marker" data-testid="tool-earlier">
-          {text.earlierLines(earlier)}
+          {text.earlier(earlier, noun)}
         </p>
       )}
       <section
@@ -122,7 +178,7 @@ function keepWheel(event: WheelEvent<HTMLElement>): void {
 }
 
 /** A settled body: its preview, expandable to the whole body; the whole body when it fits. */
-function Preview({ total, cut, render }: Omit<BoundedBodyProps, "live">): ReactNode {
+function Preview({ total, cut, render, noun = text.nouns.line }: Omit<BoundedBodyProps, "live" | "limit">): ReactNode {
   const [expanded, setExpanded] = useState(false);
   const box = useRef<HTMLElement>(null);
   const tail = cut !== undefined && cut.start > 0;
@@ -144,7 +200,7 @@ function Preview({ total, cut, render }: Omit<BoundedBodyProps, "live">): ReactN
       data-testid="tool-more"
       onPress={() => setExpanded((open) => !open)}
     >
-      {expanded ? text.fewerLines : tail ? text.earlierLines(hidden) : text.moreLines(hidden)}
+      {expanded ? text.fewer(noun) : tail ? text.earlier(hidden, noun) : text.more(hidden, noun)}
     </Button>
   );
   return (

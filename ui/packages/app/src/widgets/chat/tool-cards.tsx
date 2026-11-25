@@ -21,8 +21,11 @@ import {
   type Tone,
 } from "omfp/kit";
 import {
+  AGENT_ITEMS,
+  ANSWER_LINES,
   type AstMatch,
   ansiLines,
+  BODY_LINES,
   bodyCut,
   type CardImage,
   CardScope,
@@ -31,9 +34,14 @@ import {
   diffCut,
   type EditedFile,
   type EditPreviewFile,
+  LIST_ITEMS,
+  LOCATION_ITEMS,
   type LspResult,
   liveBody,
+  MATCH_ITEMS,
   type OpenFileOptions,
+  QUESTION_ITEMS,
+  READ_LINES,
   repoPath,
   type SubagentRun,
   strings,
@@ -41,14 +49,15 @@ import {
   type ToolCard,
   type ToolView,
   textLines,
+  todoShown,
   useAnswer,
   useCurrentWorkspaceId,
   useOpenFile,
   useReportError,
   useWorkspaces,
 } from "omfp/sdk";
-import { Fragment, type ReactNode, useMemo, useState } from "react";
-import { BoundedBody, LiveWindow } from "./bounded.tsx";
+import { Fragment, type ReactNode, useMemo } from "react";
+import { BoundedBody, BoundedList, LiveWindow } from "./bounded.tsx";
 import { useImageViewer } from "./image-viewer.tsx";
 
 const text = strings.chat.tool;
@@ -191,7 +200,7 @@ function AnsiOutput({ output, live }: { output: string; live: boolean }): ReactN
     <BoundedBody
       total={lines.length}
       live={live}
-      cut={bodyCut(lines.length, "tail")}
+      cut={bodyCut(lines.length, BODY_LINES, "tail")}
       render={(start, end) => (
         <pre className="omfp-code omfp-code--block" data-testid="tool-output">
           <code>
@@ -221,16 +230,21 @@ function AnsiOutput({ output, live }: { output: string; live: boolean }): ReactN
   );
 }
 
-/** A text body (`write` content, card and widget code, a command, a page, JSON) highlighted, bounded (UI-935). */
+/**
+ * A text body (`write` content, card and widget code, a command, a page, a file, JSON) highlighted, bounded (UI-935):
+ * its preview shows `limit` lines.
+ */
 function BoundedCode({
   code,
   language,
   live,
+  limit = BODY_LINES,
   "data-testid": testId,
 }: {
   code: string;
   language?: string | undefined;
   live: boolean;
+  limit?: number;
   "data-testid": string;
 }): ReactNode {
   const lines = useMemo(() => textLines(code), [code]);
@@ -238,7 +252,7 @@ function BoundedCode({
     <BoundedBody
       total={lines.length}
       live={live}
-      cut={bodyCut(lines.length)}
+      cut={bodyCut(lines.length, limit)}
       render={(start, end) => (
         <Code
           code={start === 0 && end === lines.length ? code : lines.slice(start, end).join("\n")}
@@ -353,10 +367,11 @@ function ToolSection({
             </p>
           )}
           {card.status !== "failed" && view.content !== undefined && (
-            <Code
+            <BoundedCode
               code={view.content}
-              block
               language={view.directory ? undefined : view.language}
+              live={live}
+              limit={READ_LINES}
               data-testid="tool-content"
             />
           )}
@@ -405,19 +420,30 @@ function ToolSection({
             (view.files.length === 0 ? (
               <p className="omfp-tool-card__meta">{text.noMatch}</p>
             ) : (
-              <ul className="omfp-tool-card__files">
-                {view.files.map((file) => (
-                  <li key={file.path} data-testid="tool-file">
-                    <div className="omfp-tool-card__file">
-                      <PathLink reference={{ path: file.path, line: undefined }} onOpen={(ref) => openFile(ref.path)}>
-                        <FilePath path={file.path} />
-                      </PathLink>
-                      {file.count !== undefined && <Badge>{file.count}</Badge>}
-                    </div>
-                    {file.matches.length > 0 && <Matches path={file.path} matches={file.matches} />}
-                  </li>
-                ))}
-              </ul>
+              <BoundedList
+                items={view.files}
+                limit={LIST_ITEMS}
+                noun={text.nouns.file}
+                live={live}
+                render={(files) => (
+                  <ul className="omfp-tool-card__files">
+                    {files.map((file) => (
+                      <li key={file.path} data-testid="tool-file">
+                        <div className="omfp-tool-card__file">
+                          <PathLink
+                            reference={{ path: file.path, line: undefined }}
+                            onOpen={(ref) => openFile(ref.path)}
+                          >
+                            <FilePath path={file.path} />
+                          </PathLink>
+                          {file.count !== undefined && <Badge>{file.count}</Badge>}
+                        </div>
+                        {file.matches.length > 0 && <Matches path={file.path} matches={file.matches} />}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              />
             ))}
           {view.truncated && <p className="omfp-tool-card__meta">{text.truncated}</p>}
         </>
@@ -432,21 +458,29 @@ function ToolSection({
           {card.status === "succeeded" && view.files.length === 0 && (
             <p className="omfp-tool-card__meta">{text.noMatch}</p>
           )}
-          <ul className="omfp-tool-card__files">
-            {view.files.map((file) => (
-              <li key={file.path} data-testid="tool-file">
-                <div className="omfp-tool-card__file">
-                  <LineLink path={file.path} line={file.diff[0]?.oldLine ?? file.diff[0]?.newLine}>
-                    <FilePath path={file.path} />
-                  </LineLink>
-                  {file.count !== undefined && <Badge>{file.count}</Badge>}
-                </div>
-                {file.diff.length > 0 && (
-                  <BoundedDiff lines={file.diff} language={languageOfPath(file.path)} live={live} />
-                )}
-              </li>
-            ))}
-          </ul>
+          <BoundedList
+            items={view.files}
+            limit={LIST_ITEMS}
+            noun={text.nouns.file}
+            live={live}
+            render={(files) => (
+              <ul className="omfp-tool-card__files">
+                {files.map((file) => (
+                  <li key={file.path} data-testid="tool-file">
+                    <div className="omfp-tool-card__file">
+                      <LineLink path={file.path} line={file.diff[0]?.oldLine ?? file.diff[0]?.newLine}>
+                        <FilePath path={file.path} />
+                      </LineLink>
+                      {file.count !== undefined && <Badge>{file.count}</Badge>}
+                    </div>
+                    {file.diff.length > 0 && (
+                      <BoundedDiff lines={file.diff} language={languageOfPath(file.path)} live={live} />
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          />
           {view.truncated && <p className="omfp-tool-card__meta">{text.truncated}</p>}
         </>
       );
@@ -477,39 +511,68 @@ function ToolSection({
           {card.status === "succeeded" && view.links.length === 0 && (
             <p className="omfp-tool-card__meta">{text.noLinks}</p>
           )}
-          <ul className="omfp-tool-card__links">
-            {view.links.map((link) => (
-              <li key={link.url} data-testid="tool-link">
-                <a href={link.url} target="_blank" rel="noreferrer">
-                  {link.title}
-                </a>
-                <span className="omfp-tool-card__meta">{link.url}</span>
-                {link.snippet !== "" && <span>{link.snippet}</span>}
-              </li>
-            ))}
-          </ul>
+          <BoundedList
+            items={view.links}
+            limit={LIST_ITEMS}
+            noun={text.nouns.link}
+            live={live}
+            render={(links) => (
+              <ul className="omfp-tool-card__links">
+                {links.map((link) => (
+                  <li key={link.url} data-testid="tool-link">
+                    <a href={link.url} target="_blank" rel="noreferrer">
+                      {link.title}
+                    </a>
+                    <span className="omfp-tool-card__meta">{link.url}</span>
+                    {link.snippet !== "" && (
+                      <span className="omfp-tool-card__snippet" data-testid="tool-snippet">
+                        {link.snippet}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          />
         </>
       );
     case "ask":
       return (
-        <dl className="omfp-tool-card__answers">
-          {view.questions.map((question) => (
-            <div key={question.question} data-testid="ask-question">
-              <dt>{question.question}</dt>
-              {question.answer !== undefined && (
-                <dd data-testid="ask-answer">{question.answer === "" ? text.noAnswer : question.answer}</dd>
-              )}
-            </div>
-          ))}
-        </dl>
+        <BoundedList
+          items={view.questions}
+          limit={QUESTION_ITEMS}
+          noun={text.nouns.question}
+          live={live}
+          render={(questions) => (
+            <dl className="omfp-tool-card__answers">
+              {questions.map((question) => (
+                <div key={question.question} data-testid="ask-question">
+                  <dt>{question.question}</dt>
+                  {question.answer !== undefined && (
+                    <dd data-testid="ask-answer">{question.answer === "" ? text.noAnswer : question.answer}</dd>
+                  )}
+                </div>
+              ))}
+            </dl>
+          )}
+        />
       );
     case "task":
+      // The subagents are a fixed list: capped, never a following window; a running one's output is (UI-935).
       return (
-        <ul className="omfp-tool-card__agents">
-          {view.agents.map((agent) => (
-            <Subagent key={agent.name} agent={agent} />
-          ))}
-        </ul>
+        <BoundedList
+          items={view.agents}
+          limit={AGENT_ITEMS}
+          noun={text.nouns.agent}
+          live={false}
+          render={(agents) => (
+            <ul className="omfp-tool-card__agents">
+              {agents.map((agent) => (
+                <Subagent key={agent.name} agent={agent} />
+              ))}
+            </ul>
+          )}
+        />
       );
     case "card":
       // The widget mounts once the call's arguments are complete; until then its code shows as it is written (UI-056).
@@ -645,27 +708,35 @@ function CardCancel({ title }: { title: string }): ReactNode {
 
 /**
  * An `ast_grep` file's matches (UI-916): each match's first line opens the file there, its code is highlighted in the
- * file's language, its metavariable captures under it.
+ * file's language, its metavariable captures under it. A long list shows its first matches (UI-935).
  */
 function Matches({ path, matches }: { path: string; matches: readonly AstMatch[] }): ReactNode {
   const language = languageOfPath(path);
   return (
-    <ol className="omfp-tool-card__matches">
-      {matches.map((match, index) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: a result's matches never move
-        <li key={index} data-testid="tool-match">
-          <LineLink path={path} line={match.line} data-testid="tool-match-line">
-            {match.line}
-          </LineLink>
-          <Code code={match.code} block language={language} data-testid="tool-match-code" />
-          {match.captures !== undefined && (
-            <p className="omfp-tool-card__meta omfp-tool-card__captures" data-testid="tool-match-captures">
-              {match.captures}
-            </p>
-          )}
-        </li>
-      ))}
-    </ol>
+    <BoundedList
+      items={matches}
+      limit={MATCH_ITEMS}
+      noun={text.nouns.match}
+      live={false}
+      render={(shown) => (
+        <ol className="omfp-tool-card__matches">
+          {shown.map((match, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: a result's matches never move
+            <li key={index} data-testid="tool-match">
+              <LineLink path={path} line={match.line} data-testid="tool-match-line">
+                {match.line}
+              </LineLink>
+              <Code code={match.code} block language={language} data-testid="tool-match-code" />
+              {match.captures !== undefined && (
+                <p className="omfp-tool-card__meta omfp-tool-card__captures" data-testid="tool-match-captures">
+                  {match.captures}
+                </p>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
+    />
   );
 }
 
@@ -692,13 +763,10 @@ function Location({ path, line, column }: { path: string; line: number; column?:
   );
 }
 
-/** Files of a long list of changed files shown until it is expanded (UI-919). */
-const FILES_SHOWN = 8;
-
 /**
  * Files a workspace edit or an applied rewrite changed, each opening against `HEAD` (UI-917, UI-919); with `preview`,
  * the files an edit that was not applied would change, each opening as it is (the call's file at the call's line). A
- * long list shows its first files, expandable to all of them.
+ * long list shows its first files, expandable to all of them (UI-935).
  */
 function ChangedFiles({
   files,
@@ -708,45 +776,38 @@ function ChangedFiles({
   preview?: { readonly file: string | undefined; readonly line: number | undefined } | undefined;
 }): ReactNode {
   const openFile = useOpenFile();
-  const [expanded, setExpanded] = useState(false);
   if (files.length === 0) {
     return null;
   }
-  const hidden = files.length - FILES_SHOWN;
   return (
-    <>
-      <ul className="omfp-tool-card__files">
-        {(expanded || hidden <= 0 ? files : files.slice(0, FILES_SHOWN)).map((file) => (
-          <li key={file.path} data-testid="tool-file">
-            <div className="omfp-tool-card__file">
-              {file.removed ? (
-                <FilePath path={file.path} />
-              ) : (
-                <PathLink
-                  reference={{ path: file.path, line: file.path === preview?.file ? preview.line : undefined }}
-                  diff={preview === undefined}
-                  onOpen={(ref) => openFile(ref.path, preview === undefined ? { diff: true } : { line: ref.line })}
-                >
+    <BoundedList
+      items={files}
+      limit={LIST_ITEMS}
+      noun={text.nouns.file}
+      live={false}
+      render={(shown) => (
+        <ul className="omfp-tool-card__files">
+          {shown.map((file) => (
+            <li key={file.path} data-testid="tool-file">
+              <div className="omfp-tool-card__file">
+                {file.removed ? (
                   <FilePath path={file.path} />
-                </PathLink>
-              )}
-              <span className="omfp-tool-card__meta">{file.note}</span>
-            </div>
-          </li>
-        ))}
-      </ul>
-      {hidden > 0 && (
-        <Button
-          size="sm"
-          variant="quiet"
-          aria-expanded={expanded}
-          data-testid="tool-more"
-          onPress={() => setExpanded((open) => !open)}
-        >
-          {expanded ? text.fewerFiles : text.moreFiles(hidden)}
-        </Button>
+                ) : (
+                  <PathLink
+                    reference={{ path: file.path, line: file.path === preview?.file ? preview.line : undefined }}
+                    diff={preview === undefined}
+                    onOpen={(ref) => openFile(ref.path, preview === undefined ? { diff: true } : { line: ref.line })}
+                  >
+                    <FilePath path={file.path} />
+                  </PathLink>
+                )}
+                <span className="omfp-tool-card__meta">{file.note}</span>
+              </div>
+            </li>
+          ))}
+        </ul>
       )}
-    </>
+    />
   );
 }
 
@@ -791,12 +852,20 @@ function LspAnswer({ result, call }: { result: LspResult; call: Extract<ToolView
       return (
         <>
           {result.diagnostics.length > 0 && (
-            <ul className="omfp-tool-card__diagnostics">
-              {result.diagnostics.map((diagnostic, index) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: an answer's diagnostics never move
-                <DiagnosticRow key={index} diagnostic={diagnostic} />
-              ))}
-            </ul>
+            <BoundedList
+              items={result.diagnostics}
+              limit={LIST_ITEMS}
+              noun={text.nouns.diagnostic}
+              live={false}
+              render={(diagnostics) => (
+                <ul className="omfp-tool-card__diagnostics">
+                  {diagnostics.map((diagnostic, index) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: an answer's diagnostics never move
+                    <DiagnosticRow key={index} diagnostic={diagnostic} />
+                  ))}
+                </ul>
+              )}
+            />
           )}
           {result.clean && (
             <p className="omfp-tool-card__meta" data-testid="lsp-clean">
@@ -812,21 +881,29 @@ function LspAnswer({ result, call }: { result: LspResult; call: Extract<ToolView
           <p className="omfp-tool-card__meta" data-testid="tool-total">
             {result.title}
           </p>
-          <ul className="omfp-tool-card__locations">
-            {result.locations.map((location) => (
-              <li key={`${location.path}:${location.line}:${location.column}`} data-testid="lsp-location-item">
-                <Location path={location.path} line={location.line} column={location.column} />
-                {location.context.length > 0 && (
-                  <Code
-                    code={location.context.map((line) => line.text).join("\n")}
-                    block
-                    language={languageOfPath(location.path)}
-                    data-testid="lsp-context"
-                  />
-                )}
-              </li>
-            ))}
-          </ul>
+          <BoundedList
+            items={result.locations}
+            limit={LOCATION_ITEMS}
+            noun={text.nouns.location}
+            live={false}
+            render={(locations) => (
+              <ul className="omfp-tool-card__locations">
+                {locations.map((location) => (
+                  <li key={`${location.path}:${location.line}:${location.column}`} data-testid="lsp-location-item">
+                    <Location path={location.path} line={location.line} column={location.column} />
+                    {location.context.length > 0 && (
+                      <Code
+                        code={location.context.map((line) => line.text).join("\n")}
+                        block
+                        language={languageOfPath(location.path)}
+                        data-testid="lsp-context"
+                      />
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          />
           <Notes notes={result.notes} />
         </>
       );
@@ -836,23 +913,31 @@ function LspAnswer({ result, call }: { result: LspResult; call: Extract<ToolView
           <p className="omfp-tool-card__meta" data-testid="tool-total">
             {result.title}
           </p>
-          <ul className="omfp-tool-card__symbols">
-            {result.symbols.map((symbol, index) => (
-              <li
-                // biome-ignore lint/suspicious/noArrayIndexKey: an answer's symbols never move
-                key={index}
-                data-testid="lsp-symbol"
-                style={{ paddingInlineStart: `${symbol.depth}rem` }}
-              >
-                <span className="omfp-tool-card__symbol">{symbol.name}</span>
-                {symbol.path !== undefined && (
-                  <LineLink path={symbol.path} line={symbol.line} data-testid="lsp-symbol-line">
-                    {result.workspace && <FilePath path={symbol.path} />}:{symbol.line}
-                  </LineLink>
-                )}
-              </li>
-            ))}
-          </ul>
+          <BoundedList
+            items={result.symbols}
+            limit={LIST_ITEMS}
+            noun={text.nouns.symbol}
+            live={false}
+            render={(symbols) => (
+              <ul className="omfp-tool-card__symbols">
+                {symbols.map((symbol, index) => (
+                  <li
+                    // biome-ignore lint/suspicious/noArrayIndexKey: an answer's symbols never move
+                    key={index}
+                    data-testid="lsp-symbol"
+                    style={{ paddingInlineStart: `${symbol.depth}rem` }}
+                  >
+                    <span className="omfp-tool-card__symbol">{symbol.name}</span>
+                    {symbol.path !== undefined && (
+                      <LineLink path={symbol.path} line={symbol.line} data-testid="lsp-symbol-line">
+                        {result.workspace && <FilePath path={symbol.path} />}:{symbol.line}
+                      </LineLink>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          />
         </>
       );
     case "edits":
@@ -902,43 +987,86 @@ function LspAnswer({ result, call }: { result: LspResult; call: Extract<ToolView
           <p className="omfp-tool-card__meta" data-testid="tool-total">
             {result.title}
           </p>
-          <ol className="omfp-tool-card__actions">
-            {result.actions.map((action) => (
-              <li key={action.index} data-testid="lsp-action">
-                <span className="omfp-tool-card__meta">{action.index}</span>
-                <Badge>{action.kind}</Badge>
-                <span>{action.title}</span>
-              </li>
-            ))}
-          </ol>
+          <BoundedList
+            items={result.actions}
+            limit={LIST_ITEMS}
+            noun={text.nouns.action}
+            live={false}
+            render={(actions) => (
+              <ol className="omfp-tool-card__actions">
+                {actions.map((action) => (
+                  <li key={action.index} data-testid="lsp-action">
+                    <span className="omfp-tool-card__meta">{action.index}</span>
+                    <Badge>{action.kind}</Badge>
+                    <span>{action.title}</span>
+                  </li>
+                ))}
+              </ol>
+            )}
+          />
         </>
       );
-    case "hover":
-      return <Markdown text={result.markdown} data-testid="lsp-hover" />;
+    case "hover": {
+      const lines = textLines(result.markdown);
+      return (
+        <BoundedBody
+          total={lines.length}
+          live={false}
+          cut={bodyCut(lines.length, ANSWER_LINES)}
+          render={(start, end) => (
+            <Markdown
+              text={end - start === lines.length ? result.markdown : lines.slice(start, end).join("\n")}
+              data-testid="lsp-hover"
+            />
+          )}
+        />
+      );
+    }
     case "text":
-      return <Code code={result.text} block data-testid="tool-result" />;
+      return <BoundedCode code={result.text} live={false} limit={ANSWER_LINES} data-testid="tool-result" />;
   }
 }
 
-/** A todo tool's phases (UI-163): the kit's todo list per phase, named when there are several. */
+/**
+ * A todo tool's phases (UI-163): the kit's todo list per phase, named when there are several. A long phase shows its
+ * tasks in progress and those around them (`todoShown`), the rest on demand (UI-935).
+ */
 function TodoPhases({ phases }: { phases: readonly TodoPhase[] }): ReactNode {
-  return phases.map((phase) => (
-    <section key={phase.name} aria-label={phase.name}>
-      {phases.length > 1 && <h3>{phase.name}</h3>}
-      <TodoList
-        className="omfp-tool-card__todo"
-        itemTestId="todo-task"
-        items={phase.tasks.map((task) => ({
-          text: task.content,
-          status: task.status,
-          statusLabel: text.todoStatus[task.status] ?? task.status,
-        }))}
-      />
-    </section>
-  ));
+  return phases.map((phase) => {
+    const items = phase.tasks.map((task) => ({
+      text: task.content,
+      status: task.status,
+      statusLabel: text.todoStatus[task.status] ?? task.status,
+    }));
+    const shown = todoShown(phase.tasks.map((task) => task.status));
+    return (
+      <section key={phase.name} aria-label={phase.name}>
+        {phases.length > 1 && <h3>{phase.name}</h3>}
+        <BoundedBody
+          total={items.length}
+          live={false}
+          cut={shown === undefined || shown.length >= items.length ? undefined : { start: 0, end: shown.length }}
+          noun={text.nouns.task}
+          render={(start, end) => (
+            <TodoList
+              className="omfp-tool-card__todo"
+              itemTestId="todo-task"
+              items={
+                end - start === items.length || shown === undefined
+                  ? items
+                  : shown.flatMap((index) => items.slice(index, index + 1))
+              }
+            />
+          )}
+        />
+      </section>
+    );
+  });
 }
 
+/** A `task`'s subagent: its head, its assignment, its output (live in a following window while it runs, UI-935). */
 function Subagent({ agent }: { agent: SubagentRun }): ReactNode {
+  const lines = textLines(agent.output ?? "");
   return (
     <li className="omfp-tool-card__agent" data-testid="subagent" data-status={agent.status}>
       <div className="omfp-tool-card__agent-head">
@@ -959,9 +1087,16 @@ function Subagent({ agent }: { agent: SubagentRun }): ReactNode {
         </p>
       )}
       {agent.output !== undefined && (
-        <p className="omfp-tool-card__agent-output" data-testid="subagent-output">
-          {agent.output}
-        </p>
+        <BoundedBody
+          total={lines.length}
+          live={agent.status === "running"}
+          cut={bodyCut(lines.length)}
+          render={(start, end) => (
+            <p className="omfp-tool-card__agent-output" data-testid="subagent-output">
+              {end - start === lines.length ? agent.output : lines.slice(start, end).join("\n")}
+            </p>
+          )}
+        />
       )}
     </li>
   );

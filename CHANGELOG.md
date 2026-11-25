@@ -9,12 +9,15 @@ The version's section is also the source of the GitHub release notes.
 
 ### Changed
 
-- Tool cards keep a long body bounded, as omp's terminal UI does: while a call is written or runs, its diff, code,
-  command, output, page or arguments show in a window about 12 lines tall that follows the newest lines, with
-  "… N earlier lines" above it; scrolling it up stops the follow until you scroll back to its end. Once the call ends,
-  a long body shows its first 12 lines (a diff its first 40 lines and 8 hunks, a command's output its last 12) and a
-  control to show the rest, which then scrolls inside the card, at most about a window tall. A `write` preview now
-  shows 12 lines instead of 6 (#319).
+- Every tool card keeps a long body or list bounded, as omp's terminal UI does: while a call is written or runs, its
+  diff, code, command, output, page, arguments or a running subagent's output show in a window about 12 lines tall
+  that follows the newest lines, with "… N earlier lines" above it; scrolling it up stops the follow until you scroll
+  back to its end. Once the call ends, a long body shows its first 12 lines (a file read 10, a diff 40 lines and 8
+  hunks, a command's output its last 12, an `lsp` hover 4) and a long list its first items (8 files, links,
+  diagnostics, symbols or tasks, with the tasks in progress always shown; 6 matches a file; 2 locations; 3 questions;
+  4 subagents), with a control to show the rest, which then scrolls inside the card, at most about a window tall, by
+  keyboard too; a search result's excerpt shows at most 3 lines. A `write` preview now shows 12 lines instead of 6
+  (#319).
 
 ## 0.4.4 — 2026-11-25
 

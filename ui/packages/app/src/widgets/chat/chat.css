@@ -542,6 +542,15 @@
     overflow-wrap: anywhere;
   }
 
+  /* A search result's excerpt shows at most 3 lines (UI-935). */
+  .omfp-tool-card__snippet {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+  }
+
   /* The kit's todo list (UI-163, UI-447) sits flush in the card's section. */
   .omfp-tool-card__todo {
     padding: 0;

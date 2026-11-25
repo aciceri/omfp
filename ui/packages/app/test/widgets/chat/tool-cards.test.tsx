@@ -577,14 +577,126 @@ describe("bounded bodies", () => {
     const generic = ended("custom_tool", fields, numbered(20));
     const fallback = await open(generic);
     expect(texts(fallback, "tool-more")).toEqual([
-      text.moreLines(generic.args.split("\n").length - 12),
-      text.moreLines(8),
+      text.more(generic.args.split("\n").length - 12, text.nouns.line),
+      text.more(8, text.nouns.line),
     ]);
     expect(byTestId(fallback, "tool-result").textContent).toBe(numbered(12).trimEnd());
     cleanup();
     const update = await open(ended("omfp_ui_update", { id: "board", props: fields }, 'Updated "board".'));
     // 20 props and the braces: 22 lines.
     expect(byTestId(update, "tool-more").textContent).toBe("… 10 more lines");
+  });
+
+  // spec: UI-935
+  test("a read: its first 10 lines once ended, the rest on demand", async () => {
+    const read = card("read_tool_calls", "call_read_1");
+    const element = await open({ ...read, view: { ...read.view, content: numbered(15) } as ToolCard["view"] });
+    expect(byTestId(element, "tool-content").textContent).toBe(numbered(10).trimEnd());
+    const more = byTestId(element, "tool-more");
+    expect(more.textContent).toBe("… 5 more lines");
+    await userEvent.click(more);
+    expect(byTestId(element, "tool-content").textContent).toBe(numbered(15));
+  });
+
+  // spec: UI-935, UI-916
+  test("a search: its first 8 files and each file's first 6 matches, the rest on demand", async () => {
+    const grep = card("search_tool_calls", "call_grep_1");
+    const matches = Array.from({ length: 8 }, (_, at) => ({
+      line: at + 1,
+      code: `fn f${at}() {}`,
+      captures: undefined,
+    }));
+    const files = Array.from({ length: 10 }, (_, at) => ({
+      path: `src/m${at}.rs`,
+      count: undefined,
+      matches: at === 0 ? matches : [],
+    }));
+    const element = await open({ ...grep, view: { ...grep.view, files } as ToolCard["view"] });
+    expect([texts(element, "tool-file").length, texts(element, "tool-match").length]).toEqual([8, 6]);
+    expect(texts(element, "tool-more")).toEqual([text.more(2, text.nouns.match), text.more(2, text.nouns.file)]);
+    const [moreMatches, moreFiles] = within(element).getAllByTestId("tool-more");
+    await userEvent.click(moreFiles as HTMLElement);
+    await userEvent.click(moreMatches as HTMLElement);
+    expect([texts(element, "tool-file").length, texts(element, "tool-match").length]).toEqual([10, 8]);
+  });
+
+  // spec: UI-935, UI-919
+  test("an lsp answer: its first 2 locations, the rest on demand", async () => {
+    const found = [2, 5, 9].map((line) => `  src/main.rs:${line}:9\n    ${line}:     add(1, 2)`);
+    const element = await open(
+      lspCard(
+        { action: "references", file: "src/lib.rs", line: 3, symbol: "add" },
+        `Found 3 reference(s):\n${found.join("\n")}`,
+      ),
+    );
+    expect(texts(element, "lsp-location-item").length).toBe(2);
+    await userEvent.click(byTestId(element, "tool-more"));
+    expect(texts(element, "lsp-location-item").length).toBe(3);
+  });
+
+  // spec: UI-935
+  test("web results: the first 8 links, each excerpt at most 3 lines", async () => {
+    const search = card("web_tool_calls", "call_web_search_1");
+    const links = Array.from({ length: 10 }, (_, at) => ({
+      title: `Result ${at}`,
+      url: `http://127.0.0.1/${at}`,
+      snippet: "An excerpt.",
+    }));
+    const element = await open({ ...search, view: { ...search.view, links } as ToolCard["view"] });
+    expect(texts(element, "tool-link").length).toBe(8);
+    expect(byTestId(element, "tool-more").textContent).toBe(text.more(2, text.nouns.link));
+    const chat = parseCss(readFileSync(join(import.meta.dir, "../../../src/widgets/chat/chat.css"), "utf8"));
+    const snippet = findRule(chat, ["@layer omfp-widgets"], ".omfp-tool-card__snippet").declarations;
+    expect([snippet.get("-webkit-line-clamp"), snippet.get("line-clamp"), snippet.get("overflow")]).toEqual([
+      "3",
+      "3",
+      "hidden",
+    ]);
+  });
+
+  // spec: UI-935
+  test("a task: its first 4 subagents; a running one's output in a window following its last lines", async () => {
+    const task = card("task_tool_call", "call_task_1");
+    const agent = (name: string, status: string, output: string) => ({
+      name,
+      agent: "task",
+      task: `Do ${name}`,
+      status,
+      activity: undefined,
+      tools: 0,
+      output,
+    });
+    const agents = [
+      agent("A", "running", numbered(20)),
+      ...["B", "C", "D", "E"].map((name) => agent(name, "completed", "done")),
+    ];
+    const element = await open({ ...task, view: { ...task.view, agents } as ToolCard["view"] });
+    expect(texts(element, "subagent").length).toBe(4);
+    expect(byTestId(element, "tool-more").textContent).toBe(text.more(1, text.nouns.agent));
+    const [running] = within(element).getAllByTestId("subagent-output");
+    expect(running?.closest("[data-testid=tool-window]")).not.toBeNull();
+    expect(byTestId(element, "tool-earlier").textContent).toBe("… 8 earlier lines");
+  });
+
+  // spec: UI-935, UI-163
+  test("a long todo phase: its task in progress, the open ones after it and the last done, the rest on demand", async () => {
+    const todo = card("todo_tool_calls", "call_todo_3");
+    const tasks = Array.from({ length: 16 }, (_, at) => ({
+      content: `Task ${at}`,
+      status: at < 5 ? "completed" : at === 5 ? "in_progress" : "pending",
+    }));
+    const element = await open({
+      ...todo,
+      view: { ...todo.view, phases: [{ name: "Plan", tasks }] } as ToolCard["view"],
+    });
+    expect(
+      within(element)
+        .getAllByTestId("todo-task")
+        .map((task) => task.dataset.status),
+    ).toEqual(["completed", "in_progress", ...Array.from({ length: 7 }, () => "pending")]);
+    expect(byTestId(element, "tool-more").textContent).toBe(text.more(7, text.nouns.task));
+    await userEvent.click(byTestId(element, "tool-more"));
+    expect(texts(element, "todo-task").length).toBe(16);
   });
 });
 
@@ -765,7 +877,7 @@ describe("code-intelligence cards", () => {
     expect([more.textContent, more.getAttribute("aria-expanded")]).toEqual(["… 2 more files", "false"]);
     await userEvent.click(more);
     expect(texts(element, "tool-file").length).toBe(10);
-    expect(byTestId(element, "tool-more").textContent).toBe(text.fewerFiles);
+    expect(byTestId(element, "tool-more").textContent).toBe(text.fewer(text.nouns.file));
     const links = within(element).getAllByTestId("path-link");
     await userEvent.click(links[1] as HTMLElement);
     await userEvent.click(links[9] as HTMLElement);
@@ -796,6 +908,9 @@ describe("code-intelligence cards", () => {
     const hover = await open(
       lspCard({ action: "hover", file: "src/lib.rs", line: 3 }, "```rust\nfn add()\n```\n\nAdds."),
     );
+    // Five lines: the first 4, the rest on demand.
+    expect(byTestId(hover, "tool-more").textContent).toBe(text.more(1, text.nouns.line));
+    await userEvent.click(byTestId(hover, "tool-more"));
     expect(byTestId(hover, "lsp-hover").querySelector("p")?.textContent).toBe("Adds.");
     cleanup();
     const actions = await open(
@@ -867,12 +982,14 @@ describe("ask card", () => {
     expect(texts(await open(streaming("ask_answered", "call_ask_1")), "ask-answer")).toEqual([]);
     cleanup();
     const element = await open(card("ask_answered", "call_ask_1"));
+    // An ask's first 3 questions, the rest on demand (UI-935).
     expect(texts(element, "ask-question")).toEqual([
       "Which database?Postgres",
       "Which features?Auth, Other: Elasticsearch",
       "Service nameorders",
-      "Replicas3",
     ]);
+    await userEvent.click(byTestId(element, "tool-more"));
+    expect(texts(element, "ask-question").at(-1)).toBe("Replicas3");
   });
 
   // spec: UI-050, UI-051, UI-052

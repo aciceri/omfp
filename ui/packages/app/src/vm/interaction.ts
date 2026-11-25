@@ -188,7 +188,7 @@ export type FieldDraft =
 /** A `form` being filled. */
 export interface FormDraft {
   readonly fields: readonly FieldDraft[];
-  /** Submit was pressed while an answer was invalid: every field shows its error from then on. */
+  /** Submit was pressed while omp would refuse an answer: the refused field shows why from then on. */
   readonly attempted: boolean;
 }
 
@@ -293,27 +293,41 @@ export function formData(form: HtmlForm, draft: FormDraft): FormAnswerData {
   return Object.fromEntries(entries);
 }
 
-/** The data when every answer passes the form's rules and omp's check of the reply, else each field's error. */
-export type FormCheck =
+/**
+ * The form's answers as they stand (UI-074). `flags` holds each answered field's broken rule (`pattern`, a range, a
+ * length, `email`/`url`), shown as the user types: omp 19.2 sends such an answer anyway, so a flag never blocks, and
+ * an unanswered field shows only its `required` mark, as omp sends unanswered questions too. `ok` carries the data
+ * unless omp's check of the reply would refuse it (an Other text naming a disabled option, same-name fields of
+ * different shapes), then the field it refuses and why.
+ */
+export type FormCheck = { readonly flags: readonly (string | undefined)[] } & (
   | { readonly ok: true; readonly data: FormAnswerData }
-  | { readonly ok: false; readonly errors: readonly (string | undefined)[] };
+  | { readonly ok: false; readonly refused: { readonly index: number; readonly reason: string } }
+);
+
+/** Whether `value` answers its field: a non-blank text or number, at least one picked option. */
+function answered(value: HtmlFormValue | undefined): boolean {
+  if (value === undefined) {
+    return false;
+  }
+  return Array.isArray(value) ? value.length > 0 : String(value).trim() !== "";
+}
 
 export function checkForm(form: HtmlForm, draft: FormDraft): FormCheck {
-  const errors = form.fields.map((field, index) => fieldError(field, fieldValue(field, draft.fields[index])));
-  if (errors.some((error) => error !== undefined)) {
-    return { ok: false, errors };
-  }
+  const flags = form.fields.map((field, index) => {
+    const value = fieldValue(field, draft.fields[index]);
+    return answered(value) ? fieldError(field, value) : undefined;
+  });
   const data = formData(form, draft);
   const reply = checkFormReply(form, data);
   if (reply.ok) {
-    return { ok: true, data };
+    return { ok: true, data, flags };
   }
-  // A refusal the field rules miss (an Other text naming a disabled option, same-name fields of different shapes).
-  const at = Math.max(
+  const index = Math.max(
     0,
     form.fields.findIndex((field) => field.name === reply.name),
   );
-  return { ok: false, errors: form.fields.map((_, index) => (index === at ? reply.reason : undefined)) };
+  return { ok: false, flags, refused: { index, reason: reply.reason } };
 }
 
 /** The `src` a form's `<img>` may load: http(s) and `data:` URLs only; a local path or `file:` URL shows as text. */

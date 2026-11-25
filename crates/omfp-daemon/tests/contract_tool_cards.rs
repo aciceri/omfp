@@ -291,7 +291,7 @@ async fn write_tool_calls() {
 // spec: TST-012, UI-051
 #[tokio::test(flavor = "multi_thread")]
 async fn search_tool_calls() {
-    // omp 19.1 advertises `grep` and `glob`; `find` and `ast_grep` are not offered as tools.
+    // omp 19.2 advertises `grep` and `glob`; `find` and `ast_grep` are not offered as tools.
     let harness = Harness::new(vec![
         call(
             "call_grep_1",
@@ -335,7 +335,7 @@ async fn search_tool_calls() {
     finish(&harness, &recorder, "search_tool_calls");
 }
 
-/// A `bash` call running the tool command `tool` with the JSON arguments `args` (`-j`): how omp 19.1 runs its
+/// A `bash` call running the tool command `tool` with the JSON arguments `args` (`-j`): how omp 19.2 runs its
 /// discoverable tools (`lsp`, `ast_grep`, `ast_edit`) while `tools.commands` (on by default) mounts them as commands.
 fn command_call(id: &str, tool: &str, args: &Value, intent: &str) -> Step {
     let json = args.to_string();
@@ -347,7 +347,7 @@ fn command_call(id: &str, tool: &str, args: &Value, intent: &str) -> Step {
     )
 }
 
-/// The dispatch of the single tool command a `bash` result ran (`details.toolCommands`, omp 19.1).
+/// The dispatch of the single tool command a `bash` result ran (`details.toolCommands`, omp 19.2).
 fn dispatch(result: &Value) -> &Value {
     let dispatches = result["details"]["toolCommands"]
         .as_array()
@@ -513,7 +513,7 @@ async fn bash_tool_error() {
         format!("oops\n\n\n{wall_time}Command exited with code 3"),
         "{failed:#}"
     );
-    // Over RPC omp 19.1 runs a foreground call as a job (`bash.autoBackground`), which reports a failed command, output
+    // Over RPC omp 19.2 runs a foreground call as a job (`bash.autoBackground`), which reports a failed command, output
     // included, before the call ends: an update carrying the output comes however fast the command exits.
     let updates = tool_frames(&events, "tool_execution_update", "call_bash_1");
     assert!(
@@ -749,7 +749,7 @@ async fn ask_cancelled() {
         let (mut process, startup) = start(&spec);
         let recorder = Recorder::attach(&mut process, &startup);
         process.client().call(&prompt("set it up")).unwrap();
-        // omp 19.1 sends the whole form as one `form` request.
+        // omp 19.2 sends the whole form as one `form` request.
         let form_id = |events: &[ThreadEvent]| {
             events.iter().find_map(|event| match event {
                 ThreadEvent::Omp {

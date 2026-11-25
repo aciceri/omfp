@@ -88,7 +88,7 @@ pub struct Flows {
     pending: Vec<(Callback, Instant)>,
 }
 
-/// The first line of `/mcp reauth`'s outputs that end its sign-in (omp 19.1.0, `handleReauthCommand`).
+/// The first line of `/mcp reauth`'s outputs that end its sign-in (omp 19.2.0, `handleReauthCommand`).
 const REAUTH_ENDS: [&str; 3] = [
     "✓ Reauthorized \"",
     "Reauthorization cancelled for \"",

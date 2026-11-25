@@ -6,7 +6,7 @@ import { debugView } from "../../src/vm/debug.ts";
 
 type Obj = Record<string, unknown>;
 
-/** omp 19.1's `DapSessionSummary` (the `snapshot` of every debug result), trimmed to what the view reads. */
+/** omp 19.2's `DapSessionSummary` (the `snapshot` of every debug result), trimmed to what the view reads. */
 function snapshot(fields: Obj = {}): Obj {
   return { id: "s1", adapter: "debugpy", cwd: "/w", program: "/w/job.py", status: "running", ...fields };
 }

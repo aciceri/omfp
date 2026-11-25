@@ -12,7 +12,7 @@ use fake_llm::{Reply, Step, ToolCall};
 use omp_rpc::PromptStatus;
 use serde_json::{Value, json};
 
-/// omp 19.1.0's MCP `clientInfo.name`.
+/// omp 19.2.0's MCP `clientInfo.name`.
 const OMP_CLIENT: &str = "omp-coding-agent";
 
 /// The text content of the tool result answering `call_id` in a chat-completions request.
@@ -39,7 +39,7 @@ fn printed_json(result: &str) -> Value {
         .unwrap_or_else(|| panic!("no JSON value at the start of: {result}"))
 }
 
-/// omp 19.1 mounts MCP tools as bash tool commands: the model runs one with its JSON arguments (`-j`) in a `bash` call.
+/// omp 19.2 mounts MCP tools as bash tool commands: the model runs one with its JSON arguments (`-j`) in a `bash` call.
 fn command_call(id: &str, tool: &str, arguments: &Value) -> ToolCall {
     let json = arguments.to_string();
     assert!(!json.contains('\''), "single-quoted for the shell: {json}");

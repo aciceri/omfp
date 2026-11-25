@@ -155,7 +155,7 @@ describe("form reply check (omp's parseFormDialogResponse)", () => {
   });
 
   // spec: UI-074
-  test("refuses unknown names, disabled options, repeated values, wrong shapes and broken rules", () => {
+  test("refuses unknown names, disabled options, repeated values and wrong shapes; a broken rule passes", () => {
     const refused = (data: Record<string, string | number | string[]>) => {
       const check = checkFormReply(form, data);
       return check.ok ? undefined : [check.name, check.reason];
@@ -166,6 +166,7 @@ describe("form reply check (omp's parseFormDialogResponse)", () => {
     expect(refused({ c: ["teal", "lime"] })).toEqual(["c", "\u201clime\u201d is not an answer this question takes"]);
     expect(refused({ c: "red" })).toEqual(["c", "Takes a list of answers"]);
     expect(refused({ db: ["pg"] })).toEqual(["db", "Takes one answer"]);
-    expect(refused({ port: 0 })).toEqual(["port", "Must be at least 1"]);
+    // omp 19.2 only flags a rule in its dialogs: an answer below `min` is sent as it is.
+    expect(checkFormReply(form, { port: 0 })).toEqual({ ok: true, data: { token: "t1", c: [], port: 0 } });
   });
 });

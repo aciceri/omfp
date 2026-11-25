@@ -73,7 +73,7 @@ rustPlatform.buildRustPackage {
   cargoLock = {
     lockFile = ../Cargo.lock;
     # The omp-rpc git dependency (the oh-my-pi tag of ENV-010); changes with every omp upgrade (ENV-020).
-    outputHashes."omp-rpc-0.1.0" = "sha256-aBhxgL3d4R3a7Prfu/iZWyUgfCqId4XBiI2Aye1JxR0=";
+    outputHashes."omp-rpc-0.1.0" = "sha256-m5KNiozZE+F5QmmqLW4ELqdOStRc3nXAi7nqQiRg2so=";
   };
 
   cargoBuildFlags = [

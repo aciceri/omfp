@@ -7,6 +7,21 @@ The version's section is also the source of the GitHub release notes.
 
 ## Unreleased
 
+### Changed
+
+- omfp now runs omp 19.2.0 (was 19.1.0).
+- An agent's question form no longer blocks Submit on a broken rule (`required`, `pattern`, a number range, a length,
+  an email or URL shape), as in omp 19.2: an answer breaking one is flagged under its field as you type and sent
+  anyway, and an unanswered required question is sent unanswered, so you can reply to the question instead of
+  satisfying it. Submit still holds back an answer omp would refuse, such as an Other answer naming a disabled option.
+- Abort while messages are queued keeps a running command going as a background job (omp 19.2); its card shows the
+  job and Stop ends it. Without queued messages Abort still ends it with the turn.
+
+### Fixed
+
+- Live voice speaks the agent's answer as soon as the agent ends its turn, also while subagents or background jobs are
+  still running; before, the voice stayed on "working" until the last of them finished (#276, fixed in omp 19.2.0).
+
 ## 0.4.5 — 2026-11-25
 
 ### Changed

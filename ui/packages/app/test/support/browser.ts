@@ -1,5 +1,5 @@
 /**
- * `eval` calls driving omp's browser, as omp 19.1.0 sends them to an RPC host (UI-870..UI-872). The recorded fixtures
+ * `eval` calls driving omp's browser, as omp 19.2.0 sends them to an RPC host (UI-870..UI-872). The recorded fixtures
  * cannot hold one: the contract tests run omp behind `DenyProxy`, where its Chromium can be neither downloaded nor
  * reached. The shapes follow omp's sources: each cell's `statusEvents` hold `{ op: "browser", detail }` from
  * `describeBrowserCall` (`tools/browser.ts`) and `{ op, error }` for a failed call (`eval/js/tool-bridge.ts`); a

@@ -18,7 +18,7 @@ fake-llm = { path = "crates/fake-llm" }
 omfp-testkit = { path = "crates/omfp-testkit" }
 
 # omp RPC client: the tag MUST match the oh-my-pi flake input and omfp_core::OMP_VERSION (ENV-010).
-omp-rpc = { git = "https://github.com/can1357/oh-my-pi", tag = "v19.1.0" }
+omp-rpc = { git = "https://github.com/can1357/oh-my-pi", tag = "v19.2.0" }
 
 # E2E browser driver
 thirtyfour = "0.38"

@@ -86,15 +86,15 @@ omp is pinned in four places that must agree (checked by `cargo xtask check-vers
 tag, the `omp-rpc` git tag in `Cargo.toml`, `omfp_core::OMP_VERSION` and the release assets' tag in
 `contrib/release/omp.sha256`. To upgrade, follow the playbook in `docs/specs/01-dev-environment.md` (ENV-020).
 
-## omp facts (omp 19.1.0)
+## omp facts (omp 19.2.0)
 
 What you need before touching the code that talks to omp; details sit in the doc comment of the module handling each.
 
 - Launch with `omp --mode rpc-ui --session-dir <dir> --continue --add-dir …`: `--continue` resumes the newest session
-  of that directory whatever the cwd; `--add-dir` roots (and their `AGENTS.md`) are lost if the session is switched
-  later with `open_session` (S-07). omp reads project config from its cwd (the workspace folder), loads a repo's
-  `AGENTS.md` only for `--add-dir` roots, never resolves symlinked roots, and keeps roots saved in a session across a
-  restart without their flag: detach with `/remove-dir` (S-10).
+  of that directory that no other running omp has open, whatever the cwd; `--add-dir` roots (and their `AGENTS.md`)
+  are lost if the session is switched later with `open_session` (S-07). omp reads project config from its cwd (the
+  workspace folder), loads a repo's `AGENTS.md` only for `--add-dir` roots, never resolves symlinked roots, and keeps
+  roots saved in a session across a restart without their flag: detach with `/remove-dir` (S-10).
 - `/add-dir` and `/remove-dir` work over RPC as `prompt` (local command, no model turn) but are refused while the agent
   streams: the daemon syncs a busy thread's roots once its session settles.
 - `--append-system-prompt` disables every `APPEND_SYSTEM.md` (user and project); the daemon concatenates them.
@@ -102,9 +102,11 @@ What you need before touching the code that talks to omp; details sit in the doc
   text; refusals of announced commands come as `command_output`.
 - Run lifecycle: `agent_end` with `isTerminal: false` is a pause; every run ends with exactly one terminal
   `agent_end`; `session_settled` follows it. The reducer reads busy/settled from `agent_start`/`session_settled` only,
-  never `agent_end`.
+  never `agent_end`. `abort_and_restore_queue` with a non-empty queue detaches the running `bash`/`eval`, which goes on
+  as a background job instead of being killed with the turn.
 - The `ask` tool sends its whole HTML `<form>` as one `form` UI request; the host answers `{ data }` or cancels, and omp
-  fails the whole call on an invalid reply with no second round, so the window validates first (UI-074).
+  fails the whole call on a reply of the wrong shape with no second round, so the window runs omp's check first. A
+  broken rule (`required`, `pattern`, a range) is no refusal: omp's dialogs only flag it (UI-074).
 - `--approval-mode` takes `always-ask`, `always-ask-cached`, `write` or `yolo` only. On a bad flag value, no usable
   model (`No default model selected`) or an unrestorable saved model (`SessionModelRestoreError`), omp exits at startup
   with the reason on stderr, which omp-rpc reports as `server closed`: the daemon validates first and returns omp's

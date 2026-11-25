@@ -1,5 +1,5 @@
 //! The two remote MCP transports the daemon speaks (DMN-351): Streamable HTTP (`http`, protocol 2025-11-25, the
-//! session revision omp 19.1.0 falls back to when a server lacks 2026-07-28) with its `Mcp-Session-Id` session, and
+//! session revision omp 19.2.0 falls back to when a server lacks 2026-07-28) with its `Mcp-Session-Id` session, and
 //! the legacy HTTP+SSE transport (`sse`), one
 //! event stream per operation. Requests the server sends the client (`ping`, `roots/list`, …) are answered so it never
 //! waits on them: `ping` with `{}`, anything else with "method not found".

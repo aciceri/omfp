@@ -1,6 +1,6 @@
 /**
  * The `omfp:browser` widget (UI-870..UI-873): the browser tabs the selected thread's agent drove, read from its `eval`
- * calls. omp 19.1.0 runs its browser as an eval prelude (`browser.open({ url })`, `tab.click(…)`), so an RPC host
+ * calls. omp 19.2.0 runs its browser as an eval prelude (`browser.open({ url })`, `tab.click(…)`), so an RPC host
  * sees nothing but the eval tool's results: each cell's status events, where a successful browser call is
  * `{ op: "browser", detail }` with omp's one-line description of it (`describeBrowserCall` of its
  * `tools/browser.ts`: `open main https://…`, `main.click("#go")`, `main.goto("https://…")`, `close main`,

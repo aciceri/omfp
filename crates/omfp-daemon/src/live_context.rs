@@ -7,7 +7,7 @@ use omp_rpc::{AgentMessage, AssistantContent, AssistantMessage, MessageContent, 
 
 use crate::voice_log::Spoken;
 
-/// omp's bundled live prompt, copied verbatim from omp 19.1.0
+/// omp's bundled live prompt, copied verbatim from omp 19.2.0
 /// `packages/coding-agent/src/live/prompts/live-instructions.md`; re-synced on every omp upgrade (ENV-020). omp
 /// renders the instructions it gets with the same Handlebars variables (`{{firstName}}`, `{{username}}`).
 const BUNDLED_PROMPT: &str = include_str!("live_instructions.txt");
@@ -24,7 +24,7 @@ const SUMMARY_CAP: usize = 4_000;
 /// How many distinct tool uses an assistant turn names.
 const TOOL_NOTES: usize = 8;
 
-/// omp's `customType` of the requests the voice delegated (`LIVE_DELEGATION_MESSAGE_TYPE`, 19.1.0).
+/// omp's `customType` of the requests the voice delegated (`LIVE_DELEGATION_MESSAGE_TYPE`, 19.2.0).
 const LIVE_DELEGATION: &str = "live-delegation";
 
 /// Between two turns.

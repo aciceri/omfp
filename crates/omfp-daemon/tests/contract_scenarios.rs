@@ -225,7 +225,7 @@ async fn approval_requested_and_granted() {
 // spec: TST-012, DMN-050, DMN-055
 #[tokio::test(flavor = "multi_thread")]
 async fn ask_answered() {
-    // omp 19.1's `ask` sends its whole HTML form as one `form` request: context, a radio group, a checkbox group
+    // omp 19.2's `ask` sends its whole HTML form as one `form` request: context, a radio group, a checkbox group
     // with a free "Other" answer, a required text field and a number.
     let form = r#"<form>
   <p>The service stores <strong>orders</strong> and needs a database.</p>
@@ -364,6 +364,76 @@ async fn follow_up_queued_then_abort_restores_it() {
     assert_eq!(texts, ["later please"]);
     assert_eq!(restored.steering, Vec::new());
     recorder.record(&harness, "follow_up_then_abort");
+}
+
+// spec: PRT-100, UI-270
+#[tokio::test(flavor = "multi_thread")]
+async fn abort_with_a_queued_follow_up_moves_the_running_command_to_the_background() {
+    // omp 19.2: `abort_and_restore_queue` with a non-empty queue detaches the running tools, so a `bash` call goes on
+    // as a background job (its card shows the job, Stop ends it) instead of being killed with the turn.
+    let harness = Harness::new(vec![
+        Step::reply(Reply::tool_calls(vec![ToolCall::new(
+            "call_bash_1",
+            "bash",
+            json!({ "command": "while [ ! -e release ]; do sleep 0.05; done; echo detached-77" }),
+        )])),
+        Step::reply(Reply::text("The job printed detached-77.")),
+    ])
+    .await;
+    let mut spec = harness.spec(&[]);
+    spec.approval_mode = Some("yolo".into());
+    let (process, recorder) = tokio::task::spawn_blocking(move || {
+        let (mut process, startup) = start(&spec);
+        let recorder = Recorder::attach(&mut process, &startup);
+        process.client().call(&prompt("run it")).unwrap();
+        recorder.wait_until("the bash call's start", |events| {
+            Recorder::count(events, "tool_execution_start") >= 1
+        });
+        process
+            .client()
+            .call(&FollowUpCommand {
+                message: "later please".into(),
+                images: None,
+            })
+            .unwrap();
+        recorder.wait_until("a queue_update with the follow-up", |events| {
+            Recorder::count(events, "queue_update") >= 1
+        });
+        let restored = process
+            .client()
+            .call(&AbortAndRestoreQueueCommand {})
+            .unwrap();
+        assert_eq!(restored.follow_up.len(), 1);
+        recorder.wait_until("the detached job's running frame", |events| {
+            job_update(events, "running")
+        });
+        (process, recorder)
+    })
+    .await
+    .unwrap_or_else(|_| panic!("stderr:\n{}", harness.stderr()));
+
+    std::fs::write(harness.workspace().join("release"), "").unwrap();
+    let recorder = tokio::task::spawn_blocking(move || {
+        recorder.wait_until("the job's completed frame", |events| {
+            job_update(events, "completed")
+        });
+        drop(process);
+        recorder
+    })
+    .await
+    .unwrap_or_else(|_| panic!("stderr:\n{}", harness.stderr()));
+    let output = recorder.events().iter().rev().find_map(|event| {
+        let value = serde_json::to_value(event).ok()?;
+        let job = &value["frame"]["partialResult"]["details"]["async"];
+        (job["state"] == "completed").then(|| value["frame"]["partialResult"].to_string())
+    });
+    assert!(
+        output
+            .as_deref()
+            .is_some_and(|text| text.contains("detached-77")),
+        "{output:?}"
+    );
+    harness.assert_no_stray_network();
 }
 
 // spec: TST-012, DMN-032

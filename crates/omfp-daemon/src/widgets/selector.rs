@@ -1,4 +1,4 @@
-//! Line selectors on `omfp://` reads (DMN-378..380). omp 19.1.0 registers a host scheme with `selectors: "none"`, so
+//! Line selectors on `omfp://` reads (DMN-378..380). omp 19.2.0 registers a host scheme with `selectors: "none"`, so
 //! its read tool hands `omfp://docs/widgets:524` to the host as is and numbers whatever the host answers from line 1,
 //! cutting it at 3000 lines / 50 KB with a `Use :N to continue` hint relative to that answer. The daemon therefore peels
 //! omp's selector grammar itself, answers the selected lines and pages long answers below omp's limits, with its own
@@ -79,7 +79,7 @@ fn number(text: &str, selector: &str) -> Result<usize, String> {
     Ok(value)
 }
 
-/// One `N` (that line alone, as omp 19.1.0 reads it), `N-`, `N-M`, `N..M` or `N+K` chunk.
+/// One `N` (that line alone, as omp 19.2.0 reads it), `N-`, `N-M`, `N..M` or `N+K` chunk.
 fn chunk(text: &str, selector: &str) -> Result<Range, String> {
     let (start, rest) = match text.find(['-', '+', '.']) {
         Some(at) => (&text[..at], Some(&text[at..])),
@@ -111,7 +111,7 @@ fn chunk(text: &str, selector: &str) -> Result<Range, String> {
     Ok(Range { start, end })
 }
 
-/// Parses omp's read selector grammar (`tools/read-selector.ts` of omp 19.1.0) minus what needs a file (`:img`,
+/// Parses omp's read selector grammar (`tools/read-selector.ts` of omp 19.2.0) minus what needs a file (`:img`,
 /// `:conflicts`).
 ///
 /// # Errors

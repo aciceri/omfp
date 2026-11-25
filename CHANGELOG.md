@@ -16,6 +16,8 @@ The version's section is also the source of the GitHub release notes.
   satisfying it. Submit still holds back an answer omp would refuse, such as an Other answer naming a disabled option.
 - Abort while messages are queued keeps a running command going as a background job (omp 19.2); its card shows the
   job and Stop ends it. Without queued messages Abort still ends it with the turn.
+- Middle-click a thread in the left list now archives it, as its `×` does, instead of deleting it; on an archived
+  thread it still deletes.
 
 ### Fixed
 

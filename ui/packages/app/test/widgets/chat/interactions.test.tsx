@@ -225,7 +225,7 @@ describe("interactions", () => {
   </form>`;
 
   // spec: UI-074, UI-070, UI-073
-  test("a form renders omp's whole HTML form, blocks invalid answers and sends the submitted data", async () => {
+  test("a form renders omp's whole HTML form, flags broken rules, holds back what omp refuses and sends", async () => {
     const { client } = renderThread(<InteractionsWidget />, [
       ...base(),
       request({ method: "form", id: "form-1", html: FORM, timeout: 30000 }),
@@ -254,20 +254,10 @@ describe("interactions", () => {
     const checkOptions = within(checks).getAllByTestId("form-option");
     expect(checkOptions.map((option) => option.dataset.disabled)).toEqual([undefined, "true"]);
 
-    // Submit is blocked until every answer passes the form's rules.
-    const submit = within(form).getByTestId("interaction-submit");
-    await userEvent.click(submit);
-    expect(client.callsTo("interaction.respond").length).toBe(0);
-    expect(
-      within(form)
-        .getAllByTestId("form-field-error")
-        .map((error) => error.textContent),
-    ).toEqual(["Required", "Required"]);
-    expect(within(form).getByTestId("form-error").textContent).toBe("Fix the answers marked above");
-
+    // An unanswered required question is only marked; a broken rule is flagged as the user types.
+    expect(within(form).queryByTestId("form-field-error")).toBeNull();
     await userEvent.click(regionOptions[0] as HTMLElement);
     await userEvent.click(checkOptions[0] as HTMLElement);
-    await userEvent.type(within(checks).getByTestId("form-other"), "docs");
     const replicas = within(form).getAllByTestId("form-input")[0] as HTMLElement;
     await userEvent.type(replicas, "0");
     expect(
@@ -275,15 +265,31 @@ describe("interactions", () => {
         .getAllByTestId("form-field-error")
         .map((error) => error.textContent),
     ).toEqual(["Must be at least 1"]);
-    await userEvent.clear(replicas);
-    await userEvent.type(replicas, "3");
-    expect(within(form).queryByTestId("form-field-error")).toBeNull();
+    expect(within(form).queryByTestId("form-error")).toBeNull();
+
+    // An Other answer naming the disabled option is one omp would refuse: Submit holds it back and says why.
+    await userEvent.type(within(checks).getByTestId("form-other"), "test");
+    const submit = within(form).getByTestId("interaction-submit");
+    await userEvent.click(submit);
+    expect(client.callsTo("interaction.respond").length).toBe(0);
+    expect(
+      within(form)
+        .getAllByTestId("form-field-error")
+        .map((error) => error.textContent),
+    ).toEqual(["\u201ctest\u201d is not available", "Must be at least 1"]);
+    expect(within(form).getByTestId("form-error").textContent).toBe("Fix the answers marked above");
+    expect(checks.contains(document.activeElement)).toBe(true);
+
+    // The broken rule goes with the answer, as omp 19.2 takes it.
+    await userEvent.clear(within(checks).getByTestId("form-other"));
+    await userEvent.type(within(checks).getByTestId("form-other"), "docs");
+    expect(within(form).queryByTestId("form-error")).toBeNull();
     await userEvent.click(submit);
     expect(client.callsTo("interaction.respond").map((call) => call.params)).toEqual([
       {
         threadId: THREAD,
         interactionId: "form-1",
-        response: { data: { plan: "p-7", region: "eu", checks: ["lint", "docs"], replicas: 3 } },
+        response: { data: { plan: "p-7", region: "eu", checks: ["lint", "docs"], replicas: 0 } },
       },
     ]);
     expect(card.getAttribute("aria-busy")).toBe("true");

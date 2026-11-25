@@ -105,7 +105,8 @@ What you need before touching the code that talks to omp; details sit in the doc
   never `agent_end`. `abort_and_restore_queue` with a non-empty queue detaches the running `bash`/`eval`, which goes on
   as a background job instead of being killed with the turn.
 - The `ask` tool sends its whole HTML `<form>` as one `form` UI request; the host answers `{ data }` or cancels, and omp
-  fails the whole call on an invalid reply with no second round, so the window validates first (UI-074).
+  fails the whole call on a reply of the wrong shape with no second round, so the window runs omp's check first. A
+  broken rule (`required`, `pattern`, a range) is no refusal: omp's dialogs only flag it (UI-074).
 - `--approval-mode` takes `always-ask`, `always-ask-cached`, `write` or `yolo` only. On a bad flag value, no usable
   model (`No default model selected`) or an unrestorable saved model (`SessionModelRestoreError`), omp exits at startup
   with the reason on stderr, which omp-rpc reports as `server closed`: the daemon validates first and returns omp's

@@ -1,14 +1,15 @@
 /**
- * Ported from oh-my-pi v19.1.0 `packages/coding-agent/src/modes/rpc/rpc-mode.ts` (`parseFormDialogResponse` and its
+ * Ported from oh-my-pi v19.2.0 `packages/coding-agent/src/modes/rpc/rpc-mode.ts` (`parseFormDialogResponse` and its
  * helpers). MIT License, Copyright (c) 2025 Mario Zechner.
  *
  * omp checks a `form` answer's `data` against the form it parsed and fails the whole `ask` call on any mismatch, with
  * no round for correcting a field. The card runs the same check before sending (UI-074), so what it sends is accepted.
+ * Since omp 19.2 the check covers the answer's shape only: a broken rule (`required`, `pattern`, a range) is sent.
  */
 
 import type { FormAnswerData } from "@omfp/core";
 import { strings } from "../../strings/index.ts";
-import { choiceValue, fieldError, type HtmlFormValue, isArrayChoice, textValue } from "./data.ts";
+import { choiceValue, type HtmlFormValue, isArrayChoice, textValue } from "./data.ts";
 import type { ChoiceField, FormField, HtmlForm, TextField } from "./parse.ts";
 
 /** What omp would accept, or the first field it would refuse and why. */
@@ -115,8 +116,8 @@ export function checkFormReply(form: HtmlForm, submitted: FormAnswerData): FormR
     }
   }
   // One entry answers every field of its name, as in HTML form data: each field that can carry the entry takes it, a
-  // same-name field of another shape counts as unanswered. At least one field must carry the entry, and every field
-  // must pass its own rules.
+  // same-name field of another shape counts as unanswered. At least one field must carry the entry. The fields' own
+  // rules are not checked: omp's form dialogs only flag them.
   const entries: [string, HtmlFormValue][] = [...form.hidden];
   for (const [name, fields] of byName) {
     const entry = Object.hasOwn(submitted, name) ? submitted[name] : undefined;
@@ -146,11 +147,7 @@ export function checkFormReply(form: HtmlForm, submitted: FormAnswerData): FormR
     if (mismatch !== undefined && !values.some(({ carried }) => carried)) {
       return { ok: false, name, reason: mismatch.message };
     }
-    for (const { field, value, carried } of values) {
-      const problem = fieldError(field, value);
-      if (problem !== undefined) {
-        return { ok: false, name, reason: problem };
-      }
+    for (const { value, carried } of values) {
       if (carried && value !== undefined) {
         entries.push([name, value]);
       }

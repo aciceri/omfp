@@ -450,9 +450,10 @@ function Spans({ spans }: { spans: readonly FormSpan[] }) {
 }
 
 /**
- * omp's HTML `form` (UI-074): its sections, context and fields drawn with the kit's controls. Submit sends `{ data }`
- * only once every answer passes the form's rules (omp fails the whole call on an invalid reply); before that it marks
- * every invalid field and moves the focus to the first one.
+ * omp's HTML `form` (UI-074): its sections, context and fields drawn with the kit's controls. An answered field that
+ * breaks one of the form's rules is flagged as the user types, and Submit sends `{ data }` anyway, as omp 19.2 does;
+ * only an answer omp's own check would refuse (it fails the whole call on one) holds Submit back: the refused field
+ * then says why and takes the focus.
  */
 function FormBody({ formKey, request, disabled, onRespond }: BodyProps<FormRequest> & { formKey: string }) {
   const form = formOf(request);
@@ -461,7 +462,8 @@ function FormBody({ formKey, request, disabled, onRespond }: BodyProps<FormReque
   const edit = (change: (draft: FormDraft) => FormDraft) =>
     setDrafts((previous) => ({ ...previous, [formKey]: change(previous[formKey] ?? emptyFormDraft(form)) }));
   const checked = checkForm(form, draft);
-  const errors = draft.attempted && !checked.ok ? checked.errors : [];
+  const refused = draft.attempted && !checked.ok ? checked.refused : undefined;
+  const errors = checked.flags.map((flag, index) => (index === refused?.index ? refused.reason : flag));
   const questions = formFieldQuestions(form);
   const formRef = useRef<HTMLFormElement>(null);
   const submit = () => {
@@ -470,7 +472,7 @@ function FormBody({ formKey, request, disabled, onRespond }: BodyProps<FormReque
       return;
     }
     edit((previous) => ({ ...previous, attempted: true }));
-    const first = checked.errors.findIndex((error) => error !== undefined);
+    const first = checked.refused.index;
     formRef.current
       ?.querySelector<HTMLElement>(`[data-field="${first}"] :is(input, textarea, button):not(:disabled)`)
       ?.focus();
@@ -516,7 +518,7 @@ function FormBody({ formKey, request, disabled, onRespond }: BodyProps<FormReque
           })}
         </fieldset>
       ))}
-      {errors.length > 0 && (
+      {refused !== undefined && (
         <p className="omfp-ask__error" data-testid="form-error" role="alert">
           {strings.chat.form.fixErrors}
         </p>

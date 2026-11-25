@@ -182,6 +182,7 @@ describe("html form", () => {
     expect(checkForm(form, draft)).toEqual({
       ok: true,
       data: { token: "t1", db: "pg", colors: [], port: 8080, code: "" },
+      flags: [undefined, undefined, undefined, undefined, undefined],
     });
   });
 
@@ -235,25 +236,29 @@ describe("html form", () => {
   });
 
   // spec: UI-074
-  test("each invalid field gets its error; omp's own refusals land on their field", () => {
+  test("a broken rule flags its answered field and is sent anyway; omp's own refusals hold the answer back", () => {
+    // An unanswered required field is not flagged: omp 19.2 sends unanswered questions too.
     let draft = setFormText(emptyFormDraft(form), PORT, " ");
     draft = setFormText(draft, CODE, "abc");
     expect(checkForm(form, draft)).toEqual({
-      ok: false,
-      errors: [undefined, undefined, undefined, "Required", "Must match [A-Z]{3}"],
+      ok: true,
+      data: { token: "t1", db: "pg", colors: [], port: " ", code: "abc" },
+      flags: [undefined, undefined, undefined, undefined, "Must match [A-Z]{3}"],
     });
     draft = setFormText(draft, PORT, "70000");
     draft = setFormText(draft, CODE, "");
     expect(checkForm(form, draft)).toEqual({
-      ok: false,
-      errors: [undefined, undefined, undefined, "Must be at most 65535", undefined],
+      ok: true,
+      data: { token: "t1", db: "pg", colors: [], port: 70000, code: "" },
+      flags: [undefined, undefined, undefined, "Must be at most 65535", undefined],
     });
-    // An Other text naming a disabled option passes the field rules but omp would refuse it.
+    // An Other text naming a disabled option breaks no rule, but omp would refuse it.
     draft = setFormText(draft, PORT, "1");
     draft = setFormOther(form, draft, COLORS, "gray");
     expect(checkForm(form, draft)).toEqual({
       ok: false,
-      errors: [undefined, "\u201cgray\u201d is not available", undefined, undefined, undefined],
+      flags: [undefined, undefined, undefined, undefined, undefined],
+      refused: { index: COLORS, reason: "\u201cgray\u201d is not available" },
     });
   });
 

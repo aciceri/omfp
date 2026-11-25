@@ -1,5 +1,5 @@
 //! The instructions of a live voice session (DMN-105): omp gives its realtime model only the live prompt, so the daemon
-//! sends that prompt, a note telling the voice to ask the agent what it does not know (DMN-115), and the thread's
+//! sends its own prompt, which makes the voice a relay that forwards to the agent (DMN-115), and the thread's
 //! conversation.
 
 use omfp_core::ThreadState;
@@ -7,16 +7,17 @@ use omp_rpc::{AgentMessage, AssistantContent, AssistantMessage, MessageContent, 
 
 use crate::voice_log::Spoken;
 
-/// omp's bundled live prompt, copied verbatim from omp 19.2.0
-/// `packages/coding-agent/src/live/prompts/live-instructions.md`; re-synced on every omp upgrade (ENV-020). omp
-/// renders the instructions it gets with the same Handlebars variables (`{{firstName}}`, `{{username}}`).
-const BUNDLED_PROMPT: &str = include_str!("live_instructions.txt");
+/// omfp's live prompt (DMN-115), in place of omp's bundled `packages/coding-agent/src/live/prompts/live-instructions.md`,
+/// which makes the voice and the agent one assistant and lets the voice answer "ordinary conversation" itself. It keeps
+/// that prompt's terms for omp's delegation protocol (client delegation, commentary context, `"Agent Final Message":`,
+/// checked on every omp upgrade, ENV-020) and its Handlebars variables (`{{firstName}}`, `{{username}}`).
+const PROMPT: &str = include_str!("live_instructions.txt");
 
 /// About how many characters of conversation the section keeps.
 pub const CONVERSATION_CAP: usize = 16_000;
 
 /// How many characters one turn keeps, its label included: a longer turn keeps its start and its end around `…`.
-const TURN_CAP: usize = 2_000;
+pub(crate) const TURN_CAP: usize = 2_000;
 
 /// How many characters of a compaction summary the section keeps, from its start.
 const SUMMARY_CAP: usize = 4_000;
@@ -32,31 +33,20 @@ const TURN_SEPARATOR: &str = "\n\n";
 
 /// How the model reads the section.
 const INSTRUCTION: &str = "The conversation of this thread so far, oldest first (earlier turns may be left out, long \
-                           turns are shortened around …). `User (spoken):` turns are requests you delegated by voice; \
-                           `Voice conversation:` turns are what you and the user said in an earlier live session; \
-                           `[used: …]` names the tools the agent ran. Use it to answer questions about the thread; \
-                           delegate when you need more than it holds.\n\n";
+                           turns are shortened around …). `User (spoken):` turns are requests you forwarded to the \
+                           agent; `Voice conversation:` turns are what you and the user said in an earlier live \
+                           session; `[used: …]` names the tools the agent ran. It is background so you follow what \
+                           the user refers to; questions and requests about it still go to the agent.\n\n";
 
 /// What `{{` becomes: omp's Handlebars (`packages/utils/src/prompt.ts`) has no escape syntax, but its `default`
 /// helper returns the string literal, so this renders as `{{`.
 const ESCAPED_BRACES: &str = r#"{{default "" "{{"}}"#;
 
-/// omfp's note after omp's prompt (DMN-115): that prompt leaves the voice to answer "ordinary conversation" itself, so
-/// it says it does not know what the agent could look up. Deliberately generic: the agent's reach varies with each
-/// workspace.
-const ASK_THE_AGENT: &str = "<ask-the-agent>\n\
-                             The client backend can look things up and act well beyond code. Something you do not \
-                             know or cannot be sure of (about the user, their notes and data, what happened before, \
-                             anything outside this conversation): MUST delegate it at once, the whole question in the \
-                             request. NEVER answer that you do not know, say no, or ask the user before the backend \
-                             tried.\n\
-                             </ask-the-agent>\n";
-
-/// The `instructions` of `live_connect`: omp's bundled prompt, omfp's note (DMN-115), then the thread context when the
-/// thread has a conversation; `spoken` are the conversations of ended sessions not in the thread yet (DMN-113).
+/// The `instructions` of `live_connect`: omfp's prompt (DMN-115), then the thread context when the thread has a
+/// conversation; `spoken` are the conversations of ended sessions not in the thread yet (DMN-113).
 #[must_use]
 pub fn live_instructions(title: &str, state: &ThreadState, spoken: &[Spoken]) -> String {
-    let prompt = format!("{}\n\n{ASK_THE_AGENT}", BUNDLED_PROMPT.trim_end());
+    let prompt = format!("{}\n", PROMPT.trim_end());
     match thread_context(title, state, spoken, CONVERSATION_CAP) {
         Some(context) => format!("{prompt}{context}"),
         None => prompt,
@@ -355,7 +345,7 @@ pub(crate) fn message_text(message: &AgentMessage) -> Option<(Role, String)> {
 }
 
 /// The most recent turns within `cap` characters (separators included), oldest first, cut at turn boundaries.
-fn recent(turns: &[String], cap: usize) -> Vec<String> {
+pub(crate) fn recent(turns: &[String], cap: usize) -> Vec<String> {
     let mut kept = Vec::new();
     let mut used = 0;
     for turn in turns.iter().rev() {
@@ -376,7 +366,7 @@ fn recent(turns: &[String], cap: usize) -> Vec<String> {
 }
 
 /// `label` and `body` within `cap` characters: a longer body keeps its start and its end around `…`.
-fn clip(label: &str, body: &str, cap: usize) -> String {
+pub(crate) fn clip(label: &str, body: &str, cap: usize) -> String {
     let length = body.chars().count();
     let room = cap.saturating_sub(label.chars().count());
     if length <= room {
@@ -447,10 +437,10 @@ mod tests {
             section,
             "\n<thread-context>\nThread title: Login bug\n\nThe conversation of this thread so far, oldest first \
              (earlier turns may be left out, long turns are shortened around …). `User (spoken):` turns are requests \
-             you delegated by voice; `Voice conversation:` turns are what you and the user said in an earlier live \
-             session; `[used: …]` names the tools the agent ran. Use it to answer questions about the \
-             thread; delegate when you need more than it holds.\n\nUser: fix the login\n\nAssistant: Done, the token \
-             was stale.\n</thread-context>\n"
+             you forwarded to the agent; `Voice conversation:` turns are what you and the user said in an earlier \
+             live session; `[used: …]` names the tools the agent ran. It is background so you follow what the user \
+             refers to; questions and requests about it still go to the agent.\n\nUser: fix the login\n\nAssistant: \
+             Done, the token was stale.\n</thread-context>\n"
         );
     }
 
@@ -699,7 +689,7 @@ mod tests {
         assert_eq!(section.replace(ESCAPED_BRACES, "").matches("{{").count(), 0);
     }
 
-    // spec: DMN-105, DMN-115
+    // spec: DMN-105
     #[test]
     fn without_a_conversation_there_is_no_section() {
         assert_eq!(
@@ -715,26 +705,52 @@ mod tests {
         );
         assert_eq!(
             live_instructions("Title", &thinking_only, &[]),
-            format!("{}\n\n{ASK_THE_AGENT}", BUNDLED_PROMPT.trim_end())
+            format!("{}\n", PROMPT.trim_end())
         );
     }
 
     // spec: DMN-105, DMN-115
     #[test]
-    fn the_instructions_are_the_bundled_prompt_the_note_then_the_section() {
+    fn the_instructions_are_omfps_prompt_then_the_section() {
         let state = state(&[user("hi")]);
 
         let instructions = live_instructions("", &state, &[]);
 
-        assert!(instructions.starts_with("You: omp Live, realtime voice surface"));
-        assert!(instructions.contains("{{firstName}} (OS account: {{username}})"));
         assert_eq!(
             instructions,
             format!(
-                "{}\n\n{ASK_THE_AGENT}{}",
-                BUNDLED_PROMPT.trim_end(),
+                "{}\n{}",
+                PROMPT.trim_end(),
                 thread_context("", &state, &[], CONVERSATION_CAP).unwrap()
             )
+        );
+    }
+
+    // spec: DMN-115
+    #[test]
+    fn the_prompt_makes_the_voice_a_relay_that_forwards() {
+        assert!(PROMPT.starts_with(
+            "You: omp Live, the realtime voice between {{firstName}} (OS account: {{username}}) and their \
+             coding agent. You are a relay, not the assistant doing the work"
+        ));
+        assert!(PROMPT.contains("- In doubt, forward."));
+        assert!(PROMPT.contains("NEVER answer that you do not know, say no, or ask the user back"));
+        // omp's delegation protocol, in its own terms.
+        for term in [
+            "client delegation",
+            "commentary context",
+            "`\"Agent Final Message\":`",
+        ] {
+            assert!(PROMPT.contains(term), "{term}");
+        }
+        // omp renders the prompt: its variables are the only Handlebars in it.
+        assert_eq!(
+            PROMPT
+                .replace("{{firstName}}", "")
+                .replace("{{username}}", "")
+                .matches("{{")
+                .count(),
+            0
         );
     }
 }

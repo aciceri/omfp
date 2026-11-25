@@ -12,6 +12,7 @@ use std::path::Path;
 
 use client::{Client, Follower};
 use common::{Harness, Recorder, TIMEOUT, frame_type, omp_daemon_with, start};
+use fake_llm::{Reply, Step};
 use omfp_core::{LiveOwner, ThreadEvent};
 use omfp_daemon::DaemonHandle;
 use omfp_testkit::{FAKE_MODEL, FAKE_PROVIDER};
@@ -292,6 +293,146 @@ async fn omfps_extension_keeps_a_voice_conversation_without_a_turn() {
         0,
         "the model never ran"
     );
+    harness.assert_no_stray_network();
+}
+
+/// The text of the user-role messages of a model request, one per message.
+fn user_texts(request: &serde_json::Value) -> Vec<String> {
+    request["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|message| message["role"] == "user")
+        .map(|message| match &message["content"] {
+            serde_json::Value::String(text) => text.clone(),
+            serde_json::Value::Array(parts) => parts
+                .iter()
+                .filter_map(|part| part["text"].as_str())
+                .collect::<Vec<_>>()
+                .join("\n"),
+            other => other.to_string(),
+        })
+        .collect()
+}
+
+/// A project extension standing in for omp's live controller: `/voice-request <text>` sends the request the way omp
+/// sends one the voice delegated.
+const VOICE_REQUEST: &str = r#"export default function (pi: any): void {
+  pi.registerCommand("voice-request", {
+    description: "test: a request delegated by the live voice",
+    handler: async (args: string) => {
+      pi.sendMessage(
+        { customType: "live-delegation", content: args, display: true, attribution: "agent" },
+        { triggerTurn: true },
+      );
+    },
+  });
+}
+"#;
+
+/// Waits until the turn the last prompt started is over: a settled session after the last `agent_start`.
+fn wait_for_turn(recorder: &Recorder) {
+    recorder.wait_until("the turn", |events| {
+        let types: Vec<String> = events.iter().filter_map(frame_type).collect();
+        types
+            .iter()
+            .rposition(|kind| kind == "agent_start")
+            .is_some_and(|start| types[start..].iter().any(|kind| kind == "session_settled"))
+    });
+}
+
+// spec: DMN-116
+#[tokio::test(flavor = "multi_thread")]
+async fn omfps_extension_marks_a_voice_request_with_the_transcript_it_was_sent_with() {
+    let harness = Harness::new(vec![
+        Step::reply(Reply::text("Old.")),
+        Step::reply(Reply::text("Done.")),
+        Step::reply(Reply::text("You're welcome.")),
+    ])
+    .await;
+    let data = tempfile::tempdir().unwrap();
+    let data = omfp_daemon::paths::DataDir::new(data.path());
+    omfp_daemon::voice_log::write_extension(&data).unwrap();
+    let extensions = harness.workspace().join(".omp/extensions");
+    std::fs::create_dir_all(&extensions).unwrap();
+    std::fs::write(extensions.join("voice-request.ts"), VOICE_REQUEST).unwrap();
+    let transcript = harness.thread.path().join("live-transcript.txt");
+    // A delegation from before omfp's extension: the session has no transcript of it.
+    let before = harness.spec(&[]);
+    let mut spec = harness.spec(&[]);
+    spec.extension = Some(data.omp_extension());
+    spec.env.push((
+        omfp_daemon::voice_log::TRANSCRIPT_ENV.into(),
+        Some(transcript.clone().into_os_string()),
+    ));
+
+    tokio::task::spawn_blocking(move || {
+        let prompt = |message: &str| omp_rpc::PromptCommand {
+            message: message.into(),
+            images: None,
+            streaming_behavior: None,
+        };
+        let voice_request = |spec: &omfp_daemon::omp::LaunchSpec, request: &str| {
+            let (mut process, startup) = start(spec);
+            let recorder = Recorder::attach(&mut process, &startup);
+            recorder.wait_until("the test's command", |events| {
+                events.iter().any(|event| {
+                    matches!(event, ThreadEvent::Omp {
+                        frame: omp_rpc::RpcNotification::AvailableCommandsUpdate(update),
+                    } if update.commands.iter().any(|command| command.name == "voice-request"))
+                })
+            });
+            process
+                .client()
+                .prompt_and_wait(&prompt(&format!("/voice-request {request}")), TIMEOUT)
+                .unwrap();
+            wait_for_turn(&recorder);
+            (process, recorder)
+        };
+        drop(voice_request(&before, "old request"));
+
+        std::fs::write(
+            &transcript,
+            "User: do what you must\nVoice: I'll pass it on.",
+        )
+        .unwrap();
+        let (process, recorder) = voice_request(&spec, "run the tests");
+        // Said later: never part of the request already sent.
+        std::fs::write(&transcript, "User: something else").unwrap();
+        process
+            .client()
+            .prompt_and_wait(&prompt("thanks"), TIMEOUT)
+            .unwrap();
+        wait_for_turn(&recorder);
+    })
+    .await
+    .unwrap();
+
+    let requests = harness.fake.requests();
+    assert_eq!(requests.len(), 3);
+    let marked = "<voice-request>\nRelayed by the realtime voice model of a live voice session, not typed by the user";
+    let old_request = "the user's own words, which win when the request and the conversation disagree.\n\
+                       <request>\nold request\n</request>\n</voice-request>";
+    let new_request = "<voice-conversation>\nUser: do what you must\nVoice: I'll pass it on.\n\
+                       </voice-conversation>\n<request>\nrun the tests\n</request>\n</voice-request>";
+    for (index, request) in requests[1..].iter().enumerate() {
+        let texts = user_texts(request);
+        let [historical, voice, ..] = &texts[..] else {
+            panic!("request {index} lacks the voice requests: {request}");
+        };
+        assert!(
+            historical.starts_with(marked) && historical.ends_with(old_request),
+            "an earlier delegation gets no transcript, request {index}: {historical}"
+        );
+        assert!(
+            voice.starts_with(marked) && voice.ends_with(new_request),
+            "request {index}: {voice}"
+        );
+        assert!(
+            !texts.concat().contains("something else"),
+            "request {index}"
+        );
+    }
     harness.assert_no_stray_network();
 }
 

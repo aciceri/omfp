@@ -69,6 +69,12 @@ impl DataDir {
         self.thread(thread_id).join("commands.json")
     }
 
+    /// What was said so far in the thread's running live voice session, read by omfp's omp extension (DMN-116).
+    #[must_use]
+    pub fn thread_live_transcript(&self, thread_id: &str) -> PathBuf {
+        self.thread(thread_id).join("live-transcript.txt")
+    }
+
     /// The daemon's omp extension root, passed to every omp as `--extension` (DMN-107): `agents/` and the extension
     /// module `index.ts` (DMN-113).
     #[must_use]

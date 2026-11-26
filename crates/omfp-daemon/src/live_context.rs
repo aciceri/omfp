@@ -55,9 +55,9 @@ pub struct About {
     pub model: Option<String>,
 }
 
-/// The `instructions` of `live_connect`: omfp's prompt (DMN-115), what the voice is and where it runs (DMN-117), then
-/// the thread context when the thread has a conversation; `spoken` are the conversations of ended sessions not in the
-/// thread yet (DMN-113).
+/// The `instructions` of `live_connect`: omfp's prompt (DMN-115) and what the voice is and where it runs (DMN-117), as
+/// [`live_identity`], then the thread context when the thread has a conversation; `spoken` are the conversations of
+/// ended sessions not in the thread yet (DMN-113).
 #[must_use]
 pub fn live_instructions(
     title: &str,
@@ -65,11 +65,19 @@ pub fn live_instructions(
     state: &ThreadState,
     spoken: &[Spoken],
 ) -> String {
-    let prompt = format!("{}\n{}", PROMPT.trim_end(), about_section(about, state));
+    let prompt = live_identity(about, state);
     match thread_context(title, state, spoken, CONVERSATION_CAP) {
         Some(context) => format!("{prompt}{context}"),
         None => prompt,
     }
+}
+
+/// omfp's prompt (DMN-115) and the `<about>` section (DMN-117): what the window appends to its session (DMN-118). The
+/// thread's conversation stays out of it: appended, its `User:` turns read as new requests, and the voice answered
+/// and forwarded them before the user said a word (checked on real calls).
+#[must_use]
+pub fn live_identity(about: &About, state: &ThreadState) -> String {
+    format!("{}\n{}", PROMPT.trim_end(), about_section(about, state))
 }
 
 /// The OS account omp renders the prompt's `{{username}}` and `{{firstName}}` with (`currentUser` of omp's live
@@ -109,7 +117,9 @@ impl LiveUser {
     }
 }
 
-/// How many UTF-8 bytes one context append carries at most: omp's `CONTEXT_CHUNK_BYTES` for its own context appends.
+/// How many UTF-8 bytes one context append carries at most: the realtime endpoint refuses an append over 500 tokens,
+/// and a token is at least one byte, so 500 bytes always fit (omp's own appends use the same bound). The voice may
+/// answer each append aloud; the window keeps it silent until the user speaks (UI-181).
 const CONTEXT_CHUNK_BYTES: usize = 500;
 
 /// The first context append: without it the voice acknowledges the instructions aloud as they arrive.
@@ -119,13 +129,13 @@ const SETUP_START: &str = "Silent setup of this voice session: your instructions
 /// The last context append.
 const SETUP_END: &str = "End of the silent setup. Stay silent until the user speaks, then answer in the user's language.\n";
 
-/// The live instructions as the voice reads them (DMN-118), for the window's context appends: omp's two variables
-/// filled in for `user`, every escaped `{{` back to `{{`, in appends of at most 500 UTF-8 bytes, cut at line ends
-/// where a line fits and at character boundaries where it does not, between a first and a last append telling the
-/// voice to stay silent (checked on real calls: without them it acknowledges the instructions aloud).
+/// What the window appends to its session (DMN-118): `identity` ([`live_identity`]) with omp's two variables filled
+/// in for `user` and every escaped `{{` back to `{{`, in appends of at most 500 UTF-8 bytes, cut at line ends where
+/// a line fits and at character boundaries where it does not, between a first and a last append telling the voice to
+/// stay silent (checked on real calls: without them it acknowledges the instructions aloud).
 #[must_use]
-pub fn window_context(instructions: &str, user: &LiveUser) -> Vec<String> {
-    let text = instructions
+pub fn window_context(identity: &str, user: &LiveUser) -> Vec<String> {
+    let text = identity
         .replace("{{firstName}}", &user.first_name)
         .replace("{{username}}", &user.username)
         .replace(ESCAPED_BRACES, "{{");
@@ -949,20 +959,26 @@ mod tests {
 
     // spec: DMN-118
     #[test]
-    fn the_window_gets_the_instructions_rendered_as_omp_would() {
+    fn the_window_gets_the_prompt_and_about_rendered_as_omp_would_without_the_thread() {
         let account = LiveUser::new("mario.rossi");
         assert_eq!(account.first_name, "mario");
         assert_eq!(LiveUser::new("").first_name, "there");
         let state = state(&[user("render {{x}}")]);
-        let instructions = live_instructions("", &about(), &state, &[]);
+        let braces = About {
+            workspace: "{{ws}}".into(),
+            ..about()
+        };
+        let identity = live_identity(&braces, &state);
+        assert!(live_instructions("", &braces, &state, &[]).starts_with(&identity));
 
-        let chunks = window_context(&instructions, &account);
+        let chunks = window_context(&identity, &account);
         let text = chunks[1..chunks.len() - 1].concat();
 
         assert!(text.starts_with(
             "You: omfp's voice, the realtime voice between mario (OS account: mario.rossi) and their coding agent"
         ));
-        assert!(text.contains("User: render {{x}}"), "{text}");
+        assert!(text.contains("Workspace: {{ws}}"), "{text}");
+        assert!(!text.contains("render") && !text.contains("<thread-context>"));
         assert!(!text.contains("{{default"));
         assert!(!text.contains("{{firstName}}") && !text.contains("{{username}}"));
     }

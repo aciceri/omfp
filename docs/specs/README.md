@@ -33,7 +33,7 @@ interface themselves ([08](08-agent-control.md)).
 - A requirement whose behavior goes is deleted with its citations, not kept as a "removed" row, and its ID is never
   reused. Retired IDs: ARC-002, ARC-010, AGT-001..AGT-004, AGT-006, AGT-008, AGT-023, AGT-064, AGT-065, AGT-074,
   DMN-064, DMN-186, DMN-385, E2E-07, ENV-012, PRT-083, PRT-084, PRT-096, TRM-001..TRM-007, TRM-010..TRM-012,
-  TRM-020..TRM-022, UI-103, UI-104, UI-233, UI-268, UI-269, UI-493, UI-527, UI-528.
+  TRM-020..TRM-022, UI-103, UI-104, UI-213, UI-233, UI-268, UI-269, UI-493, UI-527, UI-528.
 - One observable behavior per row: ideally ≤300 characters, never over 600. A row states what a user, window, agent,
   widget or script can observe (UI, protocol shapes and errors, files, CLI flags, config keys, user-facing strings,
   limits) and may name public API. It leaves out source paths and internal identifiers (code doc comments hold them),

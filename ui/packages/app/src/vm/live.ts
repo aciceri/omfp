@@ -1,13 +1,11 @@
 /**
  * Live voice view model (UI-180..UI-186): what the live panel and the mic button show for one thread, from the
  * thread's reducer state (`live`, `live_error`, PRT-052), this window's own session ({@link LocalLive}) and this
- * window's connection number (PRT-051); and what the window appends to its session as the chat moves on (UI-213).
- * Pure.
+ * window's connection number (PRT-051). Pure.
  */
 
-import type { LiveLine, LivePhase, ThreadState, TranscriptEntry } from "@omfp/core";
+import type { LiveLine, LivePhase, ThreadState } from "@omfp/core";
 import type { LiveLineView, LiveStatus } from "@omfp/kit";
-import { contentText } from "./tree.ts";
 
 /**
  * How this window can hold a live session (UI-180, UI-188): `webrtc` — its own microphone and a WebRTC peer
@@ -159,8 +157,7 @@ export function livePanelView(
       return { kind: "error", message: local.message };
     }
     const lines = mine ? liveLines(live.transcript) : [];
-    // This window's own `live_connect` session hears of the chat as it moves on (UI-213).
-    const behind = mine && !(local.kind === "running" && local.mode === "peer") && liveBehind(state);
+    const behind = mine && liveBehind(state);
     if (local.kind === "starting") {
       return { kind: "own", status: "connecting", lines, muted: false, behind };
     }
@@ -199,72 +196,4 @@ export function draftMicButton(local: LocalLive, support: LiveSupport): MicButto
 /** A mic button with no session to end: it starts one, or says why it cannot (UI-180, UI-188). */
 function availableMic(support: LiveSupport): MicButton {
   return support === "webrtc" || support === "host" ? { kind: "start" } : { kind: "unavailable", reason: support };
-}
-
-/** How many UTF-8 bytes one context append carries at most: omp's own appends' size, as the daemon cuts (DMN-118). */
-const CONTEXT_CHUNK_BYTES = 500;
-
-/** omp's `customType` of a request the voice delegated: omp relays the turn it starts itself. */
-const LIVE_DELEGATION = "live-delegation";
-
-/** How the voice reads a chat update (UI-213). */
-const UPDATE_NOTE =
-  "Chat update, typed in the thread since your last context and not said to you: background only, never read it " +
-  "aloud; mention it only when the user asks or it changes what they ask.\n";
-
-/**
- * What the chat added to `transcript` from index `from` that the voice does not know (UI-213): the user's typed
- * prompts (`User:`) and the agent's text (`Agent:`), after a short note; the turns a voice request started are left
- * out, omp relays those itself. `undefined` when there is nothing to tell.
- */
-export function liveChatUpdate(transcript: readonly TranscriptEntry[], from: number): string | undefined {
-  const lines: string[] = [];
-  let voiceTurn = false;
-  for (const { message } of transcript.slice(from)) {
-    if (message.role === "custom" && message.customType === LIVE_DELEGATION) {
-      voiceTurn = true;
-    } else if (message.role === "user" && message.synthetic !== true) {
-      voiceTurn = false;
-      const text = contentText(message.content).trim();
-      if (text !== "") {
-        lines.push(`User: ${text}`);
-      }
-    } else if (message.role === "assistant" && !voiceTurn) {
-      const text = contentText(message.content).trim();
-      if (text !== "") {
-        lines.push(`Agent: ${text}`);
-      }
-    }
-  }
-  return lines.length === 0 ? undefined : `${UPDATE_NOTE}${lines.join("\n")}\n`;
-}
-
-/** `text` in appends of at most 500 UTF-8 bytes, cut at line ends where a line fits, else between characters. */
-export function contextChunks(text: string): string[] {
-  const encoder = new TextEncoder();
-  const chunks: string[] = [];
-  let chunk = "";
-  let size = 0;
-  for (const line of text.split(/(?<=\n)/)) {
-    const lineSize = encoder.encode(line).length;
-    if (size + lineSize > CONTEXT_CHUNK_BYTES && chunk !== "") {
-      chunks.push(chunk);
-      chunk = "";
-      size = 0;
-    }
-    for (const character of line) {
-      const characterSize = encoder.encode(character).length;
-      if (size + characterSize > CONTEXT_CHUNK_BYTES) {
-        chunks.push(chunk);
-        chunk = "";
-        size = 0;
-      }
-      chunk += character;
-      size += characterSize;
-    }
-  }
-  if (chunk !== "") {
-    chunks.push(chunk);
-  }
-  return chunks;
 }

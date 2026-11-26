@@ -2178,11 +2178,18 @@ async fn live_connect_sends_the_live_prompt_with_the_threads_conversation() {
     assert!(sent.contains(
         "User: why does {{default \"\" \"{{\"}}login}} fail?\n\nAssistant: The token was stale."
     ));
-    // The window gets the same instructions, rendered, to append to the session (DMN-118).
+    // The window gets the prompt and `<about>` section, rendered, to append to the session; never the thread's
+    // conversation, whose turns the voice took for new requests (DMN-118).
     assert_eq!(
         context,
-        crate::live_context::window_context(sent, &crate::live_context::LiveUser::from_env())
+        crate::live_context::window_context(
+            &crate::live_context::live_identity(&about, &state),
+            &crate::live_context::LiveUser::from_env()
+        )
     );
+    let appended = context.concat();
+    assert!(appended.contains("</about>"));
+    assert!(!appended.contains("Thread title") && !appended.contains("The token was stale."));
 }
 
 // spec: DMN-100

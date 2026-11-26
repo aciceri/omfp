@@ -37,8 +37,8 @@ pub(super) const LIVE_SILENCE: Duration = Duration::from_mins(10);
 
 impl Supervisor {
     /// Starts a live voice session for `owner` on the client's peer (DMN-100), speaking with `voice` when given
-    /// (DMN-112). Returns omp's SDP answer once the call is signaled, and the live instructions as the window appends
-    /// them to the session (DMN-118).
+    /// (DMN-112). Returns omp's SDP answer once the call is signaled, and the prompt and `<about>` section as the
+    /// window appends them to the session (DMN-118).
     pub async fn live_connect(
         &self,
         id: &str,
@@ -49,7 +49,7 @@ impl Supervisor {
         if sdp_offer.trim().is_empty() {
             return Err(SupervisorError::EmptyOffer);
         }
-        let (answer, instructions) = self
+        let (answer, identity) = self
             .open_live(id, owner, |instructions| {
                 OmpCall::LiveConnect(LiveConnectCommand {
                     sdp_offer,
@@ -62,7 +62,7 @@ impl Supervisor {
             SupervisorError::Internal(format!("unexpected live_connect answer: {error}"))
         })?;
         let context = crate::live_context::window_context(
-            &instructions,
+            &identity,
             &crate::live_context::LiveUser::from_env(),
         );
         Ok((answer, context))
@@ -98,7 +98,7 @@ impl Supervisor {
 
     /// Opens the thread's one live session (DMN-101) for `owner`: starts omp when needed, records the owner as a
     /// `live_session` event, then sends omp the command `call` builds from the live instructions (DMN-105). Returns
-    /// omp's answer and those instructions.
+    /// omp's answer and the instructions' prompt and `<about>` section (DMN-118).
     async fn open_live(
         &self,
         id: &str,
@@ -145,12 +145,15 @@ impl Supervisor {
         // The realtime model knows only its instructions, so they carry where it runs (DMN-117), the thread's
         // conversation (DMN-105) and the conversations of ended sessions not in it yet (DMN-113).
         let spoken = lock(&actor.voice_logs).clone();
-        let instructions = actor.log.with_state(|state| {
-            crate::live_context::live_instructions(&title, &about, state, &spoken)
+        let (instructions, identity) = actor.log.with_state(|state| {
+            (
+                crate::live_context::live_instructions(&title, &about, state, &spoken),
+                crate::live_context::live_identity(&about, state),
+            )
         });
         self.push(&actor, ThreadEvent::LiveSession { owner: Some(owner) });
         self.watch_silence(&actor, slot);
-        let call = call(instructions.clone());
+        let call = call(instructions);
         let answer = blocking(move || process.call(call)).await?;
         actor.touch();
         let answer = answer.map_err(|error| {
@@ -172,7 +175,7 @@ impl Supervisor {
             }
             live_failure(error)
         })?;
-        Ok((answer, instructions))
+        Ok((answer, identity))
     }
 
     /// Stops the thread's live voice session (DMN-102); a thread whose omp does not run has none, and omp succeeds

@@ -10,13 +10,14 @@ use super::{Result, StoreError};
 const BASELINE: (i64, &str) = (12, include_str!("0001_baseline.sql"));
 
 /// The migrations after the baseline, in order: the `n`th brings the schema to `user_version` `BASELINE.0 + n`.
-const MIGRATIONS: [&str; 2] = [
+const MIGRATIONS: [&str; 3] = [
     include_str!("0013_jobs.sql"),
     include_str!("0014_interrupted_turns.sql"),
+    include_str!("0015_interrupted_turn_cause.sql"),
 ];
 
 /// The highest `user_version` this daemon knows.
-const LATEST: i64 = 14;
+const LATEST: i64 = 15;
 
 /// Applies pending migrations. Foreign keys are off while migrating (tables are rebuilt) and checked before each
 /// commit; the caller turns them on afterwards.

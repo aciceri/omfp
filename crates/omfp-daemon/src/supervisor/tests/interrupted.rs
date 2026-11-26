@@ -1,4 +1,5 @@
-//! Turns a daemon stop interrupted (DMN-370..DMN-374), across a restart of the supervisor over the same store.
+//! Turns a daemon stop or a crash of omp interrupted (DMN-370..DMN-374, DMN-377), across a restart of the supervisor
+//! over the same store.
 
 use super::*;
 
@@ -181,12 +182,19 @@ async fn a_message_to_the_agent_clears_the_mark_and_a_local_command_does_not() {
 #[tokio::test]
 async fn only_the_daemon_stop_marks_a_turn_not_a_stop_of_the_thread() {
     let h = harness(|_| {});
-    let id = h.thread();
-    h.supervisor.start(&id).await.unwrap();
+    let (busy, prompted) = (h.thread(), h.thread());
+    h.supervisor.start(&busy).await.unwrap();
     h.launcher.process(0).emit(vec![agent_start()]);
-    h.wait(&id, "the busy agent", |state| !state.settled).await;
+    h.wait(&busy, "the busy agent", |state| !state.settled)
+        .await;
+    // A prompt omp admitted and has not reported a turn for yet.
+    h.supervisor
+        .prompt(&prompted, prompt("go on"))
+        .await
+        .unwrap();
 
-    h.supervisor.stop(&id).await.unwrap();
+    h.supervisor.stop(&busy).await.unwrap();
+    h.supervisor.stop(&prompted).await.unwrap();
     h.supervisor.shutdown().await;
 
     assert_eq!(restart(&h).marked(), Vec::<String>::new());
@@ -201,10 +209,11 @@ async fn a_message_admitted_during_the_shutdown_leaves_the_mark_it_wrote() {
     h.launcher.process(0).emit(vec![agent_start()]);
     h.wait(&id, "the busy agent", |state| !state.settled).await;
     let actor = h.supervisor.lookup(&id).unwrap();
+    let admitted_by = actor.process().unwrap();
 
     h.supervisor.shutdown().await;
     // The admission of a message sent just before the stop clears the mark only after the shutdown wrote it.
-    h.supervisor.clear_interrupted(&actor).await;
+    h.supervisor.clear_interrupted(&actor, &admitted_by).await;
 
     assert_eq!(restart(&h).marked(), [id]);
 }
@@ -291,4 +300,136 @@ async fn a_message_whose_caller_goes_away_still_clears_the_mark() {
     }
 
     assert_eq!(restarted.prompts(0), ["go on"]);
+}
+
+/// `h`'s thread `id` once its omp, the `index`th process, exited on its own and the thread failed.
+async fn crashed(h: &Harness, id: &str, index: usize) {
+    h.launcher.process(index).exit();
+    h.wait(id, "the failure", |state| {
+        matches!(state.process, ProcessState::Failed { .. })
+    })
+    .await;
+}
+
+// spec: DMN-370, DMN-377
+#[tokio::test]
+async fn a_turn_whose_omp_dies_with_the_daemon_is_marked_as_a_daemon_stop() {
+    let h = harness(|_| {});
+    let id = h.thread();
+    h.supervisor.start(&id).await.unwrap();
+    h.launcher.process(0).emit(vec![agent_start()]);
+    h.wait(&id, "the busy agent", |state| !state.settled).await;
+    let actor = h.supervisor.lookup(&id).unwrap();
+    // A message on its way to omp holds the marking back while omp dies with the daemon (one signal to them all).
+    let held = h.supervisor.inner.interrupted_marks.read().await;
+    let stopping = h.supervisor.shutdown();
+    tokio::pin!(stopping);
+
+    tokio::select! {
+        () = &mut stopping => panic!("the shutdown ended before omp died"),
+        () = async {
+            while !h.supervisor.inner.shutting_down.load(Ordering::SeqCst) {
+                tokio::task::yield_now().await;
+            }
+            h.launcher.process(0).exit();
+            while actor.process().is_some() {
+                tokio::task::yield_now().await;
+            }
+        } => {}
+    }
+    drop(held);
+    stopping.await;
+    h.wait(&id, "the failure", |state| {
+        matches!(state.process, ProcessState::Failed { .. })
+    })
+    .await;
+
+    let restarted = restart(&h);
+    assert_eq!(restarted.marked(), std::slice::from_ref(&id));
+    restarted.supervisor.resume(&id).await.unwrap();
+    assert_eq!(restarted.prompts(0), [RESUME_NOTICE]);
+}
+
+// spec: DMN-377, DMN-372
+#[tokio::test]
+async fn an_omp_crashing_mid_turn_marks_it_and_resume_names_the_crash() {
+    let h = harness(|_| {});
+    let id = h.thread();
+    h.supervisor.start(&id).await.unwrap();
+    h.launcher.process(0).emit(vec![agent_start()]);
+    h.wait(&id, "the busy agent", |state| !state.settled).await;
+    let mut changes = h.supervisor.subscribe_changes();
+    let before = crate::store::now_ms();
+
+    crashed(&h, &id, 0).await;
+
+    // The failure publishes the summary, the mark already in it.
+    while changes.recv().await.unwrap() != id {}
+    let restarted = restart(&h);
+    assert_eq!(restarted.marked(), std::slice::from_ref(&id));
+    let at = restarted.store.interrupted_turns().unwrap()[&id];
+    assert!(at >= before, "marked at the crash: {at} < {before}");
+    // A later daemon stop finds the thread failed and settled: the crash stays the cause.
+    h.supervisor.shutdown().await;
+    let restarted = restart(&h);
+    restarted.supervisor.resume(&id).await.unwrap();
+    assert_eq!(restarted.prompts(0), [CRASH_RESUME_NOTICE]);
+}
+
+// spec: DMN-377, DMN-374
+#[tokio::test]
+async fn an_omp_exiting_marks_a_turn_it_was_sent_and_not_a_settled_thread() {
+    let h = harness(|_| {});
+    let (settled, prompted) = (h.thread(), h.thread());
+    h.supervisor.start(&settled).await.unwrap();
+    // The fake admits the prompt and reports no turn: the session still reads settled when omp exits.
+    h.supervisor
+        .prompt(&prompted, prompt("go on"))
+        .await
+        .unwrap();
+
+    crashed(&h, &settled, 0).await;
+    crashed(&h, &prompted, 1).await;
+
+    assert_eq!(restart(&h).marked(), [prompted]);
+}
+
+// spec: DMN-377, DMN-373
+#[tokio::test]
+async fn a_message_admitted_by_an_omp_that_crashed_since_leaves_the_crash_mark() {
+    let h = harness(|_| {});
+    let id = h.thread();
+    h.supervisor.start(&id).await.unwrap();
+    h.launcher.process(0).emit(vec![agent_start()]);
+    h.wait(&id, "the busy agent", |state| !state.settled).await;
+    let actor = h.supervisor.lookup(&id).unwrap();
+    let admitted_by = actor.process().unwrap();
+
+    crashed(&h, &id, 0).await;
+    // The bookkeeping of a message omp admitted just before it died comes after the crash marked the turn.
+    h.supervisor.clear_interrupted(&actor, &admitted_by).await;
+
+    assert_eq!(restart(&h).marked(), [id]);
+}
+
+// spec: DMN-374
+#[tokio::test]
+async fn a_stop_still_ending_when_the_daemon_stops_marks_nothing() {
+    let h = harness(|_| {});
+    let id = h.thread();
+    h.supervisor.start(&id).await.unwrap();
+    h.launcher.process(0).emit(vec![agent_start()]);
+    h.wait(&id, "the busy agent", |state| !state.settled).await;
+    let close = h.launcher.gate_closes();
+    // The stop took the process and waits for it to end while the thread still reads busy.
+    drop_at_close(&close, h.supervisor.stop(&id)).await;
+
+    tokio::join!(h.supervisor.shutdown(), async {
+        while !h.supervisor.inner.shutting_down.load(Ordering::SeqCst) {
+            tokio::task::yield_now().await;
+        }
+        close.open();
+    });
+
+    assert_eq!(restart(&h).marked(), Vec::<String>::new());
 }

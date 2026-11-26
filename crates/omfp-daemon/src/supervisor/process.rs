@@ -1,5 +1,6 @@
 //! A thread's omp process (DMN-030..DMN-040): its start in the workspace folder with the thread's host tools, the
-//! failed start that keeps the transcript readable from the session file, the event pump, the crash and the stop.
+//! failed start that keeps the transcript readable from the session file, the event pump, the crash (marking the turn
+//! it cut interrupted, DMN-377) and the stop.
 
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
@@ -178,6 +179,7 @@ impl Supervisor {
         let (ended_tx, ended) = watch::channel(false);
         let process = launched.process;
         actor.turn_requested.store(false, Ordering::SeqCst);
+        actor.stopping.store(false, Ordering::SeqCst);
         *lock(&actor.live) = Some(Live {
             process: Arc::clone(&process),
             generation,
@@ -374,6 +376,8 @@ impl Supervisor {
         });
     }
 
+    /// omp exited on its own (DMN-035): the thread fails with omp's stderr tail, its turn marked interrupted first when
+    /// it was unsettled (DMN-377), so the failure publishes the summary with the mark.
     async fn process_ended(&self, actor: &Actor, generation: u64) {
         let Some(crashed) = lock(&actor.live).take_if(|live| live.generation == generation) else {
             return;
@@ -381,6 +385,12 @@ impl Supervisor {
         self.inner.running.fetch_sub(1, Ordering::SeqCst);
         // Its OAuth listeners died with it: another process may take their ports (DMN-340).
         lock(&actor.oauth).clear();
+        // Read before the failure settles the thread; the message it was sent is marked here or not at all.
+        let unsettled = actor.unsettled();
+        actor.turn_requested.store(false, Ordering::SeqCst);
+        if unsettled {
+            self.mark_exited(actor).await;
+        }
         let path = self.inner.data.thread_log(&actor.id);
         let process = crashed.process;
         let tail = blocking(move || {
@@ -401,6 +411,10 @@ impl Supervisor {
         else {
             return Ok(());
         };
+        // A stop the user or the daemon chose marks no turn (DMN-374), not even one omp has not reported yet, also
+        // while the stop waits for the process to end.
+        actor.stopping.store(true, Ordering::SeqCst);
+        actor.turn_requested.store(false, Ordering::SeqCst);
         blocking(move || drop(process)).await?;
         let _ = ended.wait_for(|ended| *ended).await;
         self.inner.running.fetch_sub(1, Ordering::SeqCst);
@@ -409,6 +423,7 @@ impl Supervisor {
         lock(&actor.restart).clear();
         lock(&actor.oauth).clear();
         self.set_process(actor, ProcessState::Stopped);
+        actor.stopping.store(false, Ordering::SeqCst);
         info!(thread = %actor.id, "omp stopped");
         Ok(())
     }

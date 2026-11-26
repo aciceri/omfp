@@ -35,6 +35,10 @@ The version's section is also the source of the GitHub release notes.
 - Live voice speaks the agent's answer as soon as the agent ends its turn, also while subagents or background jobs are
   still running; before, the voice stayed on "working" until the last of them finished (#276, fixed in omp 19.2.0).
 - A terminal an agent shows in a card of the chat keeps its size; before, it grew taller without end.
+- A thread whose omp dies mid-turn is marked interrupted with Resume, as after a daemon restart: when omp crashes or is
+  killed for lack of memory, and when it dies together with the daemon (a signal to the whole process group, a session
+  logout), which before left the thread looking idle. Resume tells the agent whether a crash or a daemon restart cut
+  its turn (#317).
 
 ## 0.4.5 — 2026-11-25
 

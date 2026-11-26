@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
-use omfp_daemon::store::{Store, StoreError, Thread, Workspace, new_id, now_ms};
+use omfp_daemon::store::{Interruption, Store, StoreError, Thread, Workspace, new_id, now_ms};
 use omfp_protocol::{CreatedBy, TitleSource};
 use rusqlite::Connection;
 use serde_json::{Value, json};
@@ -20,7 +20,7 @@ fn user_version(path: &Path) -> i64 {
 }
 
 /// The `user_version` of a database with every migration applied.
-const LATEST: i64 = 14;
+const LATEST: i64 = 15;
 
 /// Every table of a database with every migration applied. Only metadata lives in the database: no transcript
 /// tables, no repositories of workspaces (DMN-022).
@@ -316,17 +316,79 @@ fn migration_14_adds_interrupted_turns_kept_until_taken_and_gone_with_their_thre
     assert_eq!(store.interrupted_turns().unwrap(), HashMap::new());
     // A thread deleted meanwhile is skipped; marking again takes the later time.
     store
-        .mark_interrupted(&[busy.id.clone(), other.id.clone(), new_id()], 10)
+        .mark_interrupted(
+            &[busy.id.clone(), other.id.clone(), new_id()],
+            10,
+            Interruption::DaemonStop,
+        )
         .unwrap();
     store
-        .mark_interrupted(std::slice::from_ref(&busy.id), 20)
+        .mark_interrupted(std::slice::from_ref(&busy.id), 20, Interruption::DaemonStop)
         .unwrap();
     assert_eq!(
         store.interrupted_turns().unwrap(),
         HashMap::from([(busy.id.clone(), 20), (other.id.clone(), 10)])
     );
-    assert_eq!(store.take_interrupted(&busy.id).unwrap(), Some(20));
+    assert_eq!(
+        store.take_interrupted(&busy.id).unwrap(),
+        Some((20, Interruption::DaemonStop))
+    );
     assert_eq!(store.take_interrupted(&busy.id).unwrap(), None);
     store.delete_thread(&other.id).unwrap();
     assert_eq!(count(&db, "interrupted_turns"), 0);
+}
+
+// spec: DMN-010, DMN-377
+#[test]
+fn migration_15_keeps_the_marks_as_daemon_stops_and_stores_what_interrupted_a_turn() {
+    let dir = TempDir::new().unwrap();
+    let db = dir.path().join("omfp.db");
+    let ws = workspace("a");
+    let (stopped, crashed) = (thread(&ws.id), thread(&ws.id));
+    {
+        let store = open(&dir);
+        store.insert_workspace(&ws).unwrap();
+        store.insert_thread(&stopped).unwrap();
+        store.insert_thread(&crashed).unwrap();
+    }
+    // The table as migration 14 left it, with a mark of a daemon of that version.
+    raw(&db)
+        .execute_batch(&format!(
+            "DROP TABLE interrupted_turns; {} INSERT INTO interrupted_turns VALUES ('{}', 10); PRAGMA user_version = 14;",
+            include_str!("../src/store/0014_interrupted_turns.sql"),
+            stopped.id
+        ))
+        .unwrap();
+
+    let store = open(&dir);
+
+    assert_eq!(user_version(&db), LATEST);
+    store
+        .mark_interrupted(
+            std::slice::from_ref(&crashed.id),
+            20,
+            Interruption::DaemonStop,
+        )
+        .unwrap();
+    // Marking again takes the later cause with the later time.
+    store
+        .mark_interrupted(std::slice::from_ref(&crashed.id), 30, Interruption::Crash)
+        .unwrap();
+    assert!(
+        raw(&db)
+            .execute(
+                "UPDATE interrupted_turns SET cause = 'unknown' WHERE thread_id = ?1",
+                [&crashed.id],
+            )
+            .is_err(),
+        "only known causes"
+    );
+    assert_eq!(
+        store.take_interrupted(&stopped.id).unwrap(),
+        Some((10, Interruption::DaemonStop))
+    );
+    assert_eq!(
+        store.take_interrupted(&crashed.id).unwrap(),
+        Some((30, Interruption::Crash))
+    );
 }

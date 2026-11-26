@@ -75,6 +75,16 @@ fn parse_provenance(value: &str) -> CreatedBy {
     }
 }
 
+/// What interrupted a marked turn (DMN-370, DMN-377), stored by its snake-case name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Interruption {
+    /// The daemon stopped, its omp with it (DMN-370).
+    DaemonStop,
+    /// omp exited on its own while the daemon ran: a crash, an out-of-memory kill (DMN-377).
+    Crash,
+}
+
 /// A repository seen in a workspace (DMN-021).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SeenRepository {
@@ -661,35 +671,43 @@ impl Store {
         )
     }
 
-    // Turns a daemon stop interrupted (DMN-370)
+    // Turns a daemon stop or a crash of omp interrupted (DMN-370, DMN-377)
 
-    /// Marks the turns of `ids` interrupted by a daemon stop at `at` (DMN-370); a thread marked already takes the
-    /// later time. Threads deleted meanwhile are skipped.
-    pub fn mark_interrupted(&self, ids: &[String], at: i64) -> Result<()> {
+    /// Marks the turns of `ids` interrupted by `cause` at `at` (DMN-370, DMN-377); a thread marked already takes the
+    /// later time and its cause. Threads deleted meanwhile are skipped.
+    pub fn mark_interrupted(&self, ids: &[String], at: i64, cause: Interruption) -> Result<()> {
         let mut conn = self.conn();
         let tx = conn.transaction()?;
         {
             let mut stmt = tx.prepare(
-                "INSERT INTO interrupted_turns (thread_id, interrupted_at)
-                 SELECT id, ?2 FROM threads WHERE id = ?1
-                 ON CONFLICT (thread_id) DO UPDATE SET interrupted_at = excluded.interrupted_at",
+                "INSERT INTO interrupted_turns (thread_id, interrupted_at, cause)
+                 SELECT id, ?2, ?3 FROM threads WHERE id = ?1
+                 ON CONFLICT (thread_id) DO UPDATE
+                 SET interrupted_at = excluded.interrupted_at, cause = excluded.cause",
             )?;
             for id in ids {
-                stmt.execute(params![id, at])?;
+                stmt.execute(params![id, at, wire_name(cause)])?;
             }
         }
         tx.commit()?;
         Ok(())
     }
 
-    /// Takes the thread's mark (DMN-372, DMN-373): when its turn was interrupted, `None` when it was not marked.
-    pub fn take_interrupted(&self, id: &str) -> Result<Option<i64>> {
+    /// Takes the thread's mark (DMN-372, DMN-373): when its turn was interrupted and by what, `None` when it was not
+    /// marked.
+    pub fn take_interrupted(&self, id: &str) -> Result<Option<(i64, Interruption)>> {
         Ok(self
             .conn()
             .query_row(
-                "DELETE FROM interrupted_turns WHERE thread_id = ?1 RETURNING interrupted_at",
+                "DELETE FROM interrupted_turns WHERE thread_id = ?1 RETURNING interrupted_at, cause",
                 [id],
-                |row| row.get(0),
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        from_wire_name(&row.get::<_, String>(1)?)
+                            .unwrap_or(Interruption::DaemonStop),
+                    ))
+                },
             )
             .optional()?)
     }

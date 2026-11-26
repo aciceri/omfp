@@ -54,7 +54,7 @@ mod roots;
 mod stopped;
 
 pub use cards::CardWait;
-pub use interrupted::RESUME_NOTICE;
+pub use interrupted::{CRASH_RESUME_NOTICE, RESUME_NOTICE};
 pub use login::{AuthOmp, LOGIN_MODEL};
 pub use oauth::OAuthOwner;
 pub use restart::Restart;
@@ -434,10 +434,14 @@ struct Actor {
     oauth: Mutex<crate::oauth_relay::Flows>,
     /// The `omfp_card` calls waiting for an answer, by tool call id (DMN-911, AGT-097).
     cards: Mutex<HashMap<String, tokio::sync::oneshot::Sender<omfp_protocol::CardAnswer>>>,
-    /// A message went to omp as agent work and the turn it starts has not settled yet: the shutdown counts the thread
-    /// as mid-turn even before omp reports the turn (DMN-370). Cleared when the session settles, a prompt turns out to
-    /// be a local command, a send fails, or a new process starts.
+    /// A message went to omp as agent work and the turn it starts has not settled yet: the shutdown, or omp exiting on
+    /// its own, counts the thread as mid-turn even before omp reports the turn (DMN-370, DMN-377). Cleared when the
+    /// session settles, a prompt turns out to be a local command, a send fails, the process stops or exits, or a new
+    /// process starts.
     turn_requested: AtomicBool,
+    /// A stop the user or the daemon chose took the process and the thread does not show `Stopped` yet: its unsettled
+    /// state is no interruption (DMN-374). Cleared once it shows `Stopped`, or when a new process starts.
+    stopping: AtomicBool,
 }
 
 impl Actor {
@@ -476,6 +480,7 @@ impl Actor {
             oauth: Mutex::new(crate::oauth_relay::Flows::default()),
             cards: Mutex::new(HashMap::new()),
             turn_requested: AtomicBool::new(false),
+            stopping: AtomicBool::new(false),
         }
     }
 
@@ -1056,12 +1061,12 @@ impl Supervisor {
         self.refuse_user_mcp_config(id, &command.message).await?;
         let message = command.message.clone();
         let sending = Sending::new(&actor.last_prompt);
-        let admission = self
+        let (admission, admitted_by) = self
             .deliver(&actor, move |process| process.prompt(command))
             .await?;
         if admission.agent_invoked {
             sending.admitted(admission.prompt_id.clone());
-            self.clear_interrupted(&actor).await;
+            self.clear_interrupted(&actor, &admitted_by).await;
             self.consider_title(&actor, message).await;
         } else {
             actor.turn_requested.store(false, Ordering::SeqCst);
@@ -1086,9 +1091,10 @@ impl Supervisor {
                 (command.message.clone(), OmpCall::FollowUp(command))
             }
         };
-        self.deliver(&actor, move |process| process.call(call))
+        let (_, admitted_by) = self
+            .deliver(&actor, move |process| process.call(call))
             .await?;
-        self.clear_interrupted(&actor).await;
+        self.clear_interrupted(&actor, &admitted_by).await;
         self.consider_title(&actor, text).await;
         Ok(())
     }
@@ -1097,12 +1103,12 @@ impl Supervisor {
     /// before it reaches omp first (DMN-029), and the send holds `prompting` so a reload never cuts it (DMN-203). The
     /// send also holds the interrupted marks (shared): it is refused once the shutdown began, and a message sent before
     /// marks its turn requested, so the shutdown's marking, which waits for it, counts that turn even before omp
-    /// reports it (DMN-370).
+    /// reports it (DMN-370). Returns omp's answer and the process that admitted the message.
     async fn deliver<T: Send + 'static>(
         &self,
         actor: &Arc<Actor>,
         send: impl FnOnce(&dyn AgentProcess) -> Result<T, omp_rpc::Error> + Send + 'static,
-    ) -> Result<T> {
+    ) -> Result<(T, Arc<dyn AgentProcess>)> {
         let process = self.ensure_running(actor).await?;
         self.roots_before_prompt(actor).await;
         // Conversations a gone process could not take go in before the agent's next work (DMN-113).
@@ -1116,7 +1122,8 @@ impl Supervisor {
         }
         actor.turn_requested.store(true, Ordering::SeqCst);
         let sending = actor.prompting.read().await;
-        let sent = blocking(move || send(process.as_ref())).await;
+        let receiver = Arc::clone(&process);
+        let sent = blocking(move || send(receiver.as_ref())).await;
         drop(sending);
         drop(marks);
         let sent = sent.and_then(|sent| sent.map_err(SupervisorError::from));
@@ -1125,7 +1132,7 @@ impl Supervisor {
         }
         let sent = sent?;
         actor.touch();
-        Ok(sent)
+        Ok((sent, process))
     }
 
     /// Forwards an omp command, starting omp first when needed (DMN-070). Commands do not wait for each other
@@ -1204,15 +1211,17 @@ impl Supervisor {
 
     /// Stops every process (DMN-005): closing the `omp-rpc` client closes omp's stdin, then terminates its process
     /// group. Gives up waiting after [`SHUTDOWN_GRACE`] in all, the marking of the interrupted turns (DMN-370) included.
-    /// Later starts are refused. The threads whose turn it cuts are marked interrupted first.
+    /// Later starts are refused. The threads whose turn it cuts are marked interrupted first, from the threads
+    /// unsettled the moment it begins: an omp that dies with the daemon may end before the marking.
     pub async fn shutdown(&self) {
         let deadline = Instant::now() + SHUTDOWN_GRACE;
         self.inner.shutting_down.store(true, Ordering::SeqCst);
+        let unsettled = self.unsettled();
         lock(&self.inner.widget_host).take();
         lock(&self.inner.agent_host).take();
         self.cancel_login(None);
         self.stop_predictor();
-        self.mark_interrupted().await;
+        self.mark_interrupted(unsettled).await;
         let actors: Vec<Arc<Actor>> = lock(&self.inner.actors).values().cloned().collect();
         let stops = actors.iter().map(|actor| async move {
             let _lifecycle = actor.lifecycle.lock().await;

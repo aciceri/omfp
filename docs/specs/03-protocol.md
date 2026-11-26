@@ -129,7 +129,7 @@ are the `data` of omp's `response` frame, even where omp's command output is a b
 | PRT-056 | The thread state MUST carry `goal`: the `goal` of the last `goal_updated` frame (`null` when none); a `history` event keeps it. A `goal_updated` without a `goal` key does not decode (an `unknown` notice). |
 | PRT-057 | The thread state MUST carry `todo_phases`: the phases of the transcript's last `todo` tool result that committed some (not an error, not a `view`), `[]` without one; a `blocked` task status reads as `pending`. A `message_end` of such a result replaces them; a `history` event recomputes them. |
 | PRT-100 | A tool run MUST carry `background`: the omp background job the call became, else `null` — `{ job_id, state, output, exit_code }`, state `running`, `completed`, `failed` or `cancelled`. A `tool_execution_update` with a job frame replaces it; it survives `tool_execution_end`. A frame with another state is ignored. |
-| PRT-229 | `ThreadSummary` carries `interruptedAt?: number` (unix ms): the daemon stopped while the thread's omp was mid-turn or waiting on async work (DMN-370), until a resume or a message continues the turn (DMN-372, DMN-373). |
+| PRT-229 | `ThreadSummary` carries `interruptedAt?: number` (unix ms): the daemon stopped, or the thread's omp exited on its own, while that omp was mid-turn or waiting on async work (DMN-370, DMN-377), until a resume or a message continues the turn (DMN-372, DMN-373). |
 | PRT-230 | `thread.resume { threadId }` (permission `Drive`) MUST continue the interrupted turn (DMN-372) and answer `PromptResult { promptId, agentInvoked }` like `thread.prompt`; a thread without `interruptedAt` is `conflict`, an unknown one `not_found`, an omp that cannot start `thread_failed` (DMN-212). |
 
 ## Agent tools

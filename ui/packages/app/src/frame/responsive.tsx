@@ -18,6 +18,7 @@ import {
 } from "@omfp/kit";
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
+import { THREADS_ATTRIBUTE } from "../keymap/handler.ts";
 import { DRAFT_THREAD, SELECTED_THREAD, useCommand, useThreads, useWindowState } from "../sdk/index.ts";
 import { strings } from "../strings/index.ts";
 import type { Area } from "../view/layout.ts";
@@ -232,7 +233,7 @@ export function LeftStrip(): ReactNode {
   );
   return (
     <ThreadStrip
-      {...{ [DRAWER_CONTROL]: "" }}
+      {...{ [DRAWER_CONTROL]: "", [THREADS_ATTRIBUTE]: "" }}
       aria-label={text.strip}
       data-testid="left-strip"
       open={open}

@@ -613,7 +613,7 @@ describe("HelpDialog", () => {
     const onClose = mock(() => {});
     render(
       <HelpDialog label="Keys and commands" filter={<input aria-label="Filter" />} end="esc" onClose={onClose}>
-        <HelpSection title="normal" note="vim keys">
+        <HelpSection title="threads" note="vim keys">
           <HelpRow keys={["spc a", "] a"]} description="Next thread needing attention" />
           <HelpRow keys={[":theme"]} args="system | light | dark" description="Colour scheme" />
         </HelpSection>
@@ -623,7 +623,7 @@ describe("HelpDialog", () => {
     expect(dialog.querySelector(".omfp-bbox__label")?.textContent).toBe("help");
     expect(dialog.querySelector(".omfp-bbox__end")?.textContent).toBe("esc");
     expect(screen.getByRole("heading", { level: 2, name: "help" }).className).toBe("omfp-bbox__label");
-    expect(screen.getByRole("heading", { level: 3, name: "normal" }).className).toBe("omfp-bbox__rule");
+    expect(screen.getByRole("heading", { level: 3, name: "threads" }).className).toBe("omfp-bbox__rule");
     expect([...dialog.querySelectorAll(".omfp-help__row")].map((row) => row.textContent)).toEqual([
       "spc a] aNext thread needing attention",
       ":themesystem | light | darkColour scheme",
@@ -729,7 +729,7 @@ describe("shell", () => {
     const onPress = mock(() => undefined);
     render(
       <ModeLine
-        mode="normal"
+        mode="threads"
         data-testid="line"
         notice={<ModeNotice tone="error" title="flaky" body="failed" more={2} kbd="g n" onPress={onPress} />}
       >
@@ -755,7 +755,7 @@ describe("shell", () => {
     const onSelect = mock((_id: string) => undefined);
     render(
       <ModeLine
-        mode="normal"
+        mode="view"
         data-testid="line"
         modeLabel="VISUAL"
         pillProps={{ "data-testid": "pill", "data-vim": "visual" }}
@@ -1159,14 +1159,14 @@ describe("ComposerBar", () => {
   // spec: UI-480, UI-172
   test("the hints in a group at its start, the actions in a group at its end, in their order", () => {
     const { rerender } = render(
-      <ComposerBar data-testid="bar" hints={<ComposerHint>esc normal</ComposerHint>}>
+      <ComposerBar data-testid="bar" hints={<ComposerHint>esc view</ComposerHint>}>
         <button type="button">Abort</button>
         <button type="submit">Send</button>
       </ComposerBar>,
     );
     const bar = screen.getByTestId("bar");
     expect([...bar.children].map((child) => [child.className, child.textContent])).toEqual([
-      ["omfp-compose__hints", "esc normal"],
+      ["omfp-compose__hints", "esc view"],
       ["omfp-compose__actions", "AbortSend"],
     ]);
     rerender(

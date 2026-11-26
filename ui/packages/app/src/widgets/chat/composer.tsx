@@ -192,11 +192,13 @@ function DraftComposer({ draft }: { draft: DraftThread }) {
         }
       });
   };
+  // Esc: Insert → View (UI-095), where the view was focused last.
   const leave = () => {
     if (isBlank(message)) {
       actions.discardDraft();
     }
     inputRef.current?.blur();
+    host.commands.run("view.focus");
   };
   useFocusCommands(inputRef, leave);
   const { insert, pastes, word, onSelect, keyDown, field } = useComposerInput({
@@ -857,10 +859,16 @@ export const Composer = memo(function Composer({
   const latestSend = useRef(send);
   latestSend.current = send;
   const sendLatest = useCallback((chosen: SendMode) => latestSend.current(chosen), []);
+  // Esc: Insert → View (UI-095), on the conversation; without one, where the view was focused last.
   const leave = () => {
     const input = inputRef.current;
     input?.blur();
-    nearestTranscript(input)?.focus();
+    const transcript = nearestTranscript(input);
+    if (transcript === undefined) {
+      host.commands.run("view.focus");
+    } else {
+      transcript.focus();
+    }
   };
 
   /** `Ctrl-C` (UI-063): clears a non-empty draft, kept for `u`; aborts an empty one (or on a second press within

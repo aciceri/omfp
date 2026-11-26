@@ -309,22 +309,6 @@ export function isCollapsed(workspaceId: string, collapsed: readonly string[], f
   return !isFiltering(filter) && collapsed.includes(workspaceId);
 }
 
-/** The thread rows shown, top to bottom: the threads of open sections, then their archived ones when listed. */
-export function visibleOrder(
-  sections: readonly Section[],
-  collapsed: readonly string[],
-  archivedOpen: readonly string[],
-  filter: ThreadFilter,
-): string[] {
-  return sections.flatMap((section) => {
-    const id = section.workspace.id;
-    if (isCollapsed(id, collapsed, filter)) {
-      return [];
-    }
-    return archivedOpen.includes(id) ? [...section.threadIds, ...section.archivedIds] : [...section.threadIds];
-  });
-}
-
 /** `ids` with `id` added, or removed when it was there. */
 export function toggled(ids: readonly string[], id: string): readonly string[] {
   return ids.includes(id) ? ids.filter((candidate) => candidate !== id) : [...ids, id];
@@ -399,28 +383,42 @@ export class ConversationSearch {
   }
 }
 
-/** A move through the list: by `delta` rows (clamped at both ends), or to one end. */
+/** A move through the threads: by `delta` threads, or to one end. */
 export type Move = number | "top" | "bottom";
 
-/** The thread `move` lands on from `current` in `order`; from no selection, a forward move starts at the top and a
- * backward one at the bottom. */
-export function moveSelection(order: readonly string[], current: string | undefined, move: Move): string | undefined {
-  if (order.length === 0) {
-    return undefined;
+/**
+ * The thread a move selects in Threads mode, the column shown or not (UI-989, UI-095): one step (`1`, `-1`) is
+ * {@link adjacentThread}'s, wrapping around; a longer one goes that many threads and stops at the ends; `top` and
+ * `bottom` are the first and last thread. Each counts only the threads {@link adjacentThread} stops on. From a thread
+ * the column does not list, the first step is {@link adjacentThread}'s.
+ */
+export function steppedThread(
+  sections: readonly Section[],
+  collapsed: readonly string[],
+  filter: ThreadFilter,
+  current: string | undefined,
+  workspaceId: string | undefined,
+  move: Move,
+): string | undefined {
+  if (move === 1 || move === -1) {
+    return adjacentThread(sections, collapsed, filter, current, workspaceId, move);
   }
-  const last = order.length - 1;
-  const position = current === undefined ? -1 : order.indexOf(current);
-  let target: number;
-  if (move === "top") {
-    target = 0;
-  } else if (move === "bottom") {
-    target = last;
-  } else if (position < 0) {
-    target = move > 0 ? 0 : last;
-  } else {
-    target = Math.min(last, Math.max(0, position + move));
+  const selectable = sections.flatMap((section) =>
+    isCollapsed(section.workspace.id, collapsed, filter) ? [] : section.threadIds,
+  );
+  if (move === "top" || move === "bottom") {
+    return move === "top" ? selectable[0] : selectable[selectable.length - 1];
   }
-  return order[target];
+  const direction = move > 0 ? 1 : -1;
+  let from = current === undefined ? -1 : selectable.indexOf(current);
+  if (from < 0) {
+    const first = adjacentThread(sections, collapsed, filter, current, workspaceId, direction);
+    if (first === undefined) {
+      return undefined;
+    }
+    from = selectable.indexOf(first) - direction;
+  }
+  return selectable[Math.min(selectable.length - 1, Math.max(0, from + move))];
 }
 
 /** A place of the left column for {@link adjacentThread}: a thread row, or the end of a workspace's section. */

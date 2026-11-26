@@ -789,13 +789,13 @@ describe("the composer's bar by pointer and width", () => {
     pointer = new PointerMedia(false);
     renderThread(<ComposerWidget />, fixtureEvents("text_reply"));
     const idle = bar();
-    expect(idle.hints).toEqual(["alt+enter newline", "esc normal"]);
+    expect(idle.hints).toEqual(["alt+enter newline", "esc view"]);
     expect(idle.actions.filter((id) => id !== "live-mic")).toEqual(["send"]);
     cleanup();
     renderThread(<ComposerWidget />, queuedEvents());
     const busy = bar();
     // The ctrl+c hint remains; the live activity row owns the one Abort action.
-    expect(busy.hints).toEqual(["ctrl+c interrupt", "alt+enter newline", "esc normal"]);
+    expect(busy.hints).toEqual(["ctrl+c interrupt", "alt+enter newline", "esc view"]);
     expect(busy.actions.filter((id) => id !== "live-mic")).toEqual(["send-alternative", "send"]);
     expect(busy.actions.indexOf("live-mic")).toBe(idle.actions.indexOf("live-mic"));
   });

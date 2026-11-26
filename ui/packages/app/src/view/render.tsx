@@ -1,9 +1,9 @@
 /**
  * Renders a validated view (AGT-010): containers become flex rows and columns, tabs or stacked layers; each widget
  * renders in its own slot, so a failing widget shows its error in place and the rest of the window keeps working.
+ * Each widget is a pane of View mode, focusable itself, and a tabs container steps its tabs for `g t`/`g T` (UI-095).
  * Splitters between the cells of each `row` and `col` resize them for this window (UI-206); `views.json` keeps the
- * defaults. On a phone (UI-204) the view shows one area at a time and its rows as tabs, without
- * splitters.
+ * defaults. On a phone (UI-204) the view shows one area at a time and its rows as tabs, without splitters.
  */
 
 import { Tab, TabList, TabPanel, Tabs } from "@omfp/kit";
@@ -19,6 +19,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { focusPane, PANE, TAB_STEP_EVENT } from "../keymap/panes.ts";
 import { closeOpened, useWorkspaceFolder } from "../sdk/files.ts";
 import {
   type FileTabsState,
@@ -160,7 +161,8 @@ export function PanelLayout({ id, tree, registry, workspaceId, views }: PanelLay
 function Node({ tree, path, scope }: { tree: LayoutTree; path: string; scope: Scope }): ReactNode {
   if (tree.kind === "widget") {
     return (
-      <div className="omfp-view__item">
+      // A pane of View mode (UI-095): focusable, so a click anywhere in it or `Ctrl-w` puts the window in View mode.
+      <div className="omfp-view__item omfp-focus-inset" tabIndex={-1}>
         <WidgetSlot
           reference={tree.name}
           props={tree.props}
@@ -246,6 +248,60 @@ function useTabBar(selected: string | undefined): RefObject<HTMLDivElement | nul
   return bar;
 }
 
+/**
+ * `g t` / `g T` (UI-095): the container with the tab bar `bar` answers {@link TAB_STEP_EVENT} from inside it, selecting
+ * the next or previous of its tabs `ids` (wrapping around) and focusing the pane of the tab it shows.
+ */
+function useTabSteps(
+  bar: RefObject<HTMLDivElement | null>,
+  ids: readonly string[],
+  selected: string | undefined,
+  select: (id: string) => void,
+): void {
+  const latest = useRef({ ids, selected, select });
+  latest.current = { ids, selected, select };
+  const stepped = useRef(false);
+  // Every render: the tab bar shows only once there are two tabs.
+  useEffect(() => {
+    const root = bar.current?.parentElement;
+    if (root === null || root === undefined) {
+      return undefined;
+    }
+    const step = (event: Event) => {
+      const by: unknown = event instanceof CustomEvent ? event.detail : undefined;
+      if (by !== 1 && by !== -1) {
+        return;
+      }
+      const { ids, selected, select } = latest.current;
+      const at = selected === undefined ? 0 : ids.indexOf(selected);
+      const next = ids[(at + by + ids.length) % ids.length];
+      if (next === undefined) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      stepped.current = true;
+      select(next);
+    };
+    root.addEventListener(TAB_STEP_EVENT, step);
+    return () => root.removeEventListener(TAB_STEP_EVENT, step);
+  });
+  // Once the tab shows: its panel was hidden until this commit.
+  useLayoutEffect(() => {
+    if (!stepped.current || selected === undefined) {
+      return;
+    }
+    stepped.current = false;
+    const panel = [...(bar.current?.parentElement?.children ?? [])].find(
+      (child) => child.classList.contains("omfp-view__panel") && !child.hasAttribute("hidden"),
+    );
+    const pane = panel?.querySelector<HTMLElement>(PANE);
+    if (pane !== null && pane !== undefined) {
+      focusPane(pane);
+    }
+  }, [bar, selected]);
+}
+
 /** A tab the `main` slot opened: a file (`omfp:file`) or a widget a reveal opened there (UI-373). */
 interface OpenedTab {
   readonly id: string;
@@ -326,6 +382,7 @@ function TabsNode({
   const ids = [...own.map(({ id }) => id), ...opened.map(({ id }) => id)];
   const selected = chosen !== undefined && ids.includes(chosen) ? chosen : ids[0];
   const bar = useTabBar(selected);
+  useTabSteps(bar, ids, selected, select);
   const slot = main ? MAIN_SLOT : undefined;
   // An own child closes when views.json has the same node there, in a container keeping another one, and it does not
   // hold the conversation (UI-375); a tab an init file added or changed stays.
@@ -421,7 +478,7 @@ function TabsNode({
       ))}
       {opened.map((tab) => (
         <TabPanel key={tab.id} id={tab.id} className="omfp-view__panel" keepMounted>
-          <div className="omfp-view__item">
+          <div className="omfp-view__item omfp-focus-inset" tabIndex={-1}>
             <WidgetSlot
               reference={tab.reference}
               props={tab.props}

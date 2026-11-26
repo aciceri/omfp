@@ -33,7 +33,7 @@ describe("keymap overrides", () => {
   // spec: UI-097
   test("an override of a default key in another mode leaves the default alone", () => {
     const merged = mergeBindings(DEFAULT_BINDINGS, [{ mode: "insert", keys: "j", command: "nav.next" }]);
-    expect(keysFor(merged, "nav.next")).toEqual(["j"]);
+    expect(keysFor(merged, "nav.next", "view")).toEqual(["j"]);
     expect(keysFor(merged, "nav.next", "insert")).toEqual(["j"]);
   });
 });

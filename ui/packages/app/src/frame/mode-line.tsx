@@ -1,7 +1,7 @@
 /**
- * The mode line (UI-098): the keymap mode (UI-095) the focused element puts the window in, shown at the bottom left
- * of the view area like vim's, and announced through the live region when a key changed it (never the mouse); the
- * window's views as small tabs when it has several (UI-301).
+ * The mode line (UI-098): the keymap mode (UI-095) the focused element puts the window in — `THREADS`, `VIEW`,
+ * `INSERT`, `COMMAND` — shown at the bottom left of the view area like vim's, and announced through the live region
+ * when a key changed it (never the mouse); the window's views as small tabs when it has several (UI-301).
  */
 
 import {
@@ -16,7 +16,7 @@ import {
 } from "@omfp/kit";
 import { type ReactNode, useEffect, useState } from "react";
 import { modeAt } from "../keymap/handler.ts";
-import { type Binding, keyLabel, type Mode } from "../keymap/keymap.ts";
+import { type Binding, keyLabel, type WindowMode } from "../keymap/keymap.ts";
 import {
   FOCUS_COMPOSER,
   MESSAGES,
@@ -40,8 +40,8 @@ import { MESSAGES_COMMAND } from "./messages.tsx";
 const text = strings.shell.mode;
 
 /** This window's keymap mode, live; announces the changes a key caused. */
-export function useMode(): Mode {
-  const [mode, setMode] = useState<Mode>(() => modeAt(document.activeElement));
+export function useMode(): WindowMode {
+  const [mode, setMode] = useState<WindowMode>(() => modeAt(document.activeElement));
   const announce = useAnnounce();
   useEffect(() => {
     let byKey = false;
@@ -108,7 +108,7 @@ export function WindowModeLine({
   phone = false,
   children,
 }: {
-  mode: Mode;
+  mode: WindowMode;
   vim?: VimMode | undefined;
   /** The window's bindings, for the key chip of `notice.open`. */
   bindings: readonly Binding[];

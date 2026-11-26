@@ -8,8 +8,35 @@
  * separated by spaces: `g g`, `Space n`.
  */
 
-/** `normal`: focus not in a text field; `insert`: a text field has the focus; `cmdline`: the `:` line is open. */
-export type Mode = "normal" | "insert" | "cmdline";
+/**
+ * The window's mode (UI-098): `threads` with nothing focused or the focus in the left column, `view` with the focus in
+ * the view outside a text field, `insert` while a text field has the focus, `cmdline` while the `:` line is open.
+ */
+export type WindowMode = "threads" | "view" | "insert" | "cmdline";
+
+/**
+ * The mode a binding belongs to: a window mode, or `normal`, the layer `threads` and `view` share. A binding of
+ * `threads` or `view` wins over a `normal` one with the same keys (UI-095).
+ */
+export type Mode = "normal" | WindowMode;
+
+/** Whether `mode` is Threads or View mode, the two that share the `normal` layer. */
+export function sharesNormal(mode: Mode): mode is "threads" | "view" {
+  return mode === "threads" || mode === "view";
+}
+
+/**
+ * The bindings in force in `mode`: its own, then (in `threads` and `view`) the `normal` ones whose keys it does not
+ * bind itself.
+ */
+export function bindingsIn(bindings: readonly Binding[], mode: WindowMode): Binding[] {
+  const own = bindings.filter((binding) => binding.mode === mode);
+  if (!sharesNormal(mode)) {
+    return own;
+  }
+  const bound = new Set(own.map((binding) => binding.keys));
+  return [...own, ...bindings.filter((binding) => binding.mode === "normal" && !bound.has(binding.keys))];
+}
 
 /**
  * Where a binding comes from when it is not a default: the daemon's `[keymap]` entries (`config`, UI-097), the current
@@ -30,28 +57,47 @@ export interface Binding {
 }
 
 /**
- * The defaults: vim-style navigation, `:` command line, `Space` leader (UI-095). `Space` alone opens the leader menu
- * (UI-324): the flat leader keys stay as they were; the groups `Space h` (help), `Space p` (workspace), `Space f`
- * (files) and `Space v` (views) hold the rest (UI-326).
+ * The defaults: vim-style navigation, `:` command line, `Space` leader (UI-095). In Threads mode the moves step through
+ * the threads (UI-989), in View mode they go to the focused widget (the transcript's messages, UI-370); `v`/`Enter`
+ * and `Esc` switch between them. `Space` alone opens the leader menu (UI-324): the flat leader keys stay as they were;
+ * the groups `Space h` (help), `Space p` (workspace), `Space f` (files) and `Space v` (views) hold the rest (UI-326).
  */
 export const DEFAULT_BINDINGS: readonly Binding[] = [
-  { mode: "normal", keys: "j", command: "nav.next" },
-  { mode: "normal", keys: "k", command: "nav.prev" },
-  { mode: "normal", keys: "g g", command: "nav.top" },
-  { mode: "normal", keys: "G", command: "nav.bottom" },
-  { mode: "normal", keys: "Ctrl-d", command: "nav.halfDown" },
-  { mode: "normal", keys: "Ctrl-u", command: "nav.halfUp" },
+  { mode: "threads", keys: "j", command: "thread.next" },
+  { mode: "threads", keys: "k", command: "thread.prev" },
+  { mode: "threads", keys: "g g", command: "thread.first" },
+  { mode: "threads", keys: "G", command: "thread.last" },
+  { mode: "threads", keys: "Ctrl-d", command: "thread.halfDown" },
+  { mode: "threads", keys: "Ctrl-u", command: "thread.halfUp" },
+  { mode: "threads", keys: "v", command: "view.focus" },
+  { mode: "threads", keys: "Enter", command: "view.focus" },
+  // On the focused row or workspace section of the left column, else the selected thread or its workspace (UI-020,
+  // UI-022).
+  { mode: "threads", keys: "d d", command: "nav.delete" },
+  { mode: "threads", keys: "z a", command: "nav.toggleSection" },
+  // Move the focused row or section of the left column, else the selected thread; with Shift, a thread into the
+  // previous or next workspace (UI-624).
+  { mode: "threads", keys: "Alt-ArrowUp", command: "threads.moveUp" },
+  { mode: "threads", keys: "Alt-ArrowDown", command: "threads.moveDown" },
+  { mode: "threads", keys: "Alt-Shift-ArrowUp", command: "threads.moveToPrevWorkspace" },
+  { mode: "threads", keys: "Alt-Shift-ArrowDown", command: "threads.moveToNextWorkspace" },
+  // The focused widget's moves: its `nav.*` commands (the transcript's messages, UI-370, UI-371).
+  { mode: "view", keys: "j", command: "nav.next" },
+  { mode: "view", keys: "k", command: "nav.prev" },
+  { mode: "view", keys: "g g", command: "nav.top" },
+  { mode: "view", keys: "G", command: "nav.bottom" },
+  { mode: "view", keys: "Ctrl-d", command: "nav.halfDown" },
+  { mode: "view", keys: "Ctrl-u", command: "nav.halfUp" },
+  { mode: "view", keys: "Esc", command: "view.leave" },
+  // Panes as vim's windows, tabs as its tab pages.
+  { mode: "view", keys: "Ctrl-w h", command: "pane.left" },
+  { mode: "view", keys: "Ctrl-w j", command: "pane.down" },
+  { mode: "view", keys: "Ctrl-w k", command: "pane.up" },
+  { mode: "view", keys: "Ctrl-w l", command: "pane.right" },
+  { mode: "view", keys: "g t", command: "tab.next" },
+  { mode: "view", keys: "g T", command: "tab.prev" },
   { mode: "normal", keys: "/", command: "nav.search" },
   { mode: "normal", keys: "Space /", command: "threads.pick" },
-  // On the focused row or workspace section of the left column (UI-020, UI-022).
-  { mode: "normal", keys: "d d", command: "nav.delete" },
-  { mode: "normal", keys: "z a", command: "nav.toggleSection" },
-  // Move the focused row or section of the left column; with Shift, a thread into the previous or next workspace
-  // (UI-624).
-  { mode: "normal", keys: "Alt-ArrowUp", command: "threads.moveUp" },
-  { mode: "normal", keys: "Alt-ArrowDown", command: "threads.moveDown" },
-  { mode: "normal", keys: "Alt-Shift-ArrowUp", command: "threads.moveToPrevWorkspace" },
-  { mode: "normal", keys: "Alt-Shift-ArrowDown", command: "threads.moveToNextWorkspace" },
   { mode: "normal", keys: "i", command: "composer.focus" },
   { mode: "normal", keys: ":", command: "cmdline.open" },
   // View cycling stays independent of the fuzzy picker (UI-302).
@@ -182,15 +228,17 @@ export type Match =
   | { readonly kind: "none" };
 
 /**
- * Matches key presses against bindings, one sequence at a time. A sequence whose next key does not arrive within
- * `timeoutMs` (by the injected clock) is dropped, unless it is held ({@link KeymapMatcher.hold}). A complete binding
- * wins over longer ones sharing its prefix, so defaults never bind both `g` and `g g`.
+ * Matches key presses against bindings, one sequence at a time, in the window's mode ({@link bindingsIn}). A sequence
+ * whose next key does not arrive within `timeoutMs` (by the injected clock) is dropped, unless it is held
+ * ({@link KeymapMatcher.hold}). A complete binding wins over longer ones sharing its prefix, so defaults never bind
+ * both `g` and `g g`.
  */
 export class KeymapMatcher {
   readonly #bindings: readonly Binding[];
+  readonly #inMode = new Map<WindowMode, readonly Binding[]>();
   readonly #now: () => number;
   readonly #timeoutMs: number;
-  #pending: { keys: string[]; mode: Mode; at: number; held: boolean } | undefined;
+  #pending: { keys: string[]; mode: WindowMode; at: number; held: boolean } | undefined;
 
   constructor(bindings: readonly Binding[], now: () => number, timeoutMs = SEQUENCE_TIMEOUT_MS) {
     this.#bindings = bindings;
@@ -203,7 +251,7 @@ export class KeymapMatcher {
     return this.#live()?.keys.join(" ");
   }
 
-  feed(token: string, mode: Mode): Match {
+  feed(token: string, mode: WindowMode): Match {
     const pending = this.#live();
     const continued = pending !== undefined && pending.mode === mode ? [...pending.keys, token] : undefined;
     const match = continued === undefined ? undefined : this.#match(continued, mode);
@@ -225,9 +273,13 @@ export class KeymapMatcher {
     }
   }
 
-  #match(keys: string[], mode: Mode): Match | undefined {
+  #match(keys: string[], mode: WindowMode): Match | undefined {
     const sequence = keys.join(" ");
-    const candidates = this.#bindings.filter((binding) => binding.mode === mode);
+    let candidates = this.#inMode.get(mode);
+    if (candidates === undefined) {
+      candidates = bindingsIn(this.#bindings, mode);
+      this.#inMode.set(mode, candidates);
+    }
     const exact = candidates.find((binding) => binding.keys === sequence);
     if (exact !== undefined) {
       this.#pending = undefined;
@@ -245,7 +297,7 @@ export class KeymapMatcher {
     return { kind: "none" };
   }
 
-  #live(): { keys: string[]; mode: Mode } | undefined {
+  #live(): { keys: string[]; mode: WindowMode } | undefined {
     const pending = this.#pending;
     if (pending !== undefined && !pending.held && this.#now() - pending.at > this.#timeoutMs) {
       this.#pending = undefined;
@@ -314,8 +366,9 @@ export function normalizeKeys(keys: string): string {
 
 /**
  * The defaults with `overrides` applied one by one (UI-097): an entry replaces the binding with the same mode and
- * keys (keeping its place), `""` removes it, any other entry is added after the defaults. Later entries win. The
- * bindings an entry makes carry its `args` and `source`.
+ * keys (keeping its place), `""` removes it, any other entry is added after the defaults. Later entries win. An entry
+ * of `normal` speaks for Threads and View mode both: it also drops the bindings of its keys in `threads` and `view`
+ * made before it (UI-095). The bindings an entry makes carry its `args` and `source`.
  */
 export function mergeBindings(
   defaults: readonly Binding[],
@@ -327,6 +380,9 @@ export function mergeBindings(
   for (const override of overrides) {
     const keys = normalizeKeys(override.keys);
     const same = (binding: Binding) => binding.mode === override.mode && binding.keys === keys;
+    if (override.mode === "normal") {
+      bindings = bindings.filter((binding) => binding.keys !== keys || !sharesNormal(binding.mode));
+    }
     if (override.command === "") {
       bindings = bindings.filter((binding) => !same(binding));
       continue;

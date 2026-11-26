@@ -709,30 +709,36 @@ describe("frame", () => {
     expect(screen.getByTestId("live-region").textContent).toBe("checkout: idle. 1 thread awaits input");
   });
 
-  // spec: UI-098, UI-167
+  // spec: UI-098, UI-167, UI-095
   test("the mode line follows the focus; only key-caused mode changes are announced", async () => {
     const { user } = setup({ registry: new Map([...registry, ["omfp:chat", StubComposer]]) });
     // The mode pill is rendered again on each mode change (its entrance motion).
     const line = () => screen.getByTestId("mode-line");
     const live = screen.getByTestId("live-region");
-    expect([line().textContent, screen.getByTestId("app").dataset.mode]).toEqual(["NORMAL", "normal"]);
-    expect(line().dataset.mode).toBe("normal");
+    expect([line().textContent, screen.getByTestId("app").dataset.mode]).toEqual(["THREADS", "threads"]);
+    expect(line().dataset.mode).toBe("threads");
     press("i");
     expect([line().textContent, screen.getByTestId("app").dataset.mode]).toEqual(["INSERT", "insert"]);
     expect(line().dataset.mode).toBe("insert");
     expect(live.textContent).toBe("INSERT mode");
+    // Esc: Insert → View, the composer's field being in the view; Esc again: View → Threads.
     press("Escape");
-    expect(line().textContent).toBe("NORMAL");
-    expect(live.textContent).toBe("NORMAL mode");
+    expect([line().textContent, line().dataset.mode]).toEqual(["VIEW", "view"]);
+    expect(live.textContent).toBe("VIEW mode");
+    press("Escape");
+    expect([line().textContent, line().dataset.mode]).toEqual(["THREADS", "threads"]);
+    expect(live.textContent).toBe("THREADS mode");
+    // `v` enters the view again.
+    press("v");
+    expect(line().textContent).toBe("VIEW");
     press(":");
     expect([line().textContent, line().dataset.mode]).toEqual(["COMMAND", "command"]);
     // The `:` line takes the place of the mode line's segments (UI-168).
     expect(screen.getByTestId("mode-bar").contains(screen.getByTestId("command-line"))).toBe(true);
     press("Escape");
-    expect(line().textContent).toBe("NORMAL");
     await user.click(screen.getByTestId("stub-input"));
     expect(line().textContent).toBe("INSERT");
-    expect(live.textContent).toBe("NORMAL mode");
+    expect(live.textContent).not.toBe("INSERT mode");
   });
 
   // spec: UI-096

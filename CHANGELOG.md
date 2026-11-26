@@ -29,6 +29,15 @@ The version's section is also the source of the GitHub release notes.
 
 ### Changed
 
+- The `NORMAL` mode is now two explicit modes, shown in the mode line: `THREADS` (nothing focused, or the left
+  column) and `VIEW` (the focus in the view). In Threads mode `j`/`k`, `gg`/`G` and `Ctrl-d`/`Ctrl-u` switch threads
+  even with the column collapsed or hidden, and `dd`, `za` and the `Alt`-arrow moves act on the selected thread when
+  no row is focused; `v` or `Enter` enters the view where you left it. In View mode the same keys go to the focused
+  widget (the transcript's messages), `Ctrl-w h/j/k/l` move between panes, `g t`/`g T` between tabs, and `Esc` goes
+  back to Threads mode. `Esc` in the composer now leaves for View mode. Migration: `[keymap]` strings and `normal`
+  bindings of `.omfp/keymap.json` and init files still apply in both modes (and replace both modes' defaults of their
+  keys); bind `j` to `nav.next` in only one mode with the new `[keymap.threads]` / `[keymap.view]` tables or
+  `"mode": "threads"` / `"view"`.
 - omfp now runs omp 19.2.0 (was 19.1.0).
 - An agent's question form no longer blocks Submit on a broken rule (`required`, `pattern`, a number range, a length,
   an email or URL shape), as in omp 19.2: an answer breaking one is flagged under its field as you type and sent

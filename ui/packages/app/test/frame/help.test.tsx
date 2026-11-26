@@ -97,9 +97,14 @@ describe("help panel", () => {
     expect(help.querySelector(".omfp-bbox__label")?.textContent).toBe("help");
     expect(document.activeElement === screen.getByTestId("help-filter")).toBe(true);
     expect([...help.querySelectorAll("[data-section]")].map((section) => section.getAttribute("data-section"))).toEqual(
-      ["normal", "insert", "transcript", "cmdline", "editor", "commands"],
+      ["normal", "threads", "view", "insert", "transcript", "cmdline", "editor", "commands"],
     );
-    expect(rows("normal", "nav.next")).toEqual([["j", "", "Next thread"]]);
+    expect(rows("threads", "thread.next")).toEqual([["j", "", "Next thread"]]);
+    expect(rows("threads", "view.focus")).toEqual([
+      ["v, enter", "", "Focus the view where it was last (View mode: the keys go to its widget)"],
+    ]);
+    expect(rows("view", "nav.next")).toEqual([["j", "", "Next item of the focused widget"]]);
+    expect(rows("view", "pane.left")).toEqual([["ctrl+w h", "", "Focus the pane on the left"]]);
     expect(rows("normal", "thread.nextAttention")).toEqual([
       ["spc a, ] a, alt+a", "", "Next thread needing attention"],
     ]);

@@ -12,7 +12,6 @@ import {
   forkLineage,
   isUnread,
   isWorkspacePath,
-  moveSelection,
   newWorkspaceParams,
   nextNeedingAttention,
   SEARCH_DELAY_MS,
@@ -21,11 +20,11 @@ import {
   spawnedCounts,
   spawnedTree,
   spawnerOf,
+  steppedThread,
   type ThreadFilter,
   threadStatus,
   toggled,
   updateSeen,
-  visibleOrder,
   waitingCount,
   workspaceChip,
 } from "../../src/vm/threads.ts";
@@ -135,18 +134,21 @@ describe("thread list", () => {
     ]);
   });
 
-  // spec: UI-095
-  test("j/k, gg/G and half pages move through the list order, clamped at both ends", () => {
-    const order = ["a", "b", "c"];
-    expect(moveSelection(order, undefined, 1)).toBe("a");
-    expect(moveSelection(order, undefined, -1)).toBe("c");
-    expect(moveSelection(order, "a", 1)).toBe("b");
-    expect(moveSelection(order, "a", -1)).toBe("a");
-    expect(moveSelection(order, "b", 10)).toBe("c");
-    expect(moveSelection(order, "c", "top")).toBe("a");
-    expect(moveSelection(order, "a", "bottom")).toBe("c");
-    expect(moveSelection(order, "gone", 1)).toBe("a");
-    expect(moveSelection([], "a", 1)).toBeUndefined();
+  // spec: UI-095, UI-989
+  test("Threads mode's j/k wrap, gg/G go to the ends, half pages stop there", () => {
+    const { workspaces, threads } = index();
+    const all = sidebarSections(threads, workspaces, NO_FILTER);
+    const step = (current: string | undefined, move: Parameters<typeof steppedThread>[5]) =>
+      steppedThread(all, [], NO_FILTER, current, undefined, move);
+    expect(step(undefined, 1)).toBe("t-checkout");
+    expect(step("t-checkout", 1)).toBe("t-flaky");
+    expect(step("t-checkout", -1)).toBe("t-scratch");
+    expect(step("t-checkout", 10)).toBe("t-scratch");
+    expect(step("t-scratch", -10)).toBe("t-checkout");
+    expect(step(undefined, 2)).toBe("t-flaky");
+    expect(step("t-scratch", "top")).toBe("t-checkout");
+    expect(step("t-checkout", "bottom")).toBe("t-scratch");
+    expect(steppedThread([], [], NO_FILTER, undefined, undefined, "top")).toBeUndefined();
   });
 
   // spec: UI-022
@@ -187,18 +189,15 @@ describe("thread list", () => {
     expect(sections(filter("", { "t-scratch": "x" }))).toHaveLength(4);
   });
 
-  // spec: UI-022, UI-026
-  test("rows shown skip collapsed sections (unless filtering) and list archived ones only when opened", () => {
+  // spec: UI-022, UI-095
+  test("Threads mode's moves skip collapsed sections, unless filtering", () => {
     const { workspaces, threads } = index();
     const all = sidebarSections(threads, workspaces, NO_FILTER);
-    expect(visibleOrder(all, [], [], NO_FILTER)).toEqual(["t-checkout", "t-flaky", "t-scratch"]);
-    expect(visibleOrder(all, ["w-checkout"], ["w-flaky"], NO_FILTER)).toEqual(["t-flaky", "t-old", "t-scratch"]);
+    expect(steppedThread(all, ["w-checkout"], NO_FILTER, "t-scratch", "w-scratch", "top")).toBe("t-flaky");
+    expect(steppedThread(all, ["w-checkout"], NO_FILTER, "t-scratch", "w-scratch", -10)).toBe("t-flaky");
     const typed = filter("t");
-    expect(visibleOrder(sidebarSections(threads, workspaces, typed), ["w-checkout"], [], typed)).toEqual([
-      "t-checkout",
-      "t-flaky",
-      "t-scratch",
-    ]);
+    const matching = sidebarSections(threads, workspaces, typed);
+    expect(steppedThread(matching, ["w-checkout"], typed, "t-scratch", "w-scratch", "top")).toBe("t-checkout");
   });
 
   // spec: UI-022

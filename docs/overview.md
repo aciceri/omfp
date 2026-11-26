@@ -188,7 +188,7 @@ live_voice = "sol"             # arbor | breeze | cove | ember | juniper | maple
 [ui.fonts]                     # prose, ui, code: CSS font families
 prose = "Literata, serif"
 
-[keymap]                       # normal mode; [keymap.insert] and [keymap.cmdline] for the others
+[keymap]                       # normal mode (Threads and View); [keymap.threads], .view, .insert, .cmdline the others
 "Space t" = "window.theme"     # a command id (`:describe-key`, `?` lists them)
 "g g" = ""                     # removes a default binding
 ```

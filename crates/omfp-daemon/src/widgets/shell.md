@@ -49,8 +49,10 @@ currently rendered virtual window too.
 
 The bar at the bottom of the view area, like vim's:
 
-- the **mode pill**: `NORMAL` (no text field has the focus), `INSERT` (a text field has it), `COMMAND` (the `:` line is
-  open), or vim's own mode while a file editor has the focus;
+- the **mode pill**: where the keys go. `THREADS` (nothing focused, or the focus in the left column: the keys switch
+  threads), `VIEW` (the focus in the view, outside a text field: the keys go to the focused widget), `INSERT` (a text
+  field has the focus), `COMMAND` (the `:` line is open), or vim's own mode while a file editor has the focus. The
+  mode follows the focus: a click in the view is View mode, on the left column Threads mode, in a field Insert mode;
 - the selected thread's title and state;
 - the **view tabs**, when the current workspace has several views: `Default · Review · Ops` by title, the current
   one highlighted; a click switches the selected thread's view. Each thread keeps its view in this window across
@@ -124,13 +126,21 @@ Widgets (`useCommand`) and init files (`omfp.command`) add commands to the same 
 
 ## Default keys
 
-In normal mode (no text field focused). A started sequence (`g`, `Space h`) shows the which-key panel above the mode
-line after 300 ms with the keys that complete it; `Space` alone shows it at once. `Space h` groups help and `Space p`
-workspace; `Space v` and `Space f` directly open view and workspace-file pickers. Escape cancels a sequence.
+Threads mode (`THREADS`) is where the window starts; `v` or `Enter` enter View mode (`VIEW`) on the widget the view had
+the focus on last (the transcript the first time), `i` the composer (Insert mode), and `Esc` steps back: Insert → View
+→ Threads. A started sequence (`g`, `Space h`) shows the which-key panel above the mode line after 300 ms with the keys
+that complete it; `Space` alone shows it at once. `Space h` groups help and `Space p` workspace; `Space v` and
+`Space f` directly open view and workspace-file pickers. Escape cancels a sequence. Unless a row says otherwise, a key
+works in Threads and View mode both.
 
 | Keys | What they do |
 | --- | --- |
-| `j` / `k`, `g g` / `G`, `Ctrl-d` / `Ctrl-u` | Next / previous, first / last, half a page — threads in the left column, messages in the transcript. In the transcript `j` / `k` scroll a message taller than the window down to its end / up to its top before moving on, and `Ctrl-d` / `Ctrl-u` scroll half a window (`PageDown` / `PageUp` a whole one), the focus staying on its message while it shows. |
+| `j` / `k`, `g g` / `G`, `Ctrl-d` / `Ctrl-u` | Threads mode: next / previous, first / last thread, half a page of threads, in the left column's order across workspaces, with the column shown, collapsed or hidden; archived threads, folded workspaces and threads the filter hides are skipped. Each press selects the thread. |
+| `v`, `Enter` | Threads mode: focus the view where it was last (View mode). |
+| `j` / `k`, `g g` / `G`, `Ctrl-d` / `Ctrl-u` | View mode: the focused widget's moves. In the transcript: next / previous, first / last message, half a window; `j` / `k` scroll a message taller than the window down to its end / up to its top before moving on, and `Ctrl-d` / `Ctrl-u` scroll half a window (`PageDown` / `PageUp` a whole one), the focus staying on its message while it shows. |
+| `Ctrl-w h` / `j` / `k` / `l` | View mode: focus the pane (widget) on the left, below, above, on the right. A browser tab never gets `Ctrl-w`: the desktop window does. |
+| `g t` / `g T` | View mode: next / previous tab of the tabs around the focused widget. |
+| `Esc` | View mode: leave the view (Threads mode). A widget that uses `Esc` itself keeps it (the file editor's vim). |
 | `/`, `Space /` | Search the current conversation; fuzzy thread picker with live preview (Enter confirms, Escape restores). |
 | `i` | Focus the composer. |
 | `:`, `Space :`, `Space Space` | The `:` line. |
@@ -145,15 +155,15 @@ workspace; `Space v` and `Space f` directly open view and workspace-file pickers
 | `Space s`, `Space S`, `Space R` | Stop process of the thread (and of the threads it spawned); restart it. |
 | `Space t` | Focus threads (wide); show or hide threads (narrow). Then `za` acts on the focused workspace. |
 | `Space b` | Hide or show the left column (wide); the mode line's *Show threads* brings it back too. |
-| `d d`, `z a` | Delete the focused row; fold the focused workspace. |
-| `Alt-ArrowUp`, `Alt-ArrowDown` | Move the focused thread (in its workspace) or workspace up or down. |
-| `Alt-Shift-ArrowUp`, `Alt-Shift-ArrowDown` | Move the focused thread to the end of the previous workspace, the start of the next one. |
+| `d d`, `z a` | Threads mode: delete the focused row, else the selected thread; fold the focused workspace, else the selected thread's. |
+| `Alt-ArrowUp`, `Alt-ArrowDown` | Threads mode: move the focused thread (in its workspace) or workspace up or down, else the selected thread. |
+| `Alt-Shift-ArrowUp`, `Alt-Shift-ArrowDown` | Threads mode: move the focused (else the selected) thread to the end of the previous workspace, the start of the next one. |
 | `Ctrl-c` | Interrupt the selected thread's turn (its queued messages come back into the composer); with text selected it copies. |
-| `u` | In normal mode restore this thread's last Ctrl-c-cleared composer draft, including images and paste chips, merged with any new text. Not general undo. Leave the composer with Esc first; the recovery hint stays while the draft can be restored. |
+| `u` | Restore this thread's last Ctrl-c-cleared composer draft, including images and paste chips, merged with any new text. Not general undo. Leave the composer with Esc first; the recovery hint stays while the draft can be restored. |
 
-In insert mode `Esc` leaves the text field (in the composer too, while the agent works: it never aborts), `Ctrl-c` in
-the composer clears the draft, then aborts, `Alt-a` / `Alt-n` / `Alt-j` / `Alt-k` work too (the new thread's composer
-keeps the focus); in the composer
+In insert mode `Esc` leaves the text field for the view (in the composer too, while the agent works: it never
+aborts), `Ctrl-c` in the composer clears the draft, then aborts, `Alt-a` / `Alt-n` / `Alt-j` / `Alt-k` work too (the
+new thread's composer keeps the focus); in the composer
 Enter sends; while the agent works it steers the running turn, and Ctrl-Enter (⌘-Enter), Shift-Enter or Ctrl-Q
 queue a follow-up for after the turn instead. Alt-Enter adds a line. A paste of more than 10 lines or 1000
 characters becomes a chip (`Pasted text #1 · 120 lines`) and a `[Paste #1, +120 lines]` token, expanded when the

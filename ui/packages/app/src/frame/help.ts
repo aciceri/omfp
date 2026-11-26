@@ -1,9 +1,10 @@
 /**
  * The help panel's content (UI-198): every effective binding (the defaults with the daemon's `[keymap]` entries, and
- * whatever command a widget registered), grouped by where it applies, then the `:` commands with their arguments.
- * The current workspace's `.omfp/keymap.json` bindings form a group of their own (UI-211). A binding's description is
- * the title of the command it runs in that place (the registered command of the scope the mode reaches), else the
- * built-in description of its id, else the id itself.
+ * whatever command a widget registered), grouped by where it applies — the keys of Threads and View mode both, of
+ * Threads mode, of View mode, … — then the `:` commands with their arguments. The current workspace's
+ * `.omfp/keymap.json` bindings form a group of their own (UI-211). A binding's description is the title of the command
+ * it runs in that place (the registered command of the scope the mode reaches), else the built-in description of its
+ * id, else the id itself.
  */
 
 import { type Binding, keyLabel, type Mode } from "../keymap/keymap.ts";
@@ -13,7 +14,16 @@ import { queueKeys } from "../vm/composer.ts";
 import { rawPasteKeys } from "../vm/paste.ts";
 import { unique } from "./cmdline.ts";
 
-export type HelpSectionId = "workspace" | "normal" | "insert" | "transcript" | "cmdline" | "editor" | "commands";
+export type HelpSectionId =
+  | "workspace"
+  | "normal"
+  | "threads"
+  | "view"
+  | "insert"
+  | "transcript"
+  | "cmdline"
+  | "editor"
+  | "commands";
 
 export interface HelpRow {
   /** Key chip labels (UI-148), or `:name` for a command. */
@@ -70,6 +80,18 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   "thread.nextAttention": commandTitles.nextAttention,
   "thread.next": commandTitles.nextThread,
   "thread.prev": commandTitles.prevThread,
+  "thread.first": commandTitles.firstThread,
+  "thread.last": commandTitles.lastThread,
+  "thread.halfDown": commandTitles.halfThreadsDown,
+  "thread.halfUp": commandTitles.halfThreadsUp,
+  "view.focus": commandTitles.focusView,
+  "view.leave": commandTitles.leaveView,
+  "pane.left": commandTitles.paneLeft,
+  "pane.down": commandTitles.paneDown,
+  "pane.up": commandTitles.paneUp,
+  "pane.right": commandTitles.paneRight,
+  "tab.next": commandTitles.nextTab,
+  "tab.prev": commandTitles.prevTab,
   "thread.new": commandTitles.new,
   "workspace.new": commandTitles.newWorkspace,
   "workspace.rescan": commandTitles.rescan,
@@ -211,24 +233,43 @@ export function helpSections(bindings: readonly Binding[], commands: readonly Co
   );
   const fallback = (binding: Binding) => builtinDescription(binding.command) ?? binding.command;
   // The command a binding runs in its mode: the registered one of the scope the mode reaches, else the built-in.
+  const threadsMode = (binding: Binding) =>
+    registered(commands, binding.command, [undefined, "threads"]) ?? fallback(binding);
   const describeIn: Readonly<Record<Mode, (binding: Binding) => string>> = {
-    normal: (binding) => registered(commands, binding.command, [undefined, "threads"]) ?? fallback(binding),
+    normal: threadsMode,
+    threads: threadsMode,
+    view: (binding) => registered(commands, binding.command, [undefined]) ?? fallback(binding),
     insert: (binding) => registered(commands, binding.command, ["composer", undefined]) ?? fallback(binding),
     cmdline: (binding) => registered(commands, binding.command, [undefined]) ?? fallback(binding),
   };
   const workspace = bindings.filter((binding) => binding.source === "workspace");
   const shared = bindings.filter((binding) => binding.source !== "workspace");
-  const workspaceRows = (["normal", "insert", "cmdline"] as const).flatMap((mode) =>
+  const workspaceRows = (["normal", "threads", "view", "insert", "cmdline"] as const).flatMap((mode) =>
     bindingRows(workspace, mode, (binding) =>
       mode === "normal" ? describeIn.normal(binding) : keyStrings.help.inMode(describeIn[mode](binding), mode),
     ),
   );
+  // The transcript's commands where a binding reaches it: in View mode, or in both modes.
+  const inTranscript = (binding: Binding) =>
+    transcriptScoped.has(binding.command)
+      ? registered(commands, binding.command, ["transcript"])
+      : TRANSCRIPT[binding.command];
   const sections: HelpSection[] = [
     { id: "workspace", title: keyStrings.help.section, rows: workspaceRows },
     {
       id: "normal",
       title: text.sections.normal,
       rows: bindingRows(shared, "normal", describeIn.normal),
+    },
+    {
+      id: "threads",
+      title: text.sections.threads,
+      rows: bindingRows(shared, "threads", describeIn.threads),
+    },
+    {
+      id: "view",
+      title: text.sections.view,
+      rows: bindingRows(shared, "view", describeIn.view),
     },
     {
       id: "insert",
@@ -239,11 +280,8 @@ export function helpSections(bindings: readonly Binding[], commands: readonly Co
       id: "transcript",
       title: text.sections.transcript,
       rows: [
-        ...bindingRows(shared, "normal", (binding) =>
-          transcriptScoped.has(binding.command)
-            ? registered(commands, binding.command, ["transcript"])
-            : TRANSCRIPT[binding.command],
-        ),
+        ...bindingRows(shared, "view", inTranscript),
+        ...bindingRows(shared, "normal", inTranscript),
         ...TRANSCRIPT_KEYS,
       ],
     },

@@ -11,7 +11,7 @@
 
 import { type FileErrorReport, type ViewsState, viewsTopic } from "@omfp/protocol";
 import { Activity, type ReactNode, type RefObject, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { createKeyHandler } from "../keymap/handler.ts";
+import { createKeyHandler, THREADS_ATTRIBUTE } from "../keymap/handler.ts";
 import { type Binding, DEFAULT_BINDINGS } from "../keymap/keymap.ts";
 import { globalKeyTimers, type KeyTimers, WhichKeyState } from "../keymap/which-key.ts";
 import { KeymapError, useBindings } from "../keymap/workspace.tsx";
@@ -62,6 +62,7 @@ import { type ModeLineViews, useMode, WindowModeLine } from "./mode-line.tsx";
 import type { NotificationPort } from "./notifications.ts";
 import { Notifier } from "./notifier.tsx";
 import { OpenedUrls } from "./opened-urls.tsx";
+import { PaneCommands } from "./pane-commands.tsx";
 import { LEFT_COLLAPSED, LEFT_OPEN, MOBILE_AREA } from "./responsive.ts";
 import {
   Areas,
@@ -215,6 +216,7 @@ export function Frame({
               id={LEFT_COLUMN_ID}
               className="omfp-frame__left"
               data-testid="left-column"
+              {...{ [THREADS_ATTRIBUTE]: "" }}
               data-open={(breakpoint !== "wide" && leftOpen) || undefined}
               data-collapsed={collapsed || undefined}
               hidden={collapsed}
@@ -285,6 +287,7 @@ export function Frame({
             widgets={widgetReferences(registry, state)}
             addWidget={addWidget}
           />
+          <PaneCommands />
           <Notifier port={notifications} hasFocus={hasFocus} focusWindow={focusWindow} />
           <AgentFiles />
           <AgentNotices />

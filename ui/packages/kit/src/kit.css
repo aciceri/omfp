@@ -2455,6 +2455,12 @@
     background: var(--omfp-grad);
   }
 
+  /* View mode (UI-167): the keys go to the focused widget, so the pill takes a colour of its own. */
+  .omfp-mode-pill[data-mode="view"] {
+    color: var(--omfp-on-secondary-container);
+    background: var(--omfp-secondary-container);
+  }
+
   .omfp-mode-pill[data-mode="command"] {
     color: var(--omfp-on-tertiary);
     background: linear-gradient(90deg, var(--omfp-grad-end), var(--omfp-tertiary) 38%, var(--omfp-primary));

@@ -204,7 +204,7 @@ export const chat = {
       running: "Agent working",
     },
     /** Composer bar hints after their key chips (UI-148, UI-172). */
-    hint: { newline: "newline", leave: "normal", interrupt: "interrupt", restore: "restore Ctrl-C draft" },
+    hint: { newline: "newline", leave: "view", interrupt: "interrupt", restore: "restore Ctrl-C draft" },
     attachments: "Attached images",
     attachment: (index: number) => `Attached image ${index}`,
     removeAttachment: (index: number) => `Remove image ${index}`,

@@ -52,14 +52,14 @@ describe("which-key model", () => {
       // A complete binding wins over longer ones, like the matcher.
       { mode: "normal", keys: "Space t x", command: "my.never", source: "config" },
     ];
-    const prefixes = flat(whichKeySections(bindings, { keys: "Space", mode: "normal" }, titleOf)).filter(([, , what]) =>
+    const prefixes = flat(whichKeySections(bindings, { keys: "Space", mode: "view" }, titleOf)).filter(([, , what]) =>
       what?.startsWith("prefix:"),
     );
     expect(prefixes).toEqual([
       ["threads", "T", "prefix:threads"],
       ["other", "o", "prefix:2"],
     ]);
-    const sections = whichKeySections(bindings, { keys: "Space", mode: "normal" }, titleOf);
+    const sections = whichKeySections(bindings, { keys: "Space", mode: "threads" }, titleOf);
     const toggle = sections.flatMap((section) => section.entries).find((entry) => entry.key === "t");
     expect(toggle?.kind === "command" && toggle.binding.command).toBe("threads.toggle");
   });
@@ -199,12 +199,12 @@ describe("waiting sequences in the key handler", () => {
   test("a held sequence is the matcher's until it ends", () => {
     let now = 0;
     const matcher = new KeymapMatcher(DEFAULT_BINDINGS, () => now);
-    matcher.feed("g", "normal");
+    matcher.feed("g", "threads");
     matcher.hold();
     now += SEQUENCE_TIMEOUT_MS * 10;
     expect(matcher.pending).toBe("g");
-    matcher.feed("g", "normal");
-    matcher.feed("g", "normal");
+    matcher.feed("g", "threads");
+    matcher.feed("g", "threads");
     now += SEQUENCE_TIMEOUT_MS + 1;
     expect(matcher.pending).toBeUndefined();
   });

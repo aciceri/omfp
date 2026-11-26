@@ -202,11 +202,15 @@ export function HideThreadsButton(): ReactNode {
   );
 }
 
-/** Show threads, at the mode line's start while the wide column is collapsed (UI-986). */
+/**
+ * Show threads, at the mode line's start while the wide column is collapsed (UI-986). It stands for the column, so
+ * its focus (where collapsing the column from inside it leaves the focus) keeps the window in Threads mode (UI-095).
+ */
 export function ShowThreadsButton(): ReactNode {
   const setCollapsed = useSetCollapsed();
   return (
     <ModeButton
+      {...{ [THREADS_ATTRIBUTE]: "" }}
       label={text.showThreads}
       icon="panel-left-open"
       aria-controls={LEFT_COLUMN_ID}

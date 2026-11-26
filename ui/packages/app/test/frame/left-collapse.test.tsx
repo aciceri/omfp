@@ -99,9 +99,11 @@ describe("collapsing the left column", () => {
     // The view is the shell's one visible child: nothing else takes room beside it.
     const shown = [...screen.getByTestId("shell").children].filter((child) => !(child as HTMLElement).hidden);
     expect(shown.map((child) => child.className)).toEqual(["omfp-frame__main"]);
-    // The widget stays mounted, hidden; the focus that was on the button goes to the mode line's.
+    // The widget stays mounted, hidden; the focus that was on the button goes to the mode line's, which stands for the
+    // column: the window stays in Threads mode (UI-095).
     expect(screen.getByTestId("sidebar").isConnected).toBe(true);
     expect(focused()).toBe("left-expand");
+    expect(screen.getByTestId("mode-line").dataset.mode).toBe("threads");
   });
 
   // spec: UI-985

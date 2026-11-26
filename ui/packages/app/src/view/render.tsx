@@ -249,11 +249,12 @@ function useTabBar(selected: string | undefined): RefObject<HTMLDivElement | nul
 }
 
 /**
- * `g t` / `g T` (UI-095): the container with the tab bar `bar` answers {@link TAB_STEP_EVENT} from inside it, selecting
- * the next or previous of its tabs `ids` (wrapping around) and focusing the pane of the tab it shows.
+ * `g t` / `g T` (UI-095): the tabs container holding `anchor` (its tab bar, or a marker) answers {@link TAB_STEP_EVENT}
+ * from inside it, selecting the next or previous of its tabs `ids` (wrapping around) and focusing the pane of the tab it
+ * shows. `TabsNode` and a phone's tabbed cells (`Cells`) both use it.
  */
 function useTabSteps(
-  bar: RefObject<HTMLDivElement | null>,
+  anchor: RefObject<HTMLElement | null>,
   ids: readonly string[],
   selected: string | undefined,
   select: (id: string) => void,
@@ -263,7 +264,7 @@ function useTabSteps(
   const stepped = useRef(false);
   // Every render: the tab bar shows only once there are two tabs.
   useEffect(() => {
-    const root = bar.current?.parentElement;
+    const root = anchor.current?.parentElement;
     if (root === null || root === undefined) {
       return undefined;
     }
@@ -286,21 +287,19 @@ function useTabSteps(
     root.addEventListener(TAB_STEP_EVENT, step);
     return () => root.removeEventListener(TAB_STEP_EVENT, step);
   });
-  // Once the tab shows: its panel was hidden until this commit.
+  // Once the tab shows: its panel was hidden until this commit. The other tabs, and those of nested containers, stay
+  // mounted, hidden: the first pane that shows is the selected tab's.
   useLayoutEffect(() => {
     if (!stepped.current || selected === undefined) {
       return;
     }
     stepped.current = false;
-    const panel = [...(bar.current?.parentElement?.children ?? [])].find(
-      (child) => child.classList.contains("omfp-view__panel") && !child.hasAttribute("hidden"),
-    );
-    // A nested tabs container keeps its other tabs mounted, hidden: the first pane that shows.
-    const pane = panel === undefined ? undefined : shownPanes(panel)[0];
+    const root = anchor.current?.parentElement;
+    const pane = root === null || root === undefined ? undefined : shownPanes(root)[0];
     if (pane !== undefined) {
       focusPane(pane);
     }
-  }, [bar, selected]);
+  }, [anchor, selected]);
 }
 
 /** A tab the `main` slot opened: a file (`omfp:file`) or a widget a reveal opened there (UI-373). */
@@ -542,6 +541,9 @@ function Cells({
   const choices = chat === undefined ? indices : area === "chat" ? [chat] : indices.filter((index) => index !== chat);
   const [picked, setPicked] = useState<number>();
   const selected = picked !== undefined && choices.includes(picked) ? picked : (choices[0] ?? 0);
+  // `g t` / `g T` step these tabs too (UI-095); the marker sits in the tabs container while there is one.
+  const anchor = useRef<HTMLSpanElement>(null);
+  useTabSteps(anchor, choices.map(String), String(selected), (id) => setPicked(Number(id)));
   const resize = (index: number, delta: number) => {
     setPreview(undefined);
     setOwn((previous) => withSizes(previous, key, resizeSizes(current, index, delta)));
@@ -558,6 +560,7 @@ function Cells({
         selectedKey={String(selected)}
         onSelectionChange={(key) => setPicked(Number(key))}
       >
+        <span ref={anchor} hidden />
         <TabList className="omfp-view__celltabs" aria-label={strings.shell.responsive.tabs(tree.kind, path)}>
           {choices.map((index) => {
             const child = tree.children[index];

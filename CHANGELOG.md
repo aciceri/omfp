@@ -20,6 +20,7 @@ The version's section is also the source of the GitHub release notes.
   frame, so sites that refuse to be framed (Google's sign-in, YouTube's pages, GitHub) show and stay signed in across
   restarts. While a dialog, the `:` line or another panel covers it, a still picture of the page stands in. The web
   app, the macOS app and phones keep the frame.
+- The address at the top of `omfp:web` is editable: type another page and press Enter to show it there.
 - A transcript scrolled up well away from its end shows a down-arrow button over its bottom corner: click or tap it
   (or press Enter on it) to jump to the latest message and follow the reply again. It is touch-sized on phones too.
 - Links between threads: a reply can link another thread as `[title](omfp://thread/<id>)`, and agents are told to

@@ -2,6 +2,7 @@ import { type HTMLAttributes, type ReactNode, useEffect, useId, useState } from 
 import { Button, IconButton } from "./button.tsx";
 import { cx } from "./class.ts";
 import { EmptyState } from "./feedback.tsx";
+import { TextField } from "./field.tsx";
 import { Icon } from "./icons.tsx";
 import { Toolbar } from "./layout.tsx";
 
@@ -82,6 +83,8 @@ export function webFrameUrl(text: unknown, own: string): WebFrameUrl {
 export interface WebFrameTexts {
   /** The toolbar's accessible name. */
   toolbar: string;
+  /** The address field's accessible name. */
+  address: string;
   reload: string;
   open: string;
   /** The quiet button that shows {@link WebFrameTexts.refusedHint} on demand. */
@@ -100,6 +103,7 @@ export interface WebFrameTexts {
 
 export const WEB_FRAME_TEXTS: WebFrameTexts = {
   toolbar: "Web page",
+  address: "Address",
   reload: "Reload",
   open: "Open in browser",
   blank: "Blank?",
@@ -150,7 +154,13 @@ export function WebFrame({
   const native = hasNativeWebViews();
   const placeholderId = useId();
   // The window's origin: the daemon's for the app.
-  const checked = webFrameUrl(url, globalThis.location?.origin ?? "");
+  const own = globalThis.location?.origin ?? "";
+  // A page chosen in the address field (UI-685) shows instead of `url` until `url` itself changes.
+  const [typed, setTyped] = useState<{ over: unknown; href: string }>();
+  const checked = webFrameUrl(typed !== undefined && typed.over === url ? typed.href : url, own);
+  // The address field's text while the user edits it, and whether Enter refused it.
+  const [draft, setDraft] = useState<string>();
+  const [draftRefused, setDraftRefused] = useState(false);
   const href = checked.ok ? checked.href : undefined;
   const [reloads, setReloads] = useState(0);
   // The frame now showing: a reload or another URL waits for its page again.
@@ -165,6 +175,23 @@ export function WebFrame({
     const timer = setTimeout(() => setHintFrame(frame), loadTimeoutMs);
     return () => clearTimeout(timer);
   }, [href, frame, loaded, loadTimeoutMs, native]);
+  const go = () => {
+    if (draft === undefined) {
+      return;
+    }
+    const text = draft.trim();
+    const next = webFrameUrl(/^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `https://${text}`, own);
+    if (!next.ok) {
+      setDraftRefused(true);
+      return;
+    }
+    setDraft(undefined);
+    setDraftRefused(false);
+    setTyped({ over: url, href: next.href });
+    if (next.href === href) {
+      setReloads((count) => count + 1);
+    }
+  };
   if (!checked.ok) {
     return (
       <EmptyState
@@ -184,9 +211,34 @@ export function WebFrame({
     <section data-testid="web-frame" {...props} className={cx("omfp-web-frame", className)} data-loaded={loaded}>
       <Toolbar aria-label={words.toolbar} className="omfp-web-frame__bar">
         <Icon name="globe" className="omfp-web-frame__icon" />
-        <span className="omfp-web-frame__url" title={checked.href} data-testid="web-frame-url">
-          {checked.href}
-        </span>
+        <TextField
+          label={words.address}
+          hideLabel
+          mono
+          className="omfp-web-frame__url"
+          value={draft ?? checked.href}
+          isInvalid={draftRefused}
+          onChange={(text) => {
+            setDraft(text);
+            setDraftRefused(false);
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              go();
+            } else if (event.key === "Escape") {
+              setDraft(undefined);
+              setDraftRefused(false);
+            } else if (event.ctrlKey || event.metaKey) {
+              // The window's shortcuts (zoom, UI-283); plain keys, arrows included, stay in the field.
+              event.continuePropagation();
+            }
+          }}
+          onBlur={() => {
+            setDraft(undefined);
+            setDraftRefused(false);
+          }}
+          inputProps={{ title: checked.href, spellCheck: false, "data-testid": "web-frame-url" }}
+        />
         {!native && (
           <Button
             variant="quiet"

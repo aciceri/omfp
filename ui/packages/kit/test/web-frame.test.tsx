@@ -26,6 +26,9 @@ function frame(): HTMLIFrameElement {
   return screen.getByTestId("web-frame-frame") as HTMLIFrameElement;
 }
 
+function address(): HTMLInputElement {
+  return screen.getByTestId("web-frame-url") as HTMLInputElement;
+}
 describe("webFrameUrl", () => {
   // spec: UI-671
   test("any http or https page shows, local dev servers included", () => {
@@ -121,7 +124,7 @@ describe("WebFrame", () => {
     try {
       render(<WebFrame url="https://grafana.example.com/d/abc" />);
       expect(screen.getByRole("toolbar").getAttribute("aria-label")).toBe("Web page");
-      expect(screen.getByTestId("web-frame-url").textContent).toBe("https://grafana.example.com/d/abc");
+      expect(address().value).toBe("https://grafana.example.com/d/abc");
       frame().dataset.marked = "before";
       await user.click(screen.getByRole("button", { name: "Reload" }));
       // A new frame: the page loads again (a cross-origin frame cannot be told to reload).
@@ -132,6 +135,24 @@ describe("WebFrame", () => {
     } finally {
       open.mockRestore();
     }
+  });
+
+  // spec: UI-685
+  test("the address field takes another page on Enter, refuses what it cannot show and yields to a new url", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<WebFrame url="https://grafana.example.com/" />);
+    await user.clear(address());
+    await user.type(address(), "example.com/docs{Enter}");
+    expect(frame().getAttribute("src")).toBe("https://example.com/docs");
+    expect(address().value).toBe("https://example.com/docs");
+    await user.clear(address());
+    await user.type(address(), `${OWN}/{Enter}`);
+    expect(address().getAttribute("aria-invalid")).toBe("true");
+    expect(frame().getAttribute("src")).toBe("https://example.com/docs");
+    await user.type(address(), "{Escape}");
+    expect(address().value).toBe("https://example.com/docs");
+    rerender(<WebFrame url="http://localhost:5173/" />);
+    expect(frame().getAttribute("src")).toBe("http://localhost:5173/");
   });
 
   // spec: UI-674

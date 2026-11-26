@@ -136,6 +136,8 @@ const BRIDGE: &str = r#"  if (window.top !== window || location.origin !== ORIGI
   const INSET = 2;
   // The frame around a widget: its own controls (a floating panel's bar and resize corner) do not cover it.
   const FRAME = ".omfp-floating-widget, .omfp-floating-file";
+  // Not covering either: a splitter's grab area reaches a few pixels over the cells beside it (UI-683).
+  const EDGE = ".omfp-splitter";
   let last = "";
 
   // The part of `element` that can show: its box cut by the viewport and by every ancestor clipping its overflow.
@@ -166,7 +168,7 @@ const BRIDGE: &str = r#"  if (window.top !== window || location.origin !== ORIGI
         const x = rect.left + INSET + ((rect.width - 2 * INSET) * column) / (GRID - 1);
         const y = rect.top + INSET + ((rect.height - 2 * INSET) * row) / (GRID - 1);
         const top = document.elementFromPoint(x, y);
-        if (top !== null && !frame.contains(top)) return true;
+        if (top !== null && !frame.contains(top) && top.closest(EDGE) === null) return true;
       }
     }
     return false;
@@ -220,7 +222,9 @@ const BRIDGE: &str = r#"  if (window.top !== window || location.origin !== ORIGI
       }
       const box = element.getBoundingClientRect();
       const rect = shown(element);
-      capture.style.cssText = `position:absolute;left:${rect.left - box.left}px;top:${rect.top - box.top}px;width:${rect.width}px;height:${rect.height}px;pointer-events:none`;
+      // `cover` from the top left: a capture of another size (taken while the view was still being laid out) is cut,
+      // never stretched.
+      capture.style.cssText = `position:absolute;left:${rect.left - box.left}px;top:${rect.top - box.top}px;width:${rect.width}px;height:${rect.height}px;object-fit:cover;object-position:left top;pointer-events:none`;
       capture.src = src;
     },
     thaw(id) {

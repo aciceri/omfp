@@ -107,9 +107,10 @@ async fn an_agent_frames_a_local_page_that_cannot_reach_or_navigate_the_window()
         .await?;
     assert_eq!(
         journey
-            .text(&format!("{FRAME_CSS} [data-testid=web-frame-url]"))
-            .await?,
-        url
+            .attr(&format!("{FRAME_CSS} [data-testid=web-frame-url]"), "title")
+            .await?
+            .as_deref(),
+        Some(url.as_str())
     );
     let frame = format!("{FRAME_CSS} [data-testid=web-frame-frame]");
     assert_eq!(

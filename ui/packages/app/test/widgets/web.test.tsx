@@ -28,7 +28,7 @@ describe("omfp:web", () => {
     render(<WebWidget url="http://localhost:5173/" title="Preview" />);
     const frame = screen.getByTestId("web-frame-frame");
     expect([frame.getAttribute("src"), frame.getAttribute("title")]).toEqual(["http://localhost:5173/", "Preview"]);
-    expect(screen.getByTestId("web-frame-url").textContent).toBe("http://localhost:5173/");
+    expect((screen.getByTestId("web-frame-url") as HTMLInputElement).value).toBe("http://localhost:5173/");
   });
 
   // spec: UI-670, UI-675

@@ -1,41 +1,47 @@
-//! Web pages as native views over the Linux desktop window's page (UI-682..UI-684; spikes S-16 and S-17). A web frame
-//! (`WebFrame`, UI-670) is an `<iframe>`, and sites that refuse framing (`X-Frame-Options`, CSP `frame-ancestors`:
-//! Google's sign-in) stay blank there whatever the engine. In this window the frame is a placeholder instead, and the
-//! window draws a `WebKit` view of its own over it: a top-level page, so framing rules do not apply.
+//! Web pages as native views over the desktop window's page (UI-682..UI-686; spikes S-16 and S-17). The kit's
+//! `WebView` (UI-670) is an `<iframe>` elsewhere, and sites that refuse framing (`X-Frame-Options`, CSP
+//! `frame-ancestors`: Google's sign-in) stay blank there whatever the engine. In this window it is a placeholder
+//! instead, and the window draws a web view of its own over it: a top-level page, so framing rules do not apply.
 //!
-//! The page and the window talk as the zoom does (UI-283): an initialization script of the daemon's top-level page
-//! ([`script`]) reports every placeholder each time one changes — the part of it that shows, cut by the viewport and
-//! every ancestor clipping it, and whether anything of the page lies on top of it — to a script message handler whose
-//! name only that script knows (DMN-182). The window moves the main web view from Tauri's `GtkBox` into a
-//! `gtk::Overlay` and keeps one overlay child per placeholder ([`follow`]): Tauri's own child webviews would not do,
-//! on Linux they are packed into that box and ignore their position (S-17).
+//! An initialization script of the daemon's top-level page ([`script`]) reports every placeholder each time one
+//! changes — the part of it that shows, cut by the viewport and every ancestor clipping it, and whether anything of the
+//! page lies on top of it — and posts the commands of a widget's `WebView` handle (reload, back, forward). It posts to
+//! a channel only that script knows (DMN-182): a script message handler named after the window's nonce on Linux (as
+//! the zoom does, UI-283), a navigation of a hidden frame to `omfp-web-views:?n=<nonce>&m=…` on macOS (as the
+//! notifications do, UI-252). [`Views`] keeps one view per placeholder through a platform [`Engine`]: `WebKitGTK` views
+//! in a `gtk::Overlay` on Linux (`gtk`; Tauri's child webviews are packed into a `GtkBox` there and ignore their
+//! position, S-17), Tauri child webviews on macOS (`macos`). Each view tells the page where it went
+//! (`__omfpWebViews.navigated`) and when it loaded, which `WebView` hands to the widget.
 //!
 //! A native view is always on top of the page, so omfp's own UI (the `:` line, dialogs, another panel) would show under
-//! it. While anything covers a placeholder the window captures its view, the page shows the capture in the
-//! placeholder and the view hides; uncovered, the view shows again (S-16's freeze).
+//! it. While anything covers a placeholder the view hides, behind a capture of it in the placeholder where the engine
+//! can take one (Linux); uncovered, the view shows again (S-16's freeze).
 
-use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
-use std::path::Path;
-use std::rc::Rc;
+use std::collections::hash_map::Entry as Slotted;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use gtk::glib;
-use gtk::prelude::*;
-use tauri::{Url, WebviewWindow};
-use webkit2gtk::{
-    CookieManagerExt as _, CookiePersistentStorage, SnapshotOptions, SnapshotRegion,
-    URIRequestExt as _, UserContentManagerExt as _, WebContext, WebView, WebViewExt as _,
-    WebsiteDataManager, WebsiteDataManagerExt as _,
-};
+use tauri::Url;
 
 use super::{Navigation, navigation};
+
+#[cfg(target_os = "linux")]
+mod gtk;
+#[cfg(target_os = "macos")]
+mod macos;
+
+#[cfg(target_os = "linux")]
+pub use gtk::follow;
+#[cfg(target_os = "macos")]
+pub use macos::{SharedViews, on_navigation, start};
 
 /// A placeholder as the page reports it, in the page's CSS pixels.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Slot {
-    /// The placeholder's id: one view per id, a new id (a reload) is a new view.
+    /// The placeholder's id: one view per id.
     pub id: String,
-    /// The page it shows.
+    /// The page it asks for.
     pub url: String,
     /// The part of the placeholder that shows, in the viewport.
     pub x: f64,
@@ -48,7 +54,7 @@ pub struct Slot {
     pub covered: bool,
 }
 
-/// Where a view goes in the window, in GTK's logical pixels.
+/// Where a view goes in the window, in logical pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Placement {
     pub x: i32,
@@ -57,13 +63,44 @@ pub struct Placement {
     pub height: i32,
 }
 
-/// The placeholders of a report of [`script`]: a JSON array; an entry that is not a placeholder is left out.
+/// What a widget's `WebView` handle asks of its page (UI-685).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Command {
+    Reload,
+    Back,
+    Forward,
+}
+
+/// What the page posts.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Message {
+    /// Every placeholder, and the viewport's width in CSS pixels (macOS derives the page zoom from it).
+    Slots {
+        slots: Vec<Slot>,
+        viewport_width: f64,
+    },
+    /// A command for the view of placeholder `id`.
+    Command { id: String, command: Command },
+}
+
+/// A message of [`script`]: `{"slots": […], "vw": …}` or `{"command": "back", "id": …}`; `None` for anything else.
+/// A slot entry that is not a placeholder is left out.
 #[must_use]
-pub fn parse_slots(json: &str) -> Vec<Slot> {
-    let Ok(serde_json::Value::Array(entries)) = serde_json::from_str(json) else {
-        return Vec::new();
-    };
-    entries
+pub fn parse_message(json: &str) -> Option<Message> {
+    let message: serde_json::Value = serde_json::from_str(json).ok()?;
+    if let Some(command) = message.get("command") {
+        let command = match command.as_str()? {
+            "reload" => Command::Reload,
+            "back" => Command::Back,
+            "forward" => Command::Forward,
+            _ => return None,
+        };
+        let id = message.get("id")?.as_str()?.to_owned();
+        return Some(Message::Command { id, command });
+    }
+    let slots = message
+        .get("slots")?
+        .as_array()?
         .iter()
         .filter_map(|entry| {
             let number = |key: &str| entry.get(key)?.as_f64().filter(|value| value.is_finite());
@@ -79,7 +116,38 @@ pub fn parse_slots(json: &str) -> Vec<Slot> {
                 covered: flag("covered")?,
             })
         })
-        .collect()
+        .collect();
+    let viewport_width = message
+        .get("vw")
+        .and_then(serde_json::Value::as_f64)
+        .unwrap_or(0.0);
+    Some(Message::Slots {
+        slots,
+        viewport_width,
+    })
+}
+
+/// The scheme of the page's messages on macOS (UI-686).
+pub const SCHEME: &str = "omfp-web-views";
+
+/// The message of a navigation to [`SCHEME`] signed with the window's `nonce` (DMN-182); `None` for any other URL or
+/// a message without the nonce.
+#[cfg(any(target_os = "macos", test))]
+#[must_use]
+pub fn posted(url: &Url, nonce: &str) -> Option<Message> {
+    if url.scheme() != SCHEME {
+        return None;
+    }
+    let mut signed = false;
+    let mut message = None;
+    for (key, value) in url.query_pairs() {
+        match key.as_ref() {
+            "n" => signed = value == nonce,
+            "m" => message = Some(value.into_owned()),
+            _ => {}
+        }
+    }
+    signed.then(|| parse_message(&message?)).flatten()
 }
 
 /// Where the view of `slot` goes when the page is zoomed by `zoom` (UI-683): the page's CSS pixels are `zoom` logical
@@ -110,21 +178,35 @@ pub fn shows(url: &Url, origin: &str) -> bool {
     matches!(url.scheme(), "http" | "https") && navigation(url, origin) == Navigation::External
 }
 
+/// How the page's script posts to the window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Transport {
+    /// A `WebKit` script message handler (Linux).
+    Handler,
+    /// Navigations of hidden frames to [`SCHEME`] (macOS: Tauri registers no handler of ours).
+    Frames,
+}
+
 /// The script message handler of the window of `nonce`: only the window's own script knows it (DMN-182).
 fn handler(nonce: &str) -> String {
     format!("omfpWebViews-{nonce}")
 }
 
 /// The page's side (UI-682), for the top-level page of the daemon's `origin` only (DMN-182): reports the placeholders
-/// of web frames (`[data-omfp-web-view]`) at every animation frame where they changed, and defines
-/// `window.__omfpWebViews`, which tells `WebFrame` to draw a placeholder and lets the window show and drop a view's
-/// capture.
+/// of `WebView`s (`[data-omfp-web-view]`) at every animation frame where they changed, and defines
+/// `window.__omfpWebViews`, which tells `WebView` to draw a placeholder, carries its handle's commands and lets the
+/// window show and drop a view's capture and report where the view went.
 #[must_use]
-pub fn script(origin: &str, nonce: &str) -> String {
+pub fn script(origin: &str, nonce: &str, transport: Transport) -> String {
+    let value = |text: &str| serde_json::Value::from(text).to_string();
     format!(
-        "(() => {{\n  const ORIGIN = {};\n  const HANDLER = {};\n{BRIDGE}",
-        serde_json::Value::from(origin),
-        serde_json::Value::from(handler(nonce)),
+        "(() => {{\n  const ORIGIN = {};\n  const NONCE = {};\n  const HANDLER = {};\n  const SCHEME = {};\n  \
+         const FRAMES = {};\n{BRIDGE}",
+        value(origin),
+        value(nonce),
+        value(&handler(nonce)),
+        value(SCHEME),
+        transport == Transport::Frames,
     )
 }
 
@@ -139,6 +221,18 @@ const BRIDGE: &str = r#"  if (window.top !== window || location.origin !== ORIGI
   // Not covering either: a splitter's grab area reaches a few pixels over the cells beside it (UI-683).
   const EDGE = ".omfp-splitter";
   let last = "";
+
+  function send(json) {
+    if (!FRAMES) {
+      window.webkit?.messageHandlers?.[HANDLER]?.postMessage(json);
+      return;
+    }
+    const frame = document.createElement("iframe");
+    frame.hidden = true;
+    frame.src = `${SCHEME}:?${new URLSearchParams({ n: NONCE, m: json })}`;
+    (document.body ?? document.documentElement).append(frame);
+    setTimeout(() => frame.remove(), 1000);
+  }
 
   // The part of `element` that can show: its box cut by the viewport and by every ancestor clipping its overflow.
   function shown(element) {
@@ -193,10 +287,10 @@ const BRIDGE: &str = r#"  if (window.top !== window || location.origin !== ORIGI
         covered: visible && covered(element, rect),
       });
     }
-    const json = JSON.stringify(slots);
+    const json = JSON.stringify({ slots, vw: window.innerWidth });
     if (json !== last) {
       last = json;
-      window.webkit?.messageHandlers?.[HANDLER]?.postMessage(json);
+      send(json);
     }
     requestAnimationFrame(report);
   }
@@ -209,6 +303,20 @@ const BRIDGE: &str = r#"  if (window.top !== window || location.origin !== ORIGI
   }
 
   window.__omfpWebViews = {
+    // A widget's command for the view of placeholder `id`: "reload", "back" or "forward".
+    command(id, command) {
+      send(JSON.stringify({ command, id }));
+    },
+    // The window's report: the view of `id` shows `url` (`canGoBack`, `canGoForward`: booleans, or null unknown).
+    navigated(id, url, canGoBack, canGoForward) {
+      placeholder(id)?.dispatchEvent(
+        new CustomEvent("omfp-web-view-navigate", { detail: { url, canGoBack, canGoForward } }),
+      );
+    },
+    // The window's report: the view of `id` finished loading its page.
+    loaded(id) {
+      placeholder(id)?.dispatchEvent(new CustomEvent("omfp-web-view-load"));
+    },
     // Shows the capture `src` (a data: URL) where the view was: the shown part of the placeholder `id`.
     freeze(id, src) {
       const element = placeholder(id);
@@ -234,218 +342,185 @@ const BRIDGE: &str = r#"  if (window.top !== window || location.origin !== ORIGI
   requestAnimationFrame(report);
 })();"#;
 
-/// One placeholder's view.
-struct Native {
-    view: WebView,
-    url: String,
-    /// Whether the page shows the view's capture and the view is hidden (or about to be, its capture still coming).
-    frozen: Rc<Cell<bool>>,
+/// The JavaScript that tells the page the view of placeholder `id` shows `url` (UI-685); `None` when unknown.
+#[must_use]
+pub fn navigated_call(
+    id: &str,
+    url: &str,
+    can_go_back: Option<bool>,
+    can_go_forward: Option<bool>,
+) -> String {
+    format!(
+        "window.__omfpWebViews?.navigated({}, {}, {}, {})",
+        serde_json::Value::from(id),
+        serde_json::Value::from(url),
+        serde_json::Value::from(can_go_back),
+        serde_json::Value::from(can_go_forward),
+    )
 }
 
-/// Puts the window's page into a `gtk::Overlay` and draws a native view over every placeholder [`script`] with `nonce`
-/// reports, for pages [`shows`] lets through. The views keep their web data (cookies: a sign-in) in `data`, apart from
-/// the daemon page's storage.
-pub fn follow(window: &WebviewWindow, origin: String, nonce: &str, data: &Path) {
-    let name = handler(nonce);
-    let data = data.to_path_buf();
-    let owner = window.clone();
-    let followed = window.with_webview(move |webview| {
-        let page = webview.inner();
-        let Some(parent) = page
-            .parent()
-            .and_then(|parent| parent.downcast::<gtk::Box>().ok())
-        else {
-            eprintln!("omfp desktop: no web pages in web frames, the web view is not in a box");
-            return;
-        };
-        let Some(manager) = page.user_content_manager() else {
-            eprintln!(
-                "omfp desktop: no web pages in web frames, the web view has no user content manager"
-            );
-            return;
-        };
-        if !manager.register_script_message_handler(&name) {
-            eprintln!(
-                "omfp desktop: no web pages in web frames, cannot register their message handler"
-            );
-            return;
-        }
-        let overlay = gtk::Overlay::new();
-        parent.remove(&page);
-        overlay.add(&page);
-        parent.pack_start(&overlay, true, true, 0);
-        overlay.show_all();
-        let context = web_context(&data);
-        let views = RefCell::new(HashMap::<String, Native>::new());
-        // The view keeps its manager, which keeps this handler: a weak reference, no cycle.
-        let page = page.downgrade();
-        manager.connect_script_message_received(Some(&name), move |_, message| {
-            let (Some(page), Some(json)) = (page.upgrade(), message.js_value()) else {
-                return;
-            };
-            let slots = parse_slots(&json.to_string());
-            sync(
-                &overlay,
-                &context,
-                &mut views.borrow_mut(),
-                &owner,
-                &origin,
-                &slots,
-                page.zoom_level(),
-            );
-        });
-    });
-    if let Err(error) = followed {
-        eprintln!("omfp desktop: no web pages in web frames: {error}");
-    }
+/// The JavaScript that tells the page the view of placeholder `id` finished loading (UI-685).
+#[must_use]
+pub fn loaded_call(id: &str) -> String {
+    format!(
+        "window.__omfpWebViews?.loaded({})",
+        serde_json::Value::from(id)
+    )
 }
 
-/// The web context of the views: web data and cookies kept in `data`.
-fn web_context(data: &Path) -> WebContext {
-    let directory = data.to_string_lossy();
-    let manager = WebsiteDataManager::builder()
-        .base_cache_directory(directory.as_ref())
-        .base_data_directory(directory.as_ref())
-        .build();
-    if let Some(cookies) = manager.cookie_manager() {
-        cookies.set_persistent_storage(
-            &data.join("cookies").to_string_lossy(),
-            CookiePersistentStorage::Text,
-        );
-    }
-    WebContext::builder().website_data_manager(&manager).build()
-}
-
-/// Brings the views in line with the page's placeholders `slots`.
-fn sync(
-    overlay: &gtk::Overlay,
-    context: &WebContext,
-    views: &mut HashMap<String, Native>,
-    window: &WebviewWindow,
-    origin: &str,
-    slots: &[Slot],
-    zoom: f64,
-) {
-    views.retain(|id, native| {
-        let kept = slots.iter().any(|slot| &slot.id == id);
-        if !kept {
-            overlay.remove(&native.view);
-        }
-        kept
-    });
-    for slot in slots {
-        if !Url::parse(&slot.url).is_ok_and(|url| shows(&url, origin)) {
-            continue;
-        }
-        let native = views
-            .entry(slot.id.clone())
-            .or_insert_with(|| open(overlay, context, &slot.url));
-        if native.url != slot.url {
-            native.view.load_uri(&slot.url);
-            native.url.clone_from(&slot.url);
-        }
-        let Some(place) = placement(slot, zoom) else {
-            native.view.hide();
-            if native.frozen.replace(false) {
-                thaw(window, &slot.id);
-            }
-            continue;
-        };
-        native.view.set_margin_start(place.x);
-        native.view.set_margin_top(place.y);
-        native.view.set_size_request(place.width, place.height);
-        if slot.covered {
-            if !native.frozen.replace(true) {
-                freeze(native, window, &slot.id);
-            }
-        } else {
-            native.view.show();
-            if native.frozen.replace(false) {
-                thaw(window, &slot.id);
-            }
-        }
-    }
-}
-
-/// A new view on `url` over the page: a link to a new window opens in the view itself (UI-684); it gets no script
-/// and no permission (`WebKitGTK` denies the requests nobody handles).
-fn open(overlay: &gtk::Overlay, context: &WebContext, url: &str) -> Native {
-    let view = WebView::with_context(context);
-    view.set_halign(gtk::Align::Start);
-    view.set_valign(gtk::Align::Start);
-    view.connect_create(|view, action| {
-        let target = action.clone().request().and_then(|request| request.uri());
-        if let Some(target) = target.filter(|target| {
-            Url::parse(target).is_ok_and(|url| matches!(url.scheme(), "http" | "https"))
-        }) {
-            view.load_uri(&target);
-        }
-        None
-    });
-    overlay.add_overlay(&view);
-    view.load_uri(url);
-    Native {
-        view,
-        url: url.to_owned(),
-        frozen: Rc::new(Cell::new(false)),
-    }
-}
-
-/// Captures the view of placeholder `id`, has the page show the capture and hides the view, unless the placeholder
-/// was uncovered meanwhile. Without a capture the view hides all the same: omfp's UI must stay on top.
-fn freeze(native: &Native, window: &WebviewWindow, id: &str) {
-    let (view, frozen, window, id) = (
-        native.view.clone(),
-        Rc::clone(&native.frozen),
-        window.clone(),
-        id.to_owned(),
-    );
-    native.view.snapshot(
-        SnapshotRegion::Visible,
-        SnapshotOptions::NONE,
-        None::<&gtk::gio::Cancellable>,
-        move |surface| {
-            if !frozen.get() {
-                return;
-            }
-            if let Some(src) = surface.ok().and_then(|surface| capture_url(&surface)) {
-                let call = format!(
-                    "window.__omfpWebViews?.freeze({}, {})",
-                    serde_json::Value::from(id),
-                    serde_json::Value::from(src)
-                );
-                if let Err(error) = window.eval(call) {
-                    eprintln!("omfp desktop: cannot show a web page's capture: {error}");
-                }
-            }
-            view.hide();
-        },
-    );
-}
-
-/// Has the page drop the capture of placeholder `id`.
-fn thaw(window: &WebviewWindow, id: &str) {
-    if let Err(error) = window.eval(format!(
+/// The JavaScript that drops the capture of placeholder `id`.
+#[must_use]
+pub fn thaw_call(id: &str) -> String {
+    format!(
         "window.__omfpWebViews?.thaw({})",
         serde_json::Value::from(id)
-    )) {
-        eprintln!("omfp desktop: cannot drop a web page's capture: {error}");
+    )
+}
+
+/// The native views of one platform.
+pub trait Engine {
+    type View;
+    /// A new view of placeholder `id` loading `url`, hidden until placed; `None` when none can be made.
+    fn open(&mut self, id: &str, url: &str) -> Option<Self::View>;
+    /// Loads `url` in `view`.
+    fn load(&self, view: &Self::View, url: &str);
+    /// The page `view` shows now.
+    fn current(&self, view: &Self::View) -> Option<String>;
+    fn place(&self, view: &Self::View, at: Placement);
+    fn show(&self, view: &Self::View);
+    fn hide(&self, view: &Self::View);
+    /// Hides `view` behind a capture of it in placeholder `id` where the engine can take one, unless `frozen` was
+    /// cleared meanwhile.
+    fn freeze(&self, view: &Self::View, id: &str, frozen: &Arc<AtomicBool>);
+    /// Drops the capture of placeholder `id`.
+    fn thaw(&self, id: &str);
+    fn act(&self, view: &Self::View, command: Command);
+    fn close(&self, view: Self::View);
+}
+
+/// One placeholder's view.
+#[derive(Debug)]
+struct Native<V> {
+    view: V,
+    /// The page the placeholder asked for last.
+    url: String,
+    /// Whether the view is hidden behind its capture (or about to be, its capture still coming).
+    frozen: Arc<AtomicBool>,
+}
+
+/// The window's native views, one per placeholder the page reports.
+pub struct Views<E: Engine> {
+    engine: E,
+    /// The daemon's origin: its own pages never show in a view (UI-684).
+    origin: String,
+    natives: HashMap<String, Native<E::View>>,
+}
+
+impl<E: Engine> std::fmt::Debug for Views<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Views")
+            .field("origin", &self.origin)
+            .field("placeholders", &self.natives.keys().collect::<Vec<_>>())
+            .finish_non_exhaustive()
     }
 }
 
-/// A capture as a `data:` URL of a PNG image.
-fn capture_url(surface: &gtk::cairo::Surface) -> Option<String> {
-    let image = gtk::cairo::ImageSurface::try_from(surface.clone()).ok()?;
-    let pixbuf = gtk::gdk::pixbuf_get_from_surface(&image, 0, 0, image.width(), image.height())?;
-    let png = pixbuf.save_to_bufferv("png", &[]).ok()?;
-    Some(format!(
-        "data:image/png;base64,{}",
-        glib::base64_encode(&png)
-    ))
+impl<E: Engine> Views<E> {
+    #[must_use]
+    pub fn new(engine: E, origin: String) -> Self {
+        Self {
+            engine,
+            origin,
+            natives: HashMap::new(),
+        }
+    }
+
+    #[cfg(any(target_os = "macos", test))]
+    #[must_use]
+    pub fn engine(&self) -> &E {
+        &self.engine
+    }
+
+    /// Brings the views in line with the page's placeholders `slots` at the page zoom `zoom` (UI-683): a view per
+    /// placeholder of a page [`shows`] lets through, closed with its placeholder; placed over the part that shows,
+    /// hidden while none does, frozen while covered. A placeholder asking for the page its view already went to (a
+    /// widget following `onNavigate`) loads nothing.
+    pub fn sync(&mut self, slots: &[Slot], zoom: f64) {
+        let gone: Vec<String> = self
+            .natives
+            .keys()
+            .filter(|id| {
+                !slots.iter().any(|slot| {
+                    &&slot.id == id
+                        && Url::parse(&slot.url).is_ok_and(|url| shows(&url, &self.origin))
+                })
+            })
+            .cloned()
+            .collect();
+        for id in gone {
+            if let Some(native) = self.natives.remove(&id) {
+                if native.frozen.swap(false, Ordering::SeqCst) {
+                    self.engine.thaw(&id);
+                }
+                self.engine.close(native.view);
+            }
+        }
+        for slot in slots {
+            if !Url::parse(&slot.url).is_ok_and(|url| shows(&url, &self.origin)) {
+                continue;
+            }
+            let native = match self.natives.entry(slot.id.clone()) {
+                Slotted::Occupied(entry) => entry.into_mut(),
+                Slotted::Vacant(entry) => {
+                    let Some(view) = self.engine.open(&slot.id, &slot.url) else {
+                        continue;
+                    };
+                    entry.insert(Native {
+                        view,
+                        url: slot.url.clone(),
+                        frozen: Arc::default(),
+                    })
+                }
+            };
+            if native.url != slot.url {
+                if self.engine.current(&native.view).as_deref() != Some(slot.url.as_str()) {
+                    self.engine.load(&native.view, &slot.url);
+                }
+                native.url.clone_from(&slot.url);
+            }
+            let Some(place) = placement(slot, zoom) else {
+                self.engine.hide(&native.view);
+                if native.frozen.swap(false, Ordering::SeqCst) {
+                    self.engine.thaw(&slot.id);
+                }
+                continue;
+            };
+            self.engine.place(&native.view, place);
+            if slot.covered {
+                if !native.frozen.swap(true, Ordering::SeqCst) {
+                    self.engine.freeze(&native.view, &slot.id, &native.frozen);
+                }
+            } else {
+                self.engine.show(&native.view);
+                if native.frozen.swap(false, Ordering::SeqCst) {
+                    self.engine.thaw(&slot.id);
+                }
+            }
+        }
+    }
+
+    /// Runs a widget's `command` on the view of placeholder `id` (UI-685); nothing for an unknown placeholder.
+    pub fn command(&self, id: &str, command: Command) {
+        if let Some(native) = self.natives.get(id) {
+            self.engine.act(&native.view, command);
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::cell::RefCell;
+
     use super::*;
 
     fn slot(x: f64, y: f64, width: f64, height: f64) -> Slot {
@@ -459,6 +534,67 @@ mod tests {
             visible: true,
             covered: false,
         }
+    }
+
+    /// An engine that records what the views ask of it; a view is its number and its page.
+    #[derive(Debug, Default)]
+    struct Fake {
+        calls: RefCell<Vec<String>>,
+        opened: usize,
+        /// The page every view went to by itself (a link followed), by view number.
+        current: RefCell<HashMap<usize, String>>,
+    }
+
+    impl Fake {
+        fn take(&self) -> Vec<String> {
+            self.calls.take()
+        }
+        fn log(&self, call: String) {
+            self.calls.borrow_mut().push(call);
+        }
+    }
+
+    impl Engine for Fake {
+        type View = usize;
+        fn open(&mut self, id: &str, url: &str) -> Option<usize> {
+            self.opened += 1;
+            self.log(format!("open {} {id} {url}", self.opened));
+            Some(self.opened)
+        }
+        fn load(&self, view: &usize, url: &str) {
+            self.log(format!("load {view} {url}"));
+        }
+        fn current(&self, view: &usize) -> Option<String> {
+            self.current.borrow().get(view).cloned()
+        }
+        fn place(&self, view: &usize, at: Placement) {
+            self.log(format!(
+                "place {view} {},{} {}x{}",
+                at.x, at.y, at.width, at.height
+            ));
+        }
+        fn show(&self, view: &usize) {
+            self.log(format!("show {view}"));
+        }
+        fn hide(&self, view: &usize) {
+            self.log(format!("hide {view}"));
+        }
+        fn freeze(&self, view: &usize, id: &str, _: &Arc<AtomicBool>) {
+            self.log(format!("freeze {view} {id}"));
+        }
+        fn thaw(&self, id: &str) {
+            self.log(format!("thaw {id}"));
+        }
+        fn act(&self, view: &usize, command: Command) {
+            self.log(format!("act {view} {command:?}"));
+        }
+        fn close(&self, view: usize) {
+            self.log(format!("close {view}"));
+        }
+    }
+
+    fn views() -> Views<Fake> {
+        Views::new(Fake::default(), "http://127.0.0.1:7420".to_owned())
     }
 
     // spec: UI-683
@@ -497,28 +633,64 @@ mod tests {
         assert_eq!(placement(&slot(0.0, 0.0, 400.0, 300.0), 0.0), None);
     }
 
-    // spec: UI-683
+    // spec: UI-683, UI-685
     #[test]
-    fn the_page_reports_its_placeholders_as_json() {
-        let report = r#"[
+    fn the_page_posts_its_placeholders_and_commands_as_json() {
+        let report = r#"{"slots":[
             {"id":"r1","url":"https://accounts.google.com/","x":320,"y":80.5,"w":900,"h":740,"visible":true,"covered":true},
             {"id":"broken","url":"https://example.com/"},
             "nothing"
-        ]"#;
+        ],"vw":1280}"#;
         assert_eq!(
-            parse_slots(report),
-            vec![Slot {
-                id: "r1".to_owned(),
-                url: "https://accounts.google.com/".to_owned(),
-                x: 320.0,
-                y: 80.5,
-                width: 900.0,
-                height: 740.0,
-                visible: true,
-                covered: true,
-            }]
+            parse_message(report),
+            Some(Message::Slots {
+                slots: vec![Slot {
+                    id: "r1".to_owned(),
+                    url: "https://accounts.google.com/".to_owned(),
+                    x: 320.0,
+                    y: 80.5,
+                    width: 900.0,
+                    height: 740.0,
+                    visible: true,
+                    covered: true,
+                }],
+                viewport_width: 1280.0,
+            })
         );
-        assert_eq!(parse_slots("not json"), Vec::new());
+        assert_eq!(
+            parse_message(r#"{"command":"back","id":"r1"}"#),
+            Some(Message::Command {
+                id: "r1".to_owned(),
+                command: Command::Back
+            })
+        );
+        assert_eq!(parse_message(r#"{"command":"print","id":"r1"}"#), None);
+        assert_eq!(parse_message("not json"), None);
+    }
+
+    // spec: UI-686
+    #[test]
+    fn on_macos_the_page_posts_through_frames_signed_with_the_windows_nonce() {
+        let message = r#"{"command":"reload","id":"r1"}"#;
+        let url = |nonce: &str| {
+            Url::parse_with_params(&format!("{SCHEME}:"), [("n", nonce), ("m", message)])
+                .expect("a URL")
+        };
+        assert_eq!(
+            posted(&url("secret"), "secret"),
+            Some(Message::Command {
+                id: "r1".to_owned(),
+                command: Command::Reload
+            })
+        );
+        assert_eq!(posted(&url("guess"), "secret"), None);
+        assert_eq!(
+            posted(
+                &Url::parse("https://example.com/?n=secret").expect("a URL"),
+                "secret"
+            ),
+            None
+        );
     }
 
     // spec: UI-684
@@ -532,5 +704,78 @@ mod tests {
         assert!(!shown("file:///etc/passwd"));
         assert!(!shown("mailto:someone@example.com"));
         assert!(!shown("about:blank"));
+    }
+
+    // spec: UI-682, UI-683
+    #[test]
+    fn a_placeholder_gets_one_view_placed_frozen_while_covered_and_closed_with_it() {
+        let mut views = views();
+        let mut a = slot(10.0, 20.0, 300.0, 200.0);
+        views.sync(std::slice::from_ref(&a), 1.0);
+        assert_eq!(
+            views.engine().take(),
+            [
+                "open 1 a https://example.com/",
+                "place 1 10,20 300x200",
+                "show 1"
+            ]
+        );
+        a.covered = true;
+        views.sync(std::slice::from_ref(&a), 1.0);
+        views.sync(std::slice::from_ref(&a), 1.0);
+        assert_eq!(
+            views.engine().take(),
+            [
+                "place 1 10,20 300x200",
+                "freeze 1 a",
+                "place 1 10,20 300x200"
+            ]
+        );
+        a.covered = false;
+        views.sync(std::slice::from_ref(&a), 1.0);
+        assert_eq!(
+            views.engine().take(),
+            ["place 1 10,20 300x200", "show 1", "thaw a"]
+        );
+        a.visible = false;
+        views.sync(std::slice::from_ref(&a), 1.0);
+        assert_eq!(views.engine().take(), ["hide 1"]);
+        views.sync(&[], 1.0);
+        assert_eq!(views.engine().take(), ["close 1"]);
+    }
+
+    // spec: UI-684, UI-685
+    #[test]
+    fn a_new_url_loads_unless_the_view_already_went_there_and_the_daemons_pages_never_show() {
+        let mut views = views();
+        let mut a = slot(0.0, 0.0, 100.0, 100.0);
+        views.sync(std::slice::from_ref(&a), 1.0);
+        views.engine().take();
+        a.url = "https://example.com/next".to_owned();
+        views.sync(std::slice::from_ref(&a), 1.0);
+        assert_eq!(views.engine().take()[0], "load 1 https://example.com/next");
+        // The page followed a link, and the widget passes the address it heard back as its url.
+        views
+            .engine()
+            .current
+            .borrow_mut()
+            .insert(1, "https://example.com/followed".to_owned());
+        a.url = "https://example.com/followed".to_owned();
+        views.sync(std::slice::from_ref(&a), 1.0);
+        assert_eq!(views.engine().take(), ["place 1 0,0 100x100", "show 1"]);
+        a.url = "http://127.0.0.1:7420/#token=secret".to_owned();
+        views.sync(std::slice::from_ref(&a), 1.0);
+        assert_eq!(views.engine().take(), ["close 1"]);
+    }
+
+    // spec: UI-685
+    #[test]
+    fn a_widgets_command_reaches_its_view() {
+        let mut views = views();
+        views.sync(&[slot(0.0, 0.0, 100.0, 100.0)], 1.0);
+        views.engine().take();
+        views.command("a", Command::Back);
+        views.command("unknown", Command::Reload);
+        assert_eq!(views.engine().take(), ["act 1 Back"]);
     }
 }

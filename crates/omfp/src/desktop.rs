@@ -1,7 +1,7 @@
 //! `omfp desktop` (M7, spike S-04): one Tauri window per process (D-16) on the local daemon of the data directory,
 //! found with [`omfp_daemon::discover`] or started in the background (ARC-003), or with `--connect` on another
-//! daemon. The window loads the daemon's own UI over http: no bundled assets, no Tauri IPC, no capabilities. On Linux
-//! its web frames' pages are native views over that page (UI-682, `web_views`).
+//! daemon. The window loads the daemon's own UI over http: no bundled assets, no Tauri IPC, no capabilities. Its
+//! widgets' web pages are native views over that page (UI-682, `web_views`).
 
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -19,8 +19,8 @@ use omfp_daemon::watch::{self, WatchedFile};
 use omfp_protocol::Theme;
 use omfp_protocol::method::ThemeSet;
 use tauri::webview::{
-    DownloadEvent, NewWindowResponse, PageLoadEvent, PageLoadPayload, PermissionKind,
-    PermissionResponse,
+    DownloadEvent, NewWindowFeatures, NewWindowResponse, PageLoadEvent, PageLoadPayload,
+    PermissionKind, PermissionResponse,
 };
 use tauri::{Manager as _, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 
@@ -33,7 +33,7 @@ mod local;
 mod macos;
 #[cfg(target_os = "linux")]
 mod portal;
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 mod web_views;
 #[cfg(target_os = "linux")]
 mod zoom;
@@ -439,8 +439,11 @@ fn open_window(
     let origin = url.origin().ascii_serialization();
     // The top-level page, as its loads report it (the permission handler must not call into the webview).
     let page = Arc::new(Mutex::new(url.clone()));
-    // The secret of the scripts the window gives its page (DMN-182): macOS's notifications, Linux's zoom.
+    // The secret of the scripts the window gives its page (DMN-182): macOS's notifications, Linux's zoom, the web views.
     let nonce = page_nonce();
+    // UI-686: macOS's web views, reached from the navigation handler, which exists before the window.
+    #[cfg(target_os = "macos")]
+    let views = web_views::SharedViews::default();
     let builder = WebviewWindowBuilder::new(&app, "main", WebviewUrl::External(url.clone()))
         .title("omfp")
         .inner_size(1280.0, 800.0)
@@ -460,50 +463,29 @@ fn open_window(
                 permission(kind, &page, &origin)
             }
         })
-        .on_navigation({
-            let origin = origin.clone();
+        .on_navigation(navigation_handler(
+            origin.clone(),
             #[cfg(target_os = "macos")]
-            let nonce = nonce.clone();
-            move |url| {
-                #[cfg(target_os = "macos")]
-                if let Some(allowed) = macos::on_notify(url, &nonce) {
-                    return allowed;
-                }
-                follow(url, &origin)
-            }
-        })
-        // `target="_blank"` links and `window.open`: never a second webview; a thread link of the daemon's page starts
-        // one more window on that thread (UI-047), other pages go to the browser. The same on Linux and macOS: Tauri's
-        // handlers, no platform code.
-        .on_new_window({
-            let origin = origin.clone();
-            move |url, _| {
-                if let Some(thread) = linked_thread(&url, &origin) {
-                    open_thread_window(&new_window, &thread);
-                } else if opens_externally(&url, &origin) {
-                    crate::tray::open_in_browser(url.as_str());
-                }
-                NewWindowResponse::Deny
-            }
-        })
-        // UI-791: `:export`'s file, in the Downloads folder.
-        .on_download({
-            let origin = origin.clone();
-            move |_, event| match event {
-                DownloadEvent::Requested { url, .. } => saves_download(&url, &origin),
-                _ => true,
-            }
-        });
+            nonce.clone(),
+            #[cfg(target_os = "macos")]
+            Arc::clone(&views),
+        ))
+        .on_new_window(new_window_handler(origin.clone(), new_window))
+        .on_download(download_handler(origin.clone()));
     // Per data directory: two daemons on the same port never share the window's storage (UI-005). WebKitGTK takes a
     // directory; WKWebView ignores it and takes a data store identifier instead (UI-250, macOS 14+).
     #[cfg(target_os = "linux")]
     let builder = builder.data_directory(webview_data.to_path_buf());
     // UI-283: the page zoom, which WebKitGTK has on no key and no wheel and the Linux window on no menu. UI-682: web
-    // frames' pages as native views over the page.
+    // views over the page.
     #[cfg(target_os = "linux")]
     let builder = builder
         .initialization_script(zoom::zoom_script(&origin, &nonce))
-        .initialization_script(web_views::script(&origin, &nonce));
+        .initialization_script(web_views::script(
+            &origin,
+            &nonce,
+            web_views::Transport::Handler,
+        ));
     // WKWebView has no web notifications: the daemon's page gets a `Notification` whose notifications the window posts
     // to the system's notification center (UI-252).
     #[cfg(target_os = "macos")]
@@ -511,7 +493,12 @@ fn open_window(
     #[cfg(target_os = "macos")]
     let builder = builder
         .data_store_identifier(store)
-        .initialization_script(macos::notification_script(&origin, &nonce));
+        .initialization_script(macos::notification_script(&origin, &nonce))
+        .initialization_script(web_views::script(
+            &origin,
+            &nonce,
+            web_views::Transport::Frames,
+        ));
     // UI-512: the system accent the `accent` theme derives from, which the page cannot read itself.
     #[cfg(target_os = "macos")]
     let builder = match macos::system_accent() {
@@ -532,6 +519,13 @@ fn open_window(
         &nonce,
         &webview_data.join("web-pages"),
     );
+    #[cfg(target_os = "macos")]
+    web_views::start(
+        &views,
+        &window,
+        origin.clone(),
+        macos::data_store_identifier(&webview_data.join("web-pages"))?,
+    );
     if smoke.is_some() {
         smoke_check(
             window,
@@ -548,6 +542,51 @@ fn open_window(
         #[cfg(not(target_os = "macos"))]
         let _ = event;
     }))
+}
+
+/// The window's new-window handler: `target="_blank"` links and `window.open` never make a second webview; a thread
+/// link of the daemon's page starts one more window on that thread (UI-047), other pages go to the browser. The same
+/// on Linux and macOS: Tauri's handlers, no platform code.
+fn new_window_handler(
+    origin: String,
+    new_window: Vec<OsString>,
+) -> impl Fn(Url, NewWindowFeatures) -> NewWindowResponse<tauri::Wry> + Send + 'static {
+    move |url, _| {
+        if let Some(thread) = linked_thread(&url, &origin) {
+            open_thread_window(&new_window, &thread);
+        } else if opens_externally(&url, &origin) {
+            crate::tray::open_in_browser(url.as_str());
+        }
+        NewWindowResponse::Deny
+    }
+}
+
+/// The window's download handler (UI-791): `:export`'s file, in the Downloads folder.
+fn download_handler(
+    origin: String,
+) -> impl Fn(tauri::Webview, DownloadEvent<'_>) -> bool + Send + Sync + 'static {
+    move |_, event| match event {
+        DownloadEvent::Requested { url, .. } => saves_download(&url, &origin),
+        _ => true,
+    }
+}
+
+/// The window's navigation handler (DMN-182): [`follow`], and on macOS first the page's notifications (UI-252) and its
+/// web views' messages (UI-686), navigations of hidden frames signed with `nonce`.
+fn navigation_handler(
+    origin: String,
+    #[cfg(target_os = "macos")] nonce: String,
+    #[cfg(target_os = "macos")] views: web_views::SharedViews,
+) -> impl Fn(&Url) -> bool + Send + 'static {
+    move |url| {
+        #[cfg(target_os = "macos")]
+        if let Some(allowed) =
+            macos::on_notify(url, &nonce).or_else(|| web_views::on_navigation(&views, url, &nonce))
+        {
+            return allowed;
+        }
+        follow(url, &origin)
+    }
 }
 
 /// Whether a navigation of the window's page or of one of its frames loads (DMN-182): the daemon's own pages, documents

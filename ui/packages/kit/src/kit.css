@@ -1803,16 +1803,19 @@
     margin: 0;
   }
 
-  .omfp-web-frame__frame {
+  /* UI-670: a web view fills its container, alone (`omfp:web`) or under a web frame's toolbar. */
+  .omfp-web-view {
+    display: block;
     flex: 1 1 auto;
     inline-size: 100%;
+    block-size: 100%;
     min-block-size: 0;
     border: 0;
   }
 
   /* UI-682: the placeholder the desktop window draws a web page over; a capture of the page shows in it while omfp's
      own UI covers it. */
-  .omfp-web-frame__native {
+  .omfp-web-view--native {
     position: relative;
     overflow: hidden;
   }

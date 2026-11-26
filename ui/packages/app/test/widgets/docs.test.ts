@@ -201,6 +201,7 @@ describe("built-ins for agents", () => {
       "except omfp's own address",
       "The page cannot navigate the window",
       "`X-Frame-Options`, CSP `frame-ancestors`",
+      "| `WebView` |",
       "| `WebFrame` |",
     ]) {
       expect(DOCS.includes(fact) ? fact : `missing: ${fact}`).toBe(fact);

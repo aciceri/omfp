@@ -68,10 +68,12 @@ sha1 = "0.10"
 subtle = "2"
 tempfile = "3"
 # Desktop window (M7, D-15, S-04): Tauri 2 on WebKitGTK 4.1, behind `omfp`'s `desktop` feature. No bundled assets,
-# no IPC: the window loads the daemon's own UI over http. `custom-protocol` is Tauri's production mode (no dev URL).
+# no IPC: the window loads the daemon's own UI over http. `custom-protocol` is Tauri's production mode (no dev URL);
+# `unstable` gives the child webviews of macOS's web views (UI-686).
 tauri = { version = "2.12", default-features = false, features = [
   "wry",
   "custom-protocol",
+  "unstable",
 ] }
 # Tauri's build step has its own version line (2.7.x).
 tauri-build = { version = "2.7", default-features = false }

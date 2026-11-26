@@ -320,14 +320,22 @@ export {
   type ThinkingProps,
 } from "./transcript.tsx";
 export {
-  hasNativeWebViews,
-  WEB_FRAME_SANDBOX,
   WEB_FRAME_TEXTS,
   WEB_FRAME_TIMEOUT_MS,
   WebFrame,
   type WebFrameProps,
-  type WebFrameRefusal,
   type WebFrameTexts,
-  type WebFrameUrl,
-  webFrameUrl,
 } from "./web-frame.tsx";
+export {
+  hasNativeWebViews,
+  WEB_FRAME_SANDBOX,
+  WEB_VIEW_TEXTS,
+  type WebFrameRefusal,
+  type WebFrameUrl,
+  WebView,
+  type WebViewHandle,
+  type WebViewLocation,
+  type WebViewProps,
+  type WebViewTexts,
+  webFrameUrl,
+} from "./web-view.tsx";

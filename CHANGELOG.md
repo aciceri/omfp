@@ -16,11 +16,12 @@ The version's section is also the source of the GitHub release notes.
   text fields and selected text keep the browser's menu. Init files (`omfp.contextMenu({ on, items })`) and widgets
   (`useContextMenu`) add items from commands already registered, each run with the clicked message, file or thread as
   its argument; web pages keep the engine's menu.
-- Web pages in the Linux desktop app: `omfp:web` shows its page as a native view over the widget's place instead of a
-  frame, so sites that refuse to be framed (Google's sign-in, YouTube's pages, GitHub) show and stay signed in across
-  restarts. While a dialog, the `:` line or another panel covers it, a still picture of the page stands in. The web
-  app, the macOS app and phones keep the frame.
-- The address at the top of `omfp:web` is editable: type another page and press Enter to show it there.
+- Web pages in the desktop app: `omfp:web` shows its page as a native web view instead of a frame, so sites that
+  refuse to be framed (Google's sign-in, YouTube's pages, GitHub) show and stay signed in across restarts. While a
+  dialog, the `:` line or another panel covers it, the page hides (behind a still picture of it on Linux). The macOS
+  app is not tested yet. The web app and phones keep the frame.
+- Widgets can build their own browser: the kit's `WebView` is a page alone, with `onNavigate`, `onLoad` and a handle
+  to reload it and go back and forward.
 - A transcript scrolled up well away from its end shows a down-arrow button over its bottom corner: click or tap it
   (or press Enter on it) to jump to the latest message and follow the reply again. It is touch-sized on phones too.
 - Links between threads: a reply can link another thread as `[title](omfp://thread/<id>)`, and agents are told to
@@ -43,6 +44,7 @@ The version's section is also the source of the GitHub release notes.
 
 ### Changed
 
+- `omfp:web` shows the page alone, without the toolbar (URL, Reload, Open in browser); the kit's `WebFrame` keeps it.
 - The `NORMAL` mode is now two explicit modes, shown in the mode line: `THREADS` (nothing focused, or the left
   column) and `VIEW` (the focus in the view). In Threads mode `j`/`k`, `gg`/`G` and `Ctrl-d`/`Ctrl-u` switch threads
   even with the column collapsed or hidden, and `dd`, `za` and the `Alt`-arrow moves act on the selected thread when

@@ -106,6 +106,29 @@
     flex: none;
   }
 
+  /* The transcript and the button floating over its bottom end (UI-044). */
+  .omfp-transcript-frame {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-block-size: 0;
+  }
+
+  /* Jump to the end (UI-044): a touch target in every layout, above the composer and clear of the scrollbar and the
+   * side safe-area insets. Shown only far above the end, where the last message and queue chips are out of view. */
+  .omfp-transcript__jump.omfp-icon-button {
+    position: absolute;
+    inset-block-end: var(--omfp-s3);
+    inset-inline-end: max(calc(var(--omfp-gutter) + var(--omfp-s2)), env(safe-area-inset-right, 0px));
+    z-index: 1;
+    inline-size: max(var(--omfp-touch), var(--omfp-ctl-h));
+    block-size: max(var(--omfp-touch), var(--omfp-ctl-h));
+    border-radius: var(--omfp-r-chip);
+    background: var(--omfp-surface-container-high);
+    box-shadow: var(--omfp-pop-shadow);
+  }
+
   /* The scroll container of the virtualized transcript (UI-042); items within the reading measure (UI-128). Its
    * scrollbar's gutter is always kept, as under the composer, so the two columns line up (UI-485). */
   .omfp-transcript {

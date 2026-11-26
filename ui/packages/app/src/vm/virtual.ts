@@ -18,6 +18,13 @@ const PIN_THRESHOLD_PX = 32;
 /** The view is at the very end of the content less than this far from it (rounded positions: WebKitGTK reports -1 at
  * the end, and 1 after the first 2 px frame of a smooth scroll up). */
 const END_PX = 1;
+/** Farther than this from the bottom, an unpinned transcript offers a button back to the end (UI-044). */
+const JUMP_THRESHOLD_PX = 3 * PIN_THRESHOLD_PX;
+
+/** Whether the view is far enough above the end to offer jumping back to it (UI-044). */
+export function farFromBottom({ scrollTop, scrollHeight, clientHeight }: ScrollPosition): boolean {
+  return scrollHeight - scrollTop - clientHeight > JUMP_THRESHOLD_PX;
+}
 
 /** What one transcript knows about its scrolling, kept per thread so switching threads keeps the position. */
 export interface PinState {

@@ -906,6 +906,54 @@ describe("transcript", () => {
     expect([element.scrollTop, element.dataset.pinned]).toEqual([4395, "false"]);
   });
 
+  // spec: UI-044
+  test("scrolled up far from the end, a jump button shows; tiny offsets and the pinned bottom hide it", () => {
+    renderThread(<TranscriptWidget />, longHistory(50));
+    const element = transcript();
+    const jump = () => screen.queryByTestId("jump-to-bottom");
+    scrollTo(element, 4400, 5000);
+    expect(jump()).toBeNull();
+    // A small move up unpins (UI-042) but stays within the threshold: no button.
+    scrollTo(element, 4380, 5000);
+    expect(element.dataset.pinned).toBe("false");
+    expect(jump()).toBeNull();
+    scrollTo(element, 2000, 5000);
+    expect(jump()).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Jump to the latest message" })).toBe(jump());
+    // Scrolling back down to the bottom pins again and hides it.
+    scrollTo(element, 4400, 5000);
+    expect(element.dataset.pinned).toBe("true");
+    expect(jump()).toBeNull();
+  });
+
+  // spec: UI-044, UI-042
+  test("the jump button scrolls to the end, pins the transcript so it follows streaming, and goes away", async () => {
+    const { client, flush } = renderThread(<TranscriptWidget />, longHistory(50));
+    const element = transcript();
+    fireEvent.wheel(element, { deltaY: -100 });
+    scrollTo(element, 1000, 5000);
+    const jump = screen.getByTestId("jump-to-bottom");
+    await userEvent.click(jump);
+    expect([element.scrollTop, element.dataset.pinned]).toEqual([5000, "true"]);
+    expect(screen.queryByTestId("jump-to-bottom")).toBeNull();
+    expect(document.activeElement).toBe(element);
+    Object.defineProperty(element, "scrollHeight", { configurable: true, value: 5100 });
+    client.thread(THREAD, longHistory(51));
+    flush();
+    expect([element.scrollTop, element.dataset.pinned]).toEqual([5100, "true"]);
+  });
+
+  // spec: UI-044
+  test("the jump button is reachable from the keyboard: Enter on it jumps to the end", async () => {
+    renderThread(<TranscriptWidget />, longHistory(50));
+    const element = transcript();
+    fireEvent.keyDown(element, { key: "ArrowUp" });
+    scrollTo(element, 1000, 5000);
+    screen.getByTestId("jump-to-bottom").focus();
+    await userEvent.keyboard("{Enter}");
+    expect([element.scrollTop, element.dataset.pinned]).toEqual([5000, "true"]);
+  });
+
   // spec: UI-042
   test("switching threads and back returns to where the user had scrolled up to", () => {
     const { client, flush, host } = renderThread(<TranscriptWidget />, longHistory(50));

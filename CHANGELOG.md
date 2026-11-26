@@ -7,6 +7,11 @@ The version's section is also the source of the GitHub release notes.
 
 ## Unreleased
 
+### Added
+
+- A transcript scrolled up well away from its end shows a down-arrow button over its bottom corner: click or tap it
+  (or press Enter on it) to jump to the latest message and follow the reply again. It is touch-sized on phones too.
+
 ### Changed
 
 - omfp now runs omp 19.2.0 (was 19.1.0).

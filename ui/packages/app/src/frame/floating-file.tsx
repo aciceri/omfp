@@ -103,14 +103,17 @@ export function FloatingFile({ workspaceId, views, registry }: FloatingFileProps
             keepMounted
             hidden={panel.minimised}
           >
-            <WidgetSlot
-              reference={FILE_WIDGET}
-              props={fileProps(tab)}
-              path={fileTabId(tab.path)}
-              workspaceId={workspaceId}
-              views={views}
-              registry={registry}
-            />
+            {/* A pane of View mode (UI-095): `Ctrl-w h/j/k/l` reach it and leave it like the view's widgets. */}
+            <div className="omfp-view__item omfp-focus-inset" tabIndex={-1}>
+              <WidgetSlot
+                reference={FILE_WIDGET}
+                props={fileProps(tab)}
+                path={fileTabId(tab.path)}
+                workspaceId={workspaceId}
+                views={views}
+                registry={registry}
+              />
+            </div>
           </TabPanel>
         ))}
       </Tabs>

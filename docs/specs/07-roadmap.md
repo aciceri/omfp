@@ -73,6 +73,7 @@ flowchart LR
 | S-13 | CodeMirror 6 for the file viewer, editor and diffs? | Yes: lazy chunks, live theme tokens, vim next to the app keymap |
 | S-14 | Can the main agent delegate widget building to an omp `task` subagent? | Yes, if the agent definition carries the widgets knowledge; shipped with `--extension` |
 | S-15 | Does the desktop work on macOS (aarch64-darwin)? | Yes, with small platform modules for settings, tray and webview storage (M11) |
+| S-17 | Can the Tauri desktop window show a page that refuses framing (Google sign-in) as a child webview over omfp's UI? | In progress: yes on Linux; a real Google account signs in on WebKitGTK; `add_child` ignores position on Linux, so the host moves the webviews into a `gtk::Overlay`; new-window links do nothing (`spikes/tauri-child-webview/README.md`) |
 
 ## Manual checks
 

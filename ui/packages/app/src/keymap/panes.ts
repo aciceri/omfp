@@ -160,14 +160,16 @@ export function focusPaneToward(direction: Direction): boolean {
 
 /**
  * `tab.next` / `tab.prev` (`g t` / `g T`): steps the tabs of the innermost tabs container with a tab bar around the
- * focused element (or, with the focus outside the view's panes, around where the view was focused last); `false` when
- * no container took it.
+ * focused element, a pane or a tab bar (a floating panel's too); with the focus elsewhere, around where the view was
+ * focused last. `false` when no container took it.
  */
 export function stepTab(step: 1 | -1): boolean {
   const focused = document.activeElement;
   const view = document.querySelector<HTMLElement>(SHOWN_VIEW);
   const from =
-    focused !== null && modeAt(focused) === "view" && focused.closest(PANE) !== null
+    focused !== null &&
+    modeAt(focused) === "view" &&
+    (focused.closest(PANE) !== null || focused.closest('[role="tablist"]') !== null)
       ? focused
       : view === null
         ? undefined

@@ -714,7 +714,7 @@ async fn workspace_folder_entries_follow_the_ui_and_the_agent_live() -> anyhow::
     journey.finish("E2E-09").await
 }
 
-/// Takes the focus out of every text field: the keymap's normal mode.
+/// Takes the focus off everything: the keymap's Threads mode (UI-095).
 async fn normal_mode(journey: &Journey) -> anyhow::Result<()> {
     journey
         .eval(

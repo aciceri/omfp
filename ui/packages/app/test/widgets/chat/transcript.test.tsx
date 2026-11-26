@@ -1,10 +1,13 @@
 /** L4: `omfp:transcript` over recorded fixtures. */
 
 import { afterEach, beforeEach, describe, expect, setSystemTime, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { CallError } from "@omfp/client";
 import type { JsonObject, ThreadEvent } from "@omfp/core";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { findRule, parseCss } from "../../../../kit/test/support/css.ts";
 import { ERRORS, SELECTED_THREAD, SUCCESSES, scopesAt } from "../../../src/sdk/index.ts";
 import { TranscriptWidget } from "../../../src/widgets/chat/index.ts";
 import { renderWithHost } from "../../support/host.tsx";
@@ -1324,5 +1327,139 @@ describe("read groups", () => {
     expect(groups()).toEqual([{ status: "running", count: "2", item: "1" }]);
     const message = screen.getByTestId("read-group").closest<HTMLElement>("[data-testid=message]");
     expect(message?.dataset.streaming).toBe("true");
+  });
+});
+
+/**
+ * A 2D context for the minimap's canvas (happy-dom has none; other canvases still get none); `draws` counts the clears
+ * starting each drawing.
+ */
+function installCanvas(): { draws: () => number; restore: () => void } {
+  let draws = 0;
+  const context = {
+    fillStyle: "",
+    globalAlpha: 1,
+    setTransform: () => undefined,
+    beginPath: () => undefined,
+    rect: () => undefined,
+    fill: () => undefined,
+    clearRect: () => {
+      draws += 1;
+    },
+  };
+  const saved = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, "getContext");
+  Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
+    configurable: true,
+    value(this: HTMLCanvasElement) {
+      return this.classList.contains("omfp-minimap__canvas") ? context : null;
+    },
+  });
+  return {
+    draws: () => draws,
+    restore: () => {
+      if (saved === undefined) {
+        Reflect.deleteProperty(HTMLCanvasElement.prototype, "getContext");
+      } else {
+        Object.defineProperty(HTMLCanvasElement.prototype, "getContext", saved);
+      }
+    },
+  };
+}
+
+describe("minimap", () => {
+  const minimap = () => screen.getByTestId("transcript-minimap");
+  const box = () => minimap().querySelector<HTMLElement>(".omfp-minimap__box");
+
+  // spec: UI-860
+  test("a scroll of the user's shows the minimap and the viewport's box; following the bottom does not; it hides after", async () => {
+    const { client, flush } = renderThread(<TranscriptWidget />, longHistory(50));
+    const element = transcript();
+    // The view follows the streamed bottom: its scroll event shows nothing.
+    Object.defineProperty(element, "scrollHeight", { configurable: true, value: 5100 });
+    client.thread(THREAD, longHistory(51));
+    flush();
+    expect(element.scrollTop).toBe(5100);
+    fireEvent.scroll(element);
+    expect(minimap().dataset.visible).toBeUndefined();
+    // The user scrolls up: the map shows, the box where the view is (600 px of 4800 on a 600 px map: 1/8).
+    fireEvent.wheel(element, { deltaY: -100 });
+    scrollTo(element, 1200, 4800);
+    await waitFor(() => expect(minimap().dataset.visible).toBe("true"));
+    expect([box()?.style.transform, box()?.style.height]).toEqual(["translateY(150px)", "75px"]);
+    // Scrolling stopped: it hides.
+    await waitFor(() => expect(minimap().dataset.visible).toBeUndefined(), { timeout: 3000 });
+  });
+
+  // spec: UI-860
+  test("the map sits in the gutter beside the scrollbar, takes no pointer while hidden, fades, and a phone has none", () => {
+    const css = parseCss(readFileSync(join(import.meta.dir, "../../../src/widgets/chat/chat.css"), "utf8"));
+    const rule = (selector: string) => findRule(css, ["@layer omfp-widgets"], selector).declarations;
+    expect([rule(".omfp-minimap").get("position"), rule(".omfp-minimap").get("block-size")]).toEqual(["sticky", "0"]);
+    const map = rule(".omfp-minimap__map");
+    expect(
+      ["inset-inline-end", "inline-size", "opacity", "pointer-events", "transition"].map((name) => map.get(name)),
+    ).toEqual([
+      "calc(-1 * var(--omfp-gutter))",
+      "var(--omfp-gutter)",
+      "0",
+      "none",
+      "opacity var(--omfp-dur-2) var(--omfp-ease)",
+    ]);
+    expect(Object.fromEntries(rule('.omfp-minimap__map[data-visible="true"]'))).toEqual({
+      opacity: "1",
+      "pointer-events": "auto",
+    });
+    expect(rule('.omfp-app[data-layout="mobile"] .omfp-minimap').get("display")).toBe("none");
+  });
+
+  // spec: UI-862, UI-042
+  test("pressing and dragging on the map centre the view there; a move up unpins, one to the end pins", async () => {
+    renderThread(<TranscriptWidget />, longHistory(50));
+    const element = transcript();
+    fireEvent.wheel(element, { deltaY: -100 });
+    scrollTo(element, 1200, 4800);
+    await waitFor(() => expect(minimap().dataset.visible).toBe("true"));
+    // Half way down the 600 px map is 2400 of 4800: the view's middle goes there.
+    fireEvent.pointerDown(minimap(), { button: 0, pointerId: 1, clientY: 300 });
+    expect(element.scrollTop).toBe(2100);
+    fireEvent.pointerMove(minimap(), { pointerId: 1, clientY: 60 });
+    expect([element.scrollTop, element.dataset.pinned]).toEqual([180, "false"]);
+    fireEvent.pointerUp(minimap(), { pointerId: 1 });
+    fireEvent.pointerMove(minimap(), { pointerId: 1, clientY: 300 });
+    expect(element.scrollTop).toBe(180);
+    // The end, within the content; its scroll event pins.
+    fireEvent.pointerDown(minimap(), { button: 0, pointerId: 1, clientY: 600 });
+    fireEvent.pointerUp(minimap(), { pointerId: 1 });
+    expect(element.scrollTop).toBe(4200);
+    fireEvent.scroll(element);
+    expect(element.dataset.pinned).toBe("true");
+  });
+
+  // spec: UI-863
+  test("one canvas and one box: scrolls move the box without redrawing, a new message redraws", async () => {
+    // Items measure as estimated, so scrolling measures nothing new.
+    restoreLayout();
+    restoreLayout = fakeLayout(120);
+    const canvas = installCanvas();
+    try {
+      const { client, flush } = renderThread(<TranscriptWidget />, longHistory(50));
+      const element = transcript();
+      expect(Array.from(minimap().children, (child) => child.tagName.toLowerCase())).toEqual(["canvas", "div"]);
+      fireEvent.wheel(element, { deltaY: -100 });
+      scrollTo(element, 1200, 4800);
+      await waitFor(() => expect(minimap().dataset.visible).toBe("true"));
+      expect(canvas.draws()).toBe(1);
+      for (const top of [2400, 2040, 600]) {
+        scrollTo(element, top, 4800);
+        await waitFor(() => expect(box()?.style.transform).toBe(`translateY(${top / 8}px)`));
+      }
+      expect(canvas.draws()).toBe(1);
+      client.thread(THREAD, longHistory(51));
+      flush();
+      scrollTo(element, 640, 4800);
+      await waitFor(() => expect(canvas.draws()).toBe(2));
+    } finally {
+      canvas.restore();
+    }
   });
 });

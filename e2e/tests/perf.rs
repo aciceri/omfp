@@ -42,6 +42,8 @@ use thirtyfour::prelude::*;
 const PROBE: &str = include_str!("perf/probe.js");
 const TRANSCRIPT: &str = "[data-testid=transcript]";
 const STREAMING: &str = "[data-testid=transcript-item][data-key=streaming]";
+/// The transcript's minimap (UI-860), `data-visible` while it shows.
+const MINIMAP: &str = "[data-testid=transcript-minimap]";
 const COMPOSER: &str = "[data-testid=composer-input]";
 /// The streamed reply's omp message id.
 const STREAM_ID: &str = "perf-stream";
@@ -497,6 +499,26 @@ async fn scroll_to_bottom(journey: &Journey) -> anyhow::Result<()> {
         .await
 }
 
+/// Scrolls up a little as the user would (a wheel up unpins it), so a streamed reply below stays rendered, waits until
+/// the minimap shows and keeps it shown with the mouse on it (UI-860).
+async fn show_minimap(journey: &Journey) -> anyhow::Result<()> {
+    journey
+        .eval(
+            "const t = document.querySelector(arguments[0]);
+             t.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true }));
+             t.scrollTop -= 100;",
+            vec![json!(TRANSCRIPT)],
+        )
+        .await?;
+    journey
+        .until("the minimap", async |page| {
+            let visible = page.attr(MINIMAP, "data-visible").await?;
+            Ok((visible.as_deref() == Some("true")).then_some(()))
+        })
+        .await?;
+    journey.hover(MINIMAP).await
+}
+
 // spec: TST-052, UI-190, UI-191
 #[tokio::test(flavor = "multi_thread")]
 async fn a_long_transcript_keeps_a_bounded_dom_and_a_delta_rerenders_only_the_streaming_row()
@@ -877,6 +899,16 @@ async fn transcript_benchmark(messages: usize, rate: u64, seconds: u64) -> anyho
     let deltas = streamed_deltas(200);
     let recording = stream_timed(&journey, &process, &deltas, rate, true).await?;
     report("streaming 200 deltas, renders tracked", &recording, 200);
+
+    // The minimap's redraws while a reply streams below a view scrolled up (UI-863).
+    show_minimap(&journey).await?;
+    let deltas = streamed_deltas(count);
+    let recording = stream_timed(&journey, &process, &deltas, rate, false).await?;
+    report(
+        &format!("streaming {count} deltas at {rate}/s, scrolled up with the minimap shown"),
+        &recording,
+        count as u64,
+    );
 
     journey.finish("transcript benchmark").await
 }

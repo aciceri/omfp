@@ -148,6 +148,55 @@
     padding-block: var(--omfp-s4);
   }
 
+  /* The minimap (UI-860): a zero-height anchor stuck to the top of the scroll container holds the map, which spans the
+     viewport's height (set by script) in the right gutter, beside the scrollbar. Hidden it takes no pointer; it fades
+     in and out (UI-146; none at motion `none`). */
+  .omfp-minimap {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 1;
+    block-size: 0;
+  }
+
+  .omfp-minimap__map {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-end: calc(-1 * var(--omfp-gutter));
+    inline-size: var(--omfp-gutter);
+    opacity: 0;
+    pointer-events: none;
+    touch-action: none;
+    user-select: none;
+    transition: opacity var(--omfp-dur-2) var(--omfp-ease);
+  }
+
+  .omfp-minimap__map[data-visible="true"] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .omfp-minimap__canvas {
+    display: block;
+    inline-size: 100%;
+    block-size: 100%;
+  }
+
+  /* The viewport's box, moved by a transform as the view scrolls. */
+  .omfp-minimap__box {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline: 0;
+    box-sizing: border-box;
+    border-block: var(--omfp-bw) solid color-mix(in oklab, var(--omfp-primary) 55%, transparent);
+    background: color-mix(in oklab, var(--omfp-primary) 14%, transparent);
+    will-change: transform;
+  }
+
+  /* A phone scrolls by touch, with no scrollbar to sit beside (UI-485): no minimap. */
+  .omfp-app[data-layout="mobile"] .omfp-minimap {
+    display: none;
+  }
+
   /* An item reaches `s2` into the gutter on both sides, so its focus bar and selected background (UI-132) sit beside
      the message, not on its own left border; the content keeps the measure. */
   .omfp-transcript__item {

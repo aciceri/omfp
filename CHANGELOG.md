@@ -22,6 +22,10 @@ The version's section is also the source of the GitHub release notes.
   delete_archived_after` (`30m`, `12h`, `30d`, `2w`, …), `--delete-archived-after` or `:set delete_archived_after=…`
   from a window, live; `never` keeps archived threads. **On upgrade**, the first check deletes every thread archived
   more than a week ago: set `delete_archived_after = "never"` in `config.toml` first to keep them.
+- While you scroll a conversation, a minimap of the whole thread shows beside the scrollbar: a faded overview with
+  your messages, the assistant's text, tool calls and failures in their own colors, the open search's matches and the
+  focused message marked, and a box where you are. Click or drag on it to jump there; it fades out a second after you
+  stop scrolling. Phones do not show it.
 
 ### Changed
 

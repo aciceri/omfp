@@ -25,6 +25,10 @@ The version's section is also the source of the GitHub release notes.
   the transcript of the voice conversation so far, so it sees what you actually said and not only the voice's wording.
 - Live voice knows who it is and where it runs: omfp's voice for your agent, the thread's workspace, its repositories
   and the agent's model, also on a new thread; before, it introduced itself as ChatGPT running in the cloud.
+- Agents know how language servers work in a thread: omp starts them per repository from the daemon's `PATH`, never
+  from a dev shell. Without one an agent falls back to text search quietly instead of retrying `lsp` or asking you to
+  install a server; ask it why `lsp` finds none and it explains how to get one (installed where the daemon sees it,
+  or declared in the workspace's `.omp/lsp.json`).
 
 ### Fixed
 

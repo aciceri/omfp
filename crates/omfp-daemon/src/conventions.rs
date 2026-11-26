@@ -1,7 +1,7 @@
 //! What the daemon tells the agent about its workspace (DMN-030): a short text passed with
-//! `--append-system-prompt` — the workspace conventions, then a note on widgets (AGT-024) and one on driving omfp
-//! (AGT-045) — followed by the user's own `APPEND_SYSTEM.md`, which the flag would otherwise disable (S-10). Nothing
-//! is written into the workspace for it.
+//! `--append-system-prompt` — the workspace conventions (where language servers come from, AGT-099), then a note on
+//! widgets (AGT-024) and one on driving omfp (AGT-045) — followed by the user's own `APPEND_SYSTEM.md`, which the flag
+//! would otherwise disable (S-10). Nothing is written into the workspace for it.
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -21,9 +21,16 @@ pub fn workspace_conventions(name: &str, id: &str, path: &Path) -> String {
          - Work on a project from elsewhere: link it with `ln -s <project> {path}/<name>`.\n\
          - Work on a separate branch: `git -C <repo> worktree add {path}/<name> -b <branch>`.\n\
          - Get a remote repository: `git clone <url> {path}/<name>`.\n\
-         - Keep repositories at the top level of the workspace: omfp does not look deeper."
+         - Keep repositories at the top level of the workspace: omfp does not look deeper.\n\
+         - {LSP_RULE}"
     )
 }
+
+/// The language servers line of the workspace conventions (AGT-099): where `lsp` finds servers, the quiet fallback
+/// without one, and the docs section saying how to get one.
+pub const LSP_RULE: &str = "Language servers (the `lsp` tool) start per repository from the daemon's PATH, never \
+    from a dev shell. Without one, use grep and ast_grep quietly: never point out the missing server or suggest \
+    installing or configuring one unless the user asks (then read omfp://docs/shell, Language servers).";
 
 /// The user's append prompt as omp would load it: `<workspace>/.omp/APPEND_SYSTEM.md` if present, else
 /// `<agent dir>/APPEND_SYSTEM.md`; trimmed, `None` when absent or empty.
@@ -274,6 +281,26 @@ mod tests {
         }
         assert!(text.lines().count() <= 10, "short: {text}");
         assert!(!text.ends_with('\n'));
+    }
+
+    // spec: AGT-099
+    #[test]
+    fn conventions_say_where_language_servers_come_from_and_to_fall_back_quietly() {
+        let text = workspace_conventions("checkout", "01WORKSPACE", Path::new("/ws/checkout"));
+        let line = format!("- {LSP_RULE}");
+        assert_eq!(
+            text.lines().filter(|candidate| *candidate == line).count(),
+            1,
+            "one line: {text}"
+        );
+        for rule in [
+            "the daemon's PATH, never from a dev shell",
+            "use grep and ast_grep quietly",
+            "unless the user asks",
+            "omfp://docs/shell, Language servers",
+        ] {
+            assert!(LSP_RULE.contains(rule), "{rule:?} missing: {LSP_RULE}");
+        }
     }
 
     // spec: AGT-024, AGT-028, AGT-029, AGT-031, AGT-032, AGT-075, AGT-076, AGT-084

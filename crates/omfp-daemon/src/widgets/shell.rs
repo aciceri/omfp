@@ -18,7 +18,8 @@ pub const SHELL_URL: &str = "omfp://docs/shell";
 pub const KEYMAP_URL: &str = "omfp://keymap";
 /// Host URI describing the open windows showing the thread's workspace (AGT-081), as `omfp_windows` does.
 pub const WINDOWS_URL: &str = "omfp://windows";
-/// The window's reference: left column, mode line and view tabs, `:` commands, default keys (DMN-198).
+/// The window's reference: left column, mode line and view tabs, `:` commands, default keys (DMN-198); logging in and
+/// language servers (AGT-099).
 pub const SHELL: &str = include_str!("shell.md");
 /// The app's default bindings and commands, generated from the UI (DMN-199).
 pub const KEYMAP_DEFAULTS: &str = include_str!("keymap-defaults.json");
@@ -98,7 +99,8 @@ pub fn index() -> String {
          \n\
          - {DOCS_URL} — widgets, views (`.omfp/views.json`), init files, the `omfp/sdk` SDK and the \
          `omfp/kit` kit.\n\
-         - {SHELL_URL} — the window: left column, mode line and view tabs, `:` commands, default keys.\n\
+         - {SHELL_URL} — the window: left column, mode line and view tabs, `:` commands, default keys; logging in \
+         and how omp finds language servers.\n\
          - {KEYMAP_URL} — the default key bindings and commands; a thread's agent also sees what this daemon's \
          config and its workspace's `.omfp/keymap.json` add.\n\
          - {SCHEMA_URL} — the JSON Schema of `.omfp/views.json`.\n\
@@ -390,5 +392,36 @@ mod tests {
             );
         }
         assert!(text.contains("`user:init`"), "{text}");
+    }
+
+    // spec: AGT-099, DMN-198
+    #[test]
+    fn the_shell_reference_says_how_omp_finds_language_servers_and_not_to_raise_a_missing_one() {
+        let start = SHELL.find("\n## Language servers\n").expect("the section");
+        let rest = &SHELL[start + 1..];
+        let section = rest.find("\n## ").map_or(rest, |end| &rest[..end]);
+        let words = section.split_whitespace().collect::<Vec<_>>().join(" ");
+        for fact in [
+            "starts when a file of that repository is first touched",
+            "`No language servers configured for this project`",
+            "then `lsp status` lists the servers",
+            "the `PATH` it inherits, which is the **daemon's** environment",
+            "A dev shell (`nix develop`, direnv) does not count",
+            "`No language server found for this action`",
+            "install the server where the daemon's `PATH` sees it",
+            "declare it in `<workspace>/.omp/lsp.json` with an absolute `command`",
+            "`fileTypes` and `rootMarkers`",
+            "the `lsp` tool's `reload` action",
+            "a missing server is not something to raise",
+            "nor suggest installing or configuring one, unless the user asks",
+            "Never install a server or change the user's system",
+        ] {
+            assert!(words.contains(fact), "{fact:?} missing: {words}");
+        }
+        assert!(
+            index().contains("how omp finds language servers"),
+            "{}",
+            index()
+        );
     }
 }

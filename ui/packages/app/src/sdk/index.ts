@@ -556,6 +556,7 @@ export {
   useTerminal,
   useToolRun,
 } from "./sources.ts";
+export { ThreadLink } from "./thread-link.tsx";
 export {
   useWidget,
   type WidgetComponent,

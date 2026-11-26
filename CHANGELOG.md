@@ -11,6 +11,11 @@ The version's section is also the source of the GitHub release notes.
 
 - A transcript scrolled up well away from its end shows a down-arrow button over its bottom corner: click or tap it
   (or press Enter on it) to jump to the latest message and follow the reply again. It is touch-sized on phones too.
+- Links between threads: a reply can link another thread as `[title](omfp://thread/<id>)`, and agents are told to
+  link the threads they mention (one they created, waited on or listed). A click selects that thread in the window (a
+  tap on a phone shows its chat); a middle click or a click with Ctrl, Cmd or Shift opens a new window on it, in the
+  desktop app too. A link written as the bare id shows the thread's current title and state; a link to a thread that
+  does not exist stays plain text. Widgets get the same links with `ThreadLink` from `omfp/sdk`.
 
 ### Changed
 

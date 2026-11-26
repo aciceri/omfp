@@ -266,12 +266,12 @@ describe("omfp:threads", () => {
     await user.click(jobsToggle);
     expect([host.window.get(JOBS_OPEN), host.window.get(ARCHIVED_OPEN)]).toEqual([[], ["w2"]]);
     expect(screen.queryAllByTestId("jobs-list").length).toBe(0);
-    // j/k still move through threads only.
+    // Threads mode's moves skip jobs and archived threads (UI-990).
     await user.click(jobsToggle);
     act(() => {
-      host.commands.run("nav.bottom", [], ["threads"]);
+      host.commands.run("thread.last");
     });
-    expect(host.window.get(SELECTED_THREAD)).toBe("t3");
+    expect(host.window.get(SELECTED_THREAD)).toBe("t2");
   });
 
   // spec: UI-020, UI-442
@@ -609,23 +609,27 @@ describe("omfp:threads", () => {
     await waitFor(() => expect(focusedItem()).toBe("workspace-collapse w1"));
   });
 
-  // spec: UI-095, UI-022, UI-023
-  test("nav commands move through visible rows and Space w focuses the + workspace field", () => {
+  // spec: UI-095, UI-989, UI-022, UI-023
+  test("Threads mode's moves step the threads from anywhere and Space w focuses the + workspace field", () => {
     const { host } = setup();
-    const run = (name: string, scopes: string[] = []) =>
+    const run = (name: string) =>
       act(() => {
-        host.commands.run(name, [], scopes);
+        host.commands.run(name);
       });
-    run("nav.next", ["threads"]);
+    run("thread.next");
     expect(host.window.get(SELECTED_THREAD)).toBe("t1");
-    run("nav.next");
+    run("thread.next");
     expect(host.window.get(SELECTED_THREAD)).toBe("t2");
-    run("nav.top");
+    run("thread.first");
     expect(host.window.get(SELECTED_THREAD)).toBe("t1");
-    run("nav.bottom", ["threads"]);
+    run("thread.last");
     expect(host.window.get(SELECTED_THREAD)).toBe("t2");
-    run("nav.halfUp");
+    run("thread.halfUp");
     expect(host.window.get(SELECTED_THREAD)).toBe("t1");
+    // The threads scope no longer answers the View mode moves.
+    expect(host.commands.list().some((command) => command.id === "nav.next" && command.scope === "threads")).toBe(
+      false,
+    );
     run("workspace.new");
     expect(document.activeElement === screen.getByTestId("new-workspace-input")).toBe(true);
   });

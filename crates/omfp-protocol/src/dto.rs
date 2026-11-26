@@ -452,11 +452,14 @@ pub struct WorkspaceBinding {
     pub args: Vec<String>,
 }
 
-/// The keymap mode a binding belongs to: `[keymap]`, `[keymap.insert]`, `[keymap.cmdline]`.
+/// The keymap mode a binding belongs to: `[keymap]` (`normal`, the layer Threads and View mode share),
+/// `[keymap.threads]`, `[keymap.view]`, `[keymap.insert]`, `[keymap.cmdline]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum KeymapMode {
     Normal,
+    Threads,
+    View,
     Insert,
     Cmdline,
 }

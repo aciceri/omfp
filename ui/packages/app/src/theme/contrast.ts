@@ -58,8 +58,8 @@ const FILL = 1.1;
  * own light outline is 4.26:1). `on-surface` is the target, so it is not guarded. Then the labels of filled controls
  * on their fills, measured after the fills were guarded: `on-primary` on the primary button and the `INSERT` pill
  * (primary → tertiary), `on-tertiary` on the `COMMAND` pill (the reversed gradient), `on-error` on the danger button,
- * `on-secondary-container` on counts. Last the `NORMAL` pill's fill, `surface-container-highest`, on the mode line's
- * `surface-container-lowest`: a theme that makes them one color hides the pill.
+ * `on-secondary-container` on counts and the `VIEW` pill. Last the `THREADS` pill's fill, `surface-container-highest`,
+ * on the mode line's `surface-container-lowest`: a theme that makes them one color hides the pill.
  */
 export const GUARDED_ROLES: readonly GuardedRole[] = [
   ...["primary", "tertiary", "secondary", "error", "on-surface-variant", "ok", "warn"].map(

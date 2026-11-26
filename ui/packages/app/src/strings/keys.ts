@@ -1,6 +1,12 @@
 /** Texts of the workspace keymap, `.omfp/keymap.json` (UI-210..212), and of the which-key panel (UI-320..UI-326). */
 
-const MODES = { normal: "normal", insert: "insert", cmdline: "command line" } as const;
+const MODES = {
+  normal: "normal",
+  threads: "threads",
+  view: "view",
+  insert: "insert",
+  cmdline: "command line",
+} as const;
 
 export const keys = {
   /** The banner while the file is refused (UI-212). */

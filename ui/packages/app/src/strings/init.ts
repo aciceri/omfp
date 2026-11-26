@@ -3,7 +3,13 @@
  * `:describe-command` (UI-264, UI-265).
  */
 
-const MODES = { normal: "normal", insert: "insert", cmdline: "command line" } as const;
+const MODES = {
+  normal: "normal",
+  threads: "threads",
+  view: "view",
+  insert: "insert",
+  cmdline: "command line",
+} as const;
 
 export const init = {
   /** How the banner names each file. */

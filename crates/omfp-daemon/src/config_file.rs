@@ -27,12 +27,12 @@
 //! [ui.fonts]
 //! prose = "Literata, serif"
 //!
-//! [keymap]                      # normal mode
+//! [keymap]                      # normal mode: Threads and View mode both
 //! "Space t" = "window.theme"
 //! "g g" = ""                    # removes the default binding
 //!
-//! [keymap.insert]
-//! "Ctrl-j" = "nav.next"
+//! [keymap.threads]              # also [keymap.view], [keymap.insert], [keymap.cmdline]
+//! "Ctrl-j" = "thread.next"
 //! ```
 
 use std::net::SocketAddr;
@@ -235,7 +235,8 @@ struct RawFonts {
 pub struct ConfigFile {
     pub daemon: DaemonOptions,
     pub ui: UiSettings,
-    /// `[keymap]` (normal mode), then `[keymap.insert]`, then `[keymap.cmdline]`, each sorted by keys.
+    /// `[keymap]` (normal mode), then its mode tables (`threads`, `view`, `insert`, `cmdline`), each sorted by
+    /// keys.
     pub keymap: Vec<KeymapEntry>,
 }
 
@@ -316,13 +317,15 @@ pub const FONT_SIZES: std::ops::RangeInclusive<u8> = 10..=28;
 /// The largest accepted `[ui] recent_threads` (UI-996): each kept thread's state stays in the window's memory.
 pub const RECENT_THREADS_MAX: u8 = 100;
 
-const MODE_TABLES: [(&str, KeymapMode); 2] = [
+const MODE_TABLES: [(&str, KeymapMode); 4] = [
+    ("threads", KeymapMode::Threads),
+    ("view", KeymapMode::View),
     ("insert", KeymapMode::Insert),
     ("cmdline", KeymapMode::Cmdline),
 ];
 
-/// The bindings of `[keymap]`: string values are normal-mode bindings, `insert` and `cmdline` sub-tables the other
-/// modes.
+/// The bindings of `[keymap]`: string values are normal-mode bindings (Threads and View mode both), the `threads`,
+/// `view`, `insert` and `cmdline` sub-tables the other modes.
 fn keymap(table: &toml::Table) -> Result<Vec<KeymapEntry>, String> {
     let mut entries = Vec::new();
     let mut modes = Vec::new();
@@ -336,7 +339,8 @@ fn keymap(table: &toml::Table) -> Result<Vec<KeymapEntry>, String> {
             toml::Value::Table(bindings) => {
                 let Some((_, mode)) = MODE_TABLES.iter().find(|(name, _)| name == keys) else {
                     return Err(format!(
-                        "unknown keymap table `keymap.{keys}`, expected `keymap.insert` or `keymap.cmdline`"
+                        "unknown keymap table `keymap.{keys}`, expected `keymap.threads`, \
+                         `keymap.view`, `keymap.insert` or `keymap.cmdline`"
                     ));
                 };
                 modes.push((*mode, keys, bindings));
@@ -428,6 +432,8 @@ pub fn write_back(text: &str, update: &SetSettingsParams) -> Result<String, Stri
         let table = child(doc.as_table_mut(), "keymap")?;
         let table = match entry.mode {
             KeymapMode::Normal => table,
+            KeymapMode::Threads => child(table, "threads")?,
+            KeymapMode::View => child(table, "view")?,
             KeymapMode::Insert => child(table, "insert")?,
             KeymapMode::Cmdline => child(table, "cmdline")?,
         };
@@ -676,6 +682,40 @@ prose = "Literata, serif"
             ]
         );
         assert_eq!(ConfigFile::parse("").unwrap(), ConfigFile::default());
+    }
+
+    // spec: UI-097, UI-095
+    #[test]
+    fn the_threads_and_view_tables_bind_one_mode_each_and_are_written_back() {
+        let text = r#"
+[keymap]
+j = "x"
+
+[keymap.threads]
+j = "thread.next"
+
+[keymap.view]
+j = "nav.next"
+"#;
+        let file = ConfigFile::parse(text).unwrap();
+        assert_eq!(
+            file.keymap,
+            [
+                entry(KeymapMode::Normal, "j", "x"),
+                entry(KeymapMode::Threads, "j", "thread.next"),
+                entry(KeymapMode::View, "j", "nav.next"),
+            ]
+        );
+
+        let update = SetSettingsParams {
+            ui: None,
+            keymap: Some(vec![
+                entry(KeymapMode::Threads, "g g", ""),
+                entry(KeymapMode::View, "Ctrl-w x", "pane.right"),
+            ]),
+        };
+        let written = ConfigFile::parse(&write_back("", &update).unwrap()).unwrap();
+        assert_eq!(written.keymap, update.keymap.unwrap());
     }
 
     // spec: DMN-009, DMN-238

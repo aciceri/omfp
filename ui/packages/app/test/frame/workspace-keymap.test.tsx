@@ -224,7 +224,7 @@ describe("workspace keymap", () => {
     keys("?");
     const help = screen.getByTestId("help");
     expect([...help.querySelectorAll("[data-section]")].map((section) => section.getAttribute("data-section"))).toEqual(
-      ["workspace", "normal", "insert", "transcript", "cmdline", "editor", "commands"],
+      ["workspace", "normal", "threads", "view", "insert", "transcript", "cmdline", "editor", "commands"],
     );
     // In keymap order: a binding that replaces a default keeps its place.
     expect(rows("workspace")).toEqual([
@@ -232,8 +232,9 @@ describe("workspace keymap", () => {
       ["g p", "one", "Ping the demo"],
       ["ctrl+t", "", "Ping the demo (insert)"],
     ]);
-    const normal = rows("normal").map(([chips]) => chips);
-    expect(normal).not.toContain("?");
-    expect(normal).not.toContain("j");
+    // A `normal` entry speaks for Threads and View mode both: `j` is gone from either.
+    const chips = ["normal", "threads", "view"].flatMap((section) => rows(section).map(([key]) => key));
+    expect(chips).not.toContain("?");
+    expect(chips).not.toContain("j");
   });
 });

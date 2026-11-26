@@ -6,10 +6,11 @@
  * its threads (state mark, title, time; unread titles bold) but those listed under their job (UI-992), its draft
  * thread, "+ thread", then the collapsed "Jobs (N)" (UI-740, `job-rows.tsx`) and "Archived (N)" rows. Sections
  * collapse (`za`); the collapsed set is window-local and survives reloads. Threads and sections are dragged (and moved
- * by keys) into another place, a thread into another workspace (UI-621..UI-627, `reorder.ts`). Its `threads` scope
- * answers `nav.*` (j/k, gg/G, Ctrl-d/u, UI-095) over the rows it lists, which are also the global fallback, `dd` and
- * `za` on the focused row or section; it registers `nav.search` (`/`), `workspace.new` (`Space w`) and the global
- * `thread.next` / `thread.prev` (`Alt-j` / `Alt-k`, UI-989..UI-991), which follow its order from anywhere.
+ * by keys) into another place, a thread into another workspace (UI-621..UI-627, `reorder.ts`). It registers Threads
+ * mode's moves (UI-095), which work with the column shown, collapsed or hidden: `thread.next` / `thread.prev` (`j` /
+ * `k`, and `Alt-j` / `Alt-k` from any mode, UI-989..UI-991), `thread.first` / `thread.last` (`gg` / `G`) and
+ * `thread.halfDown` / `thread.halfUp` (`Ctrl-d` / `Ctrl-u`) following its order; `dd` and `za` on the focused row or
+ * section, else on the selected thread and its workspace; `workspace.new` (`Space w`).
  */
 
 import {
@@ -37,7 +38,6 @@ import {
   DRAFT_THREAD,
   FOCUS_COMPOSER,
   SELECTED_THREAD,
-  threadActions,
   useCall,
   useCommand,
   useCurrentWorkspaceId,
@@ -52,7 +52,6 @@ import {
 import { strings } from "../../strings/index.ts";
 import type { ReorderSource } from "../../vm/order.ts";
 import {
-  adjacentThread,
   ConversationSearch,
   type DeclaredJobs,
   displayTitle,
@@ -61,16 +60,15 @@ import {
   isFiltering,
   isUnread,
   type Move,
-  moveSelection,
   type Section,
   type Seen,
   sidebarSections,
   spawnedCounts,
   spawnedTree,
+  steppedThread,
   type ThreadFilter,
   toggled,
   updateSeen,
-  visibleOrder,
 } from "../../vm/threads.ts";
 import { WorkspaceJobs } from "./job-rows.tsx";
 import { ARCHIVED_OPEN, COLLAPSED_WORKSPACES, SEEN, SPAWNED_BY, THREAD_QUERY } from "./keys.ts";
@@ -80,7 +78,7 @@ import { NewWorkspace, RenameWorkspace } from "./workspace-fields.tsx";
 
 const text = strings.shell.threads;
 
-/** Rows moved by Ctrl-d / Ctrl-u. */
+/** Threads moved by Ctrl-d / Ctrl-u. */
 const HALF_PAGE = 10;
 const NO_SNIPPETS: ReadonlyMap<string, string> = new Map();
 
@@ -97,7 +95,6 @@ export function ThreadsWidget({
   const [selected] = useWindowState(SELECTED_THREAD);
   const [query] = useWindowState(THREAD_QUERY);
   const [collapsed] = useWindowState(COLLAPSED_WORKSPACES);
-  const [archivedOpen] = useWindowState(ARCHIVED_OPEN);
   const [spawnedBy, setSpawnedBy] = useWindowState(SPAWNED_BY);
   // The column is `aria-busy` until the index is live (again while it resubscribes after a reconnect).
   const loaded = useSnapshot((snapshot) =>
@@ -127,10 +124,6 @@ export function ThreadsWidget({
     () => sidebarSections(threads, workspaces, filter, declared),
     [threads, workspaces, filter, declared],
   );
-  const order = useMemo(
-    () => visibleOrder(sections, collapsed, archivedOpen, filter),
-    [sections, collapsed, archivedOpen, filter],
-  );
   const root = useRef<HTMLElement>(null);
   const newWorkspace = useRef<HTMLInputElement>(null);
   const filtering = isFiltering(filter);
@@ -148,9 +141,8 @@ export function ThreadsWidget({
   const reorder = useReorder(sections, nameOf);
   const { drag, start } = useReorderDrag(root, !filtering, reorder);
   useMoveCommands(sections, filtering, reorder);
-  useNavCommands(order, root);
   useStepCommands(sections, collapsed, filter, root);
-  useSectionCommands();
+  useSectionCommands(root);
   useFocusAfterRemoval(sections, root, newWorkspace);
   useCommand({
     id: "workspace.new",
@@ -277,52 +269,19 @@ function useConversationMatches(query: string): ReadonlyMap<string, string> {
   return found.query === query ? found.snippets : NO_SNIPPETS;
 }
 
-/** `nav.*` in the `threads` scope and as the global fallback. */
-function useNavCommands(order: readonly string[], root: RefObject<HTMLElement | null>): void {
-  const host = useHost();
-  const latest = useRef(order);
-  latest.current = order;
-  useEffect(() => {
-    const actions = threadActions(host);
-    const move = (step: Move) => {
-      const target = moveSelection(latest.current, host.window.get(SELECTED_THREAD), step);
-      if (target === undefined) {
-        return;
-      }
-      actions.select(target);
-      const row = root.current?.querySelector<HTMLElement>(
-        `[data-testid="thread-row"][data-thread-id="${CSS.escape(target)}"]`,
-      );
-      if (root.current?.contains(document.activeElement) === true) {
-        row?.focus();
-      }
-      row?.scrollIntoView?.({ block: "nearest" });
-    };
-    const removals = NAV_MOVES.flatMap(([id, title, step]) => [
-      host.commands.register({ id, title, scope: "threads", run: () => move(step) }),
-      host.commands.register({ id, title, run: () => move(step) }),
-    ]);
-    return () => {
-      for (const remove of removals) {
-        remove();
-      }
-    };
-  }, [host, root]);
-}
-
-const NAV_MOVES: ReadonlyArray<readonly [string, string, Move]> = [
-  ["nav.next", strings.shell.commands.next, 1],
-  ["nav.prev", strings.shell.commands.prev, -1],
-  ["nav.top", strings.shell.commands.top, "top"],
-  ["nav.bottom", strings.shell.commands.bottom, "bottom"],
-  ["nav.halfDown", strings.shell.commands.halfDown, HALF_PAGE],
-  ["nav.halfUp", strings.shell.commands.halfUp, -HALF_PAGE],
+/** Threads mode's moves besides `thread.next` / `thread.prev` (UI-095). */
+const MOVES: ReadonlyArray<readonly [string, string, Move, readonly string[]]> = [
+  ["thread.first", strings.shell.commands.firstThread, "top", ["first-thread"]],
+  ["thread.last", strings.shell.commands.lastThread, "bottom", ["last-thread"]],
+  ["thread.halfDown", strings.shell.commands.halfThreadsDown, HALF_PAGE, []],
+  ["thread.halfUp", strings.shell.commands.halfThreadsUp, -HALF_PAGE, []],
 ];
 
 /**
- * `thread.next` / `thread.prev` (UI-989..UI-991): global, so they work from the composer, the transcript and with the
- * column hidden. Pressed in a text field outside the column, the new thread's composer takes the focus; on a row of
- * the column, the new row does; anywhere else the focus stays.
+ * `thread.next` / `thread.prev` (UI-989..UI-991) and Threads mode's other moves (UI-095), one implementation
+ * ({@link steppedThread}): global, so they work from the composer, the transcript and with the column hidden. Pressed
+ * in a text field outside the column, the new thread's composer takes the focus; on a row of the column, the new row
+ * does; anywhere else the focus stays.
  */
 function useStepCommands(
   sections: readonly Section[],
@@ -332,58 +291,84 @@ function useStepCommands(
 ): void {
   const host = useHost();
   const actions = useThreadActions();
-  const step = (by: 1 | -1) => {
-    const target = adjacentThread(
-      sections,
-      collapsed,
-      filter,
-      host.window.get(SELECTED_THREAD),
-      currentWorkspaceId(host),
-      by,
-    );
-    if (target === undefined) {
-      return;
-    }
-    const focused = document.activeElement;
-    const inColumn = root.current?.contains(focused) === true;
-    actions.select(target);
-    const row = root.current?.querySelector<HTMLElement>(
-      `[data-testid="thread-row"][data-thread-id="${CSS.escape(target)}"]`,
-    );
-    if (inColumn && focused?.closest("[data-thread-id]") !== null) {
-      row?.focus();
-    } else if (!inColumn && modeAt(focused) === "insert") {
-      host.window.set(FOCUS_COMPOSER, target);
-    }
-    row?.scrollIntoView?.({ block: "nearest" });
-  };
-  useCommand({
-    id: "thread.next",
-    title: strings.shell.commands.nextThread,
-    aliases: ["next-thread"],
-    run: () => step(1),
-  });
-  useCommand({
-    id: "thread.prev",
-    title: strings.shell.commands.prevThread,
-    aliases: ["prev-thread"],
-    run: () => step(-1),
-  });
+  const latest = useRef({ sections, collapsed, filter, actions });
+  latest.current = { sections, collapsed, filter, actions };
+  useEffect(() => {
+    const step = (move: Move) => {
+      const current = latest.current;
+      const target = steppedThread(
+        current.sections,
+        current.collapsed,
+        current.filter,
+        host.window.get(SELECTED_THREAD),
+        currentWorkspaceId(host),
+        move,
+      );
+      if (target === undefined) {
+        return;
+      }
+      const focused = document.activeElement;
+      const inColumn = root.current?.contains(focused) === true;
+      current.actions.select(target);
+      const row = root.current?.querySelector<HTMLElement>(
+        `[data-testid="thread-row"][data-thread-id="${CSS.escape(target)}"]`,
+      );
+      if (inColumn && focused?.closest("[data-thread-id]") !== null) {
+        row?.focus();
+      } else if (!inColumn && modeAt(focused) === "insert") {
+        host.window.set(FOCUS_COMPOSER, target);
+      }
+      row?.scrollIntoView?.({ block: "nearest" });
+    };
+    const removals = [
+      host.commands.register({
+        id: "thread.next",
+        title: strings.shell.commands.nextThread,
+        aliases: ["next-thread"],
+        run: () => step(1),
+      }),
+      host.commands.register({
+        id: "thread.prev",
+        title: strings.shell.commands.prevThread,
+        aliases: ["prev-thread"],
+        run: () => step(-1),
+      }),
+      ...MOVES.map(([id, title, move, aliases]) =>
+        host.commands.register({ id, title, ...(aliases.length === 0 ? {} : { aliases }), run: () => step(move) }),
+      ),
+    ];
+    return () => {
+      for (const remove of removals) {
+        remove();
+      }
+    };
+  }, [host, root]);
 }
 
-/** `dd` (delete the focused thread, draft or workspace) and `za` (collapse the focused section), UI-020, UI-022. */
-function useSectionCommands(): void {
+/**
+ * `dd` (delete the focused thread, draft or workspace) and `za` (collapse the focused section), UI-020, UI-022; with
+ * the focus outside the column (Threads mode with nothing focused, the column collapsed or hidden, UI-095), the
+ * selected thread and the current workspace's section.
+ */
+function useSectionCommands(root: RefObject<HTMLElement | null>): void {
   const host = useHost();
   const actions = useThreadActions();
+  /** The focused element when it is in the column. */
+  const inColumn = () => {
+    const element = document.activeElement;
+    return element !== null && root.current?.contains(element) === true ? element : null;
+  };
   const sectionOf = (element: Element | null) =>
     element?.closest<HTMLElement>('[data-testid="workspace-section"]')?.dataset.workspaceId;
   useCommand({
     id: "nav.delete",
     title: strings.shell.commands.deleteFocused,
-    scope: "threads",
     run: () => {
-      const element = document.activeElement;
-      const threadId = element?.closest<HTMLElement>("[data-thread-id]")?.dataset.threadId;
+      const element = inColumn();
+      const threadId =
+        element === null
+          ? host.window.get(SELECTED_THREAD)
+          : element.closest<HTMLElement>("[data-thread-id]")?.dataset.threadId;
       const workspaceId = sectionOf(element);
       if (threadId !== undefined) {
         void actions.remove(threadId);
@@ -397,16 +382,17 @@ function useSectionCommands(): void {
   useCommand({
     id: "nav.toggleSection",
     title: strings.shell.commands.toggleSection,
-    scope: "threads",
     run: () => {
-      const workspaceId = sectionOf(document.activeElement);
-      if (workspaceId !== undefined) {
-        host.window.set(COLLAPSED_WORKSPACES, (previous) => toggled(previous, workspaceId));
-        document.activeElement
-          ?.closest('[data-testid="workspace-section"]')
-          ?.querySelector<HTMLElement>('[data-testid="workspace-collapse"]')
-          ?.focus();
+      const element = inColumn();
+      const workspaceId = element === null ? currentWorkspaceId(host) : sectionOf(element);
+      if (workspaceId === undefined) {
+        return;
       }
+      host.window.set(COLLAPSED_WORKSPACES, (previous) => toggled(previous, workspaceId));
+      element
+        ?.closest('[data-testid="workspace-section"]')
+        ?.querySelector<HTMLElement>('[data-testid="workspace-collapse"]')
+        ?.focus();
     },
   });
 }

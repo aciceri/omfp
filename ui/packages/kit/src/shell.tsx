@@ -31,8 +31,8 @@ import { LogoMark, Wordmark } from "./logo.tsx";
 import { StateMark, type ThreadState } from "./marks.tsx";
 import { useMarquee } from "./marquee.ts";
 
-/** The keymap modes (UI-098). */
-export type Mode = "normal" | "insert" | "command";
+/** The keymap modes (UI-098), and vim's `normal` while a file editor has the focus (UI-112). */
+export type Mode = "threads" | "view" | "normal" | "insert" | "command";
 
 export interface ModePillProps extends HTMLAttributes<HTMLSpanElement> {
   mode: Mode;
@@ -40,7 +40,8 @@ export interface ModePillProps extends HTMLAttributes<HTMLSpanElement> {
   children?: ReactNode;
 }
 
-/** `NORMAL`, `INSERT` or `COMMAND` (UI-167); it rises in when the mode changes at motion `full`. */
+/** `THREADS`, `VIEW`, `INSERT`, `COMMAND` or vim's `NORMAL` (UI-167); it rises in when the mode changes at motion
+ * `full`. */
 export function ModePill({ mode, className, children, ...props }: ModePillProps) {
   return (
     <span key={mode} {...props} className={cx("omfp-mode-pill", className)} data-mode={mode}>

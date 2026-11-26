@@ -1,8 +1,8 @@
 /**
  * Reordering the left column (UI-620..UI-627): the pointer drag of thread rows and workspace sections — a mouse or a
- * pen drags once it moved 4 px, a finger after a long press (UI-623) —, the move keys on the focused row or section
- * (UI-624), and the call, announced once done (UI-625) or reported as an error. Nothing drags or moves while a filter
- * is typed (UI-626).
+ * pen drags once it moved 4 px, a finger after a long press (UI-623) —, the move keys on the focused row or section,
+ * else on the selected thread (UI-624, UI-095), and the call, announced once done (UI-625) or reported as an error.
+ * Nothing drags or moves while a filter is typed (UI-626).
  */
 
 import {
@@ -13,7 +13,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { reportError, useAnnounce, useHost } from "../../sdk/index.ts";
+import { reportError, SELECTED_THREAD, useAnnounce, useHost } from "../../sdk/index.ts";
 import { strings } from "../../strings/index.ts";
 import {
   announcement,
@@ -332,6 +332,15 @@ function focusedSource(element: Element | null): ReorderSource | undefined {
   return element.closest("[data-thread-id]") === null ? { kind: "workspace", id: workspaceId } : undefined;
 }
 
+/** The thread the move keys act on outside the column's sections (UI-095): the selected one, where a section lists it. */
+function selectedSource(sections: readonly Section[], selected: string | undefined): ReorderSource | undefined {
+  if (selected === undefined) {
+    return undefined;
+  }
+  const section = sections.find((candidate) => candidate.threadIds.includes(selected));
+  return section === undefined ? undefined : { kind: "thread", id: selected, workspaceId: section.workspace.id };
+}
+
 const MOVES: ReadonlyArray<readonly [string, string, KeyMove]> = [
   ["threads.moveUp", strings.shell.commands.moveUp, "up"],
   ["threads.moveDown", strings.shell.commands.moveDown, "down"],
@@ -339,8 +348,9 @@ const MOVES: ReadonlyArray<readonly [string, string, KeyMove]> = [
   ["threads.moveToNextWorkspace", strings.shell.commands.moveToNextWorkspace, "nextWorkspace"],
 ];
 
-/** The move keys of the `threads` scope (UI-624): `Alt-ArrowUp`/`Alt-ArrowDown` move the focused thread or workspace,
- * `Alt-Shift-ArrowUp`/`Alt-Shift-ArrowDown` the focused thread into the previous or next workspace. */
+/** The move keys of Threads mode (UI-624, UI-095): `Alt-ArrowUp`/`Alt-ArrowDown` move the focused thread or workspace,
+ * `Alt-Shift-ArrowUp`/`Alt-Shift-ArrowDown` the focused thread into the previous or next workspace; with the focus
+ * outside the column's sections, the selected thread. */
 export function useMoveCommands(sections: readonly Section[], filtering: boolean, reorder: Reorder): void {
   const host = useHost();
   const announce = useAnnounce();
@@ -351,10 +361,14 @@ export function useMoveCommands(sections: readonly Section[], filtering: boolean
       host.commands.register({
         id,
         title,
-        scope: "threads",
         run: () => {
           const current = latest.current;
-          const source = focusedSource(document.activeElement);
+          const element = document.activeElement;
+          const section = element === null ? null : element.closest('[data-testid="workspace-section"]');
+          const source =
+            section === null
+              ? selectedSource(current.sections, host.window.get(SELECTED_THREAD))
+              : focusedSource(element);
           if (source === undefined) {
             return;
           }

@@ -382,6 +382,12 @@
     background: var(--omfp-inverse-surface);
   }
 
+  :root[data-skin="boring"] .omfp-mode-pill[data-mode="view"] {
+    color: var(--omfp-on-surface);
+    background: transparent;
+    box-shadow: inset 0 0 0 1px var(--omfp-outline);
+  }
+
   :root[data-skin="boring"] .omfp-mode-pill[data-mode="command"] {
     color: var(--omfp-on-secondary-container);
     background: var(--omfp-secondary-container);

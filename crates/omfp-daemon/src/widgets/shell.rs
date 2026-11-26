@@ -73,8 +73,15 @@ pub struct Additions {
     pub workspace: Option<Result<Vec<WorkspaceBinding>, String>>,
 }
 
-/// The keymap modes in the order the docs list them.
-const MODES: [KeymapMode; 3] = [KeymapMode::Normal, KeymapMode::Insert, KeymapMode::Cmdline];
+/// The keymap modes in the order the docs list them: `normal` is the layer Threads and View mode share, where a
+/// `threads` or `view` binding of the same keys wins.
+const MODES: [KeymapMode; 5] = [
+    KeymapMode::Normal,
+    KeymapMode::Threads,
+    KeymapMode::View,
+    KeymapMode::Insert,
+    KeymapMode::Cmdline,
+];
 
 /// `` `keys` → `command` `` with its arguments; an empty command removes the binding of `keys`.
 fn binding_line(keys: &str, command: &str, args: &[String]) -> String {
@@ -156,7 +163,9 @@ fn render(defaults: &Result<Defaults, serde_json::Error>, additions: &Additions)
         "# omfp keys and commands\n\
          \n\
          The key bindings and `:` commands every omfp window has by default (see {SHELL_URL} for the window). A \
-         binding runs a command by id, with its arguments; `:` runs a command by an alias.\n"
+         binding runs a command by id, with its arguments; `:` runs a command by an alias. `threads` mode: nothing \
+         is focused or the focus is in the left column; `view` mode: the focus is in the view, outside a text \
+         field; a `normal` binding applies in both, unless a `threads` or `view` binding has the same keys.\n"
     );
     match defaults {
         Ok(defaults) => {
@@ -290,6 +299,8 @@ mod tests {
             r#"{
               "bindings": [
                 { "mode": "normal", "keys": "g v", "command": "view.pick", "args": ["ops"] },
+                { "mode": "threads", "keys": "j", "command": "thread.next" },
+                { "mode": "view", "keys": "j", "command": "nav.next" },
                 { "mode": "cmdline", "keys": "Ctrl-p", "command": "history.prev" }
               ],
               "commands": [
@@ -303,7 +314,10 @@ mod tests {
         let text = render(&Ok(defaults), &Additions::default());
         for line in [
             "### normal mode\n\n- `g v` → `view.pick` (`ops`)\n",
+            "### threads mode\n\n- `j` → `thread.next`\n",
+            "### view mode\n\n- `j` → `nav.next`\n",
             "### cmdline mode\n\n- `Ctrl-p` → `history.prev`\n",
+            "a `normal` binding applies in both",
             "- `thread.new` — New thread (`:new`, `:n`). Starts one.\n",
             "- `transcript.copy` — Copy. Scope `transcript`: applies while focus is inside it.\n",
             "exist only while those are shown",

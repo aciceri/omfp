@@ -63,7 +63,7 @@ export const VOICES: readonly LiveVoice[] = [
   "vale",
 ];
 const FONT_ROLES: readonly FontRole[] = ["prose", "ui", "code"];
-const MODES: readonly Mode[] = ["normal", "insert", "cmdline"];
+const MODES: readonly Mode[] = ["normal", "threads", "view", "insert", "cmdline"];
 /** `delete_archived_after`'s values (DMN-395): minutes, hours, days or weeks, or `never` (also `0`). */
 const ARCHIVED_LIFETIME = /^(?:\d+[mhdw]|never|0)$/;
 

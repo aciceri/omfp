@@ -230,7 +230,7 @@ const CASES: readonly Case[] = [
     base: "omfp-resolved",
   },
   { name: "ModePill", element: <ModePill {...FORWARDED} mode="insert" />, base: "omfp-mode-pill" },
-  { name: "ModeLine", element: <ModeLine {...FORWARDED} mode="normal" />, base: "omfp-modeline" },
+  { name: "ModeLine", element: <ModeLine {...FORWARDED} mode="threads" />, base: "omfp-modeline" },
   { name: "ModeSegment", element: <ModeSegment {...FORWARDED}>opus</ModeSegment>, base: "omfp-modeline__segment" },
   {
     name: "ModeNotice",
@@ -251,7 +251,7 @@ const CASES: readonly Case[] = [
     element: <HelpDialog {...FORWARDED} label="Keys" filter={null} inline />,
     base: "omfp-help",
   },
-  { name: "HelpSection", element: <HelpSection {...FORWARDED} title="normal" />, base: "omfp-help__section" },
+  { name: "HelpSection", element: <HelpSection {...FORWARDED} title="threads" />, base: "omfp-help__section" },
   {
     name: "HelpRow",
     element: <HelpRow {...FORWARDED} keys={["j"]} description="Next thread" />,

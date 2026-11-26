@@ -47,8 +47,8 @@ export function ModeLines() {
     <Section title="Mode line · command line · which-key" note="UI-167 · UI-168 · UI-193 · UI-320" wide>
       {/* The window's mode line as the app fills it (UI-441): the thread's title and state, the views, a notice. */}
       <ModeLine
-        mode="normal"
-        modeLabel="NORMAL"
+        mode="threads"
+        modeLabel="THREADS"
         views={
           <ModeViews
             label="Views"
@@ -71,7 +71,7 @@ export function ModeLines() {
         <ModeSegment kind="title">Redesign kit tokens</ModeSegment>
         <ModeSegment>running</ModeSegment>
       </ModeLine>
-      <ModeLine mode="normal">
+      <ModeLine mode="view">
         <ModeSegment kind="title">omfp › Redesign kit tokens</ModeSegment>
         <ModeSegment>
           <StateMark state="running" /> running
@@ -231,7 +231,7 @@ export function HelpPanels() {
   return (
     <Section title="Help" note="UI-198 · ? or :help · type to filter" wide>
       <HelpDialog inline label="Keys and commands" filter={filter("")} end={end}>
-        <HelpSection title="normal">
+        <HelpSection title="threads">
           <HelpRow keys={["j"]} description="Next thread" />
           <HelpRow keys={["g g"]} description="First thread" />
           <HelpRow keys={["spc a", "] a", "alt+a"]} description="Next thread needing attention" />

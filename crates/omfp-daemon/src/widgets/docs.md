@@ -226,8 +226,11 @@ the default keys and the built-in commands with their titles and aliases for age
 }
 ```
 
-`mode` is `normal` (the default: the focus is not in a text field), `insert` (a text field has it) or `cmdline` (the `:`
-line is open). `keys` are tokens separated by spaces: a printable key is its character (`j`, `G`, `:`), other keys
+`mode` is `normal` (the default: Threads and View mode both), `threads` (nothing focused or the focus in the left
+column: `j`/`k` switch threads), `view` (the focus in the view outside a text field: `j`/`k` go to the focused widget's
+`useCommand`), `insert` (a text field has the focus) or `cmdline` (the `:` line is open); a `threads` or `view` binding
+wins over a `normal` one with the same keys, and a `normal` entry replaces the `threads` and `view` bindings of its
+keys. `keys` are tokens separated by spaces: a printable key is its character (`j`, `G`, `:`), other keys
 their name (`Space`, `Esc`, `Enter`, `Tab`), prefixed by `Ctrl-`, `Alt-`, `Meta-` (`g g`, `Space t`, `Ctrl-k`). `args`
 are passed to the command's `run(args)`; `"command": ""` removes a binding.
 

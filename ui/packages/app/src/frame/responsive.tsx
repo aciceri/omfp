@@ -18,6 +18,7 @@ import {
 } from "@omfp/kit";
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
+import { THREADS_ATTRIBUTE } from "../keymap/handler.ts";
 import { DRAFT_THREAD, SELECTED_THREAD, useCommand, useThreads, useWindowState } from "../sdk/index.ts";
 import { strings } from "../strings/index.ts";
 import type { Area } from "../view/layout.ts";
@@ -201,11 +202,15 @@ export function HideThreadsButton(): ReactNode {
   );
 }
 
-/** Show threads, at the mode line's start while the wide column is collapsed (UI-986). */
+/**
+ * Show threads, at the mode line's start while the wide column is collapsed (UI-986). It stands for the column, so
+ * its focus (where collapsing the column from inside it leaves the focus) keeps the window in Threads mode (UI-095).
+ */
 export function ShowThreadsButton(): ReactNode {
   const setCollapsed = useSetCollapsed();
   return (
     <ModeButton
+      {...{ [THREADS_ATTRIBUTE]: "" }}
       label={text.showThreads}
       icon="panel-left-open"
       aria-controls={LEFT_COLUMN_ID}
@@ -232,7 +237,7 @@ export function LeftStrip(): ReactNode {
   );
   return (
     <ThreadStrip
-      {...{ [DRAWER_CONTROL]: "" }}
+      {...{ [DRAWER_CONTROL]: "", [THREADS_ATTRIBUTE]: "" }}
       aria-label={text.strip}
       data-testid="left-strip"
       open={open}

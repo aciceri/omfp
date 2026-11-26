@@ -862,8 +862,11 @@ export type KeymapEntry = {
   mode: KeymapMode;
 };
 
-/** The keymap mode a binding belongs to: `[keymap]`, `[keymap.insert]`, `[keymap.cmdline]`. */
-export type KeymapMode = "normal" | "insert" | "cmdline";
+/**
+ * The keymap mode a binding belongs to: `[keymap]` (`normal`, the layer Threads and View mode share),
+ * `[keymap.threads]`, `[keymap.view]`, `[keymap.insert]`, `[keymap.cmdline]`.
+ */
+export type KeymapMode = "normal" | "threads" | "view" | "insert" | "cmdline";
 
 /** `thread.label` params. */
 export type LabelParams = {

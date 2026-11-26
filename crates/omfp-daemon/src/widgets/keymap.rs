@@ -37,9 +37,15 @@ fn binding(entry: &Value, path: &str) -> Result<WorkspaceBinding, String> {
     }
     let mode = match entry.get("mode").map(|mode| mode.as_str()) {
         None | Some(Some("normal")) => KeymapMode::Normal,
+        Some(Some("threads")) => KeymapMode::Threads,
+        Some(Some("view")) => KeymapMode::View,
         Some(Some("insert")) => KeymapMode::Insert,
         Some(Some("cmdline")) => KeymapMode::Cmdline,
-        Some(_) => return Err(format!("{path}.mode: expected normal, insert or cmdline")),
+        Some(_) => {
+            return Err(format!(
+                "{path}.mode: expected normal, threads, view, insert or cmdline"
+            ));
+        }
     };
     let keys = entry
         .get("keys")
@@ -102,6 +108,8 @@ mod tests {
             "bindings": [
                 { "keys": "Space t", "command": "tests.run", "args": ["unit"] },
                 { "mode": "insert", "keys": "Ctrl-t", "command": "" },
+                { "mode": "threads", "keys": "Ctrl-j", "command": "thread.next" },
+                { "mode": "view", "keys": "Ctrl-j", "command": "nav.next" },
                 { "mode": "cmdline", "keys": "Ctrl-r", "command": "history.search", "note": "ignored" }
             ],
             "comment": "unknown keys are ignored"
@@ -111,6 +119,8 @@ mod tests {
             Ok(vec![
                 bound(KeymapMode::Normal, "Space t", "tests.run", &["unit"]),
                 bound(KeymapMode::Insert, "Ctrl-t", "", &[]),
+                bound(KeymapMode::Threads, "Ctrl-j", "thread.next", &[]),
+                bound(KeymapMode::View, "Ctrl-j", "nav.next", &[]),
                 bound(KeymapMode::Cmdline, "Ctrl-r", "history.search", &[]),
             ])
         );
@@ -140,7 +150,7 @@ mod tests {
             ),
             (
                 json!({ "bindings": [{ "keys": "a", "command": "x", "mode": "visual" }] }),
-                "bindings[0].mode: expected normal, insert or cmdline",
+                "bindings[0].mode: expected normal, threads, view, insert or cmdline",
             ),
             (
                 json!({ "bindings": [{ "keys": "a", "command": "x", "args": ["1", 2] }] }),
@@ -201,7 +211,7 @@ mod tests {
         assert_eq!(binding["required"], json!(["keys", "command"]));
         assert_eq!(
             binding["properties"]["mode"]["enum"],
-            json!(["normal", "insert", "cmdline"])
+            json!(["normal", "threads", "view", "insert", "cmdline"])
         );
         assert_eq!(binding["properties"]["args"]["items"]["type"], "string");
     }

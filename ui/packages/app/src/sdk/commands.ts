@@ -2,10 +2,10 @@
  * Commands (UI-095): every keyboard action and every `:` command line entry is a command id run through one registry.
  * The keymap maps key sequences to ids; the command line lists the registered commands with completion.
  *
- * Several widgets may register the same id in different **scopes**: `nav.next` moves between threads in the
- * `threads` scope and between messages in the `transcript` scope. A scope is the `data-omfp-scope` attribute of a
- * widget's root element; {@link CommandRegistry.resolve} prefers the command of the innermost scope around the
- * focused element, then the global one (no scope).
+ * Several widgets may register the same id in different **scopes**: View mode's `j` runs `nav.next`, which moves
+ * between messages in the `transcript` scope and does what another widget registers in its own. A scope is the
+ * `data-omfp-scope` attribute of a widget's root element; {@link CommandRegistry.resolve} prefers the command of the
+ * innermost scope around the focused element, then the global one (no scope).
  */
 
 /** One runnable command. */

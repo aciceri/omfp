@@ -9,11 +9,12 @@
 
 import { Tab, TabList, TabPanel, Tabs } from "@omfp/kit";
 import type { ViewsState } from "@omfp/protocol";
-import type { KeyboardEvent, ReactNode } from "react";
+import { type KeyboardEvent, type ReactNode, useRef } from "react";
 import { FLOATING_FILES, fileName, fileTabId, useFileTabs } from "../sdk/index.ts";
 import { strings } from "../strings/index.ts";
 import { ClosableTabLabel, closableTabBarHandlers } from "../view/closable-tab.tsx";
 import { FILE_WIDGET, fileProps } from "../view/layout.ts";
+import { useTabSteps } from "../view/render.tsx";
 import type { WidgetRegistry } from "../view/resolve.ts";
 import { WidgetSlot } from "../view/slot.tsx";
 import { floatingControls, useFloatingBox } from "./floating-box.tsx";
@@ -31,6 +32,11 @@ export function FloatingFile({ workspaceId, views, registry }: FloatingFileProps
   const box = useFloatingBox(FLOATING_FILES);
   const { panel, root, style } = box;
   const controls = floatingControls(box, "floating-file", text);
+  // `g t` / `g T` from a focused file tab (UI-095): the tab bar sits right in the tabs container.
+  const anchor = useRef<HTMLDivElement>(null);
+  const ids = files.tabs.map((tab) => fileTabId(tab.path));
+  const active = files.active !== undefined && ids.includes(files.active) ? files.active : ids[0];
+  useTabSteps(anchor, ids, active, files.select);
   const first = files.tabs[0];
   if (first === undefined) {
     return null;
@@ -43,7 +49,7 @@ export function FloatingFile({ workspaceId, views, registry }: FloatingFileProps
     }
   };
   const bar = (tabs: ReactNode) => (
-    <div className="omfp-floating-file__bar" {...closableTabBarHandlers(files.closeTab)}>
+    <div ref={anchor} className="omfp-floating-file__bar" {...closableTabBarHandlers(files.closeTab)}>
       {controls.grip}
       {tabs}
       {controls.minimise}
@@ -97,14 +103,17 @@ export function FloatingFile({ workspaceId, views, registry }: FloatingFileProps
             keepMounted
             hidden={panel.minimised}
           >
-            <WidgetSlot
-              reference={FILE_WIDGET}
-              props={fileProps(tab)}
-              path={fileTabId(tab.path)}
-              workspaceId={workspaceId}
-              views={views}
-              registry={registry}
-            />
+            {/* A pane of View mode (UI-095): `Ctrl-w h/j/k/l` reach it and leave it like the view's widgets. */}
+            <div className="omfp-view__item omfp-focus-inset" tabIndex={-1}>
+              <WidgetSlot
+                reference={FILE_WIDGET}
+                props={fileProps(tab)}
+                path={fileTabId(tab.path)}
+                workspaceId={workspaceId}
+                views={views}
+                registry={registry}
+              />
+            </div>
           </TabPanel>
         ))}
       </Tabs>

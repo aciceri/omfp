@@ -5,12 +5,12 @@
  * (frame/which-key.tsx).
  */
 
-import type { Binding, Mode } from "./keymap.ts";
+import { type Binding, bindingsIn, sharesNormal, type WindowMode } from "./keymap.ts";
 
 /** How long a started sequence waits for its next key before the panel shows it (UI-321). */
 export const WHICH_KEY_DELAY_MS = 300;
 
-/** The leader: alone in normal mode it opens the panel at once (UI-324). */
+/** The leader: alone in Threads or View mode it opens the panel at once (UI-324). */
 export const LEADER = "Space";
 
 /** Timers of the panel's delay, so tests drive it (the global timers in the browser). */
@@ -28,14 +28,14 @@ export const globalKeyTimers: KeyTimers = {
 export interface PendingKeys {
   /** The keys typed so far, tokens separated by spaces (`Space h`). */
   readonly keys: string;
-  readonly mode: Mode;
+  readonly mode: WindowMode;
   /** The command scopes around the focused element, innermost first: whose commands the keys would run. */
   readonly scopes: readonly string[];
 }
 
-/** Whether `pending` opens the panel without the delay: the leader alone in normal mode (UI-324). */
+/** Whether `pending` opens the panel without the delay: the leader alone in Threads or View mode (UI-324). */
 export function opensAtOnce(pending: Pick<PendingKeys, "keys" | "mode">): boolean {
-  return pending.mode === "normal" && pending.keys === LEADER;
+  return sharesNormal(pending.mode) && pending.keys === LEADER;
 }
 
 /** The sequence the panel shows, `undefined` while it is closed; the frame subscribes to it. */
@@ -83,6 +83,8 @@ const COMMAND_GROUPS: Readonly<Record<string, KeyGroup>> = {
   "threads.collapse": "views",
   "live.voice": "commands",
   "live.toggle": "threads",
+  "view.focus": "navigation",
+  "view.leave": "navigation",
 };
 
 /** The group of a command id's namespace (the part before its first dot). */
@@ -96,6 +98,8 @@ const NAMESPACE_GROUPS: Readonly<Record<string, KeyGroup>> = {
   file: "files",
   help: "help",
   nav: "navigation",
+  pane: "navigation",
+  tab: "navigation",
   notice: "navigation",
   focus: "navigation",
   cmdline: "commands",
@@ -110,7 +114,7 @@ export function commandGroup(command: string): KeyGroup {
   return COMMAND_GROUPS[command] ?? NAMESPACE_GROUPS[namespace] ?? "other";
 }
 
-/** The leader's groups (UI-326): a prefix of normal mode → its group. */
+/** The leader's groups (UI-326): a prefix of Threads and View mode → its group. */
 const PREFIX_GROUPS: Readonly<Record<string, KeyGroup>> = {
   "Space h": "help",
   "Space p": "workspace",
@@ -151,9 +155,10 @@ export interface WhichKeySection {
 }
 
 /**
- * The keys completing `pending` in its mode, from `bindings` (the window's effective table, so whatever is bound now),
- * in sections by {@link KEY_GROUPS}, each in binding order. A key whose sequence is bound is a command, like the
- * matcher where a complete binding wins over longer ones; a key that only starts longer bindings is a prefix.
+ * The keys completing `pending` in its mode ({@link bindingsIn}), from `bindings` (the window's effective table, so
+ * whatever is bound now), in sections by {@link KEY_GROUPS}, each in binding order. A key whose sequence is bound is a
+ * command, like the matcher where a complete binding wins over longer ones; a key that only starts longer bindings is
+ * a prefix.
  */
 export function whichKeySections(
   bindings: readonly Binding[],
@@ -161,7 +166,7 @@ export function whichKeySections(
   titleOf: (binding: Binding) => CommandTitle,
 ): WhichKeySection[] {
   const start = `${pending.keys} `;
-  const below = bindings.filter((binding) => binding.mode === pending.mode && binding.keys.startsWith(start));
+  const below = bindingsIn(bindings, pending.mode).filter((binding) => binding.keys.startsWith(start));
   const order: string[] = [];
   const byKey = new Map<string, Binding[]>();
   for (const binding of below) {
@@ -192,8 +197,8 @@ export function whichKeySections(
   });
 }
 
-function prefixGroup(mode: Mode, keys: string, under: readonly Binding[]): KeyGroup | undefined {
-  const known = mode === "normal" ? PREFIX_GROUPS[keys] : undefined;
+function prefixGroup(mode: WindowMode, keys: string, under: readonly Binding[]): KeyGroup | undefined {
+  const known = sharesNormal(mode) ? PREFIX_GROUPS[keys] : undefined;
   if (known !== undefined) {
     return known;
   }

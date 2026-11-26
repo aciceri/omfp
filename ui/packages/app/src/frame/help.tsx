@@ -68,7 +68,7 @@ function HelpPanel({
       new KeymapMatcher(
         bindings
           .filter((binding) => binding.command === "help.open")
-          .map((binding) => ({ ...binding, mode: "normal" as const })),
+          .map((binding) => ({ ...binding, mode: "view" as const })),
         now,
       ),
     [bindings, now],
@@ -82,7 +82,7 @@ function HelpPanel({
     if (query !== "" && ([...token].length === 1 || token === "Space")) {
       return;
     }
-    const match = closer.feed(token, "normal");
+    const match = closer.feed(token, "view");
     if (match.kind === "none") {
       return;
     }

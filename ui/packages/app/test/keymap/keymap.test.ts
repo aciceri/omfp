@@ -3,9 +3,16 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import type { ViewsState } from "@omfp/protocol";
 import { renderHook } from "@testing-library/react";
-import { CMDLINE_ATTRIBUTE, createKeyHandler, modeAt } from "../../src/keymap/handler.ts";
+import {
+  CMDLINE_ATTRIBUTE,
+  createKeyHandler,
+  modeAt,
+  SHOWN_VIEW,
+  THREADS_ATTRIBUTE,
+} from "../../src/keymap/handler.ts";
 import {
   type Binding,
+  bindingsIn,
   DEFAULT_BINDINGS,
   describeKeys,
   type InitBindings,
@@ -13,6 +20,7 @@ import {
   keyLabel,
   keysFor,
   keyToken,
+  mergeBindings,
   SEQUENCE_TIMEOUT_MS,
 } from "../../src/keymap/keymap.ts";
 import { useBindings } from "../../src/keymap/workspace.tsx";
@@ -104,12 +112,12 @@ describe("keymap", () => {
     expect(keyLabel("Alt-a")).toBe("alt+a");
   });
 
-  // spec: UI-624
+  // spec: UI-624, UI-095
   test("Alt-arrows move the focused row or section of the column; with Shift a thread into another workspace", () => {
     expect(keyToken(key("ArrowUp", { altKey: true }, "ArrowUp"))).toBe("Alt-ArrowUp");
     expect(keyToken(key("ArrowDown", { altKey: true, shiftKey: true }, "ArrowDown"))).toBe("Alt-Shift-ArrowDown");
     const moves = ["threads.moveUp", "threads.moveDown", "threads.moveToPrevWorkspace", "threads.moveToNextWorkspace"];
-    expect(moves.map((command) => keysFor(DEFAULT_BINDINGS, command, "normal"))).toEqual([
+    expect(moves.map((command) => keysFor(DEFAULT_BINDINGS, command, "threads"))).toEqual([
       ["Alt-ArrowUp"],
       ["Alt-ArrowDown"],
       ["Alt-Shift-ArrowUp"],
@@ -121,49 +129,111 @@ describe("keymap", () => {
   test("sequences complete, wait, or start over on a key that does not continue them", () => {
     const time = clock();
     const matcher = new KeymapMatcher(DEFAULT_BINDINGS, time.now);
-    expect(matcher.feed("g", "normal")).toEqual({ kind: "pending", keys: "g" });
+    expect(matcher.feed("g", "threads")).toEqual({ kind: "pending", keys: "g" });
     expect(matcher.pending).toBe("g");
-    const top = matcher.feed("g", "normal");
-    expect(top.kind === "command" && top.binding.command).toBe("nav.top");
+    const top = matcher.feed("g", "threads");
+    expect(top.kind === "command" && top.binding.command).toBe("thread.first");
     expect(matcher.pending).toBeUndefined();
-    expect(matcher.feed("Space", "normal").kind).toBe("pending");
-    const next = matcher.feed("a", "normal");
+    expect(matcher.feed("Space", "threads").kind).toBe("pending");
+    const next = matcher.feed("a", "threads");
     expect(next.kind === "command" && next.binding.command).toBe("thread.nextAttention");
-    matcher.feed("Space", "normal");
-    const restart = matcher.feed("j", "normal");
-    expect(restart.kind === "command" && restart.binding.command).toBe("nav.next");
-    expect(matcher.feed("q", "normal")).toEqual({ kind: "none" });
+    matcher.feed("Space", "threads");
+    const restart = matcher.feed("j", "threads");
+    expect(restart.kind === "command" && restart.binding.command).toBe("thread.next");
+    expect(matcher.feed("q", "threads")).toEqual({ kind: "none" });
     expect(matcher.feed("j", "insert")).toEqual({ kind: "none" });
+  });
+
+  // spec: UI-095, UI-370, UI-989
+  test("Threads mode's moves step the threads, View mode's go to the focused widget; both share the normal layer", () => {
+    const matcher = new KeymapMatcher(DEFAULT_BINDINGS, clock().now);
+    const run = (keys: string, mode: "threads" | "view") => {
+      const match = keys
+        .split(" ")
+        .map((token) => matcher.feed(token, mode))
+        .at(-1);
+      return match?.kind === "command" ? match.binding.command : match?.kind;
+    };
+    expect(["j", "k", "g g", "G", "Ctrl-d", "Ctrl-u", "v", "Enter"].map((keys) => run(keys, "threads"))).toEqual([
+      "thread.next",
+      "thread.prev",
+      "thread.first",
+      "thread.last",
+      "thread.halfDown",
+      "thread.halfUp",
+      "view.focus",
+      "view.focus",
+    ]);
+    expect(["j", "k", "g g", "G", "Ctrl-d", "Ctrl-u", "Esc"].map((keys) => run(keys, "view"))).toEqual([
+      "nav.next",
+      "nav.prev",
+      "nav.top",
+      "nav.bottom",
+      "nav.halfDown",
+      "nav.halfUp",
+      "view.leave",
+    ]);
+    expect(["Ctrl-w h", "Ctrl-w j", "Ctrl-w k", "Ctrl-w l", "g t", "g T"].map((keys) => run(keys, "view"))).toEqual([
+      "pane.left",
+      "pane.down",
+      "pane.up",
+      "pane.right",
+      "tab.next",
+      "tab.prev",
+    ]);
+    // The shared layer: `:` and the leader in both.
+    expect([run(":", "threads"), run(":", "view"), run("Space n", "view")]).toEqual([
+      "cmdline.open",
+      "cmdline.open",
+      "thread.new",
+    ]);
+  });
+
+  // spec: UI-095, UI-097
+  test("a mode's own binding wins over the normal layer; a normal entry replaces both modes' bindings of its keys", () => {
+    const bindings: Binding[] = [
+      { mode: "normal", keys: "j", command: "my.normal" },
+      { mode: "threads", keys: "j", command: "thread.next" },
+      { mode: "normal", keys: "x", command: "my.x" },
+    ];
+    expect(bindingsIn(bindings, "threads").map((binding) => binding.command)).toEqual(["thread.next", "my.x"]);
+    expect(bindingsIn(bindings, "view").map((binding) => binding.command)).toEqual(["my.normal", "my.x"]);
+    expect(bindingsIn(bindings, "insert")).toEqual([]);
+    const merged = mergeBindings(DEFAULT_BINDINGS, [{ mode: "normal", keys: "j", command: "my.down" }]);
+    expect(merged.filter((binding) => binding.keys === "j").map(({ mode, command }) => [mode, command])).toEqual([
+      ["normal", "my.down"],
+    ]);
   });
 
   // spec: UI-095
   test("a sequence whose next key comes too late is dropped", () => {
     const time = clock();
     const matcher = new KeymapMatcher(DEFAULT_BINDINGS, time.now);
-    matcher.feed("g", "normal");
+    matcher.feed("g", "threads");
     time.advance(SEQUENCE_TIMEOUT_MS + 1);
     expect(matcher.pending).toBeUndefined();
-    expect(matcher.feed("g", "normal")).toEqual({ kind: "pending", keys: "g" });
+    expect(matcher.feed("g", "threads")).toEqual({ kind: "pending", keys: "g" });
     time.advance(SEQUENCE_TIMEOUT_MS);
-    const top = matcher.feed("g", "normal");
-    expect(top.kind === "command" && top.binding.command).toBe("nav.top");
+    const top = matcher.feed("g", "threads");
+    expect(top.kind === "command" && top.binding.command).toBe("thread.first");
   });
 
-  // spec: UI-095
+  // spec: UI-095, UI-098
   test("the focused element decides the mode", () => {
     document.body.innerHTML = `
       <input id="text"><input id="box" type="checkbox"><textarea id="area"></textarea>
       <div id="edit" contenteditable="true"></div><button id="button">b</button>
-      <input id="cmd" ${CMDLINE_ATTRIBUTE}>`;
+      <input id="cmd" ${CMDLINE_ATTRIBUTE}><nav ${THREADS_ATTRIBUTE}><button id="row">t</button></nav>`;
     const mode = (id: string) => modeAt(document.getElementById(id));
-    expect([mode("text"), mode("box"), mode("area"), mode("button"), mode("cmd")]).toEqual([
+    expect([mode("text"), mode("box"), mode("area"), mode("button"), mode("cmd"), mode("row")]).toEqual([
       "insert",
-      "normal",
+      "view",
       "insert",
-      "normal",
+      "view",
       "cmdline",
+      "threads",
     ]);
-    expect(modeAt(null)).toBe("normal");
+    expect([modeAt(null), modeAt(document.body)]).toEqual(["threads", "threads"]);
   });
 });
 
@@ -227,6 +297,43 @@ describe("global key handler", () => {
     expect(document.activeElement === field).toBe(true);
     expect(press(field, "Escape")).toBe(true);
     expect(document.activeElement === field).toBe(false);
+  });
+
+  // spec: UI-095, UI-098
+  test("Esc leaves a field of the view for View mode, any other field for Threads mode; Enter enters the view", () => {
+    document.body.innerHTML = `<div class="omfp-view" data-testid="view"><input id="inner"></div><input id="outer">
+      <nav ${THREADS_ATTRIBUTE}><button id="row">t</button><div id="strip" tabindex="-1"></div></nav>`;
+    const { register, ran, press } = setup();
+    register("view.focus");
+    const element = (id: string) => {
+      const found = document.getElementById(id);
+      if (found === null) {
+        throw new Error("fixture");
+      }
+      return found;
+    };
+    expect(element("inner").closest(SHOWN_VIEW)).not.toBeNull();
+    expect(press(element("inner"), "Escape")).toBe(true);
+    expect(ran).toEqual(["global:view.focus"]);
+    expect(press(element("outer"), "Escape")).toBe(true);
+    expect(ran).toEqual(["global:view.focus"]);
+    // A button keeps its own Enter; elsewhere in Threads mode Enter enters the view.
+    expect(press(element("row"), "Enter")).toBe(false);
+    expect(press(element("strip"), "Enter")).toBe(true);
+    expect(ran).toEqual(["global:view.focus", "global:view.focus"]);
+  });
+
+  // spec: UI-095
+  test("an Insert-mode binding of Enter still reaches a text field", () => {
+    document.body.innerHTML = `<input id="field">`;
+    const { register, ran, press } = setup([{ mode: "insert", keys: "Enter", command: "my.submit" }]);
+    register("my.submit");
+    const field = document.getElementById("field");
+    if (field === null) {
+      throw new Error("fixture");
+    }
+    expect(press(field, "Enter")).toBe(true);
+    expect(ran).toEqual(["global:my.submit"]);
   });
 
   // spec: UI-021, UI-405

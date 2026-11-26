@@ -1,34 +1,139 @@
 {
   "bindings": [
     {
-      "mode": "normal",
+      "mode": "threads",
+      "keys": "j",
+      "command": "thread.next"
+    },
+    {
+      "mode": "threads",
+      "keys": "k",
+      "command": "thread.prev"
+    },
+    {
+      "mode": "threads",
+      "keys": "g g",
+      "command": "thread.first"
+    },
+    {
+      "mode": "threads",
+      "keys": "G",
+      "command": "thread.last"
+    },
+    {
+      "mode": "threads",
+      "keys": "Ctrl-d",
+      "command": "thread.halfDown"
+    },
+    {
+      "mode": "threads",
+      "keys": "Ctrl-u",
+      "command": "thread.halfUp"
+    },
+    {
+      "mode": "threads",
+      "keys": "v",
+      "command": "view.focus"
+    },
+    {
+      "mode": "threads",
+      "keys": "Enter",
+      "command": "view.focus"
+    },
+    {
+      "mode": "threads",
+      "keys": "d d",
+      "command": "nav.delete"
+    },
+    {
+      "mode": "threads",
+      "keys": "z a",
+      "command": "nav.toggleSection"
+    },
+    {
+      "mode": "threads",
+      "keys": "Alt-ArrowUp",
+      "command": "threads.moveUp"
+    },
+    {
+      "mode": "threads",
+      "keys": "Alt-ArrowDown",
+      "command": "threads.moveDown"
+    },
+    {
+      "mode": "threads",
+      "keys": "Alt-Shift-ArrowUp",
+      "command": "threads.moveToPrevWorkspace"
+    },
+    {
+      "mode": "threads",
+      "keys": "Alt-Shift-ArrowDown",
+      "command": "threads.moveToNextWorkspace"
+    },
+    {
+      "mode": "view",
       "keys": "j",
       "command": "nav.next"
     },
     {
-      "mode": "normal",
+      "mode": "view",
       "keys": "k",
       "command": "nav.prev"
     },
     {
-      "mode": "normal",
+      "mode": "view",
       "keys": "g g",
       "command": "nav.top"
     },
     {
-      "mode": "normal",
+      "mode": "view",
       "keys": "G",
       "command": "nav.bottom"
     },
     {
-      "mode": "normal",
+      "mode": "view",
       "keys": "Ctrl-d",
       "command": "nav.halfDown"
     },
     {
-      "mode": "normal",
+      "mode": "view",
       "keys": "Ctrl-u",
       "command": "nav.halfUp"
+    },
+    {
+      "mode": "view",
+      "keys": "Esc",
+      "command": "view.leave"
+    },
+    {
+      "mode": "view",
+      "keys": "Ctrl-w h",
+      "command": "pane.left"
+    },
+    {
+      "mode": "view",
+      "keys": "Ctrl-w j",
+      "command": "pane.down"
+    },
+    {
+      "mode": "view",
+      "keys": "Ctrl-w k",
+      "command": "pane.up"
+    },
+    {
+      "mode": "view",
+      "keys": "Ctrl-w l",
+      "command": "pane.right"
+    },
+    {
+      "mode": "view",
+      "keys": "g t",
+      "command": "tab.next"
+    },
+    {
+      "mode": "view",
+      "keys": "g T",
+      "command": "tab.prev"
     },
     {
       "mode": "normal",
@@ -39,36 +144,6 @@
       "mode": "normal",
       "keys": "Space /",
       "command": "threads.pick"
-    },
-    {
-      "mode": "normal",
-      "keys": "d d",
-      "command": "nav.delete"
-    },
-    {
-      "mode": "normal",
-      "keys": "z a",
-      "command": "nav.toggleSection"
-    },
-    {
-      "mode": "normal",
-      "keys": "Alt-ArrowUp",
-      "command": "threads.moveUp"
-    },
-    {
-      "mode": "normal",
-      "keys": "Alt-ArrowDown",
-      "command": "threads.moveDown"
-    },
-    {
-      "mode": "normal",
-      "keys": "Alt-Shift-ArrowUp",
-      "command": "threads.moveToPrevWorkspace"
-    },
-    {
-      "mode": "normal",
-      "keys": "Alt-Shift-ArrowDown",
-      "command": "threads.moveToNextWorkspace"
     },
     {
       "mode": "normal",
@@ -614,37 +689,14 @@
     },
     {
       "id": "nav.bottom",
-      "title": "Last thread",
-      "aliases": []
-    },
-    {
-      "id": "nav.bottom",
-      "title": "Last thread",
-      "aliases": [],
-      "scope": "threads"
-    },
-    {
-      "id": "nav.bottom",
       "title": "Last message",
       "aliases": [],
       "scope": "transcript"
     },
     {
       "id": "nav.delete",
-      "title": "Delete focused thread or workspace",
-      "aliases": [],
-      "scope": "threads"
-    },
-    {
-      "id": "nav.halfDown",
-      "title": "Half a page of threads down",
+      "title": "Delete the focused thread or workspace, else the selected thread",
       "aliases": []
-    },
-    {
-      "id": "nav.halfDown",
-      "title": "Half a page of threads down",
-      "aliases": [],
-      "scope": "threads"
     },
     {
       "id": "nav.halfDown",
@@ -654,48 +706,15 @@
     },
     {
       "id": "nav.halfUp",
-      "title": "Half a page of threads up",
-      "aliases": []
-    },
-    {
-      "id": "nav.halfUp",
-      "title": "Half a page of threads up",
-      "aliases": [],
-      "scope": "threads"
-    },
-    {
-      "id": "nav.halfUp",
       "title": "Scroll half a page up",
       "aliases": [],
       "scope": "transcript"
     },
     {
       "id": "nav.next",
-      "title": "Next thread",
-      "aliases": []
-    },
-    {
-      "id": "nav.next",
-      "title": "Next thread",
-      "aliases": [],
-      "scope": "threads"
-    },
-    {
-      "id": "nav.next",
       "title": "Next message (a long one scrolls down to its end first)",
       "aliases": [],
       "scope": "transcript"
-    },
-    {
-      "id": "nav.prev",
-      "title": "Previous thread",
-      "aliases": []
-    },
-    {
-      "id": "nav.prev",
-      "title": "Previous thread",
-      "aliases": [],
-      "scope": "threads"
     },
     {
       "id": "nav.prev",
@@ -712,20 +731,8 @@
     },
     {
       "id": "nav.toggleSection",
-      "title": "Collapse or expand the focused workspace",
-      "aliases": [],
-      "scope": "threads"
-    },
-    {
-      "id": "nav.top",
-      "title": "First thread",
+      "title": "Collapse or expand the focused workspace, else the selected thread's",
       "aliases": []
-    },
-    {
-      "id": "nav.top",
-      "title": "First thread",
-      "aliases": [],
-      "scope": "threads"
     },
     {
       "id": "nav.top",
@@ -741,11 +748,41 @@
       ]
     },
     {
+      "id": "pane.down",
+      "title": "Focus the pane below",
+      "aliases": []
+    },
+    {
+      "id": "pane.left",
+      "title": "Focus the pane on the left",
+      "aliases": []
+    },
+    {
+      "id": "pane.right",
+      "title": "Focus the pane on the right",
+      "aliases": []
+    },
+    {
+      "id": "pane.up",
+      "title": "Focus the pane above",
+      "aliases": []
+    },
+    {
       "id": "settings.set",
       "title": "Change a setting (:set key=value)",
       "aliases": [
         "set"
       ]
+    },
+    {
+      "id": "tab.next",
+      "title": "Next tab of the focused tabs",
+      "aliases": []
+    },
+    {
+      "id": "tab.prev",
+      "title": "Previous tab of the focused tabs",
+      "aliases": []
     },
     {
       "id": "thread.abort",
@@ -801,6 +838,13 @@
       "description": "Saves the selected thread's conversation as a Markdown file, the same text :copy copies: the browser downloads it, the desktop window saves it in your Downloads folder."
     },
     {
+      "id": "thread.first",
+      "title": "First thread",
+      "aliases": [
+        "first-thread"
+      ]
+    },
+    {
       "id": "thread.fork",
       "title": "Fork a new thread from the selected message (transcript) or entry (session tree)",
       "aliases": [
@@ -808,6 +852,23 @@
       ],
       "description": "Makes a new thread in the same workspace holding the conversation up to the message, the message included; the thread you fork from is left as it is.",
       "scope": "transcript"
+    },
+    {
+      "id": "thread.halfDown",
+      "title": "Half a page of threads down",
+      "aliases": []
+    },
+    {
+      "id": "thread.halfUp",
+      "title": "Half a page of threads up",
+      "aliases": []
+    },
+    {
+      "id": "thread.last",
+      "title": "Last thread",
+      "aliases": [
+        "last-thread"
+      ]
     },
     {
       "id": "thread.new",
@@ -895,27 +956,23 @@
     },
     {
       "id": "threads.moveDown",
-      "title": "Move the focused thread or workspace down",
-      "aliases": [],
-      "scope": "threads"
+      "title": "Move the focused thread or workspace down, else the selected thread",
+      "aliases": []
     },
     {
       "id": "threads.moveToNextWorkspace",
-      "title": "Move the focused thread to the start of the next workspace",
-      "aliases": [],
-      "scope": "threads"
+      "title": "Move the focused (else the selected) thread to the start of the next workspace",
+      "aliases": []
     },
     {
       "id": "threads.moveToPrevWorkspace",
-      "title": "Move the focused thread to the end of the previous workspace",
-      "aliases": [],
-      "scope": "threads"
+      "title": "Move the focused (else the selected) thread to the end of the previous workspace",
+      "aliases": []
     },
     {
       "id": "threads.moveUp",
-      "title": "Move the focused thread or workspace up",
-      "aliases": [],
-      "scope": "threads"
+      "title": "Move the focused thread or workspace up, else the selected thread",
+      "aliases": []
     },
     {
       "id": "threads.pick",
@@ -934,6 +991,16 @@
     {
       "id": "threads.toggle",
       "title": "Focus threads (wide); show or hide threads (narrow)",
+      "aliases": []
+    },
+    {
+      "id": "view.focus",
+      "title": "Focus the view where it was last (View mode: the keys go to its widget)",
+      "aliases": []
+    },
+    {
+      "id": "view.leave",
+      "title": "Leave the view (Threads mode: the keys switch threads)",
       "aliases": []
     },
     {

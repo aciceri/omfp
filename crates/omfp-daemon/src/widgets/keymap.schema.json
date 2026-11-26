@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "omfp://schemas/keymap.json",
   "title": "omfp workspace keymap",
-  "description": "<workspace>/.omfp/keymap.json: key bindings of this workspace (UI-210). They apply while it is a window's current workspace, over the default bindings and the daemon's [keymap] entries, one by one in file order: an entry replaces the binding with the same mode and keys, `\"command\": \"\"` removes it, any other entry is added. omfp reads the file and never writes it; an invalid one shows its error while the last valid bindings stay. Unknown keys are ignored.",
+  "description": "<workspace>/.omfp/keymap.json: key bindings of this workspace (UI-210). They apply while it is a window's current workspace, over the default bindings and the daemon's [keymap] entries, one by one in file order: an entry replaces the binding with the same mode and keys (a `normal` entry also the `threads` and `view` bindings of its keys), `\"command\": \"\"` removes it, any other entry is added. omfp reads the file and never writes it; an invalid one shows its error while the last valid bindings stay. Unknown keys are ignored.",
   "type": "object",
   "required": ["bindings"],
   "properties": {
@@ -18,9 +18,9 @@
       "required": ["keys", "command"],
       "properties": {
         "mode": {
-          "enum": ["normal", "insert", "cmdline"],
+          "enum": ["normal", "threads", "view", "insert", "cmdline"],
           "default": "normal",
-          "description": "normal: the focus is not in a text field; insert: a text field has it; cmdline: the `:` line is open."
+          "description": "threads: nothing is focused or the focus is in the left column (j/k switch threads); view: the focus is in the view outside a text field (j/k go to the focused widget); normal: Threads and View mode both, where a threads or view binding of the same keys wins; insert: a text field has the focus; cmdline: the `:` line is open."
         },
         "keys": {
           "type": "string",

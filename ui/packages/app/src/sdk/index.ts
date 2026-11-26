@@ -325,6 +325,7 @@ export {
 export type { ThreadViewChoice, ViewChoices } from "../vm/view-choices.ts";
 export {
   arrivalScroll,
+  farFromBottom,
   halfPageScrollTop,
   INITIAL_PIN,
   type ItemEdges,

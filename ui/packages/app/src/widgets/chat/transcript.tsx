@@ -13,11 +13,12 @@
  */
 
 import type { ThreadState } from "@omfp/core";
-import { Button, Icon, SearchField } from "omfp/kit";
+import { Button, Icon, IconButton, SearchField } from "omfp/kit";
 import {
   arrivalScroll,
   type DayMark,
   daySeparator,
+  farFromBottom,
   halfPageScrollTop,
   highlightRegistry,
   type ItemEdges,
@@ -189,6 +190,8 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
   );
   /** Where the last scroll event or follow left the view; a scroll up from there unpins (UI-042). */
   const lastPosition = useRef<ScrollPosition | undefined>(undefined);
+  /** The view is unpinned far enough above the end to offer jumping back to it (UI-044). */
+  const [far, setFar] = useState(false);
   // The same list (and so the same item keys) while only the streaming reply changes (UI-191).
   const rows = items(state, useSettings().ui.showXdevNotices === true);
   const pattern = useMemo(() => searchPattern(query), [query]);
@@ -299,11 +302,26 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
         container.scrollTop = container.scrollHeight;
       }
       lastPosition.current = scrollPosition(container);
+      setFar(farFromBottom(lastPosition.current));
     },
     [dispatch],
   );
   const userScrolls = () => {
     restoring.current = undefined;
+  };
+  /** Back to the end, following it again (UI-044): instant, like a follow, at every motion level. */
+  const jumpToBottom = () => {
+    const container = containerRef.current;
+    if (container === null) {
+      return;
+    }
+    restoring.current = undefined;
+    dispatch({ type: "pin" });
+    container.scrollTop = container.scrollHeight;
+    lastPosition.current = scrollPosition(container);
+    setFar(false);
+    // The button goes away: the keyboard stays on the transcript.
+    container.focus({ preventScroll: true });
   };
   // Every render (new items, measured heights, streaming deltas) follows the bottom or the restore target.
   useLayoutEffect(() => {
@@ -603,89 +621,110 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
           </Button>
         </div>
       )}
-      <div
-        ref={containerRef}
-        className="omfp-transcript omfp-focus-inset"
-        data-testid="transcript"
-        data-thread-id={threadId}
-        data-pinned={pin.pinned}
-        role="log"
-        aria-label={strings.chat.transcript}
-        // biome-ignore lint/a11y/noNoninteractiveTabindex: the scroll container takes focus for keyboard scrolling (UI-092)
-        tabIndex={0}
-        {...{ [SCOPE_ATTRIBUTE]: "transcript" }}
-        onScroll={(event) => {
-          // Scroll events while restoring come from clamping, not from the user.
-          if (restoring.current !== undefined) {
-            return;
-          }
-          const now = scrollPosition(event.currentTarget);
-          const previous = lastPosition.current;
-          lastPosition.current = now;
-          dispatch({ type: "scroll", ...now, previous });
-        }}
-        onWheel={(event) => {
-          // Ctrl with the wheel zooms the page and scrolls nothing (UI-283): the pin and the restore stay.
-          if (!fromInside(event) || event.ctrlKey) {
-            return;
-          }
-          userScrolls();
-          if (event.deltaY < 0) {
-            dispatch({ type: "userScrollUp" });
-          }
-        }}
-        onKeyDown={onKeyDown}
-        onPointerDown={(event) => fromInside(event) && userScrolls()}
-        onTouchStart={(event) => fromInside(event) && userScrolls()}
-      >
-        {NAV.map(({ id, title }) => (
-          <NavRegistration key={id} id={id} title={title} run={runNav} />
-        ))}
-        <div ref={contentRef} className="omfp-transcript__content">
-          <div
-            ref={listRef}
-            className="omfp-transcript__list"
-            style={{ height: virtualizer.getTotalSize(), position: "relative" }}
-          >
-            {virtualizer.getVirtualItems().map((virtual) => {
-              const row = rows[virtual.index];
-              const content = row === undefined ? undefined : rowContent(state, row);
-              return row === undefined || content === undefined ? null : (
+      <div className="omfp-transcript-frame">
+        <div
+          ref={containerRef}
+          className="omfp-transcript omfp-focus-inset"
+          data-testid="transcript"
+          data-thread-id={threadId}
+          data-pinned={pin.pinned}
+          role="log"
+          aria-label={strings.chat.transcript}
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: the scroll container takes focus for keyboard scrolling (UI-092)
+          tabIndex={0}
+          {...{ [SCOPE_ATTRIBUTE]: "transcript" }}
+          onScroll={(event) => {
+            // Scroll events while restoring come from clamping, not from the user.
+            if (restoring.current !== undefined) {
+              return;
+            }
+            const now = scrollPosition(event.currentTarget);
+            const previous = lastPosition.current;
+            lastPosition.current = now;
+            dispatch({ type: "scroll", ...now, previous });
+            setFar(farFromBottom(now));
+          }}
+          onWheel={(event) => {
+            // Ctrl with the wheel zooms the page and scrolls nothing (UI-283): the pin and the restore stay.
+            if (!fromInside(event) || event.ctrlKey) {
+              return;
+            }
+            userScrolls();
+            if (event.deltaY < 0) {
+              dispatch({ type: "userScrollUp" });
+            }
+          }}
+          onKeyDown={onKeyDown}
+          onPointerDown={(event) => fromInside(event) && userScrolls()}
+          onTouchStart={(event) => fromInside(event) && userScrolls()}
+        >
+          {NAV.map(({ id, title }) => (
+            <NavRegistration key={id} id={id} title={title} run={runNav} />
+          ))}
+          <div ref={contentRef} className="omfp-transcript__content">
+            <div
+              ref={listRef}
+              className="omfp-transcript__list"
+              style={{ height: virtualizer.getTotalSize(), position: "relative" }}
+            >
+              {virtualizer.getVirtualItems().map((virtual) => {
+                const row = rows[virtual.index];
+                const content = row === undefined ? undefined : rowContent(state, row);
+                return row === undefined || content === undefined ? null : (
+                  <div
+                    key={virtual.key}
+                    ref={virtualizer.measureElement}
+                    data-index={virtual.index}
+                    data-key={row.key}
+                    data-testid="transcript-item"
+                    aria-current={current === virtual.index ? true : undefined}
+                    tabIndex={-1}
+                    className="omfp-transcript__item omfp-focus-item"
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      transform: `translateY(${virtual.start}px)`,
+                    }}
+                  >
+                    <Row
+                      threadId={threadId}
+                      cardKey={`${threadId}/${row.key}`}
+                      content={content}
+                      forkIndex={forkIndex(state, row)}
+                      turn={turnOf(state, row)}
+                      onFork={forkAt}
+                      {...(row.kind.type === "message" && row.kind.day !== undefined
+                        ? { day: row.kind.day, today }
+                        : {})}
+                    />
+                  </div>
+                );
+              })}
+              {highlighting && highlightRegistry() === undefined && (
                 <div
-                  key={virtual.key}
-                  ref={virtualizer.measureElement}
-                  data-index={virtual.index}
-                  data-key={row.key}
-                  data-testid="transcript-item"
-                  aria-current={current === virtual.index ? true : undefined}
-                  tabIndex={-1}
-                  className="omfp-transcript__item omfp-focus-item"
-                  style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
-                    transform: `translateY(${virtual.start}px)`,
-                  }}
-                >
-                  <Row
-                    threadId={threadId}
-                    cardKey={`${threadId}/${row.key}`}
-                    content={content}
-                    forkIndex={forkIndex(state, row)}
-                    turn={turnOf(state, row)}
-                    onFork={forkAt}
-                    {...(row.kind.type === "message" && row.kind.day !== undefined ? { day: row.kind.day, today } : {})}
-                  />
-                </div>
-              );
-            })}
-            {highlighting && highlightRegistry() === undefined && (
-              <div ref={overlayRef} className="omfp-transcript__marks" data-testid="search-marks" aria-hidden="true" />
-            )}
+                  ref={overlayRef}
+                  className="omfp-transcript__marks"
+                  data-testid="search-marks"
+                  aria-hidden="true"
+                />
+              )}
+            </div>
+            {footer}
           </div>
-          {footer}
         </div>
+        {!pin.pinned && far && (
+          <IconButton
+            className="omfp-transcript__jump"
+            variant="secondary"
+            size="md"
+            label={strings.chat.jumpToBottom}
+            icon={<Icon name="arrow-down" />}
+            onPress={jumpToBottom}
+            data-testid="jump-to-bottom"
+          />
+        )}
       </div>
     </ImageViewer>
   );

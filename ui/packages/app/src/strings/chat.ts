@@ -9,6 +9,8 @@ export const chat = {
   transcript: "Transcript",
   search: "Search conversation",
   closeSearch: "Close search",
+  /** The button bringing a transcript scrolled up back to its end (UI-044). */
+  jumpToBottom: "Jump to the latest message",
   /** Day separators in the transcript (UI-750). */
   today: "Today",
   yesterday: "Yesterday",

@@ -67,6 +67,12 @@ On a niri session (pike), `demo.ts … -- --ozone-platform=wayland` ran on nativ
   the page for the resize corner.
 - **Panel order.** omfp stacks floating widget panels at one `z-index`, in mount-id order, and never raises a clicked
   one. A panel mounted after the browser's covers it, and the page freezes; one mounted before stays under it.
+- **Google sign-in.** On 2026-11-26 (niri on picard) a real Google account signed in to `accounts.google.com` in the
+  embedded page (Alloy, CEF 156.0.31, unsandboxed, with `--remote-debugging-port` open): no "This browser or app may
+  not be secure" refusal. The host crashed later in that run (exit 133, SIGTRAP; Chromium logged two `observer_list.h`
+  check failures at startup), not investigated.
+- **Links opened bare windows.** During that sign-in, some links in the embedded page opened separate Chromium
+  windows, outside omfp's window: on Wayland the popups that stay invisible on Xvfb (below) are shown.
 
 ## Replacing Tauri: what [`probe.ts`](probe.ts) found
 
@@ -81,7 +87,7 @@ without Tauri/wry. Alloy style, CEF 156.0.31, Linux:
 | Zoom (UI-281, UI-283) | Ctrl+= changes nothing: Alloy has no Chrome accelerators. | A `CefKeyboardHandler` and `SetZoomLevel`, replacing #202's script handlers. |
 | Downloads (UI-791) | A `blob:` download of omfp's page is not saved. | A `CefDownloadHandler` keeping today's rule: save to Downloads, number the name. |
 | File picker | `<input type=file>` opens no window. | A `CefDialogHandler`, e.g. the portal's FileChooser over D-Bus. |
-| Popups (`window.open`) | Creates a browser, a DevTools target, but no visible window. | `OnBeforePopup` applying DMN-182 (other sites go to the system browser). |
+| Popups (`window.open`, links to a new window) | On Xvfb: a browser and a DevTools target, no visible window. On niri: a separate bare Chromium window. | `OnBeforePopup` applying DMN-182 (other sites go to the system browser), or opening the popup in the same embedded page. |
 | Context menu | None on right click. | Alloy draws none by default: `CefContextMenuHandler`, or none (omfp has its own menus). |
 | Window | Resizable once `can_resize` is set. `GetLinuxWindowProperties` is called, but neither its WM class nor `--class` set `WM_CLASS` on Xvfb. | The Wayland app id is still to check on niri, for rules on `app-id="omfp"`. |
 | Sandbox | `--sandbox` starts. The renderers run without `--no-sandbox` on NixOS (user namespaces). | Packaging: zypak in the Flatpak, `chrome-sandbox` where namespaces are off. |
@@ -100,7 +106,6 @@ app menu, the `.app` with CEF's framework and signed helpers, the desktop tests 
 
 ## Not covered
 
-- Google sign-in with a real account (needs a person and an account).
 - macOS.
 - The Flatpak and the other packages.
 - Page zoom: the rectangles assume CSS pixels equal the window's DIPs.

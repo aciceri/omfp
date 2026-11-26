@@ -73,7 +73,7 @@ flowchart LR
 | S-13 | CodeMirror 6 for the file viewer, editor and diffs? | Yes: lazy chunks, live theme tokens, vim next to the app keymap |
 | S-14 | Can the main agent delegate widget building to an omp `task` subagent? | Yes, if the agent definition carries the widgets knowledge; shipped with `--extension` |
 | S-15 | Does the desktop work on macOS (aarch64-darwin)? | Yes, with small platform modules for settings, tray and webview storage (M11) |
-| S-16 | Can desktop widgets show real web pages (Google sign-in, YouTube) on prebuilt CEF, under omfp's own overlays? | In progress: yes on Linux, one embedded browser per widget, frozen to a capture while omfp's UI covers it; no H.264 or AAC in Spotify's builds. Replacing Tauri with CEF needs handlers for notifications, zoom, downloads, file picker, popups and context menu, changes D-15 and D-16, and costs 333 MB against 10.9 MB (`spikes/cef-browser/README.md`) |
+| S-16 | Can desktop widgets show real web pages (Google sign-in, YouTube) on prebuilt CEF, under omfp's own overlays? | In progress: yes on Linux, one embedded browser per widget, frozen to a capture while omfp's UI covers it; a real Google account signs in; no H.264 or AAC in Spotify's builds. Replacing Tauri with CEF needs handlers for notifications, zoom, downloads, file picker, popups and context menu, changes D-15 and D-16, and costs 333 MB against 10.9 MB (`spikes/cef-browser/README.md`) |
 
 ## Manual checks
 

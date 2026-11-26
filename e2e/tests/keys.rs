@@ -7,7 +7,7 @@ use thirtyfour::prelude::*;
 
 const PANEL: &str = "[data-testid=which-key]";
 
-/// Leaves any text field, so the window is in normal mode.
+/// Leaves any text field, so the window is in Threads mode (UI-095).
 async fn normal_mode(journey: &Journey) -> anyhow::Result<()> {
     journey
         .eval(
@@ -67,7 +67,7 @@ async fn space_opens_the_leader_menu_and_runs_the_binding_picked() -> anyhow::Re
         .element("[data-testid=which-key][data-keys=g]")
         .await?;
     journey
-        .element("[data-testid=which-key-entry][data-command='nav.top']")
+        .element("[data-testid=which-key-entry][data-command='thread.first']")
         .await?;
     journey.keys(Key::Escape).await?;
     journey.gone(PANEL).await?;

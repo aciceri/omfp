@@ -248,6 +248,37 @@ describe("live voice", () => {
     expect(live.media.link.contexts).toEqual([["You: omfp's voice", "…"]]);
   });
 
+  // spec: UI-213
+  test("once a typed turn settles, the window tells the voice of it", async () => {
+    const live = renderLive();
+    await connected(live);
+    const sent = live.media.link.contexts.length;
+    const turn: ThreadEvent[] = [
+      { kind: "omp", frame: { type: "agent_start" } },
+      {
+        kind: "omp",
+        frame: { type: "message_end", messageId: "u1", message: { role: "user", content: "and logout?" } },
+      },
+      {
+        kind: "omp",
+        frame: {
+          type: "message_end",
+          messageId: "a1",
+          message: { role: "assistant", content: [{ type: "text", text: "Logout works." }] },
+        },
+      },
+    ];
+    live.events(...turn);
+    // Nothing before the turn settles.
+    expect(live.media.link.contexts.length).toBe(sent);
+    live.events({ kind: "omp", frame: { type: "session_settled" } });
+    const update = live.media.link.contexts.slice(sent);
+    expect(update.length).toBe(1);
+    expect(update[0]?.join("").endsWith("\nUser: and logout?\nAgent: Logout works.\n")).toBe(true);
+    live.events({ kind: "omp", frame: { type: "live_phase", phase: "listening" } });
+    expect(live.media.link.contexts.length).toBe(sent + 1);
+  });
+
   // spec: UI-108
   test(":live starts the session like the mic button, and ends it", async () => {
     const live = renderLive();

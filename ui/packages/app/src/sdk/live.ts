@@ -12,10 +12,11 @@
  */
 
 import { CallError } from "@omfp/client";
+import type { ThreadState } from "@omfp/core";
 import { AnalyserSource, type Levels, LevelsSource, SILENT_SOURCE, type SpectrumSource, Tap } from "@omfp/kit";
 import { type LiveVoice, threadTopic } from "@omfp/protocol";
 import { strings } from "../strings/index.ts";
-import { IDLE, type LiveSupport, type LocalLive, liveSupport } from "../vm/live.ts";
+import { contextChunks, IDLE, type LiveSupport, type LocalLive, liveChatUpdate, liveSupport } from "../vm/live.ts";
 import type { FrameStore } from "./frame-store.ts";
 import type { SdkClient, TopicRefs } from "./host.tsx";
 import { DRAFT_THREAD, SELECTED_THREAD } from "./keys.ts";
@@ -136,6 +137,11 @@ export class LiveClient {
   #release: (() => void)[] = [];
   /** The thread state showed this window's session: from then on its absence means it ended. */
   #seen = false;
+  /**
+   * The open `live_connect` session's peer and the transcript index the voice knows the chat up to (UI-213):
+   * `undefined` until the thread state shows the session, then its `context_end`.
+   */
+  #chat: { readonly link: LiveLink; from: number | undefined } | undefined;
   /** The open session's peer reached `connected`. */
   #connected = false;
   #speakingUntil = 0;
@@ -316,6 +322,7 @@ export class LiveClient {
     try {
       await link.answer(answer);
       link.context(context);
+      this.#chat = { link, from: undefined };
     } catch (error) {
       if (this.#link === link) {
         this.#stop(threadId);
@@ -465,6 +472,7 @@ export class LiveClient {
   #close(): void {
     const link = this.#link;
     this.#link = undefined;
+    this.#chat = undefined;
     for (const release of this.#release) {
       release();
     }
@@ -496,9 +504,31 @@ export class LiveClient {
     const live = view.state.live;
     if (live !== null && live.owner.connection === connection) {
       this.#seen = true;
+      this.#tellChat(view.state);
     } else if (this.#seen) {
       this.#close();
       this.#set(IDLE);
+    }
+  }
+
+  /**
+   * Appends to this window's `live_connect` session what the chat added since the voice last heard of it, once each
+   * turn settles (UI-213): omp tells the voice only of the turns it started.
+   */
+  #tellChat(state: ThreadState): void {
+    const chat = this.#chat;
+    if (chat === undefined || this.#link !== chat.link || state.live === null) {
+      return;
+    }
+    const from = chat.from ?? state.live.context_end;
+    chat.from = from;
+    if (!state.settled) {
+      return;
+    }
+    const update = liveChatUpdate(state.transcript, from);
+    chat.from = state.transcript.length;
+    if (update !== undefined) {
+      chat.link.context(contextChunks(update));
     }
   }
 

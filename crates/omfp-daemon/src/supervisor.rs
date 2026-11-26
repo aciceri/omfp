@@ -1008,14 +1008,33 @@ impl Supervisor {
     /// removed (DMN-028): a start under way still creates its folder. The hold names the workspace the records name
     /// when they go, which a move (DMN-283) may change meanwhile. Cancellation-safe ([`Self::detached`]).
     pub async fn delete(&self, id: &str) -> Result<()> {
+        self.delete_where(id, None).await.map(|_| ())
+    }
+
+    /// [`Self::delete`] of a thread archived at or before `archived_by` (unix ms) only (DMN-395): `false`, nothing
+    /// deleted, when it is not. Its records go in one statement with that check, so an unarchive meanwhile always
+    /// keeps the thread whole.
+    pub async fn delete_archived(&self, id: &str, archived_by: i64) -> Result<bool> {
+        self.delete_where(id, Some(archived_by)).await
+    }
+
+    async fn delete_where(&self, id: &str, archived_by: Option<i64>) -> Result<bool> {
         let id = id.to_owned();
-        self.detached(|supervisor| async move {
+        self.detached(move |supervisor| async move {
             let _hold = loop {
-                let workspace_id = supervisor.thread(&id).await?.workspace_id;
+                let thread = supervisor.thread(&id).await?;
+                if archived_by.is_some_and(|by| thread.archived_at.is_none_or(|at| at > by)) {
+                    return Ok(false);
+                }
+                let workspace_id = thread.workspace_id;
                 let hold = supervisor.inner.workspaces.hold_removal(&workspace_id);
                 let thread_id = id.clone();
                 if supervisor
-                    .stores(move |inner| inner.threads.delete_record(&thread_id, &workspace_id))
+                    .stores(move |inner| {
+                        inner
+                            .threads
+                            .delete_record(&thread_id, &workspace_id, archived_by)
+                    })
                     .await?
                 {
                     break hold;
@@ -1024,7 +1043,8 @@ impl Supervisor {
             supervisor.forget(&id).await?;
             supervisor
                 .stores(move |inner| inner.threads.remove_dir(&id))
-                .await
+                .await?;
+            Ok(true)
         })
         .await
     }

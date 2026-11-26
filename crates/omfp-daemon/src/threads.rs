@@ -212,11 +212,17 @@ impl Threads {
         self.remove_dir(id)
     }
 
-    /// Deletes the thread's records if it still lives in workspace `workspace_id`, keeping its directory for
-    /// [`Self::remove_dir`]: once they are gone no omp can start for the thread (DMN-039). `false` (nothing deleted)
-    /// when it moved to another workspace meanwhile (DMN-283).
-    pub fn delete_record(&self, id: &str, workspace_id: &str) -> Result<bool> {
-        Ok(self.store.delete_thread_in(id, workspace_id)?)
+    /// Deletes the thread's records if it still lives in workspace `workspace_id` and, with `archived_by`, was archived
+    /// at or before that time (DMN-395), keeping its directory for [`Self::remove_dir`]: once they are gone no omp can
+    /// start for the thread (DMN-039). `false` (nothing deleted) when it moved to another workspace meanwhile (DMN-283)
+    /// or is not archived that long.
+    pub fn delete_record(
+        &self,
+        id: &str,
+        workspace_id: &str,
+        archived_by: Option<i64>,
+    ) -> Result<bool> {
+        Ok(self.store.delete_thread_in(id, workspace_id, archived_by)?)
     }
 
     /// Removes the thread's directory (sessions, log), if there is one.

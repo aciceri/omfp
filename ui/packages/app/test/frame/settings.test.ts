@@ -174,6 +174,24 @@ describe(":set", () => {
     expect(SET_KEYS).toContain("recent_threads=all");
   });
 
+  // spec: UI-099
+  test("`delete_archived_after=` sends minutes to weeks or never to the daemon, and refuses anything else", () => {
+    for (const value of ["30m", "12h", "7d", "2w", "never", "0"]) {
+      expect(parseSet(`delete_archived_after=${value}`)).toEqual({
+        ok: true,
+        patch: { daemon: { deleteArchivedAfter: value } },
+      });
+    }
+    for (const value of ["7", "7x", "-1d", "1.5d", "7 d", "Never", ""]) {
+      expect(parseSet(`delete_archived_after=${value}`)).toEqual({
+        ok: false,
+        error: `Invalid value for delete_archived_after: ${value === "" ? "(empty)" : value}`,
+      });
+    }
+    expect(SET_KEYS).toContain("delete_archived_after=");
+    expect(SET_KEYS).toContain("delete_archived_after=never");
+  });
+
   // spec: UI-097, UI-145
   test("unknown keys and invalid values are refused", () => {
     expect(parseSet("density")).toEqual({ ok: false, error: expect.stringContaining("Usage: :set") });

@@ -94,6 +94,7 @@ async fn the_page_shows_the_daemons_theme_and_skin_before_its_index() -> anyhow:
     let mut connection = journey.connect().await?;
     connection
         .call::<omfp_protocol::method::SettingsSet>(omfp_protocol::SetSettingsParams {
+            daemon: None,
             ui: Some(omfp_protocol::UiSettings {
                 theme: Some(omfp_protocol::BuiltinTheme::Graphite),
                 skin: Some(omfp_protocol::Skin::Boring),

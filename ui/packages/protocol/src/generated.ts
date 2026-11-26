@@ -294,6 +294,15 @@ export type CreatedBy =
     kind: "job";
   };
 
+/** The `[daemon]` values of the config file that apply without a restart (DMN-396); an absent value is the default. */
+export type DaemonSettings = {
+  /**
+   * How long a thread stays archived before the daemon deletes it (DMN-395, PRT-231): `<n>m`, `<n>h`, `<n>d` or
+   * `<n>w`, or `never` (also `0`) to keep archived threads; absent is `7d`.
+   */
+  deleteArchivedAfter?: string | null;
+};
+
 /** `jobs.define` params (PRT-205). */
 export type DefineJobParams = {
   /** The job as in `.omfp/jobs.json`; the daemon validates it (DMN-320). */
@@ -1567,6 +1576,8 @@ export type SetModelParams = {
 
 /** `settings.set` params: values merged into the config file (DMN-009); absent ones are unchanged. */
 export type SetSettingsParams = {
+  /** `[daemon]` values to set that apply without a restart (DMN-396); absent fields are unchanged. */
+  daemon?: DaemonSettings | null;
   /** Bindings replacing the ones with the same mode and keys (`command: ""` unbinds the default). */
   keymap?: KeymapEntry[] | null;
   /** `[ui]` values to set; absent fields are unchanged. */
@@ -1601,8 +1612,13 @@ export type SetWidgetStateParams = {
   workspaceId: string;
 };
 
-/** UI settings and key bindings the daemon keeps in its config file (DMN-009, UI-097). */
+/**
+ * UI settings and key bindings the daemon keeps in its config file (DMN-009, UI-097), and the `[daemon]` values a
+ * window may change live (DMN-396).
+ */
 export type Settings = {
+  /** The `[daemon]` values of the config file a window may change live (PRT-231); absent when it sets none. */
+  daemon?: DaemonSettings | null;
   /** Why the last reload of the config file failed (the previous settings stay); `null` when it is valid. */
   error: string | null;
   /** Bindings over the defaults, in file order; `command: ""` removes a default binding. */

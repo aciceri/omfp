@@ -141,6 +141,7 @@ pub fn theme() -> Theme {
 /// UI settings of a config file (DMN-009, UI-097): every `[ui]` value and one binding per mode.
 pub fn settings() -> Settings {
     Settings {
+        daemon: None,
         ui: UiSettings {
             density: Some(Density::Normal),
             font_size: Some(18),

@@ -209,10 +209,11 @@ async fn a_message_admitted_during_the_shutdown_leaves_the_mark_it_wrote() {
     h.launcher.process(0).emit(vec![agent_start()]);
     h.wait(&id, "the busy agent", |state| !state.settled).await;
     let actor = h.supervisor.lookup(&id).unwrap();
+    let admitted_by = actor.process().unwrap();
 
     h.supervisor.shutdown().await;
     // The admission of a message sent just before the stop clears the mark only after the shutdown wrote it.
-    h.supervisor.clear_interrupted(&actor).await;
+    h.supervisor.clear_interrupted(&actor, &admitted_by).await;
 
     assert_eq!(restart(&h).marked(), [id]);
 }
@@ -318,6 +319,7 @@ async fn a_turn_whose_omp_dies_with_the_daemon_is_marked_as_a_daemon_stop() {
     h.supervisor.start(&id).await.unwrap();
     h.launcher.process(0).emit(vec![agent_start()]);
     h.wait(&id, "the busy agent", |state| !state.settled).await;
+    let actor = h.supervisor.lookup(&id).unwrap();
     // A message on its way to omp holds the marking back while omp dies with the daemon (one signal to them all).
     let held = h.supervisor.inner.interrupted_marks.read().await;
     let stopping = h.supervisor.shutdown();
@@ -329,11 +331,18 @@ async fn a_turn_whose_omp_dies_with_the_daemon_is_marked_as_a_daemon_stop() {
             while !h.supervisor.inner.shutting_down.load(Ordering::SeqCst) {
                 tokio::task::yield_now().await;
             }
-            crashed(&h, &id, 0).await;
+            h.launcher.process(0).exit();
+            while actor.process().is_some() {
+                tokio::task::yield_now().await;
+            }
         } => {}
     }
     drop(held);
     stopping.await;
+    h.wait(&id, "the failure", |state| {
+        matches!(state.process, ProcessState::Failed { .. })
+    })
+    .await;
 
     let restarted = restart(&h);
     assert_eq!(restarted.marked(), std::slice::from_ref(&id));
@@ -383,4 +392,22 @@ async fn an_omp_exiting_marks_a_turn_it_was_sent_and_not_a_settled_thread() {
     crashed(&h, &prompted, 1).await;
 
     assert_eq!(restart(&h).marked(), [prompted]);
+}
+
+// spec: DMN-377, DMN-373
+#[tokio::test]
+async fn a_message_admitted_by_an_omp_that_crashed_since_leaves_the_crash_mark() {
+    let h = harness(|_| {});
+    let id = h.thread();
+    h.supervisor.start(&id).await.unwrap();
+    h.launcher.process(0).emit(vec![agent_start()]);
+    h.wait(&id, "the busy agent", |state| !state.settled).await;
+    let actor = h.supervisor.lookup(&id).unwrap();
+    let admitted_by = actor.process().unwrap();
+
+    crashed(&h, &id, 0).await;
+    // The bookkeeping of a message omp admitted just before it died comes after the crash marked the turn.
+    h.supervisor.clear_interrupted(&actor, &admitted_by).await;
+
+    assert_eq!(restart(&h).marked(), [id]);
 }

@@ -6,6 +6,7 @@
 //! signal to the whole process group or cgroup) ends before the shutdown gets to it, so the shutdown takes its list of
 //! unsettled threads the moment it begins, and an omp's exit marks its own thread's turn before failing the thread.
 
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
@@ -13,7 +14,7 @@ use omp_rpc::{PromptCommand, StreamingBehavior};
 use tracing::{info, warn};
 
 use super::{Actor, Result, Sending, Supervisor, SupervisorError, lock};
-use crate::agent::PromptAdmission;
+use crate::agent::{AgentProcess, PromptAdmission};
 use crate::store::{Interruption, now_ms};
 
 /// What `thread.resume` sends the agent after a daemon stop (DMN-372).
@@ -83,8 +84,17 @@ impl Supervisor {
     }
 
     /// omp exited on its own (DMN-035) while its thread was unsettled: marks the turn interrupted (DMN-377), by a
-    /// daemon stop once the shutdown began (omp died with the daemon), by a crash otherwise.
+    /// daemon stop once the shutdown began (omp died with the daemon), by a crash otherwise. The caller took the
+    /// process out of the thread first; the marks taken exclusively, at most [`MARK_WAIT`], order the mark after
+    /// every clear that found the process still running ([`Self::clear_interrupted`]).
     pub(super) async fn mark_exited(&self, actor: &Actor) {
+        let marks = tokio::time::timeout(MARK_WAIT, self.inner.interrupted_marks.write()).await;
+        if marks.is_err() {
+            warn!(
+                thread = %actor.id,
+                "messages on their way to omp held the marking of the cut turn back; marking anyway"
+            );
+        }
         let cause = if self.inner.shutting_down.load(Ordering::SeqCst) {
             Interruption::DaemonStop
         } else {
@@ -121,11 +131,22 @@ impl Supervisor {
         Ok(taken)
     }
 
-    /// A message reached the agent: the interrupted turn is the user's business no more (DMN-373). Once the daemon
-    /// shuts down nothing is cleared: the shutdown marks the turns it cuts, this message's included.
-    pub(super) async fn clear_interrupted(&self, actor: &Actor) {
+    /// A message `admitted_by` the thread's omp reached the agent: the interrupted turn is the user's business no more
+    /// (DMN-373). Nothing is cleared once the daemon shuts down (the shutdown marks the turns it cuts, this message's
+    /// included), nor once that omp is gone: its exit marks the turn it cut (DMN-377), this message's included.
+    pub(super) async fn clear_interrupted(
+        &self,
+        actor: &Actor,
+        admitted_by: &Arc<dyn AgentProcess>,
+    ) {
         let _marks = self.inner.interrupted_marks.read().await;
         if self.inner.shutting_down.load(Ordering::SeqCst) {
+            return;
+        }
+        let running = lock(&actor.live)
+            .as_ref()
+            .is_some_and(|live| Arc::ptr_eq(&live.process, admitted_by));
+        if !running {
             return;
         }
         if let Err(error) = self.take_interrupted(actor).await {
@@ -161,7 +182,7 @@ impl Supervisor {
             .deliver(&actor, move |process| process.prompt(command))
             .await
         {
-            Ok(admission) => {
+            Ok((admission, _)) => {
                 if admission.agent_invoked {
                     sending.admitted(admission.prompt_id.clone());
                 } else {

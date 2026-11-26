@@ -55,7 +55,7 @@ runs:
         sudo mount --bind /var/tmp/nothing-but-nix/cargo-target target
         echo "CARGO_HOME=/var/tmp/nothing-but-nix/cargo-home" >> "$GITHUB_ENV"
 
-    - uses: cachix/install-nix-action@v31
+    - uses: cachix/install-nix-action@v32
       with:
         github_access_token: ${{ github.token }}
         # Builds go to the Btrfs volume, not to /tmp on the small root disk. A failed download from a cache (Cachix

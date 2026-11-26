@@ -108,7 +108,8 @@ function box(element: Element): Box {
 /**
  * The index of the box of `candidates` next to `from` toward `direction`, as vim's `Ctrl-w h/j/k/l`: one wholly on
  * that side (1 px of overlap allowed), preferring the ones facing `from` (overlapping it across the move), then the
- * nearest, then the one whose middle is nearest to `from`'s; `undefined` when none is on that side.
+ * nearest, then the one whose middle is nearest to `from`'s. With none wholly on that side, one overlapping `from` (a
+ * floating panel lies over the view's panes) whose middle is nearest past `from`'s middle that way; else `undefined`.
  */
 export function paneToward(from: Box, candidates: readonly Box[], direction: Direction): number | undefined {
   const [start, end] =
@@ -135,7 +136,25 @@ export function paneToward(from: Box, candidates: readonly Box[], direction: Dir
       best = { index, facing, distance, offset };
     }
   }
-  return best?.index;
+  if (best !== undefined) {
+    return best.index;
+  }
+  const middle = (box: Box) =>
+    direction === "left" || direction === "right" ? (box.left + box.right) / 2 : (box.top + box.bottom) / 2;
+  const sign = direction === "left" || direction === "up" ? -1 : 1;
+  let nearest: { index: number; distance: number } | undefined;
+  for (const [index, candidate] of candidates.entries()) {
+    const overlaps =
+      candidate.left < from.right &&
+      from.left < candidate.right &&
+      candidate.top < from.bottom &&
+      from.top < candidate.bottom;
+    const distance = (middle(candidate) - middle(from)) * sign;
+    if (overlaps && distance > 0 && (nearest === undefined || distance < nearest.distance)) {
+      nearest = { index, distance };
+    }
+  }
+  return nearest?.index;
 }
 
 /**

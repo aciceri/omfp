@@ -25,6 +25,19 @@ describe("pane geometry", () => {
     expect(paneToward(box(0, 0, 100, 100), [box(150, 200, 300, 300), box(400, 0, 500, 100)], "right")).toBe(1);
     // 1 px of overlap still counts as beside.
     expect(paneToward(box(0, 0, 100, 100), [box(99, 0, 200, 100)], "right")).toBe(0);
-    expect(paneToward(box(0, 0, 100, 100), [box(90, 0, 200, 100)], "right")).toBeUndefined();
+  });
+
+  // spec: UI-095
+  test("a floating panel over a pane is reached and left by the side its middle lies on", () => {
+    const conversation = box(0, 0, 1000, 800);
+    const floating = box(600, 400, 950, 750);
+    expect(paneToward(conversation, [floating], "right")).toBe(0);
+    expect(paneToward(conversation, [floating], "down")).toBe(0);
+    expect(paneToward(conversation, [floating], "left")).toBeUndefined();
+    expect(paneToward(floating, [conversation], "left")).toBe(0);
+    expect(paneToward(floating, [conversation], "up")).toBe(0);
+    expect(paneToward(floating, [conversation], "right")).toBeUndefined();
+    // A pane wholly on that side still wins over an overlapping one.
+    expect(paneToward(floating, [conversation, box(950, 0, 1200, 800)], "right")).toBe(1);
   });
 });

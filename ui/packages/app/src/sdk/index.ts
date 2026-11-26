@@ -232,6 +232,19 @@ export {
   pendingRestart,
   reauthPrompt,
 } from "../vm/mcp.ts";
+export {
+  type MinimapBox,
+  type MinimapKind,
+  type MinimapPaint,
+  type MinimapPart,
+  type MinimapRow,
+  type MinimapScene,
+  minimapBox,
+  minimapRow,
+  minimapScrollTop,
+  minimapShapes,
+  sameMinimapScene,
+} from "../vm/minimap.ts";
 export type { NoticeRow } from "../vm/notice.ts";
 export { loopbackCallback, OpenedUrlWatch, openedUrls, urlHost } from "../vm/opened-url.ts";
 export {

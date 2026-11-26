@@ -9,7 +9,8 @@
  * (UI-790). A message sent on another day than
  * the one before it shows a day separator inside its item, so `j`/`k` never stop on one (UI-750). `/` searches the
  * conversation, visiting the query's occurrences and highlighting them in the rendered rows (UI-730, UI-736,
- * search.ts).
+ * search.ts). While the user scrolls, a minimap of the whole conversation shows beside the scrollbar (UI-860,
+ * minimap.tsx); the view following the bottom does not show it.
  */
 
 import type { ThreadState } from "@omfp/core";
@@ -75,6 +76,7 @@ import {
 import { ImageViewer } from "./image-viewer.tsx";
 import { InterruptedTurn } from "./interrupted.tsx";
 import { blockCardKey, MessageRow, NoticeRowView, SystemRowView } from "./message.tsx";
+import { type MinimapHandle, TranscriptMinimap } from "./minimap.tsx";
 import type { WidgetProps } from "./props.ts";
 import { collapsedThinkingHints, NO_MARKS, revealInline, textRanges, useSearchHighlights } from "./search.ts";
 import { measurementsKey, pinKey, useExpandCards, useSelectedThread } from "./state.ts";
@@ -85,6 +87,8 @@ const estimateSize = () => ESTIMATED_ITEM_PX;
 const neverAdjust = () => false;
 /** Items rendered beyond each edge of the viewport. */
 const OVERSCAN = 6;
+/** No search matches for the minimap while the search is closed. */
+const NO_MATCHES: readonly number[] = [];
 
 const NAV: readonly { id: NavCommand; title: string }[] = [
   { id: "nav.next", title: strings.chat.nav.next },
@@ -227,6 +231,10 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
   virtualizer.shouldAdjustScrollPositionOnItemSizeChange = pin.pinned ? neverAdjust : undefined;
   // Unmounting (a thread switch) keeps the measured sizes for the next mount.
   useEffect(() => () => setMeasurements(virtualizer.measurementsCache), [setMeasurements, virtualizer]);
+  const measurementsOf = useCallback(() => virtualizer.measurementsCache, [virtualizer]);
+  const minimap = useRef<MinimapHandle>(null);
+  /** Where the last follow moved the view, until its scroll event arrives: that one is no scroll of the user's. */
+  const followTop = useRef<number | undefined>(undefined);
   const [current, setCurrent] = useState<number | undefined>(undefined);
   const today = useToday();
   useSettledAnnouncements(state.settled);
@@ -288,6 +296,7 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
    * after the render a streamed delta caused). */
   const follow = useCallback(
     (container: HTMLElement) => {
+      const before = container.scrollTop;
       const target = restoring.current;
       if (target !== undefined) {
         container.scrollTop = target;
@@ -303,6 +312,9 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
       }
       lastPosition.current = scrollPosition(container);
       setFar(farFromBottom(lastPosition.current));
+      if (lastPosition.current.scrollTop !== before) {
+        followTop.current = lastPosition.current.scrollTop;
+      }
     },
     [dispatch],
   );
@@ -378,6 +390,14 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
       dispatch({ type: "userScrollUp" });
     }
     container.scrollTop = top;
+  };
+
+  /** Scrolls to where the user pressed or dragged on the minimap (UI-862). */
+  const jumpTo = (top: number) => {
+    const container = containerRef.current;
+    if (container !== null) {
+      userScrollTo(container, top);
+    }
   };
 
   /** After a scroll by a paging key, focuses the item at the viewport's top if the focused one left it (UI-371). */
@@ -643,6 +663,10 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
             lastPosition.current = now;
             dispatch({ type: "scroll", ...now, previous });
             setFar(farFromBottom(now));
+            // The scroll event of a follow is no scroll of the user's: it does not show the minimap (UI-860).
+            const followed = followTop.current !== undefined && Math.abs(now.scrollTop - followTop.current) < 1;
+            followTop.current = undefined;
+            minimap.current?.scrolled(now, !followed);
           }}
           onWheel={(event) => {
             // Ctrl with the wheel zooms the page and scrolls nothing (UI-283): the pin and the restore stay.
@@ -661,6 +685,17 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
           {NAV.map(({ id, title }) => (
             <NavRegistration key={id} id={id} title={title} run={runNav} />
           ))}
+          <TranscriptMinimap
+            ref={minimap}
+            container={containerRef}
+            list={listRef}
+            measurements={measurementsOf}
+            rows={rows}
+            state={state}
+            matches={searching ? matches : NO_MATCHES}
+            current={current}
+            onJump={jumpTo}
+          />
           <div ref={contentRef} className="omfp-transcript__content">
             <div
               ref={listRef}

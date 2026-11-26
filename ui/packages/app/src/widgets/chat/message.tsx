@@ -25,6 +25,7 @@ import {
   markdownChunks,
   OAuthCallbackField,
   strings,
+  ThreadLink,
   useFileUrl,
   useOpenFile,
   useUrlActions,
@@ -163,7 +164,7 @@ const BlockView = memo(function BlockView({
   turn: Turn;
 }) {
   const openFile = useOpenFile();
-  // Paths in the assistant's text open the file (UI-116).
+  // Paths in the assistant's text open the file (UI-116); links to a thread select it (UI-045).
   const openPath = useCallback(
     (reference: { path: string; line: number | undefined }) => openFile(reference.path, { line: reference.line }),
     [openFile],
@@ -180,7 +181,14 @@ const BlockView = memo(function BlockView({
       return streaming ? (
         <StreamingMarkdown text={block.text} trail={last} onOpenPath={openPath} />
       ) : (
-        <Markdown text={block.text} data-testid="markdown" onOpenPath={openPath} image={FileImage} absoluteImages />
+        <Markdown
+          text={block.text}
+          data-testid="markdown"
+          onOpenPath={openPath}
+          image={FileImage}
+          absoluteImages
+          threadLink={ThreadLink}
+        />
       );
     case "thinking":
       return <ThinkingBlock cardKey={cardKey} text={block.text} live={streaming && last} />;
@@ -231,7 +239,7 @@ function FileImage({ path, alt, title }: MarkdownImageProps): ReactNode {
 const MarkdownChunk = memo(Markdown);
 
 /** Streaming Markdown in top-level chunks (UI-191): a delta parses the chunk it grows, not the whole reply. With
- * `trail`, the stream caret follows its last character (UI-147). */
+ * `trail`, the stream caret follows its last character (UI-147). Links to a thread select it (UI-045). */
 function StreamingMarkdown({
   text: markdown,
   trail,
@@ -241,12 +249,14 @@ function StreamingMarkdown({
   trail: boolean;
   onOpenPath: (reference: { path: string; line: number | undefined }) => void;
 }) {
+  // What every chunk renders with: the same values each time, so an unchanged chunk keeps its render (memo).
+  const props = { onOpenPath, image: FileImage, absoluteImages: true, threadLink: ThreadLink };
   return (
     <div className={trail ? "omfp-markdown-stream omfp-caret-trail" : "omfp-markdown-stream"} data-testid="markdown">
       {markdownChunks(markdown).map((chunk, index) => (
         // Chunks only change or grow at the end while streaming, so the index is a stable key.
         // biome-ignore lint/suspicious/noArrayIndexKey: see above
-        <MarkdownChunk key={index} text={chunk} onOpenPath={onOpenPath} image={FileImage} absoluteImages />
+        <MarkdownChunk key={index} text={chunk} {...props} />
       ))}
     </div>
   );

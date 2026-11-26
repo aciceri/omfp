@@ -85,14 +85,15 @@ pub(crate) fn static_texts() -> Vec<(String, String)> {
     texts
 }
 
-/// The names `text` (served as `served`) mentions that are neither among `tools` nor `uris`, as `served: name`.
+/// The names `text` (served as `served`) mentions that are neither among `tools` nor `uris`, as `served: name`. A link
+/// to a thread (`omfp://thread/<id>`, UI-045) is for the user's window, not a URI anyone reads: never missing.
 pub(crate) fn missing(served: &str, text: &str, tools: &[&str], uris: &[&str]) -> Vec<String> {
     let unknown_tools = self::tools(text)
         .into_iter()
         .filter(|name| !tools.contains(&name.as_str()));
     let unknown_uris = self::uris(text)
         .into_iter()
-        .filter(|uri| !uris.contains(&uri.as_str()));
+        .filter(|uri| uri != crate::conventions::THREAD_LINK && !uris.contains(&uri.as_str()));
     unknown_tools
         .chain(unknown_uris)
         .map(|name| format!("{served}: {name}"))
@@ -122,6 +123,20 @@ mod tests {
                 "omfp://widgets/builtin",
                 "omfp://docs/widgets"
             ]
+        );
+    }
+
+    // spec: AGT-045
+    #[test]
+    fn a_link_to_a_thread_is_no_uri_a_reader_misses() {
+        assert_eq!(
+            missing(
+                "note",
+                "link it as [<title>](omfp://thread/<id>), see omfp://nothing",
+                &[],
+                &[]
+            ),
+            ["note: omfp://nothing"]
         );
     }
 }

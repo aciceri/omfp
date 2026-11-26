@@ -1,5 +1,10 @@
-import { type ComponentProps, type ComponentType, type HTMLAttributes, useMemo } from "react";
-import ReactMarkdown, { type Components, type ExtraProps } from "react-markdown";
+import { type ComponentProps, type ComponentType, type HTMLAttributes, type ReactNode, useMemo } from "react";
+import ReactMarkdown, {
+  type Components,
+  defaultUrlTransform,
+  type ExtraProps,
+  type UrlTransform,
+} from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { cx } from "./class.ts";
 import { Highlighted } from "./highlight.tsx";
@@ -15,6 +20,7 @@ import {
   relativeSource,
   resolvePath,
 } from "./paths.tsx";
+import { threadLinkId } from "./thread-links.ts";
 
 const REMARK_PLUGINS = [remarkGfm, remarkClosedFences, remarkMath];
 
@@ -82,12 +88,17 @@ function FencedBlock({ node, className, ...props }: ComponentProps<"pre"> & Extr
   return <pre {...props} className={cx("omfp-code omfp-code--block", className)} data-lang={fence} />;
 }
 
-/** Links open in a new tab without leaking the referrer; fenced code with a language is highlighted (UI-090), a closed
- * `mermaid` fence drawn (UI-981); math is typeset (UI-850); a table sits in a region that scrolls sideways when it is
- * wider than the text (UI-369), focusable so the keyboard can scroll it; everything else keeps react-markdown's
- * elements. */
+/** Links open in a new tab without leaking the referrer, a thread link (UI-045) is its text; fenced code with a
+ * language is highlighted (UI-090), a closed `mermaid` fence drawn (UI-981); math is typeset (UI-850); a table sits in a
+ * region that scrolls sideways when it is wider than the text (UI-369), focusable so the keyboard can scroll it;
+ * everything else keeps react-markdown's elements. */
 const COMPONENTS = {
-  a: ({ node: _node, ...props }) => <a {...props} target="_blank" rel="noreferrer" />,
+  a: ({ node: _node, ...props }) =>
+    threadLinkId(props.href) === undefined ? (
+      <a {...props} target="_blank" rel="noreferrer" />
+    ) : (
+      <span data-testid="thread-link-text">{props.children}</span>
+    ),
   pre: FencedBlock,
   table: ({ node: _node, ...props }) => (
     // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region must be focusable to scroll by keyboard.
@@ -113,10 +124,14 @@ const COMPONENTS = {
   },
 } satisfies Components;
 
+/** The kit's element overrides: {@link COMPONENTS} and the layers over it, each `a` a component of its own (never a
+ * tag name), so a layer can render the one it wraps. */
+type MarkdownComponents = typeof COMPONENTS;
+
 /** {@link COMPONENTS} where file paths open with `onOpen` (UI-116): inline code that reads as a path, and links to a
  * relative path (resolved against `linkBase` when given, UI-561). A fenced block's text ends with a line break, so it
  * never counts as inline code. */
-function withPaths(onOpen: OpenPath, linkBase: string | undefined): Components {
+function withPaths(onOpen: OpenPath, linkBase: string | undefined): MarkdownComponents {
   const { a: Link, code: CodeElement } = COMPONENTS;
   return {
     ...COMPONENTS,
@@ -152,6 +167,54 @@ function withPaths(onOpen: OpenPath, linkBase: string | undefined): Components {
     },
   };
 }
+
+/** A link to a thread in Markdown (UI-045, UI-046): `omfp://thread/<id>`. */
+export interface MarkdownThreadLinkProps {
+  /** The id the link names. */
+  readonly threadId: string;
+  /** The link's text is the bare id or the link itself (`<omfp://thread/<id>>`), so it should show the thread's own
+   * title instead. */
+  readonly bare: boolean;
+  /** The link's text as written. */
+  readonly children: ReactNode;
+}
+
+/** `components` where links to a thread render with `ThreadLink` (UI-045); other links stay as they were. */
+function withThreads(
+  components: MarkdownComponents,
+  ThreadLink: ComponentType<MarkdownThreadLinkProps>,
+): MarkdownComponents {
+  const { a: Link } = components;
+  return {
+    ...components,
+    a: (props) => {
+      const threadId = threadLinkId(props.href);
+      if (threadId === undefined) {
+        return <Link {...props} />;
+      }
+      const text = plainText(props.children);
+      return (
+        <ThreadLink threadId={threadId} bare={text === threadId || text === props.href}>
+          {props.children}
+        </ThreadLink>
+      );
+    },
+  };
+}
+
+/** The text of `children` when it is only text, else `undefined`. */
+function plainText(children: ReactNode): string | undefined {
+  if (typeof children === "string") {
+    return children.trim();
+  }
+  return Array.isArray(children) && children.every((child) => typeof child === "string")
+    ? children.join("").trim()
+    : undefined;
+}
+
+/** react-markdown's URL filter (no `javascript:` links, UI-040), keeping the links to a thread (UI-045). */
+const urlTransform: UrlTransform = (url, key) =>
+  key === "href" && threadLinkId(url) !== undefined ? url : defaultUrlTransform(url);
 
 /** A Markdown image whose source is a file path (UI-562, UI-572). */
 export interface MarkdownImageProps {
@@ -196,6 +259,9 @@ export interface MarkdownProps extends Omit<HTMLAttributes<HTMLDivElement>, "chi
   /** `image` also renders the images whose source is an absolute file path (`/home/u/a.png`, UI-572), not a
    * root-relative URL: for text where no page's root makes sense, such as an agent's reply. */
   absoluteImages?: boolean | undefined;
+  /** Renders the links to a thread (`omfp://thread/<id>`, UI-045), e.g. `ThreadLink` from `omfp/sdk`; without it
+   * they are their text. */
+  threadLink?: ComponentType<MarkdownThreadLinkProps> | undefined;
 }
 
 /**
@@ -211,15 +277,17 @@ export function Markdown({
   linkBase,
   image,
   absoluteImages = false,
+  threadLink,
   ...props
 }: MarkdownProps) {
   const components = useMemo(() => {
-    const linked = onOpenPath === undefined ? COMPONENTS : withPaths(onOpenPath, linkBase);
+    const paths = onOpenPath === undefined ? COMPONENTS : withPaths(onOpenPath, linkBase);
+    const linked = threadLink === undefined ? paths : withThreads(paths, threadLink);
     return image === undefined ? linked : withImage(linked, image, linkBase ?? "", absoluteImages);
-  }, [onOpenPath, linkBase, image, absoluteImages]);
+  }, [onOpenPath, linkBase, image, absoluteImages, threadLink]);
   return (
     <div {...props} className={cx("omfp-prose omfp-markdown", className)}>
-      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components}>
+      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={components} urlTransform={urlTransform}>
         {text}
       </ReactMarkdown>
     </div>

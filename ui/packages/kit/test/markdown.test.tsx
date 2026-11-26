@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { cleanup, render, screen } from "@testing-library/react";
-import { Code, Markdown } from "../src/index.ts";
+import { Code, Markdown, type MarkdownThreadLinkProps, threadLinkId, threadLinkUrl } from "../src/index.ts";
 
 afterEach(cleanup);
 
@@ -92,5 +92,72 @@ describe("Code", () => {
     const block = screen.getByTestId("block");
     expect(block.tagName).toBe("PRE");
     expect(block.querySelector("code")?.textContent).toBe("a\n  b");
+  });
+});
+
+/** Shows what the kit hands a thread link: its id, whether its text is bare, and that text. */
+function ThreadProbe({ threadId, bare, children }: MarkdownThreadLinkProps) {
+  return (
+    <span data-testid="thread-probe" data-thread-id={threadId} data-bare={String(bare)}>
+      {children}
+    </span>
+  );
+}
+
+describe("thread links", () => {
+  // spec: UI-045
+  test("omfp://thread/<id> names a thread, its id decoded; nothing else does", () => {
+    expect(threadLinkId("omfp://thread/01ABC")).toBe("01ABC");
+    expect(threadLinkId("OMFP://Thread/01ABC/")).toBe("01ABC");
+    expect(threadLinkId("omfp://thread/01ABC#prompt-2")).toBe("01ABC");
+    expect(threadLinkId("omfp://thread/a%20b")).toBe("a b");
+    expect(threadLinkId(threadLinkUrl("t/1#x"))).toBe("t/1#x");
+    for (const href of [
+      undefined,
+      "",
+      "omfp://thread/",
+      "omfp://thread/%E0",
+      "omfp://threads/01ABC",
+      "omfp://docs/widgets",
+      "#thread=01ABC",
+      "https://example.com/omfp://thread/01ABC",
+      "docs/a.md",
+    ]) {
+      expect([href, threadLinkId(href)]).toEqual([href, undefined]);
+    }
+  });
+
+  // spec: UI-045
+  test("with threadLink, a link to a thread renders through it; other links and paths keep their own rendering", () => {
+    render(
+      <Markdown
+        data-testid="md"
+        threadLink={ThreadProbe}
+        onOpenPath={() => {}}
+        text={
+          "See [the parser fix](omfp://thread/01FIX), <omfp://thread/01AUTO>, [01BARE](omfp://thread/01BARE), " +
+          "[docs](https://example.com/) and [notes](docs/notes.md)."
+        }
+      />,
+    );
+    const probes = screen.getAllByTestId("thread-probe");
+    expect(probes.map((probe) => [probe.dataset.threadId, probe.dataset.bare, probe.textContent])).toEqual([
+      ["01FIX", "false", "the parser fix"],
+      ["01AUTO", "true", "omfp://thread/01AUTO"],
+      ["01BARE", "true", "01BARE"],
+    ]);
+    const root = screen.getByTestId("md");
+    expect([...root.querySelectorAll("a")].map((link) => [link.getAttribute("href"), link.target])).toEqual([
+      ["https://example.com/", "_blank"],
+    ]);
+    expect(screen.getAllByTestId("path-link").map((link) => link.dataset.omfpPath)).toEqual(["docs/notes.md"]);
+  });
+
+  // spec: UI-046
+  test("without threadLink, a link to a thread is its text, never a dead link", () => {
+    const root = renderMarkdown("Done in [the fix](omfp://thread/01FIX).");
+    expect(root.querySelector("a")).toBeNull();
+    expect(screen.getByTestId("thread-link-text").textContent).toBe("the fix");
+    expect(root.textContent).toBe("Done in the fix.");
   });
 });

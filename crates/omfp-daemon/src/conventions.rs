@@ -193,8 +193,8 @@ pub fn write_widget_builder(data: &DataDir) -> std::io::Result<bool> {
 }
 
 /// The control note (AGT-045): the thread's own id, `omfp_call` over every protocol method and its catalogue,
-/// `thread.session` for a thread's session facts (AGT-085), `omfp_thread_wait`, and that new MCP tools arrive without
-/// a restart (AGT-080). The widget tools are the widgets note's.
+/// `thread.session` for a thread's session facts (AGT-085), `omfp_thread_wait`, that new MCP tools arrive without
+/// a restart (AGT-080), and the link to a thread ([`THREAD_LINK`], UI-045). The widget tools are the widgets note's.
 #[must_use]
 pub fn control_note(thread_id: &str) -> String {
     format!(
@@ -207,13 +207,20 @@ pub fn control_note(thread_id: &str) -> String {
          never starts omp, while thread.state is omp's whole state (tool definitions, system prompt).\n\
          - {wait} {{ threadId, promptId? }} waits until another thread is done or needs the user and answers its \
          last reply: use it instead of polling.\n\
+         - When you mention another thread (one you created, waited on or listed), link it as \
+         [<title>]({link}/<id>): a click in the user's window selects it.\n\
          - MCP servers added (`/mcp add`, an MCP config file) or reauthorized (`/mcp reauth`) give you their tools \
          from your next turn: omfp reloads your omp once you are idle, so never ask the user to restart.",
         call = crate::agent_tools::CALL,
         wait = crate::agent_tools::THREAD_WAIT,
         methods = crate::agent_tools::catalog::METHODS_URL,
+        link = THREAD_LINK,
     )
 }
+
+/// What a link to a thread starts with, the thread's id following (`omfp://thread/<id>`): the user's window selects
+/// that thread on a click (UI-045). A link, never a resource anyone reads.
+pub const THREAD_LINK: &str = "omfp://thread";
 
 /// What the daemon itself appends to the system prompt of thread `thread_id`: the workspace conventions, the widgets
 /// note, then the control note.
@@ -400,8 +407,21 @@ mod tests {
             !text.contains("omfp_ui_"),
             "the widget tools are the widgets note's: {text}"
         );
-        assert!(text.lines().count() <= 6, "short: {text}");
+        assert!(text.lines().count() <= 7, "short: {text}");
         assert!(!text.ends_with('\n'));
+    }
+
+    // spec: AGT-045, UI-045
+    #[test]
+    fn the_control_note_tells_the_agent_to_link_the_threads_it_mentions() {
+        let text = control_note("01THREAD");
+        for rule in [
+            "When you mention another thread",
+            "link it as [<title>](omfp://thread/<id>)",
+            "selects it",
+        ] {
+            assert!(text.contains(rule), "{rule:?} missing: {text}");
+        }
     }
 
     // spec: AGT-024, AGT-028, AGT-084, AGT-061

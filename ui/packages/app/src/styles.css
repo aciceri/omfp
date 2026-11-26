@@ -270,6 +270,12 @@
     min-inline-size: 0;
   }
 
+  /* A link to a thread (UI-046): the state mark before the title sits on the text's line, the title underlined only. */
+  .omfp-thread-link .omfp-state-mark {
+    margin-inline-end: var(--omfp-s1);
+    vertical-align: -0.1em;
+  }
+
   /* Logging in (UI-380..UI-388): the progress and URL toasts' second line, the provider picker, the header's offer. */
   .omfp-login__progress,
   .omfp-login__instructions {

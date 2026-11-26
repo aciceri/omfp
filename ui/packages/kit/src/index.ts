@@ -162,7 +162,14 @@ export {
   VoiceMeter,
 } from "./live.tsx";
 export { type LogoGradient, LogoIcon, LogoMark, type LogoProps, Wordmark } from "./logo.tsx";
-export { Code, type CodeProps, Markdown, type MarkdownImageProps, type MarkdownProps } from "./markdown.tsx";
+export {
+  Code,
+  type CodeProps,
+  Markdown,
+  type MarkdownImageProps,
+  type MarkdownProps,
+  type MarkdownThreadLinkProps,
+} from "./markdown.tsx";
 export {
   Count,
   type CountProps,
@@ -289,6 +296,7 @@ export {
 export { TerminalEmulator, type TerminalEmulatorProps } from "./terminal.tsx";
 export { cssColorReader } from "./theme-colors.ts";
 export { watchTheme } from "./theme-watch.ts";
+export { threadLinkId, threadLinkUrl } from "./thread-links.ts";
 export {
   ChatHeader,
   type ChatHeaderProps,

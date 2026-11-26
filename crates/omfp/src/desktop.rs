@@ -415,15 +415,7 @@ const PROBE: &str = r#"((wait) => {
 })"#;
 
 /// Opens the window and runs the event loop until it closes. `new_window` is the command line of one more window
-/// (macOS's File menu, UI-282).
-#[cfg_attr(
-    not(target_os = "macos"),
-    expect(
-        unused_variables,
-        clippy::needless_pass_by_value,
-        reason = "macOS's app menu only"
-    )
-)]
+/// (macOS's File menu, UI-282; a thread link opened in a new window, UI-047).
 fn open_window(
     url: Url,
     webview_data: &Path,
@@ -438,7 +430,7 @@ fn open_window(
     let builder = tauri::Builder::default();
     // UI-281, UI-282: the app menu with New Window and the zoom items on their macOS keys.
     #[cfg(target_os = "macos")]
-    let builder = macos::with_app_menu(builder, new_window);
+    let builder = macos::with_app_menu(builder, new_window.clone());
     let app = builder.build(tauri::generate_context!())?;
     // The window stays on the daemon's UI (DMN-182): its origin is the only one granted anything.
     let origin = url.origin().ascii_serialization();
@@ -477,12 +469,15 @@ fn open_window(
                 follow(url, &origin)
             }
         })
-        // `target="_blank"` links and `window.open`: never a second webview; other pages go to the browser. The same on
-        // Linux and macOS: Tauri's handlers, no platform code.
+        // `target="_blank"` links and `window.open`: never a second webview; a thread link of the daemon's page starts
+        // one more window on that thread (UI-047), other pages go to the browser. The same on Linux and macOS: Tauri's
+        // handlers, no platform code.
         .on_new_window({
             let origin = origin.clone();
             move |url, _| {
-                if opens_externally(&url, &origin) {
+                if let Some(thread) = linked_thread(&url, &origin) {
+                    open_thread_window(&new_window, &thread);
+                } else if opens_externally(&url, &origin) {
                     crate::tray::open_in_browser(url.as_str());
                 }
                 NewWindowResponse::Deny
@@ -590,6 +585,40 @@ fn on_page_load(
 /// or mail link does; the window never opens a second webview.
 fn opens_externally(url: &Url, origin: &str) -> bool {
     navigation(url, origin) == Navigation::External
+}
+
+/// The thread a new-window request of the daemon's own page names (`#thread=<id>`, UI-047): a thread link the user
+/// opens in a new window. `None` for every other request.
+fn linked_thread(url: &Url, origin: &str) -> Option<String> {
+    if url.origin().ascii_serialization() != origin {
+        return None;
+    }
+    // The fragment's parameters, decoded as a query's.
+    let mut parameters = url.clone();
+    parameters.set_query(Some(url.fragment()?));
+    parameters
+        .query_pairs()
+        .find(|(key, _)| key == "thread")
+        .map(|(_, thread)| thread.trim().to_owned())
+        .filter(|thread| !thread.is_empty())
+}
+
+/// Starts one more window (`new_window`, UI-282) that selects `thread` (`--thread`, UI-218).
+fn open_thread_window(new_window: &[OsString], thread: &str) {
+    match std::env::current_exe() {
+        Ok(exe) => crate::tray::spawn_detached(
+            std::process::Command::new(exe)
+                .args(new_window)
+                .args(["--thread", thread]),
+            "omfp desktop",
+            "omfp desktop",
+        ),
+        Err(error) => {
+            note!(
+                "omfp desktop: no window on thread {thread}, cannot find this executable: {error}"
+            );
+        }
+    }
 }
 
 /// A zoom command of the window: the macOS View menu's Zoom In, Zoom Out and Actual Size (UI-281), the Linux page's
@@ -956,6 +985,39 @@ mod tests {
                 "{target}"
             );
         }
+    }
+
+    // spec: UI-047
+    #[test]
+    fn a_thread_link_opened_in_a_new_window_names_its_thread() {
+        let origin = "http://127.0.0.1:7420";
+        let url = |text: &str| Url::parse(text).unwrap();
+        for (target, thread) in [
+            ("http://127.0.0.1:7420/#thread=01ABC", Some("01ABC")),
+            (
+                "http://127.0.0.1:7420/#local=1&thread=a%20b%26c",
+                Some("a b&c"),
+            ),
+            ("http://127.0.0.1:7420/", None),
+            ("http://127.0.0.1:7420/#thread=", None),
+            ("http://127.0.0.1:7420/#token=t&local=1", None),
+            ("http://127.0.0.1:7421/#thread=01ABC", None),
+            ("https://example.com/#thread=01ABC", None),
+        ] {
+            assert_eq!(
+                linked_thread(&url(target), origin).as_deref(),
+                thread,
+                "{target}"
+            );
+        }
+        // The thread a window opens on (UI-218) reads back whatever its id holds.
+        let window = window_url(
+            &url("http://127.0.0.1:7420/"),
+            Some("t"),
+            true,
+            Some("a&b=c#d%"),
+        );
+        assert_eq!(linked_thread(&window, origin).as_deref(), Some("a&b=c#d%"));
     }
 
     // spec: UI-791

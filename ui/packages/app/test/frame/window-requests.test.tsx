@@ -156,7 +156,9 @@ describe("commands the daemon runs in the window", () => {
     test.request("r2", { kind: "run_command", command: "view.switch", args: ["nope"] });
     test.request("r3", { kind: "run_command", command: "eval", args: ["alert(1)"] });
     test.request("r4", { kind: "run_command", command: "thread.unarchive", args: [] });
-    test.request("r5", { kind: "run_command", command: "nav.toggleSection", args: [] });
+    // A command only a scope answers (the transcript's `nav.*`, say): registered here, the chat being a stub.
+    test.host.commands.register({ id: "demo.scoped", title: "Scoped", scope: "transcript", run: () => {} });
+    test.request("r5", { kind: "run_command", command: "demo.scoped", args: [] });
     await settle(test);
     // The async view.switch answers last: compare by request.
     const byRequest = (test.answers() as { requestId: string; answer: unknown }[]).toSorted((a, b) =>
@@ -180,7 +182,7 @@ describe("commands the daemon runs in the window", () => {
         answer: {
           kind: "not_run",
           reason: "unknown",
-          message: '"nav.toggleSection" runs only with the focus in the threads scope; run a global command',
+          message: '"demo.scoped" runs only with the focus in the transcript scope; run a global command',
         },
       },
     ]);

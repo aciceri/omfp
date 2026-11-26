@@ -416,7 +416,8 @@ describe("threads made by jobs", () => {
     ]);
     const { workspaces, threads } = jobIndex();
     const all = sidebarSections(threads, workspaces, NO_FILTER, declared);
-    expect(visibleOrder(all, [], ["w-jobs"], NO_FILTER)).toEqual(["t-own", "t-gone", "t-mail-old", "t-moved"]);
+    const end = (move: "top" | "bottom") => steppedThread(all, [], NO_FILTER, undefined, undefined, move);
+    expect([end("top"), end("bottom")]).toEqual(["t-own", "t-moved"]);
   });
 
   // spec: UI-992, UI-995, UI-022
@@ -478,7 +479,7 @@ describe("spawned tree (UI-240)", () => {
     const filter: ThreadFilter = { ...NO_FILTER, spawned: spawnedTree(threads, "a") };
     const sections = sidebarSections(threads, workspaces, filter);
     expect(sections.map((section) => [section.threadIds, section.archivedIds])).toEqual([[["a"], ["b"]]]);
-    expect(visibleOrder(sections, ["w1"], [], filter)).toEqual(["a"]);
+    expect(steppedThread(sections, ["w1"], filter, undefined, undefined, "top")).toBe("a");
     const typed: ThreadFilter = { ...filter, query: "be" };
     expect(sidebarSections(threads, workspaces, typed).map((section) => section.archivedIds)).toEqual([["b"]]);
   });

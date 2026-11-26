@@ -138,7 +138,7 @@ works in Threads and View mode both.
 | `j` / `k`, `g g` / `G`, `Ctrl-d` / `Ctrl-u` | Threads mode: next / previous, first / last thread, half a page of threads, in the left column's order across workspaces, with the column shown, collapsed or hidden; archived threads, folded workspaces and threads the filter hides are skipped. Each press selects the thread. |
 | `v`, `Enter` | Threads mode: focus the view where it was last (View mode). |
 | `j` / `k`, `g g` / `G`, `Ctrl-d` / `Ctrl-u` | View mode: the focused widget's moves. In the transcript: next / previous, first / last message, half a window; `j` / `k` scroll a message taller than the window down to its end / up to its top before moving on, and `Ctrl-d` / `Ctrl-u` scroll half a window (`PageDown` / `PageUp` a whole one), the focus staying on its message while it shows. |
-| `Ctrl-w h` / `j` / `k` / `l` | View mode: focus the pane (widget) on the left, below, above, on the right. A browser tab never gets `Ctrl-w`: the desktop window does. |
+| `Ctrl-w h` / `Ctrl-w j` / `Ctrl-w k` / `Ctrl-w l` | View mode: focus the pane (widget) on the left, below, above, on the right. A browser tab never gets `Ctrl-w`: the desktop window does. |
 | `g t` / `g T` | View mode: next / previous tab of the tabs around the focused widget. |
 | `Esc` | View mode: leave the view (Threads mode). A widget that uses `Esc` itself keeps it (the file editor's vim). |
 | `/`, `Space /` | Search the current conversation; fuzzy thread picker with live preview (Enter confirms, Escape restores). |

@@ -910,20 +910,20 @@ describe("transcript", () => {
   test("scrolled up far from the end, a jump button shows; tiny offsets and the pinned bottom hide it", () => {
     renderThread(<TranscriptWidget />, longHistory(50));
     const element = transcript();
-    const jump = () => screen.queryByTestId("jump-to-bottom");
+    const shown = () => screen.queryByTestId("jump-to-bottom") !== null;
     scrollTo(element, 4400, 5000);
-    expect(jump()).toBeNull();
+    expect(shown()).toBe(false);
     // A small move up unpins (UI-042) but stays within the threshold: no button.
     scrollTo(element, 4380, 5000);
     expect(element.dataset.pinned).toBe("false");
-    expect(jump()).toBeNull();
+    expect(shown()).toBe(false);
     scrollTo(element, 2000, 5000);
-    expect(jump()).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Jump to the latest message" })).toBe(jump());
+    expect(shown()).toBe(true);
+    expect(screen.getByRole("button", { name: "Jump to the latest message" }).dataset.testid).toBe("jump-to-bottom");
     // Scrolling back down to the bottom pins again and hides it.
     scrollTo(element, 4400, 5000);
     expect(element.dataset.pinned).toBe("true");
-    expect(jump()).toBeNull();
+    expect(shown()).toBe(false);
   });
 
   // spec: UI-044, UI-042
@@ -935,8 +935,8 @@ describe("transcript", () => {
     const jump = screen.getByTestId("jump-to-bottom");
     await userEvent.click(jump);
     expect([element.scrollTop, element.dataset.pinned]).toEqual([5000, "true"]);
-    expect(screen.queryByTestId("jump-to-bottom")).toBeNull();
-    expect(document.activeElement).toBe(element);
+    expect(screen.queryByTestId("jump-to-bottom") === null).toBe(true);
+    expect(document.activeElement === element).toBe(true);
     Object.defineProperty(element, "scrollHeight", { configurable: true, value: 5100 });
     client.thread(THREAD, longHistory(51));
     flush();

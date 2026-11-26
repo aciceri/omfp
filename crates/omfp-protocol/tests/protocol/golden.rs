@@ -822,6 +822,7 @@ fn ui_settings_examples() -> Vec<(&'static str, Value)> {
         example::<method::SettingsGet>(Empty {}, &set),
         example::<method::SettingsSet>(
             SetSettingsParams {
+                daemon: None,
                 ui: Some(set.ui.clone()),
                 keymap: Some(set.keymap.clone()),
             },
@@ -2247,6 +2248,38 @@ fn settings_omit_defaults_and_null_the_error() {
     assert_eq!(
         wire["keymap"][1],
         json!({ "mode": "insert", "keys": "Ctrl-j", "command": "" })
+    );
+}
+
+// spec: PRT-231
+#[test]
+fn daemon_settings_carry_the_archived_thread_lifetime_as_written() {
+    let set: SetSettingsParams =
+        serde_json::from_value(json!({ "daemon": { "deleteArchivedAfter": "14d" } })).unwrap();
+    assert_eq!(
+        set.daemon,
+        Some(omfp_protocol::DaemonSettings {
+            delete_archived_after: Some("14d".to_owned())
+        })
+    );
+    assert_eq!(set.ui, None);
+    let settings = omfp_protocol::Settings {
+        daemon: set.daemon,
+        ..omfp_protocol::Settings::default()
+    };
+    assert_eq!(
+        serde_json::to_value(settings).unwrap(),
+        json!({
+            "daemon": { "deleteArchivedAfter": "14d" },
+            "ui": {},
+            "keymap": [],
+            "error": null
+        })
+    );
+    assert_eq!(
+        serde_json::to_value(omfp_protocol::DaemonSettings::default()).unwrap(),
+        json!({}),
+        "absent: the default"
     );
 }
 

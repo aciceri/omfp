@@ -786,6 +786,7 @@ async fn set_theme(journey: &Journey, theme: omfp_protocol::BuiltinTheme) -> any
     let mut connection = journey.connect().await?;
     connection
         .call::<omfp_protocol::method::SettingsSet>(omfp_protocol::SetSettingsParams {
+            daemon: None,
             ui: Some(omfp_protocol::UiSettings {
                 theme: Some(theme),
                 ..omfp_protocol::UiSettings::default()
@@ -904,6 +905,7 @@ async fn a_built_in_theme_is_chosen_with_theme_kept_by_the_daemon_and_the_user_t
     for (theme, light, dark) in THEME_SURFACES {
         connection
             .call::<omfp_protocol::method::SettingsSet>(omfp_protocol::SetSettingsParams {
+                daemon: None,
                 ui: Some(omfp_protocol::UiSettings {
                     theme: Some(serde_json::from_value(json!(theme))?),
                     ..omfp_protocol::UiSettings::default()

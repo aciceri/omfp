@@ -1,6 +1,7 @@
 //! The config file (DMN-009): `[daemon]` holds the `omfp daemon` options (merged in [`crate::config::Config`]),
 //! `[ui]` and `[keymap]` the UI settings (UI-097) the daemon serves with `settings.get` and writes back with
-//! `settings.set`, keeping comments and the other keys ([`write_back`]).
+//! `settings.set`, keeping comments and the other keys ([`write_back`]). `[daemon] delete_archived_after`
+//! ([`DeleteArchivedAfter`], DMN-395) is the one `[daemon]` key served and written back too, applied live (DMN-396).
 //!
 //! ```toml
 //! [daemon]
@@ -9,6 +10,7 @@
 //! # Origins besides the daemon's own allowed to open the WebSocket (DMN-140): the UI's URL behind a tunnel or a
 //! # reverse proxy, exactly `http(s)://host[:port]`; no `*`.
 //! allowed_origins = ["https://omfp.example.ts.net"]
+//! delete_archived_after = "7d"  # <n>m | <n>h | <n>d | <n>w | never (also 0)
 //!
 //! [ui]
 //! density = "normal"            # compact | normal
@@ -37,8 +39,9 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 use omfp_protocol::{
-    AllThreads, BuiltinTheme, Density, FontSettings, KeymapEntry, KeymapMode, LiveVoice, Motion,
-    NotificationMode, RecentThreads, SetSettingsParams, Settings, Skin, UiSettings,
+    AllThreads, BuiltinTheme, DaemonSettings, Density, FontSettings, KeymapEntry, KeymapMode,
+    LiveVoice, Motion, NotificationMode, RecentThreads, SetSettingsParams, Settings, Skin,
+    UiSettings,
 };
 use serde::Deserialize;
 use toml_edit::{DocumentMut, Item, Table};
@@ -63,6 +66,8 @@ pub struct DaemonOptions {
     pub theme_file: Option<PathBuf>,
     /// `false` is `--no-title-generation`.
     pub title_generation: Option<bool>,
+    /// Applies without a restart, unlike the other keys (DMN-396).
+    pub delete_archived_after: Option<DeleteArchivedAfter>,
 }
 
 impl DaemonOptions {
@@ -90,6 +95,104 @@ pub fn expand_home(path: PathBuf, home: Option<&Path>) -> PathBuf {
     match path.strip_prefix("~") {
         Ok(rest) => home.join(rest),
         Err(_) => path,
+    }
+}
+
+/// `[daemon] delete_archived_after` and `--delete-archived-after` (DMN-395): how long a thread stays archived before
+/// the daemon deletes it, kept as written (`7d` stays `7d`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeleteArchivedAfter {
+    /// Archived threads stay: `never`, `0`.
+    Never,
+    /// `count` (at least 1) of `unit`: `m`, `h`, `d` or `w`.
+    After { count: u32, unit: char },
+}
+
+/// The units of [`DeleteArchivedAfter`], in milliseconds.
+const ARCHIVED_UNITS: [(char, i64); 4] = [
+    ('m', 60_000),
+    ('h', 3_600_000),
+    ('d', 86_400_000),
+    ('w', 604_800_000),
+];
+
+impl DeleteArchivedAfter {
+    /// One week (DMN-395).
+    pub const DEFAULT: Self = Self::After {
+        count: 7,
+        unit: 'd',
+    };
+
+    /// How long in milliseconds; `None` when archived threads stay.
+    #[must_use]
+    pub fn millis(self) -> Option<i64> {
+        let Self::After { count, unit } = self else {
+            return None;
+        };
+        ARCHIVED_UNITS
+            .iter()
+            .find(|(name, _)| *name == unit)
+            .map(|(_, ms)| i64::from(count).saturating_mul(*ms))
+    }
+}
+
+impl std::str::FromStr for DeleteArchivedAfter {
+    type Err = String;
+
+    fn from_str(text: &str) -> Result<Self, String> {
+        let invalid = || {
+            format!(
+                "`{text}` is no time to keep archived threads: use a number followed by m, h, d or w (minutes, hours, \
+                 days, weeks; e.g. 7d), or never"
+            )
+        };
+        if text == "never" || text == "0" {
+            return Ok(Self::Never);
+        }
+        let Some(unit) = text.chars().next_back() else {
+            return Err(invalid());
+        };
+        let digits = &text[..text.len() - unit.len_utf8()];
+        if digits.is_empty()
+            || !digits.bytes().all(|byte| byte.is_ascii_digit())
+            || !ARCHIVED_UNITS.iter().any(|(name, _)| *name == unit)
+        {
+            return Err(invalid());
+        }
+        let count: u32 = digits.parse().map_err(|_| invalid())?;
+        Ok(if count == 0 {
+            Self::Never
+        } else {
+            Self::After { count, unit }
+        })
+    }
+}
+
+impl std::fmt::Display for DeleteArchivedAfter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Never => f.write_str("never"),
+            Self::After { count, unit } => write!(f, "{count}{unit}"),
+        }
+    }
+}
+
+/// A string as [`DeleteArchivedAfter`] parses it, or the number `0`.
+impl<'de> Deserialize<'de> for DeleteArchivedAfter {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Text(String),
+            Number(i64),
+        }
+        match Raw::deserialize(deserializer)? {
+            Raw::Text(text) => text.parse().map_err(serde::de::Error::custom),
+            Raw::Number(0) => Ok(Self::Never),
+            Raw::Number(number) => Err(serde::de::Error::custom(format!(
+                "`{number}` needs a unit, e.g. \"{number}d\", or 0 to keep archived threads"
+            ))),
+        }
     }
 }
 
@@ -190,10 +293,16 @@ impl ConfigFile {
         }
     }
 
-    /// The UI settings the file holds, without error.
+    /// The settings the file holds, without error.
     #[must_use]
     pub fn settings(&self) -> Settings {
         Settings {
+            daemon: self
+                .daemon
+                .delete_archived_after
+                .map(|after| DaemonSettings {
+                    delete_archived_after: Some(after.to_string()),
+                }),
             ui: self.ui.clone(),
             keymap: self.keymap.clone(),
             error: None,
@@ -260,6 +369,20 @@ pub fn write_back(text: &str, update: &SetSettingsParams) -> Result<String, Stri
     let mut doc: DocumentMut = text
         .parse()
         .map_err(|error| format!("the config file is not valid TOML: {error}"))?;
+    let delete_archived_after = update
+        .daemon
+        .as_ref()
+        .and_then(|daemon| daemon.delete_archived_after.as_deref());
+    if let Some(after) = delete_archived_after {
+        let after: DeleteArchivedAfter = after
+            .parse()
+            .map_err(|error| format!("`daemon.delete_archived_after`: {error}"))?;
+        set(
+            child(doc.as_table_mut(), "daemon")?,
+            "delete_archived_after",
+            after.to_string(),
+        );
+    }
     if let Some(ui) = &update.ui {
         let table = child(doc.as_table_mut(), "ui")?;
         let recent_threads: Option<toml_edit::Value> =
@@ -359,6 +482,7 @@ mod tests {
             text = write_back(
                 &text,
                 &SetSettingsParams {
+                    daemon: None,
                     ui: Some(UiSettings {
                         show_xdev_notices: Some(visible),
                         ..UiSettings::default()
@@ -390,6 +514,7 @@ mod tests {
             text = write_back(
                 &text,
                 &SetSettingsParams {
+                    daemon: None,
                     ui: Some(UiSettings {
                         skin: Some(skin),
                         ..UiSettings::default()
@@ -413,6 +538,7 @@ mod tests {
             text = write_back(
                 &text,
                 &SetSettingsParams {
+                    daemon: None,
                     ui: Some(UiSettings {
                         live_voice: Some(voice),
                         ..UiSettings::default()
@@ -445,6 +571,7 @@ mod tests {
             let text = write_back(
                 FILE,
                 &SetSettingsParams {
+                    daemon: None,
                     ui: Some(UiSettings {
                         recent_threads: Some(value),
                         ..UiSettings::default()
@@ -467,6 +594,7 @@ mod tests {
         assert_eq!(parsed("[ui]\nrecent_threads = \"all\""), Ok(Some(all)));
 
         let too_many = SetSettingsParams {
+            daemon: None,
             ui: Some(UiSettings {
                 recent_threads: Some(RecentThreads::Count(RECENT_THREADS_MAX + 1)),
                 ..UiSettings::default()
@@ -589,6 +717,7 @@ prose = "Literata, serif"
         let text = write_back(
             FILE,
             &SetSettingsParams {
+                daemon: None,
                 ui: Some(UiSettings {
                     theme: Some(BuiltinTheme::Matugen),
                     ..UiSettings::default()
@@ -617,6 +746,7 @@ prose = "Literata, serif"
             let text = write_back(
                 FILE,
                 &SetSettingsParams {
+                    daemon: None,
                     ui: Some(UiSettings {
                         theme: Some(theme),
                         ..UiSettings::default()
@@ -656,6 +786,7 @@ prose = "Literata, serif"
     #[test]
     fn write_back_changes_only_the_given_values_and_keeps_comments() {
         let update = SetSettingsParams {
+            daemon: None,
             ui: Some(UiSettings {
                 density: Some(Density::Normal),
                 font_size: Some(18),
@@ -716,6 +847,7 @@ Ctrl-p = "nav.prev"
     #[test]
     fn write_back_creates_the_tables_of_an_empty_file_and_refuses_broken_ones() {
         let update = SetSettingsParams {
+            daemon: None,
             ui: Some(UiSettings {
                 density: Some(Density::Compact),
                 font_size: Some(20),
@@ -732,6 +864,7 @@ Ctrl-p = "nav.prev"
         assert!(write_back("[ui", &update).is_err());
         assert!(write_back("ui = 1", &update).is_err());
         let too_big = SetSettingsParams {
+            daemon: None,
             ui: Some(UiSettings {
                 font_size: Some(40),
                 ..UiSettings::default()
@@ -744,9 +877,116 @@ Ctrl-p = "nav.prev"
                 .contains("ui.font_size")
         );
         let no_keys = SetSettingsParams {
+            daemon: None,
             ui: None,
             keymap: Some(vec![entry(KeymapMode::Normal, " ", "x")]),
         };
         assert!(write_back("", &no_keys).is_err());
+    }
+
+    fn archived(value: &str) -> Result<Option<DeleteArchivedAfter>, String> {
+        ConfigFile::parse(&format!("[daemon]\ndelete_archived_after = {value}"))
+            .map(|file| file.daemon.delete_archived_after)
+    }
+
+    // spec: DMN-395, DMN-009
+    #[test]
+    fn delete_archived_after_takes_minutes_to_weeks_or_never_and_refuses_the_rest() {
+        assert_eq!(
+            ConfigFile::parse(FILE)
+                .unwrap()
+                .daemon
+                .delete_archived_after,
+            None
+        );
+        assert_eq!(DeleteArchivedAfter::DEFAULT.millis(), Some(604_800_000));
+        let after = |count, unit| Some(DeleteArchivedAfter::After { count, unit });
+        for (value, parsed, millis) in [
+            ("\"30m\"", after(30, 'm'), Some(1_800_000)),
+            ("\"12h\"", after(12, 'h'), Some(43_200_000)),
+            ("\"7d\"", after(7, 'd'), Some(604_800_000)),
+            ("\"2w\"", after(2, 'w'), Some(1_209_600_000)),
+            ("\"never\"", Some(DeleteArchivedAfter::Never), None),
+            ("\"0\"", Some(DeleteArchivedAfter::Never), None),
+            ("\"0d\"", Some(DeleteArchivedAfter::Never), None),
+            ("0", Some(DeleteArchivedAfter::Never), None),
+        ] {
+            assert_eq!(archived(value), Ok(parsed), "{value}");
+            assert_eq!(
+                parsed.and_then(DeleteArchivedAfter::millis),
+                millis,
+                "{value}"
+            );
+        }
+        assert_eq!(after(7, 'd').unwrap().to_string(), "7d", "as written");
+        assert_eq!(DeleteArchivedAfter::Never.to_string(), "never");
+        for wrong in [
+            "\"7\"",
+            "\"7x\"",
+            "\"-1d\"",
+            "\"+1d\"",
+            "\"d\"",
+            "\"\"",
+            "\"7 d\"",
+            "\"Never\"",
+            "7",
+            "true",
+        ] {
+            let error = archived(wrong).unwrap_err();
+            assert!(error.contains("delete_archived_after"), "{wrong}: {error}");
+        }
+    }
+
+    // spec: DMN-396, PRT-231
+    #[test]
+    fn delete_archived_after_is_written_back_into_the_daemon_table_and_served() {
+        let set = |value: &str| SetSettingsParams {
+            daemon: Some(DaemonSettings {
+                delete_archived_after: Some(value.to_owned()),
+            }),
+            ..SetSettingsParams::default()
+        };
+        let text = write_back(FILE, &set("14d")).unwrap();
+        assert!(
+            text.contains("max_processes = 4 # enough\ndelete_archived_after = \"14d\"\n"),
+            "{text}"
+        );
+        let mut expected = ConfigFile::parse(FILE).unwrap();
+        expected.daemon.delete_archived_after = Some(DeleteArchivedAfter::After {
+            count: 14,
+            unit: 'd',
+        });
+        let file = ConfigFile::parse(&text).unwrap();
+        assert_eq!(file, expected);
+        assert_eq!(
+            file.settings().daemon,
+            Some(DaemonSettings {
+                delete_archived_after: Some("14d".to_owned())
+            })
+        );
+        assert_eq!(
+            ConfigFile::parse(FILE).unwrap().settings().daemon,
+            None,
+            "absent: the default"
+        );
+
+        let text = write_back(&text, &set("0")).unwrap();
+        assert!(
+            text.contains("delete_archived_after = \"never\"\n"),
+            "{text}"
+        );
+        let text = write_back("", &set("12h")).unwrap();
+        assert_eq!(
+            ConfigFile::parse(&text)
+                .unwrap()
+                .daemon
+                .delete_archived_after,
+            Some(DeleteArchivedAfter::After {
+                count: 12,
+                unit: 'h'
+            })
+        );
+        let error = write_back(FILE, &set("7")).unwrap_err();
+        assert!(error.contains("daemon.delete_archived_after"), "{error}");
     }
 }

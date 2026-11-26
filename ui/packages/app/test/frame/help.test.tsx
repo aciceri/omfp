@@ -162,7 +162,8 @@ describe("help panel", () => {
       ["spc x", "", "Archive the thread"],
       ["spc u", "", "Unarchive the thread"],
     ]);
-    expect(rows("commands").map(([keys]) => keys)).toEqual([":archive", ":unarchive"]);
+    // `:set` matches through its `delete_archived_after=` argument.
+    expect(rows("commands").map(([keys]) => keys)).toEqual([":archive", ":unarchive", ":set"]);
     await user.type(filter, "?");
     expect((filter as HTMLInputElement).value).toBe("ARCHIVE?");
     expect(screen.getByTestId("help-empty").textContent).toBe("No key or command matches");

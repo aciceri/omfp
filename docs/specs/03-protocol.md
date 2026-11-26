@@ -57,8 +57,9 @@ status per repository, `error` for one that could not be read, DMN-383), `views/
 The `index` state is `{ workspaces, threads, theme, settings, init, models }`; its events are `workspace_upserted` /
 `workspace_removed`, `thread_upserted` / `thread_removed`, `theme_changed { theme }` (`{ css: string | null }`,
 DMN-075), `settings_changed { settings }`, `init_changed { init }` (PRT-095) and `models_changed { models }` (PRT-141).
-`settings` is `{ ui, keymap: { mode, keys, command }[], error }`: the `[ui]` and `[keymap]` tables of the config file
-and the last reload error (DMN-009, UI-097). A thread summary carries `title` (`""` until the first message) and
+`settings` is `{ daemon?, ui, keymap: { mode, keys, command }[], error }`: the `[ui]` and `[keymap]` tables of the
+config file, its `[daemon]` values that apply live (PRT-231) and the last reload error (DMN-009, UI-097). A thread
+summary carries `title` (`""` until the first message) and
 `titleSource`: `placeholder`, `generated` or `set` (DMN-073).
 
 ```jsonc
@@ -87,6 +88,7 @@ and the last reload error (DMN-009, UI-097). A thread summary carries `title` (`
 | PRT-143 | `UiSettings.theme` MUST be one of `synth`, `catppuccin`, `gruvbox`, `tokyo-night`, `nord`, `solarized`, `rose-pine`, `graphite`, `paper`, `clay`, `primer`, `accent`, `matugen` (DMN-240, UI-510); absent means `synth`. Another name is `bad_request` from `settings.set` and reported by the config file (DMN-238). |
 | PRT-213 | `UiSettings.skin` MUST be `crush` or `boring` (UI-794); absent means `crush`. Another name is `bad_request` from `settings.set` and reported by the config file (DMN-009). |
 | PRT-228 | `UiSettings.liveVoice` and the optional `voice` of `thread.live_connect` / `thread.live_start` MUST be one of `arbor`, `breeze`, `cove`, `ember`, `juniper`, `maple`, `sol`, `spruce`, `vale`; absent leaves the voice to omp (its `live.voice`, else `sol`). Another name is `bad_request` and reported by the config file (DMN-009). |
+| PRT-231 | `Settings.daemon` and `settings.set`'s `daemon` MUST be `{ deleteArchivedAfter? }`: the config file's `[daemon] delete_archived_after` as written (`<n>m`, `<n>h`, `<n>d`, `<n>w`, `never` or `0`; DMN-395), absent when the file sets none (`7d`). Another form is `bad_request` from `settings.set`, nothing written (DMN-396). |
 | PRT-180 | `threads.fork { threadId, entryId? }` (permission `Manage`) MUST answer the new thread's `ThreadSummary`, in the source's workspace, once its omp runs on a copy of the conversation through message entry `entryId` (of `thread.tree`), the whole session without it (DMN-300..DMN-302). `thread.fork` forks inside the same thread (DMN-072). |
 | PRT-181 | `ThreadSummary.forkedFrom` MUST be absent for a thread that is no fork, else `ForkOrigin { threadId, title, entryId?, message? }`: the source thread (maybe deleted since), its title when forked, the entry and the first line of its message (DMN-304). |
 | PRT-182 | `threads.fork` MUST answer `bad_request` for a source without a session yet, `not_found` for an unknown thread or an entry that is no message of the source's session, and `thread_failed` (with `details.stderrTail`) when the new omp cannot start; none of them leaves a thread behind (DMN-303). |

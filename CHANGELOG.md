@@ -16,6 +16,12 @@ The version's section is also the source of the GitHub release notes.
   tap on a phone shows its chat); a middle click or a click with Ctrl, Cmd or Shift opens a new window on it, in the
   desktop app too. A link written as the bare id shows the thread's current title and state; a link to a thread that
   does not exist stays plain text. Widgets get the same links with `ThreadLink` from `omfp/sdk`.
+- Archived threads are deleted automatically once they have been archived for a week, as a manual delete does; the
+  daemon checks at startup and every hour and logs each thread it deletes. Unarchiving a thread restarts its count, and
+  a thread whose agent's background commands still run waits until they end. Change the time with `[daemon]
+  delete_archived_after` (`30m`, `12h`, `30d`, `2w`, …), `--delete-archived-after` or `:set delete_archived_after=…`
+  from a window, live; `never` keeps archived threads. **On upgrade**, the first check deletes every thread archived
+  more than a week ago: set `delete_archived_after = "never"` in `config.toml` first to keep them.
 
 ### Changed
 

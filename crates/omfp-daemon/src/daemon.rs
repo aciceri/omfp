@@ -576,6 +576,8 @@ pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHa
                 .map_err(|error| anyhow::anyhow!(error.message))?,
         );
     }
+    // Once the config file's `delete_archived_after` is known: its first check runs at once (DMN-395).
+    background.push(services.spawn_archive_cleanup(config.delete_archived_after));
 
     let listener = tokio::net::TcpListener::bind(config.bind)
         .await

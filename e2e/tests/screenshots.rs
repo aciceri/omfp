@@ -98,6 +98,7 @@ async fn push_theme(journey: &Journey, css: Option<String>, primary: &str) -> an
     let mut connection = journey.connect().await?;
     connection
         .call::<SettingsSet>(SetSettingsParams {
+            daemon: None,
             ui: Some(UiSettings {
                 theme: Some(BuiltinTheme::Matugen),
                 ..UiSettings::default()

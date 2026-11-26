@@ -168,6 +168,8 @@ bind = "127.0.0.1:7420"
 # idle_timeout_minutes = 15, max_processes = 64, event_buffer = 2000
 # allowed_origins = ["https://omfp.example.ts.net"]   # the UI's URL behind a tunnel or reverse proxy
 # title_generation = false     # no generated thread titles
+# delete_archived_after = "7d" # delete threads archived this long ago (m, h, d, w), checked hourly; "never" keeps
+                               # them. Applies live, also from a window: `:set delete_archived_after=30d`
 
 [ui]                           # also set from the window: `:set font_size=15`, `:density compact`
 density = "normal"             # compact | normal
@@ -191,10 +193,10 @@ prose = "Literata, serif"
 "g g" = ""                     # removes a default binding
 ```
 
-`[ui]` and `[keymap]` apply live; a change to `[daemon]` needs a daemon restart. A user theme is the CSS file
-`~/.config/omfp/theme.css` next to it, followed live (the matugen template in `contrib/matugen` makes one); `omfp
-theme set <file>` pushes a theme to a running daemon instead. The windows show it with the `matugen` theme (`:theme
-matugen`), over Synth; any other theme leaves it stored but unused.
+`[ui]`, `[keymap]` and `delete_archived_after` apply live; any other change to `[daemon]` needs a daemon restart. A
+user theme is the CSS file `~/.config/omfp/theme.css` next to it, followed live (the matugen template in
+`contrib/matugen` makes one); `omfp theme set <file>` pushes a theme to a running daemon instead. The windows show it
+with the `matugen` theme (`:theme matugen`), over Synth; any other theme leaves it stored but unused.
 
 ## Status
 

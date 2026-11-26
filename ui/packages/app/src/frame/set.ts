@@ -5,7 +5,8 @@
  * (UI-794), `recent_threads` (0..=100 or `all`, UI-996), `live_voice` (UI-999), `fonts.prose|ui|code`,
  * `keymap.<keys>` (normal mode) and
  * `keymap.<mode>.<keys>`; a keymap value is a command id, `""`
- * removes the binding.
+ * removes the binding. `delete_archived_after` (UI-099) is the daemon's `[daemon]` value: how long a thread stays
+ * archived before the daemon deletes it (`<n>m`, `<n>h`, `<n>d`, `<n>w`, `never` or `0`).
  */
 
 import type {
@@ -63,6 +64,8 @@ export const VOICES: readonly LiveVoice[] = [
 ];
 const FONT_ROLES: readonly FontRole[] = ["prose", "ui", "code"];
 const MODES: readonly Mode[] = ["normal", "insert", "cmdline"];
+/** `delete_archived_after`'s values (DMN-395): minutes, hours, days or weeks, or `never` (also `0`). */
+const ARCHIVED_LIFETIME = /^(?:\d+[mhdw]|never|0)$/;
 
 /** Completions of the key part (`:set ` …). */
 export const SET_KEYS: readonly string[] = [
@@ -78,6 +81,8 @@ export const SET_KEYS: readonly string[] = [
   "recent_threads=all",
   ...VOICES.map((voice) => `live_voice=${voice}`),
   ...FONT_ROLES.map((role) => `fonts.${role}=`),
+  "delete_archived_after=",
+  "delete_archived_after=never",
   "keymap.",
 ];
 
@@ -163,6 +168,11 @@ export function parseSet(line: string): ParsedSet {
     }
     const recentThreads = /^\d+$/.test(value) ? Number(value) : Number.NaN;
     return recentThreads <= RECENT_THREADS_MAX ? { ok: true, patch: { ui: { recentThreads } } } : invalid(key, value);
+  }
+  if (key === "delete_archived_after") {
+    return ARCHIVED_LIFETIME.test(value)
+      ? { ok: true, patch: { daemon: { deleteArchivedAfter: value } } }
+      : invalid(key, value);
   }
   if (key.startsWith("fonts.")) {
     const role = FONT_ROLES.find((candidate) => `fonts.${candidate}` === key);

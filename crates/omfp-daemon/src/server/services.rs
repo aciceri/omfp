@@ -3,6 +3,7 @@
 //! index, the roots of the live threads in the workspace (DMN-029) and its views (`views`, DMN-082); watched
 //! workspaces are polled (`polls`).
 
+mod archive_cleanup;
 mod file_checks;
 mod logins;
 mod mounts;
@@ -106,7 +107,8 @@ struct SettingsState {
     file: Option<PathBuf>,
     /// Without a file: the TOML `settings.set` wrote so far.
     memory: String,
-    /// `[daemon]` as last seen; a change needs a restart.
+    /// `[daemon]` as last seen: a change needs a restart, except `delete_archived_after`, which applies live
+    /// (DMN-396).
     daemon: DaemonOptions,
     settings: Settings,
 }
@@ -135,6 +137,8 @@ pub(crate) struct Services {
     settings: Arc<Mutex<SettingsState>>,
     /// Serializes `settings.set` writes to the config file.
     settings_writes: Arc<tokio::sync::Mutex<()>>,
+    /// The time declared jobs and the deletion of archived threads (DMN-395) follow.
+    clock: Arc<dyn Clock>,
     /// The widget libraries and the compile cache (DMN-084).
     pub widgets: Arc<Widgets>,
     views_logs: Arc<Mutex<HashMap<String, Arc<ViewsLog>>>>,
@@ -162,7 +166,7 @@ fn not_found(entity: &'static str, id: &str) -> ErrorBody {
 impl Services {
     /// The services over the daemon's stores; every workspace is scanned first (DMN-023) and gets the default
     /// `views.json` when its folder has none (DMN-088). The supervisor's threads get the widget host tools; declared
-    /// jobs follow `clock`.
+    /// jobs and the deletion of archived threads follow `clock`.
     pub async fn new(
         store: Arc<Store>,
         threads: Arc<Threads>,
@@ -177,7 +181,7 @@ impl Services {
             jobs.clone(),
             supervisor.clone(),
             Arc::clone(&threads),
-            clock,
+            Arc::clone(&clock),
             jiff::tz::TimeZone::system(),
         );
         let mcp = crate::mcp_client::McpClient::new(supervisor.omp_credentials());
@@ -210,6 +214,7 @@ impl Services {
             repo_errors: Arc::new(Mutex::new(HashMap::new())),
             settings: Arc::new(Mutex::new(SettingsState::default())),
             settings_writes: Arc::new(tokio::sync::Mutex::new(())),
+            clock,
             widgets,
             views_logs: Arc::new(Mutex::new(HashMap::new())),
             views_refresh: Arc::new(tokio::sync::Mutex::new(())),
@@ -536,31 +541,43 @@ impl Services {
         lock(&self.settings).settings.clone()
     }
 
-    /// Reads the config file now and then follows its `[ui]` and `[keymap]` (DMN-009); `startup` is its `[daemon]` as
-    /// the daemon applied it. An invalid file is an error here, at startup.
+    /// Reads the config file now and then follows its `[ui]`, `[keymap]` and `[daemon] delete_archived_after` (DMN-009,
+    /// DMN-396); `startup` is its `[daemon]` as the daemon applied it. An invalid file is an error here, at startup.
+    /// Until a first read settles (DMN-091), `delete_archived_after` stays the one of `startup`: an inconclusive read is
+    /// no empty file, so it never brings back the default.
     pub async fn follow_config_file(
         &self,
         path: PathBuf,
         startup: DaemonOptions,
     ) -> Result<JoinHandle<()>, ErrorBody> {
         let (file, change) = Self::first_read(path.clone()).await?;
-        let parsed = match change.flatten() {
-            Some(text) => ConfigFile::parse(&text)
-                .map_err(|error| bad_request(format!("{}: {error}", path.display())))?,
-            None => ConfigFile::default(),
-        };
+        let parsed = change
+            .flatten()
+            .map(|text| {
+                ConfigFile::parse(&text)
+                    .map_err(|error| bad_request(format!("{}: {error}", path.display())))
+            })
+            .transpose()?;
         {
             let mut state = lock(&self.settings);
             state.file = Some(path.clone());
-            state.daemon = startup;
-            state.settings = parsed.settings();
+            state.daemon = DaemonOptions {
+                delete_archived_after: parsed
+                    .as_ref()
+                    .map_or(startup.delete_archived_after, |parsed| {
+                        parsed.daemon.delete_archived_after
+                    }),
+                ..startup
+            };
+            state.settings = parsed.unwrap_or_default().settings();
         }
         self.refresh_index().await?;
         Ok(self.follow(file, path, Self::reload_config_file))
     }
 
-    /// A change of the config file: `[ui]` / `[keymap]` apply now, `[daemon]` at the next start; an invalid file keeps
-    /// the previous settings and reports why in `Settings.error` (DMN-009).
+    /// A change of the config file: `[ui]`, `[keymap]` and `[daemon] delete_archived_after` apply now, the rest of
+    /// `[daemon]` at the next start; an invalid file keeps the previous settings and reports why in `Settings.error`
+    /// (DMN-009, DMN-396).
     async fn reload_config_file(self, path: PathBuf, text: Option<String>) {
         let parsed = text.map_or_else(
             || Ok(ConfigFile::default()),
@@ -570,10 +587,14 @@ impl Services {
             let mut state = lock(&self.settings);
             match parsed {
                 Ok(file) => {
-                    if file.daemon != state.daemon {
+                    let restart_only = |options: &DaemonOptions| DaemonOptions {
+                        delete_archived_after: None,
+                        ..options.clone()
+                    };
+                    if restart_only(&file.daemon) != restart_only(&state.daemon) {
                         warn!(path = %path.display(), "[daemon] of the config file changed: restart the daemon to apply it");
-                        state.daemon = file.daemon.clone();
                     }
+                    state.daemon = file.daemon.clone();
                     info!(path = %path.display(), "config file reloaded");
                     state.settings = file.settings();
                 }
@@ -586,8 +607,9 @@ impl Services {
         self.refresh_index_quietly().await;
     }
 
-    /// Merges `update` into the config file, written back with its comments, and pushes the new settings (DMN-009).
-    /// Without a config file the settings live in memory.
+    /// Merges `update` into the config file, written back with its comments, and pushes the new settings (DMN-009); a
+    /// new `delete_archived_after` applies from the next check (DMN-396). Without a config file the settings live in
+    /// memory.
     pub async fn set_settings(&self, update: SetSettingsParams) -> Result<Settings, ErrorBody> {
         let _write = self.settings_writes.lock().await;
         let (file, memory) = {
@@ -618,6 +640,7 @@ impl Services {
             if state.file.is_none() {
                 state.memory = text;
             }
+            state.daemon.delete_archived_after = parsed.daemon.delete_archived_after;
             state.settings = settings.clone();
         }
         self.refresh_index().await?;

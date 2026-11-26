@@ -237,10 +237,49 @@ fn a_deletion_names_the_workspace_and_deletes_nothing_once_the_thread_moved_away
             .unwrap()
     );
 
-    assert!(!env.threads.delete_record(&thread.id, &shop.id).unwrap());
+    assert!(
+        !env.threads
+            .delete_record(&thread.id, &shop.id, None)
+            .unwrap()
+    );
     assert_eq!(env.threads.get(&thread.id).unwrap().workspace_id, blog.id);
 
-    assert!(env.threads.delete_record(&thread.id, &blog.id).unwrap());
+    assert!(
+        env.threads
+            .delete_record(&thread.id, &blog.id, None)
+            .unwrap()
+    );
     assert_not_found(env.threads.get(&thread.id));
-    assert_not_found(env.threads.delete_record(&thread.id, &blog.id));
+    assert_not_found(env.threads.delete_record(&thread.id, &blog.id, None));
+}
+
+// spec: DMN-395
+#[test]
+fn an_archived_deletion_deletes_nothing_once_the_thread_is_unarchived_or_archived_later() {
+    let env = env();
+    let ws = env.workspace("shop");
+    let thread = env.threads.create(NewThread::new("t", &ws.id)).unwrap();
+    assert!(
+        !env.threads
+            .delete_record(&thread.id, &ws.id, Some(1_000))
+            .unwrap(),
+        "not archived"
+    );
+    env.store
+        .set_thread_archived_at(&thread.id, Some(2_000))
+        .unwrap();
+    assert!(
+        !env.threads
+            .delete_record(&thread.id, &ws.id, Some(1_000))
+            .unwrap(),
+        "archived after the cutoff"
+    );
+    assert!(env.threads.get(&thread.id).is_ok());
+
+    assert!(
+        env.threads
+            .delete_record(&thread.id, &ws.id, Some(2_000))
+            .unwrap()
+    );
+    assert_not_found(env.threads.get(&thread.id));
 }

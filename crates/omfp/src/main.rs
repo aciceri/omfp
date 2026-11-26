@@ -43,8 +43,9 @@ enum Command {
 struct DaemonArgs {
     #[command(subcommand)]
     command: Option<DaemonCommand>,
+    // Boxed, or every `Command` would be as large as the daemon's options (clippy's `large_enum_variant`).
     #[command(flatten)]
-    cli: omfp_daemon::config::Cli,
+    cli: Box<omfp_daemon::config::Cli>,
     /// Shows the daemon in the system tray (a status notifier item) with its threads, a menu to open windows and to quit
     /// it; `omfp desktop` passes it to the daemon it starts (DMN-128).
     #[cfg(feature = "desktop")]
@@ -64,14 +65,14 @@ fn run_daemon(args: DaemonArgs) -> anyhow::Result<()> {
     // Linux: the status notifier item on a GLib thread of the daemon (DMN-128).
     #[cfg(all(feature = "desktop", target_os = "linux"))]
     if args.tray {
-        return omfp_daemon::run_with(args.cli, omfp::tray::Tray::start);
+        return omfp_daemon::run_with(*args.cli, omfp::tray::Tray::start);
     }
     // macOS: AppKit's status item needs the main thread; the daemon runs on another (DMN-171).
     #[cfg(all(feature = "desktop", target_os = "macos"))]
     if args.tray {
-        return omfp::tray::run_daemon(args.cli);
+        return omfp::tray::run_daemon(*args.cli);
     }
-    omfp_daemon::run(args.cli)
+    omfp_daemon::run(*args.cli)
 }
 
 fn main() -> ExitCode {

@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use clap::Parser;
 
-use crate::config_file::{ConfigFile, DaemonOptions};
+use crate::config_file::{ConfigFile, DaemonOptions, DeleteArchivedAfter};
 use crate::server::parse_origin;
 use crate::supervisor::{DEFAULT_EVENT_BUFFER, DEFAULT_IDLE_MINUTES, DEFAULT_MAX_PROCESSES};
 
@@ -74,6 +74,11 @@ pub struct Cli {
     /// their first message until renamed. In the config file: `title_generation = false`.
     #[arg(long)]
     pub no_title_generation: bool,
+    /// How long a thread stays archived before the daemon deletes it (DMN-395): `<n>m`, `<n>h`, `<n>d` or `<n>w`, or
+    /// `never` (also `0`) to keep archived threads; default: `7d`. Wins over the config file's
+    /// `delete_archived_after`, which applies live (DMN-396).
+    #[arg(long, value_name = "DURATION")]
+    pub delete_archived_after: Option<DeleteArchivedAfter>,
 }
 
 /// Resolved daemon settings.
@@ -104,8 +109,10 @@ pub struct Config {
     /// `[daemon]` as the file held at startup: a reload that changes it needs a restart.
     pub file_options: DaemonOptions,
     /// The process catches `SIGUSR2` to restart the daemon in place, which `daemon.json` then says (DMN-394).
-    /// [`Config::from_cli`] leaves it `false`; `omfp daemon` ([`crate::run`]) sets it once it caught the signal.
     pub restarts_in_place: bool,
+    /// `--delete-archived-after` (DMN-395); `None` follows the config file's `delete_archived_after` live (DMN-396),
+    /// else [`DeleteArchivedAfter::DEFAULT`].
+    pub delete_archived_after: Option<DeleteArchivedAfter>,
 }
 
 /// `$XDG_CONFIG_HOME/omfp` when absolute, else `$HOME/.config/omfp`: where the config and theme files live.
@@ -213,6 +220,7 @@ impl Config {
             config_file: cli.config,
             file_options,
             restarts_in_place: false,
+            delete_archived_after: cli.delete_archived_after,
         })
     }
 
@@ -491,6 +499,40 @@ allow_omp_mismatch = true
         assert!(
             Config::from_cli(parse(&["--max-processes", "0"]), None, Some("/h".into())).is_err()
         );
+    }
+
+    // spec: DMN-395
+    #[test]
+    fn deleting_archived_threads_follows_the_flag_else_the_config_file() {
+        assert_eq!(config(&[]).unwrap().delete_archived_after, None);
+        assert_eq!(
+            config(&["--delete-archived-after", "3d"])
+                .unwrap()
+                .delete_archived_after,
+            Some(DeleteArchivedAfter::After {
+                count: 3,
+                unit: 'd'
+            })
+        );
+        assert_eq!(
+            config(&["--delete-archived-after", "never"])
+                .unwrap()
+                .delete_archived_after,
+            Some(DeleteArchivedAfter::Never)
+        );
+        let error = Cli::try_parse_from(["daemon", "--delete-archived-after", "3"]).unwrap_err();
+        assert!(error.to_string().contains("m, h, d or w"), "{error}");
+        let (_dir, file) = with_file("[daemon]\ndelete_archived_after = \"2w\"\n");
+        let from_file = config(&["--config", &file]).unwrap();
+        assert_eq!(
+            from_file.file_options.delete_archived_after,
+            Some(DeleteArchivedAfter::After {
+                count: 2,
+                unit: 'w'
+            }),
+            "followed live from the file"
+        );
+        assert_eq!(from_file.delete_archived_after, None);
     }
 
     // spec: DMN-073, DMN-075

@@ -30,15 +30,16 @@ pub use auth::{
     ProviderRef,
 };
 pub use dto::{
-    AllThreads, BuiltinTheme, CreatedBy, Density, DiffPage, FileCandidate, FileCandidates,
-    FileChange, FileContent, FileDiff, FileKind, FileMatch, FileStatus, FileWritten, FontSettings,
-    ForkOrigin, GitStatus, IndexSnapshot, JobCounts, JobDefinition, JobInfo, JobLine, JobPrompt,
-    JobRunStatus, JobRuns, JobState, JobStatus, JobStream, JobTrigger, JobView, JobViewStatus,
-    JobsState, KeymapEntry, KeymapMode, LiveVoice, MissedPolicy, Motion, NotificationMode,
-    PathEntry, PromptThread, Provenance, RecentThreads, RepoKind, RepoStatus, RestartPolicy,
-    RestartReason, RunInfo, RunTrigger, SeenRepository, Settings, Skin, TerminalCursor,
-    TerminalInfo, TerminalScreen, TerminalState, TerminalStatus, Theme, ThreadSummary, TitleSource,
-    UiSettings, ViewsState, WidgetInfo, WidgetSource, Workspace, WorkspaceBinding, WorkspaceRepo,
+    AllThreads, BuiltinTheme, CreatedBy, DaemonSettings, Density, DiffPage, FileCandidate,
+    FileCandidates, FileChange, FileContent, FileDiff, FileKind, FileMatch, FileStatus,
+    FileWritten, FontSettings, ForkOrigin, GitStatus, IndexSnapshot, JobCounts, JobDefinition,
+    JobInfo, JobLine, JobPrompt, JobRunStatus, JobRuns, JobState, JobStatus, JobStream, JobTrigger,
+    JobView, JobViewStatus, JobsState, KeymapEntry, KeymapMode, LiveVoice, MissedPolicy, Motion,
+    NotificationMode, PathEntry, PromptThread, Provenance, RecentThreads, RepoKind, RepoStatus,
+    RestartPolicy, RestartReason, RunInfo, RunTrigger, SeenRepository, Settings, Skin,
+    TerminalCursor, TerminalInfo, TerminalScreen, TerminalState, TerminalStatus, Theme,
+    ThreadSummary, TitleSource, UiSettings, ViewsState, WidgetInfo, WidgetSource, Workspace,
+    WorkspaceBinding, WorkspaceRepo,
 };
 pub use envelope::{
     ErrorBody, ErrorCode, EventFrame, IndexEvent, JobEvent, JobsEvent, ProtocolError, Request,

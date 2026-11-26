@@ -585,13 +585,20 @@ impl Store {
         found(deleted, "thread", id)
     }
 
-    /// Deletes a thread with its roots if it still lives in workspace `workspace_id`: `false` (nothing deleted) when
-    /// it moved to another one meanwhile (DMN-039); its workspace stays.
-    pub fn delete_thread_in(&self, id: &str, workspace_id: &str) -> Result<bool> {
+    /// Deletes a thread with its roots if it still lives in workspace `workspace_id` and, with `archived_by`, was
+    /// archived at or before that time (unix ms): `false` (nothing deleted) when it moved to another one meanwhile
+    /// (DMN-039) or is not archived that long (DMN-395); its workspace stays.
+    pub fn delete_thread_in(
+        &self,
+        id: &str,
+        workspace_id: &str,
+        archived_by: Option<i64>,
+    ) -> Result<bool> {
         let conn = self.conn();
         if conn.execute(
-            "DELETE FROM threads WHERE id = ?1 AND workspace_id = ?2",
-            [id, workspace_id],
+            "DELETE FROM threads WHERE id = ?1 AND workspace_id = ?2 \
+             AND (?3 IS NULL OR archived_at <= ?3)",
+            params![id, workspace_id, archived_by],
         )? == 1
         {
             return Ok(true);

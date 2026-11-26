@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::dto::{
-    KeymapEntry, LiveVoice, PathEntry, RepoStatus, SeenRepository, UiSettings, WidgetSource,
+    DaemonSettings, KeymapEntry, LiveVoice, PathEntry, RepoStatus, SeenRepository, UiSettings,
+    WidgetSource,
 };
 use crate::topic::Topic;
 
@@ -798,6 +799,9 @@ impl JsonSchema for ConstTrue {
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct SetSettingsParams {
+    /// `[daemon]` values to set that apply without a restart (DMN-396); absent fields are unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub daemon: Option<DaemonSettings>,
     /// `[ui]` values to set; absent fields are unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ui: Option<UiSettings>,

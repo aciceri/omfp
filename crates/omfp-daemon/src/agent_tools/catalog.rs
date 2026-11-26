@@ -25,7 +25,10 @@ pub fn methods() -> impl Iterator<Item = &'static str> {
 pub fn list() -> String {
     let mut text = format!(
         "# omfp protocol methods\n\nCall one with {CALL} {{ method, params }}; read {METHODS_URL}/<name> for its \
-         params and result JSON Schemas.\n\n"
+         params and result JSON Schemas. From a thread, a read-only `thread.*` method without `threadId` reads the \
+         calling thread, and a read-only method of one workspace (`workspaces.status`, `workspaces.diff`, \
+         `workspaces.read_file`, `workspaces.find_file`, `workspaces.mcp_servers`, `mcp.tools`, `jobs.list`, \
+         `jobs.runs`, `views.errors`) without `workspaceId` reads the calling thread's workspace.\n\n"
     );
     for method in methods() {
         let description = method_description(method).unwrap_or_default();
@@ -98,6 +101,10 @@ mod tests {
             .filter(|line| line.starts_with("- `"))
             .collect();
         assert_eq!(lines.len(), METHODS.len() - CONNECTION_ONLY.len());
+        assert!(
+            text.contains("without `workspaceId` reads the calling thread's workspace"),
+            "{text}"
+        );
         assert!(
             lines.contains(
                 &"- `threads.list` — Thread summaries as on the `index` topic, without archived threads unless \

@@ -34,6 +34,8 @@ The version's section is also the source of the GitHub release notes.
   from a dev shell. Without one an agent falls back to text search quietly instead of retrying `lsp` or asking you to
   install a server; ask it why `lsp` finds none and it explains how to get one (installed where the daemon sees it,
   or declared in the workspace's `.omp/lsp.json`).
+- Archived threads in the left column are listed most recently archived first, so the thread you just archived is at
+  the top of "Archived (N)".
 
 ### Fixed
 

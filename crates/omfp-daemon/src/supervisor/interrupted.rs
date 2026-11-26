@@ -43,15 +43,18 @@ pub(super) const MARK_WAIT: Duration = Duration::from_secs(2);
 
 impl Actor {
     /// Mid-turn, waiting on async work that can resume the run, or sent agent work omp has not reported yet
-    /// (DMN-370), read from the thread's state: an omp that just exited still counts until the thread fails.
+    /// (DMN-370), read from the thread's state: an omp that just exited still counts until the thread fails, one a
+    /// stop is ending does not (DMN-374).
     pub(super) fn unsettled(&self) -> bool {
-        !self.log.with_state(|state| state.settled) || self.turn_requested.load(Ordering::SeqCst)
+        !self.stopping.load(Ordering::SeqCst)
+            && (!self.log.with_state(|state| state.settled)
+                || self.turn_requested.load(Ordering::SeqCst))
     }
 }
 
 impl Supervisor {
-    /// The unsettled threads (DMN-370): a thread whose omp stopped or failed has settled, and a stop cleared the
-    /// message it was sent (DMN-374).
+    /// The unsettled threads (DMN-370): a thread whose omp stopped or failed has settled, and a stop excludes its
+    /// thread from the moment it takes the process (DMN-374).
     pub(super) fn unsettled(&self) -> Vec<String> {
         let actors: Vec<_> = lock(&self.inner.actors).values().cloned().collect();
         actors

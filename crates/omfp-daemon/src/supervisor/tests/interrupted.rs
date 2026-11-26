@@ -411,3 +411,25 @@ async fn a_message_admitted_by_an_omp_that_crashed_since_leaves_the_crash_mark()
 
     assert_eq!(restart(&h).marked(), [id]);
 }
+
+// spec: DMN-374
+#[tokio::test]
+async fn a_stop_still_ending_when_the_daemon_stops_marks_nothing() {
+    let h = harness(|_| {});
+    let id = h.thread();
+    h.supervisor.start(&id).await.unwrap();
+    h.launcher.process(0).emit(vec![agent_start()]);
+    h.wait(&id, "the busy agent", |state| !state.settled).await;
+    let close = h.launcher.gate_closes();
+    // The stop took the process and waits for it to end while the thread still reads busy.
+    drop_at_close(&close, h.supervisor.stop(&id)).await;
+
+    tokio::join!(h.supervisor.shutdown(), async {
+        while !h.supervisor.inner.shutting_down.load(Ordering::SeqCst) {
+            tokio::task::yield_now().await;
+        }
+        close.open();
+    });
+
+    assert_eq!(restart(&h).marked(), Vec::<String>::new());
+}

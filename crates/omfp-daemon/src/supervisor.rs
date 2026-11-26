@@ -439,6 +439,9 @@ struct Actor {
     /// session settles, a prompt turns out to be a local command, a send fails, the process stops or exits, or a new
     /// process starts.
     turn_requested: AtomicBool,
+    /// A stop the user or the daemon chose took the process and the thread does not show `Stopped` yet: its unsettled
+    /// state is no interruption (DMN-374). Cleared once it shows `Stopped`, or when a new process starts.
+    stopping: AtomicBool,
 }
 
 impl Actor {
@@ -477,6 +480,7 @@ impl Actor {
             oauth: Mutex::new(crate::oauth_relay::Flows::default()),
             cards: Mutex::new(HashMap::new()),
             turn_requested: AtomicBool::new(false),
+            stopping: AtomicBool::new(false),
         }
     }
 

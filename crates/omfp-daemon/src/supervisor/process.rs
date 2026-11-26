@@ -179,6 +179,7 @@ impl Supervisor {
         let (ended_tx, ended) = watch::channel(false);
         let process = launched.process;
         actor.turn_requested.store(false, Ordering::SeqCst);
+        actor.stopping.store(false, Ordering::SeqCst);
         *lock(&actor.live) = Some(Live {
             process: Arc::clone(&process),
             generation,
@@ -410,7 +411,9 @@ impl Supervisor {
         else {
             return Ok(());
         };
-        // A stop the user or the daemon chose marks no turn (DMN-374), even one omp has not reported yet.
+        // A stop the user or the daemon chose marks no turn (DMN-374), not even one omp has not reported yet, also
+        // while the stop waits for the process to end.
+        actor.stopping.store(true, Ordering::SeqCst);
         actor.turn_requested.store(false, Ordering::SeqCst);
         blocking(move || drop(process)).await?;
         let _ = ended.wait_for(|ended| *ended).await;
@@ -420,6 +423,7 @@ impl Supervisor {
         lock(&actor.restart).clear();
         lock(&actor.oauth).clear();
         self.set_process(actor, ProcessState::Stopped);
+        actor.stopping.store(false, Ordering::SeqCst);
         info!(thread = %actor.id, "omp stopped");
         Ok(())
     }

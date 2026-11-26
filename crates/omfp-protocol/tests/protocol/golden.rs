@@ -634,6 +634,10 @@ fn live_examples() -> Vec<(&'static str, Value)> {
             &LiveConnected {
                 sdp_answer: "v=0\r\no=- 7215 1 IN IP4 0.0.0.0\r\n…".to_owned(),
                 voice: "maple".to_owned(),
+                context: vec![
+                    "You: omfp's voice, the realtime voice between ada (OS account: ada) …"
+                        .to_owned(),
+                ],
             },
         ),
         example::<method::ThreadLiveStart>(
@@ -1885,7 +1889,7 @@ fn hello_names_the_connection() {
     );
 }
 
-// spec: PRT-050
+// spec: PRT-050, DMN-118
 #[test]
 fn live_methods_have_the_shapes_of_the_spec() {
     let connect = Request::new(
@@ -1903,10 +1907,26 @@ fn live_methods_have_the_shapes_of_the_spec() {
     let connected = LiveConnected {
         sdp_answer: "v=0".to_owned(),
         voice: "sol".to_owned(),
+        context: Vec::new(),
     };
     assert_eq!(
         serde_json::to_value(&connected).unwrap(),
-        json!({ "sdpAnswer": "v=0", "voice": "sol" })
+        json!({ "sdpAnswer": "v=0", "voice": "sol" }),
+        "no context: the field is left out"
+    );
+    let with_context = LiveConnected {
+        context: vec!["You: omfp's voice".to_owned(), "…".to_owned()],
+        ..connected
+    };
+    assert_eq!(
+        serde_json::to_value(&with_context).unwrap(),
+        json!({ "sdpAnswer": "v=0", "voice": "sol", "context": ["You: omfp's voice", "…"] })
+    );
+    assert_eq!(
+        serde_json::from_value::<LiveConnected>(json!({ "sdpAnswer": "v=0", "voice": "sol" }))
+            .unwrap()
+            .context,
+        Vec::<String>::new()
     );
     let mute = Request::new(
         "c2",

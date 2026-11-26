@@ -2095,7 +2095,7 @@ async fn live_connect_starts_omp_records_the_owner_and_relays_the_answer() {
         crate::agent::FakeLive::call_frames(),
     ));
 
-    let answer = h
+    let (answer, _) = h
         .supervisor
         .live_connect(&id, owner(4), OFFER.into(), None)
         .await
@@ -2118,7 +2118,7 @@ async fn live_connect_starts_omp_records_the_owner_and_relays_the_answer() {
     assert_eq!(live.transcript.len(), 2);
 }
 
-// spec: DMN-105, DMN-117
+// spec: DMN-105, DMN-117, DMN-118
 #[tokio::test]
 async fn live_connect_sends_the_live_prompt_with_the_threads_conversation() {
     let h = harness(|_| {});
@@ -2139,7 +2139,8 @@ async fn live_connect_sends_the_live_prompt_with_the_threads_conversation() {
     h.launcher
         .push_run(FakeRun::fresh().with_history(history.into()));
 
-    h.supervisor
+    let (_, context) = h
+        .supervisor
         .live_connect(&id, owner(1), OFFER.into(), None)
         .await
         .unwrap();
@@ -2177,6 +2178,11 @@ async fn live_connect_sends_the_live_prompt_with_the_threads_conversation() {
     assert!(sent.contains(
         "User: why does {{default \"\" \"{{\"}}login}} fail?\n\nAssistant: The token was stale."
     ));
+    // The window gets the same instructions, rendered, to append to the session (DMN-118).
+    assert_eq!(
+        context,
+        crate::live_context::window_context(sent, &crate::live_context::LiveUser::from_env())
+    );
 }
 
 // spec: DMN-100
@@ -2784,7 +2790,7 @@ async fn a_chosen_voice_reaches_omp_and_none_leaves_omps_own() {
     let h = harness(|_| {});
     let id = h.thread();
 
-    let answer = h
+    let (answer, _) = h
         .supervisor
         .live_connect(&id, owner(1), OFFER.into(), Some(LiveVoice::Maple))
         .await

@@ -913,6 +913,12 @@ export type LiveConnectParams = {
 
 /** `thread.live_connect` result: omp's answer once the call is signaled (PRT-050). */
 export type LiveConnected = {
+  /**
+   * The live instructions as the voice reads them, in appends of at most 500 bytes, which the window sends to the
+   * session as silent context once the peer's data channel opens (DMN-118): the realtime endpoint ignores the
+   * instructions omp passes at the start.
+   */
+  context?: string[];
   /** SDP answer to apply to the peer right away. */
   sdpAnswer: string;
   /** The realtime voice omp uses. */

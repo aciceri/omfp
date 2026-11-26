@@ -78,7 +78,9 @@ export function focusView(): boolean {
     return true;
   }
   const transcript = view.querySelector<HTMLElement>(`[${SCOPE_ATTRIBUTE}="transcript"]`);
-  const pane = (transcript === null ? null : transcript.closest<HTMLElement>(PANE)) ?? shownPanes(view)[0];
+  // A transcript in a hidden (kept-mounted) tab cannot take the focus: the first shown pane does.
+  const pane =
+    (transcript === null || !shown(transcript) ? null : transcript.closest<HTMLElement>(PANE)) ?? shownPanes(view)[0];
   if (pane !== undefined) {
     focusPane(pane);
   }
@@ -93,7 +95,8 @@ export function leaveView(): void {
   }
 }
 
-function shownPanes(within: ParentNode): HTMLElement[] {
+/** The panes inside `within` that show, in document order. */
+export function shownPanes(within: ParentNode): HTMLElement[] {
   return [...within.querySelectorAll<HTMLElement>(PANE)].filter(shown);
 }
 

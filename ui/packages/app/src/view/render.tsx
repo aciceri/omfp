@@ -19,7 +19,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { focusPane, PANE, TAB_STEP_EVENT } from "../keymap/panes.ts";
+import { focusPane, shownPanes, TAB_STEP_EVENT } from "../keymap/panes.ts";
 import { closeOpened, useWorkspaceFolder } from "../sdk/files.ts";
 import {
   type FileTabsState,
@@ -295,8 +295,9 @@ function useTabSteps(
     const panel = [...(bar.current?.parentElement?.children ?? [])].find(
       (child) => child.classList.contains("omfp-view__panel") && !child.hasAttribute("hidden"),
     );
-    const pane = panel?.querySelector<HTMLElement>(PANE);
-    if (pane !== null && pane !== undefined) {
+    // A nested tabs container keeps its other tabs mounted, hidden: the first pane that shows.
+    const pane = panel === undefined ? undefined : shownPanes(panel)[0];
+    if (pane !== undefined) {
       focusPane(pane);
     }
   }, [bar, selected]);

@@ -323,6 +323,19 @@ describe("global key handler", () => {
     expect(ran).toEqual(["global:view.focus", "global:view.focus"]);
   });
 
+  // spec: UI-095
+  test("an Insert-mode binding of Enter still reaches a text field", () => {
+    document.body.innerHTML = `<input id="field">`;
+    const { register, ran, press } = setup([{ mode: "insert", keys: "Enter", command: "my.submit" }]);
+    register("my.submit");
+    const field = document.getElementById("field");
+    if (field === null) {
+      throw new Error("fixture");
+    }
+    expect(press(field, "Enter")).toBe(true);
+    expect(ran).toEqual(["global:my.submit"]);
+  });
+
   // spec: UI-021, UI-405
   test("macOS's Option keys run the attention and new-thread chords in normal mode, and type their text while typing", () => {
     document.body.innerHTML = `<input id="field"><p id="out" tabindex="-1"></p>`;

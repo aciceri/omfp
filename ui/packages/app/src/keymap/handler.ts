@@ -182,7 +182,8 @@ export function createKeyHandler(options: KeymapOptions): KeyHandler {
     if (token === "Space" && matcher.pending === undefined && keepsSpace(element)) {
       return;
     }
-    if (token === "Enter" && matcher.pending === undefined && keepsEnter(element)) {
+    // Only in Threads and View mode: an Insert-mode binding of Enter still reaches a text field.
+    if (token === "Enter" && matcher.pending === undefined && sharesNormal(modeAt(element)) && keepsEnter(element)) {
       return;
     }
     if (token === "Esc" && matcher.pending !== undefined) {

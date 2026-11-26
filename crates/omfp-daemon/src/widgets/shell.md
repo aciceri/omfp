@@ -239,6 +239,41 @@ there is no sharing switch or standalone fallback. Threads/history and workspace
 unchanged, and explicit API keys inherited from the daemon's environment still work. `:logout` affects only this
 profile's store.
 
+## Language servers
+
+omp's `lsp` tool (diagnostics, definitions, references, rename, hover; in a thread a command of the `bash` tool) and
+the diagnostics omp reports after an edit need a language server for the file's language. omp finds servers by itself,
+from its built-in list (`rust-analyzer`, `typescript-language-server`, `nixd`, …); omfp configures none.
+
+- **Per repository**: a thread's omp runs in the workspace folder. A server whose root marker (`Cargo.toml`,
+  `package.json`, `flake.nix`, …) sits in the workspace folder itself is available at once; one whose marker sits in a
+  repository starts when a file of that repository is first touched (an `lsp` call on the file, an edit), and the
+  other repositories it serves join it as workspace folders when one of their files is. Before that `lsp status` may
+  answer `No language servers configured for this project`: ask about a file first (the `diagnostics` action on it),
+  then `lsp status` lists the servers and whether they started.
+- **Why none is found**: omp looks for a server's binary in the repository's own bin folders (`node_modules/.bin`, a
+  virtualenv, …), then on the `PATH` it inherits, which is the **daemon's** environment (as for jobs:
+  omfp://docs/widgets, Jobs). A dev shell (`nix develop`, direnv) does not count: a server only it provides is not
+  found, and that language's files answer `No language server found for this action` (or `… for this file`).
+- **Getting one**: install the server where the daemon's `PATH` sees it (a changed `PATH` needs a daemon restart), or
+  declare it in `<workspace>/.omp/lsp.json` with an absolute `command`. A dev shell's binary is found with
+  `cd <repo> && nix develop -c sh -c 'command -v rust-analyzer'` (its path changes when the shell does):
+
+  ```json
+  { "servers": { "rust-analyzer": { "command": "/nix/store/…-rust-analyzer-…/bin/rust-analyzer" } } }
+  ```
+
+  A built-in server needs only the fields it changes (`command`, `args`); a new one also `fileTypes` and
+  `rootMarkers`. Servers for every workspace go in the omp profile's `agent/lsp.json` (see Logging in; standalone
+  omp's `~/.omp/agent/lsp.json` is not read). omp reads these files once per thread: the `lsp` tool's `reload` action
+  (`file` `*` or none) reads them again and restarts the servers whose configuration changed; restarting the thread
+  does too.
+- **For agents**: a missing server is not something to raise. Without one, fall back to `grep`, `ast_grep` and reading
+  the code without comment: do not report the missing server, nor suggest installing or configuring one, unless the
+  user asks why `lsp` does not work or how to enable it; then explain the above. Never install a server or change the
+  user's system (packages, `PATH`, the profile's `lsp.json`) yourself; write `<workspace>/.omp/lsp.json` only when the
+  user asks for it.
+
 ## Agents and the window
 
 Each window reports to the daemon what it shows — its thread, focus, views and where each comes from, the commands

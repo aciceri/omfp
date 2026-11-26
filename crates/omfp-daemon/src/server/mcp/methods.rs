@@ -78,7 +78,8 @@ fn resources() -> [Described; 9] {
             shell::SHELL_URL,
             "omfp-docs-shell",
             "The omfp window",
-            "The window: left column, mode line and view tabs, `:` commands, default keys.",
+            "The window: left column, mode line and view tabs, `:` commands, default keys; logging in and how omp \
+             finds language servers.",
             "text/markdown",
         ),
         (

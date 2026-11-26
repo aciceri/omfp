@@ -65,7 +65,9 @@ server's preview — in a sandboxed frame under a toolbar with the URL, Reload a
 `omfp_ui_mount { id: "preview", widget: "omfp:web", props: { url: "http://localhost:5173/" } }` and point it elsewhere
 with `omfp_ui_update { id: "preview", props: { url } }`. The page cannot navigate the window; its new windows open in the
 browser. Sites that refuse framing (`X-Frame-Options`, CSP `frame-ancestors`: GitHub, Linear, Google) stay blank, and
-the frame says so when nothing loaded in 10 s: reach them through their API in a widget of your own),
+the frame says so when nothing loaded in 10 s: reach them through their API in a widget of your own. The Linux desktop
+window is the exception: there the page is a native view over the frame's place, so those sites show, and a capture of
+it stands in while omfp's own UI covers it),
 `omfp:terminal` (`{ command?, shell?, cwd?, cols?, rows?, key? }`: an interactive CLI on a daemon-owned PTY, run by
 `sh -c` in the workspace folder or the workspace-relative `cwd`. Without props it starts the daemon's `$SHELL` (`sh`
 when unset). `shell` picks another shell: a program name or path and its arguments, separated by spaces and each

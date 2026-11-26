@@ -16,6 +16,10 @@ The version's section is also the source of the GitHub release notes.
   text fields and selected text keep the browser's menu. Init files (`omfp.contextMenu({ on, items })`) and widgets
   (`useContextMenu`) add items from commands already registered, each run with the clicked message, file or thread as
   its argument; web pages keep the engine's menu.
+- Web pages in the Linux desktop app: `omfp:web` shows its page as a native view over the widget's place instead of a
+  frame, so sites that refuse to be framed (Google's sign-in, YouTube's pages, GitHub) show and stay signed in across
+  restarts. While a dialog, the `:` line or another panel covers it, a still picture of the page stands in. The web
+  app, the macOS app and phones keep the frame.
 - A transcript scrolled up well away from its end shows a down-arrow button over its bottom corner: click or tap it
   (or press Enter on it) to jump to the latest message and follow the reply again. It is touch-sized on phones too.
 - Links between threads: a reply can link another thread as `[title](omfp://thread/<id>)`, and agents are told to

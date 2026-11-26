@@ -1,6 +1,7 @@
 //! `omfp desktop` (M7, spike S-04): one Tauri window per process (D-16) on the local daemon of the data directory,
 //! found with [`omfp_daemon::discover`] or started in the background (ARC-003), or with `--connect` on another
-//! daemon. The window loads the daemon's own UI over http: no bundled assets, no Tauri IPC, no capabilities.
+//! daemon. The window loads the daemon's own UI over http: no bundled assets, no Tauri IPC, no capabilities. On Linux
+//! its web frames' pages are native views over that page (UI-682, `web_views`).
 
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -32,6 +33,8 @@ mod local;
 mod macos;
 #[cfg(target_os = "linux")]
 mod portal;
+#[cfg(target_os = "linux")]
+mod web_views;
 #[cfg(target_os = "linux")]
 mod zoom;
 
@@ -495,9 +498,12 @@ fn open_window(
     // directory; WKWebView ignores it and takes a data store identifier instead (UI-250, macOS 14+).
     #[cfg(target_os = "linux")]
     let builder = builder.data_directory(webview_data.to_path_buf());
-    // UI-283: the page zoom, which WebKitGTK has on no key and no wheel and the Linux window on no menu.
+    // UI-283: the page zoom, which WebKitGTK has on no key and no wheel and the Linux window on no menu. UI-682: web
+    // frames' pages as native views over the page.
     #[cfg(target_os = "linux")]
-    let builder = builder.initialization_script(zoom::zoom_script(&origin, &nonce));
+    let builder = builder
+        .initialization_script(zoom::zoom_script(&origin, &nonce))
+        .initialization_script(web_views::script(&origin, &nonce));
     // WKWebView has no web notifications: the daemon's page gets a `Notification` whose notifications the window posts
     // to the system's notification center (UI-252).
     #[cfg(target_os = "macos")]
@@ -519,6 +525,13 @@ fn open_window(
     if let Err(error) = zoom::follow_zoom(&window, &nonce) {
         eprintln!("omfp desktop: no page zoom: {error}");
     }
+    #[cfg(target_os = "linux")]
+    web_views::follow(
+        &window,
+        origin.clone(),
+        &nonce,
+        &webview_data.join("web-pages"),
+    );
     if smoke.is_some() {
         smoke_check(
             window,

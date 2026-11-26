@@ -26,6 +26,7 @@ desktop = [
   "dep:tauri-build",
   "dep:gio",
   "dep:webkit2gtk",
+  "dep:gtk",
   "dep:objc2",
   "dep:objc2-app-kit",
   "dep:objc2-foundation",
@@ -46,9 +47,10 @@ tokio.workspace = true
 tokio-tungstenite.workspace = true
 
 # Linux: the settings portal's colour scheme and the status notifier tray over gio's D-Bus API; the page zoom of the
-# window through its WebKitGTK web view (UI-283).
+# window through its WebKitGTK web view (UI-283); web pages as native views over the window's page (UI-682).
 [target.'cfg(target_os = "linux")'.dependencies]
 gio = { workspace = true, optional = true }
+gtk = { workspace = true, optional = true }
 webkit2gtk = { workspace = true, optional = true }
 # The binary's allocator (DMN-366): jemalloc with its background threads gives freed memory back to the system while
 # the daemon idles; glibc's malloc keeps it in its arenas.

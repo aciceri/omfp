@@ -320,6 +320,7 @@ export {
   type ThinkingProps,
 } from "./transcript.tsx";
 export {
+  hasNativeWebViews,
   WEB_FRAME_SANDBOX,
   WEB_FRAME_TEXTS,
   WEB_FRAME_TIMEOUT_MS,

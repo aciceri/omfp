@@ -1810,6 +1810,13 @@
     border: 0;
   }
 
+  /* UI-682: the placeholder the desktop window draws a web page over; a capture of the page shows in it while omfp's
+     own UI covers it. */
+  .omfp-web-frame__native {
+    position: relative;
+    overflow: hidden;
+  }
+
   /* Prose (UI-144): the only place for the serif; ragged right, 70ch measure, never justified. */
   .omfp-prose {
     font-family: var(--omfp-font-prose);

@@ -172,3 +172,26 @@ describe("WebFrame", () => {
     expect(screen.queryAllByTestId("web-frame-hint").length).toBe(0);
   });
 });
+
+describe("WebFrame in a window that draws web pages (UI-682)", () => {
+  // The Linux desktop window's page script defines it before the app runs.
+  beforeAll(() => Object.assign(globalThis, { __omfpWebViews: {} }));
+  afterAll(() => Reflect.deleteProperty(globalThis, "__omfpWebViews"));
+
+  // spec: UI-682
+  test("is a placeholder naming its page, with a new id at each reload and no Blank?", async () => {
+    const user = userEvent.setup();
+    render(<WebFrame url="https://accounts.google.com/" />);
+    expect(screen.queryAllByTestId("web-frame-frame").length).toBe(0);
+    const placeholder = screen.getByTestId("web-frame-native");
+    expect(placeholder.getAttribute("data-url")).toBe("https://accounts.google.com/");
+    expect(placeholder.getAttribute("aria-label")).toBe("accounts.google.com");
+    const first = placeholder.getAttribute("data-omfp-web-view");
+    expect(first).toBeTruthy();
+    expect(screen.queryAllByRole("button", { name: "Blank?" }).length).toBe(0);
+    await user.click(screen.getByRole("button", { name: "Reload" }));
+    const second = screen.getByTestId("web-frame-native").getAttribute("data-omfp-web-view");
+    expect(second).toBeTruthy();
+    expect(second === first).toBe(false);
+  });
+});

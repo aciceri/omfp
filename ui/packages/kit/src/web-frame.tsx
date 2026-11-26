@@ -1,4 +1,4 @@
-import { type HTMLAttributes, type ReactNode, useEffect, useState } from "react";
+import { type HTMLAttributes, type ReactNode, useEffect, useId, useState } from "react";
 import { Button, IconButton } from "./button.tsx";
 import { cx } from "./class.ts";
 import { EmptyState } from "./feedback.tsx";
@@ -17,6 +17,14 @@ export const WEB_FRAME_SANDBOX =
 
 /** How long a web frame waits for its page's `load` before it says the site may refuse framing (UI-674). */
 export const WEB_FRAME_TIMEOUT_MS = 10_000;
+
+/**
+ * Whether the window draws web pages itself (UI-682): the Linux desktop window defines `__omfpWebViews` in its page
+ * and draws a native view over each `[data-omfp-web-view]` placeholder, where sites that refuse framing show too.
+ */
+export function hasNativeWebViews(): boolean {
+  return "__omfpWebViews" in globalThis;
+}
 
 /** Why {@link webFrameUrl} refuses a URL. */
 export type WebFrameRefusal = "missing" | "invalid" | "scheme" | "own-origin";
@@ -127,7 +135,8 @@ export interface WebFrameProps extends Omit<HTMLAttributes<HTMLElement>, "title"
  * A web page in a sandboxed frame (UI-670..UI-674) under a toolbar: the URL, Reload (the frame loads again), Open in
  * browser (a new window: the browser's tab, the desktop's system browser) and Blank?. Whether a site refuses framing
  * cannot be told from outside the frame, so the hint saying it may shows when the page has not loaded in
- * `loadTimeoutMs`, or on Blank?.
+ * `loadTimeoutMs`, or on Blank?. In a window that draws web pages itself (UI-682) the frame is a placeholder the
+ * window draws the page over, and there is no hint.
  */
 export function WebFrame({
   url,
@@ -138,6 +147,8 @@ export function WebFrame({
   ...props
 }: WebFrameProps): ReactNode {
   const words = { ...WEB_FRAME_TEXTS, ...texts };
+  const native = hasNativeWebViews();
+  const placeholderId = useId();
   // The window's origin: the daemon's for the app.
   const checked = webFrameUrl(url, globalThis.location?.origin ?? "");
   const href = checked.ok ? checked.href : undefined;
@@ -148,12 +159,12 @@ export function WebFrame({
   const [hintFrame, setHintFrame] = useState<string>();
   const loaded = loadedFrame === frame;
   useEffect(() => {
-    if (href === undefined || loaded) {
+    if (href === undefined || loaded || native) {
       return;
     }
     const timer = setTimeout(() => setHintFrame(frame), loadTimeoutMs);
     return () => clearTimeout(timer);
-  }, [href, frame, loaded, loadTimeoutMs]);
+  }, [href, frame, loaded, loadTimeoutMs, native]);
   if (!checked.ok) {
     return (
       <EmptyState
@@ -176,15 +187,17 @@ export function WebFrame({
         <span className="omfp-web-frame__url" title={checked.href} data-testid="web-frame-url">
           {checked.href}
         </span>
-        <Button
-          variant="quiet"
-          size="sm"
-          className="omfp-web-frame__blank"
-          onPress={() => setHintFrame(frame)}
-          data-testid="web-frame-blank"
-        >
-          {words.blank}
-        </Button>
+        {!native && (
+          <Button
+            variant="quiet"
+            size="sm"
+            className="omfp-web-frame__blank"
+            onPress={() => setHintFrame(frame)}
+            data-testid="web-frame-blank"
+          >
+            {words.blank}
+          </Button>
+        )}
         <IconButton
           label={words.reload}
           icon={<Icon name="refresh-cw" />}
@@ -204,19 +217,31 @@ export function WebFrame({
           <IconButton label={words.dismiss} icon={<Icon name="x" />} onPress={() => setHintFrame(undefined)} />
         </div>
       )}
-      <iframe
-        key={frame}
-        className="omfp-web-frame__frame"
-        src={checked.href}
-        title={title ?? host}
-        sandbox={WEB_FRAME_SANDBOX}
-        referrerPolicy="no-referrer"
-        data-testid="web-frame-frame"
-        onLoad={() => {
-          setLoadedFrame(frame);
-          setHintFrame(undefined);
-        }}
-      />
+      {native ? (
+        <div
+          key={frame}
+          className="omfp-web-frame__frame omfp-web-frame__native"
+          role="document"
+          aria-label={title ?? host}
+          data-omfp-web-view={`${placeholderId}-${reloads}`}
+          data-url={checked.href}
+          data-testid="web-frame-native"
+        />
+      ) : (
+        <iframe
+          key={frame}
+          className="omfp-web-frame__frame"
+          src={checked.href}
+          title={title ?? host}
+          sandbox={WEB_FRAME_SANDBOX}
+          referrerPolicy="no-referrer"
+          data-testid="web-frame-frame"
+          onLoad={() => {
+            setLoadedFrame(frame);
+            setHintFrame(undefined);
+          }}
+        />
+      )}
     </section>
   );
 }

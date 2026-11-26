@@ -54,7 +54,7 @@ mod roots;
 mod stopped;
 
 pub use cards::CardWait;
-pub use interrupted::RESUME_NOTICE;
+pub use interrupted::{CRASH_RESUME_NOTICE, RESUME_NOTICE};
 pub use login::{AuthOmp, LOGIN_MODEL};
 pub use oauth::OAuthOwner;
 pub use restart::Restart;
@@ -434,9 +434,10 @@ struct Actor {
     oauth: Mutex<crate::oauth_relay::Flows>,
     /// The `omfp_card` calls waiting for an answer, by tool call id (DMN-911, AGT-097).
     cards: Mutex<HashMap<String, tokio::sync::oneshot::Sender<omfp_protocol::CardAnswer>>>,
-    /// A message went to omp as agent work and the turn it starts has not settled yet: the shutdown counts the thread
-    /// as mid-turn even before omp reports the turn (DMN-370). Cleared when the session settles, a prompt turns out to
-    /// be a local command, a send fails, or a new process starts.
+    /// A message went to omp as agent work and the turn it starts has not settled yet: the shutdown, or omp exiting on
+    /// its own, counts the thread as mid-turn even before omp reports the turn (DMN-370, DMN-377). Cleared when the
+    /// session settles, a prompt turns out to be a local command, a send fails, the process stops or exits, or a new
+    /// process starts.
     turn_requested: AtomicBool,
 }
 
@@ -1204,15 +1205,17 @@ impl Supervisor {
 
     /// Stops every process (DMN-005): closing the `omp-rpc` client closes omp's stdin, then terminates its process
     /// group. Gives up waiting after [`SHUTDOWN_GRACE`] in all, the marking of the interrupted turns (DMN-370) included.
-    /// Later starts are refused. The threads whose turn it cuts are marked interrupted first.
+    /// Later starts are refused. The threads whose turn it cuts are marked interrupted first, from the threads
+    /// unsettled the moment it begins: an omp that dies with the daemon may end before the marking.
     pub async fn shutdown(&self) {
         let deadline = Instant::now() + SHUTDOWN_GRACE;
         self.inner.shutting_down.store(true, Ordering::SeqCst);
+        let unsettled = self.unsettled();
         lock(&self.inner.widget_host).take();
         lock(&self.inner.agent_host).take();
         self.cancel_login(None);
         self.stop_predictor();
-        self.mark_interrupted().await;
+        self.mark_interrupted(unsettled).await;
         let actors: Vec<Arc<Actor>> = lock(&self.inner.actors).values().cloned().collect();
         let stops = actors.iter().map(|actor| async move {
             let _lifecycle = actor.lifecycle.lock().await;

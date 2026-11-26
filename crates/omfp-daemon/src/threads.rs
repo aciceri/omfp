@@ -10,7 +10,7 @@ use std::sync::Arc;
 use omfp_protocol::{CreatedBy, TitleSource};
 
 use crate::paths::DataDir;
-use crate::store::{Store, StoreError, Thread, ThreadFork, new_id, now_ms};
+use crate::store::{Interruption, Store, StoreError, Thread, ThreadFork, new_id, now_ms};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ThreadError {
@@ -183,13 +183,14 @@ impl Threads {
         Ok(self.store.set_thread_roots(id, roots)?)
     }
 
-    /// Marks the turns of `ids` interrupted by a daemon stop at `at` (DMN-370).
-    pub fn mark_interrupted(&self, ids: &[String], at: i64) -> Result<()> {
-        Ok(self.store.mark_interrupted(ids, at)?)
+    /// Marks the turns of `ids` interrupted by `cause` at `at` (DMN-370, DMN-377).
+    pub fn mark_interrupted(&self, ids: &[String], at: i64, cause: Interruption) -> Result<()> {
+        Ok(self.store.mark_interrupted(ids, at, cause)?)
     }
 
-    /// Takes the thread's interrupted mark: when its turn was interrupted, `None` when it was not (DMN-372, DMN-373).
-    pub fn take_interrupted(&self, id: &str) -> Result<Option<i64>> {
+    /// Takes the thread's interrupted mark: when its turn was interrupted and by what, `None` when it was not
+    /// (DMN-372, DMN-373).
+    pub fn take_interrupted(&self, id: &str) -> Result<Option<(i64, Interruption)>> {
         Ok(self.store.take_interrupted(id)?)
     }
 

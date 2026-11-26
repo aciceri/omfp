@@ -1,5 +1,7 @@
 //! `omfp_call { method, params? }` (AGT-041): any protocol method, by name, as the calling thread's agent.
 
+use std::fmt::Write as _;
+
 use omfp_protocol::decode_request;
 use serde_json::{Map, Value, json};
 
@@ -49,6 +51,19 @@ const READS_OWN_THREAD: &[&str] = &[
     "thread.git",
 ];
 
+/// Methods that only read one workspace: a missing `workspaceId` means the calling thread's workspace (AGT-041).
+const READS_OWN_WORKSPACE: &[&str] = &[
+    "workspaces.status",
+    "workspaces.diff",
+    "workspaces.read_file",
+    "workspaces.find_file",
+    "workspaces.mcp_servers",
+    "mcp.tools",
+    "jobs.list",
+    "jobs.runs",
+    "views.errors",
+];
+
 fn run(context: ToolContext, arguments: Map<String, Value>) -> ToolFuture {
     Box::pin(async move {
         let method = match arguments.get("method") {
@@ -68,18 +83,31 @@ fn run(context: ToolContext, arguments: Map<String, Value>) -> ToolFuture {
                 .entry("threadId")
                 .or_insert_with(|| Value::String(own.to_owned()));
         }
+        let own_workspace = context.workspace_id.as_deref();
+        if let Some(own) = own_workspace
+            && READS_OWN_WORKSPACE.contains(&method.as_str())
+        {
+            params
+                .entry("workspaceId")
+                .or_insert_with(|| Value::String(own.to_owned()));
+        }
         if let Some(why) = not_for_agents(&method) {
             return Err(why);
         }
         let frame = json!({ "id": CALL, "type": "request", "method": method, "params": params });
         let request = decode_request(&frame.to_string()).map_err(|error| {
-            let text = format!("{error}; {METHODS_URL} lists the methods and their params");
-            match own_thread {
-                Some(own) if text.contains("missing field `threadId`") => {
-                    format!("{text} (your own thread is {own})")
-                }
-                _ => text,
+            let mut text = format!("{error}; {METHODS_URL} lists the methods and their params");
+            if let Some(own) = own_thread
+                && text.contains("missing field `threadId`")
+            {
+                let _ = write!(text, " (your own thread is {own})");
             }
+            if let Some(own) = own_workspace
+                && text.contains("missing field `workspaceId`")
+            {
+                let _ = write!(text, " (your own workspace is {own})");
+            }
+            text
         })?;
         let result = call(&context, request.call)
             .await
@@ -228,6 +256,37 @@ mod tests {
         assert!(error.contains("missing field `threadId`"), "{error}");
         assert!(
             error.contains(&format!("(your own thread is {})", harness.thread)),
+            "{error}"
+        );
+    }
+
+    // spec: AGT-041
+    #[tokio::test]
+    async fn reading_workspace_methods_default_to_the_calling_threads_workspace() {
+        let harness = Harness::new().await;
+
+        for method in ["jobs.list", "workspaces.mcp_servers", "views.errors"] {
+            let implicit = call_tool(&harness, json!({ "method": method, "params": {} }))
+                .await
+                .unwrap();
+            let explicit = call_tool(
+                &harness,
+                json!({ "method": method, "params": { "workspaceId": harness.workspace } }),
+            )
+            .await
+            .unwrap();
+            assert_eq!(implicit, explicit, "{method}");
+        }
+
+        let error = call_tool(
+            &harness,
+            json!({ "method": "jobs.run", "params": { "job": "build" } }),
+        )
+        .await
+        .unwrap_err();
+        assert!(error.contains("missing field `workspaceId`"), "{error}");
+        assert!(
+            error.contains(&format!("(your own workspace is {})", harness.workspace)),
             "{error}"
         );
     }

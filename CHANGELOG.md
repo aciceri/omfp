@@ -36,6 +36,9 @@ The version's section is also the source of the GitHub release notes.
   or declared in the workspace's `.omp/lsp.json`).
 - Archived threads in the left column are listed most recently archived first, so the thread you just archived is at
   the top of "Archived (N)".
+- An agent's `omfp_call` to a read-only method of one workspace (`jobs.list`, `jobs.runs`, `workspaces.mcp_servers`,
+  `workspaces.status`, `workspaces.read_file`, …) without `workspaceId` now reads its own workspace instead of failing;
+  methods that change something still require it, and their error names the agent's workspace id (#318).
 
 ### Fixed
 

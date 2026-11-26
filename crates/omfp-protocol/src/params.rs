@@ -647,6 +647,11 @@ pub struct LiveConnected {
     pub sdp_answer: String,
     /// The realtime voice omp uses.
     pub voice: String,
+    /// The live instructions as the voice reads them, in appends of at most 500 bytes, which the window sends to the
+    /// session as silent context once the peer's data channel opens (DMN-118): the realtime endpoint ignores the
+    /// instructions omp passes at the start.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub context: Vec<String>,
 }
 
 /// `thread.live_start` result: the voice omp uses once the host's session records (PRT-053, DMN-109).

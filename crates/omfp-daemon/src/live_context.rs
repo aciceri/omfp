@@ -1,6 +1,8 @@
 //! The instructions of a live voice session (DMN-105): omp gives its realtime model only the live prompt, so the daemon
 //! sends its own prompt, which makes the voice a relay that forwards to the agent (DMN-115), and the thread's
-//! conversation.
+//! conversation. The Codex realtime endpoint omp signals ignores a call's `instructions` (checked on real calls with
+//! omp 19.2.0) and refuses to change them later, so the daemon also hands them, rendered, to the window, which appends
+//! them to the session as silent context over the peer's data channel (DMN-118).
 
 use omfp_core::ThreadState;
 use omp_rpc::{AgentMessage, AssistantContent, AssistantMessage, MessageContent, UserContent};
@@ -68,6 +70,86 @@ pub fn live_instructions(
         Some(context) => format!("{prompt}{context}"),
         None => prompt,
     }
+}
+
+/// The OS account omp renders the prompt's `{{username}}` and `{{firstName}}` with (`currentUser` of omp's live
+/// controller): the account name, and its first part split at `.`, `_`, `-` or whitespace.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LiveUser {
+    pub username: String,
+    pub first_name: String,
+}
+
+impl LiveUser {
+    /// The daemon's account: `$USER`, else `$LOGNAME`, else `user`, as omp falls back.
+    #[must_use]
+    pub fn from_env() -> Self {
+        let username = ["USER", "LOGNAME"]
+            .into_iter()
+            .find_map(|key| {
+                std::env::var(key)
+                    .ok()
+                    .filter(|value| !value.trim().is_empty())
+            })
+            .unwrap_or_else(|| "user".to_owned());
+        Self::new(username.trim())
+    }
+
+    #[must_use]
+    pub fn new(username: &str) -> Self {
+        let first_name = username
+            .split(|c: char| matches!(c, '.' | '_' | '-') || c.is_whitespace())
+            .find(|part| !part.is_empty())
+            .unwrap_or("there")
+            .to_owned();
+        Self {
+            username: username.to_owned(),
+            first_name,
+        }
+    }
+}
+
+/// How many UTF-8 bytes one context append carries at most: omp's `CONTEXT_CHUNK_BYTES` for its own context appends.
+const CONTEXT_CHUNK_BYTES: usize = 500;
+
+/// The first context append: without it the voice acknowledges the instructions aloud as they arrive.
+const SETUP_START: &str = "Silent setup of this voice session: your instructions and context follow. Never answer or \
+                           acknowledge them; stay silent until the user speaks.\n";
+
+/// The last context append.
+const SETUP_END: &str = "End of the silent setup. Stay silent until the user speaks, then answer in the user's language.\n";
+
+/// The live instructions as the voice reads them (DMN-118), for the window's context appends: omp's two variables
+/// filled in for `user`, every escaped `{{` back to `{{`, in appends of at most 500 UTF-8 bytes, cut at line ends
+/// where a line fits and at character boundaries where it does not, between a first and a last append telling the
+/// voice to stay silent (checked on real calls: without them it acknowledges the instructions aloud).
+#[must_use]
+pub fn window_context(instructions: &str, user: &LiveUser) -> Vec<String> {
+    let text = instructions
+        .replace("{{firstName}}", &user.first_name)
+        .replace("{{username}}", &user.username)
+        .replace(ESCAPED_BRACES, "{{");
+    if text.is_empty() {
+        return Vec::new();
+    }
+    let mut chunks = vec![SETUP_START.to_owned()];
+    let mut chunk = String::new();
+    for line in text.split_inclusive('\n') {
+        if chunk.len() + line.len() > CONTEXT_CHUNK_BYTES && !chunk.is_empty() {
+            chunks.push(std::mem::take(&mut chunk));
+        }
+        for character in line.chars() {
+            if chunk.len() + character.len_utf8() > CONTEXT_CHUNK_BYTES {
+                chunks.push(std::mem::take(&mut chunk));
+            }
+            chunk.push(character);
+        }
+    }
+    if !chunk.is_empty() {
+        chunks.push(chunk);
+    }
+    chunks.push(SETUP_END.to_owned());
+    chunks
 }
 
 /// The `<about>` section (DMN-117): omfp, the voice and the agent, the workspace with its repositories, and the agent's
@@ -862,6 +944,47 @@ mod tests {
                 .matches("{{")
                 .count(),
             0
+        );
+    }
+
+    // spec: DMN-118
+    #[test]
+    fn the_window_gets_the_instructions_rendered_as_omp_would() {
+        let account = LiveUser::new("mario.rossi");
+        assert_eq!(account.first_name, "mario");
+        assert_eq!(LiveUser::new("").first_name, "there");
+        let state = state(&[user("render {{x}}")]);
+        let instructions = live_instructions("", &about(), &state, &[]);
+
+        let chunks = window_context(&instructions, &account);
+        let text = chunks[1..chunks.len() - 1].concat();
+
+        assert!(text.starts_with(
+            "You: omfp's voice, the realtime voice between mario (OS account: mario.rossi) and their coding agent"
+        ));
+        assert!(text.contains("User: render {{x}}"), "{text}");
+        assert!(!text.contains("{{default"));
+        assert!(!text.contains("{{firstName}}") && !text.contains("{{username}}"));
+    }
+
+    // spec: DMN-118
+    #[test]
+    fn the_window_context_comes_in_appends_of_at_most_500_bytes() {
+        let long_line = "é".repeat(400);
+        let instructions = format!("short line\n{long_line}\nlast\n");
+
+        let chunks = window_context(&instructions, &LiveUser::new("u"));
+
+        assert_eq!(chunks.first().map(String::as_str), Some(SETUP_START));
+        assert_eq!(chunks.last().map(String::as_str), Some(SETUP_END));
+        let body = &chunks[1..chunks.len() - 1];
+        assert_eq!(body.concat(), instructions, "nothing lost, in order");
+        assert!(chunks.iter().all(|chunk| chunk.len() <= 500), "{chunks:?}");
+        assert_eq!(body[0], "short line\n", "a line that fits is not cut");
+        assert!(body.len() >= 3);
+        assert_eq!(
+            window_context("", &LiveUser::new("u")),
+            Vec::<String>::new()
         );
     }
 }

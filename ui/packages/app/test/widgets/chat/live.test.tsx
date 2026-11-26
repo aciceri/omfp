@@ -56,6 +56,7 @@ class FakeLink implements LiveLink {
   readonly offer = OFFER;
   readonly source = new FakeSource();
   readonly answers: string[] = [];
+  readonly contexts: string[][] = [];
   readonly muted: boolean[] = [];
   closed = false;
   answerError: Error | undefined;
@@ -65,6 +66,10 @@ class FakeLink implements LiveLink {
       throw this.answerError;
     }
     this.answers.push(sdp);
+  }
+
+  context(chunks: readonly string[]): void {
+    this.contexts.push([...chunks]);
   }
 
   setMuted(muted: boolean): void {
@@ -231,6 +236,16 @@ describe("live voice", () => {
     await answer(live);
     expect(live.media.link.answers).toEqual([ANSWER]);
     expect(live.media.link.closed).toBe(false);
+  });
+
+  // spec: DMN-118
+  test("the window hands the peer the context the daemon returned, after the answer", async () => {
+    const live = renderLive();
+    await press(mic());
+    const [call] = live.client.callsTo("thread.live_connect");
+    await act(async () => call?.resolve({ sdpAnswer: ANSWER, voice: "sol", context: ["You: omfp's voice", "…"] }));
+    expect(live.media.link.answers).toEqual([ANSWER]);
+    expect(live.media.link.contexts).toEqual([["You: omfp's voice", "…"]]);
   });
 
   // spec: UI-108

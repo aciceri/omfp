@@ -2444,7 +2444,7 @@ async fn numbered(daemon: &TestDaemon, name: &str) -> (Client, u64) {
 
 const OFFER: &str = "v=0\r\na=setup:actpass\r\na=mid:0\r\n";
 
-// spec: PRT-051, DMN-100
+// spec: PRT-051, DMN-100, DMN-118
 #[tokio::test(flavor = "multi_thread")]
 async fn live_connect_relays_the_offer_and_records_the_owning_connection() {
     let daemon = daemon(&[]).await;
@@ -2460,9 +2460,13 @@ async fn live_connect_relays_the_offer_and_records_the_owning_connection() {
         )
         .await;
 
-    assert_eq!(
-        answer,
-        json!({ "sdpAnswer": omfp_daemon::agent::answer_for(OFFER), "voice": "sol" })
+    assert_eq!(answer["sdpAnswer"], omfp_daemon::agent::answer_for(OFFER));
+    assert_eq!(answer["voice"], "sol");
+    // The live instructions, rendered, for the window to append (DMN-118).
+    let context: Vec<String> = serde_json::from_value(answer["context"].clone()).unwrap();
+    assert!(
+        context.concat().contains("You: omfp's voice"),
+        "{context:?}"
     );
     let mut follower = Follower::snapshot(&mut second, &thread, None).await;
     follower

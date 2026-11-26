@@ -17,6 +17,9 @@ expression: golden
     "id": "c42",
     "ok": true,
     "result": {
+      "context": [
+        "You: omfp's voice, the realtime voice between ada (OS account: ada) …"
+      ],
       "sdpAnswer": "v=0\r\no=- 7215 1 IN IP4 0.0.0.0\r\n…",
       "voice": "maple"
     },

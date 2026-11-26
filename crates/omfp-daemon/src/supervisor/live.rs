@@ -37,18 +37,19 @@ pub(super) const LIVE_SILENCE: Duration = Duration::from_mins(10);
 
 impl Supervisor {
     /// Starts a live voice session for `owner` on the client's peer (DMN-100), speaking with `voice` when given
-    /// (DMN-112). Returns omp's SDP answer once the call is signaled.
+    /// (DMN-112). Returns omp's SDP answer once the call is signaled, and the live instructions as the window appends
+    /// them to the session (DMN-118).
     pub async fn live_connect(
         &self,
         id: &str,
         owner: LiveOwner,
         sdp_offer: String,
         voice: Option<LiveVoice>,
-    ) -> Result<LiveConnectResult> {
+    ) -> Result<(LiveConnectResult, Vec<String>)> {
         if sdp_offer.trim().is_empty() {
             return Err(SupervisorError::EmptyOffer);
         }
-        let answer = self
+        let (answer, instructions) = self
             .open_live(id, owner, |instructions| {
                 OmpCall::LiveConnect(LiveConnectCommand {
                     sdp_offer,
@@ -57,9 +58,14 @@ impl Supervisor {
                 })
             })
             .await?;
-        serde_json::from_value(answer).map_err(|error| {
+        let answer = serde_json::from_value(answer).map_err(|error| {
             SupervisorError::Internal(format!("unexpected live_connect answer: {error}"))
-        })
+        })?;
+        let context = crate::live_context::window_context(
+            &instructions,
+            &crate::live_context::LiveUser::from_env(),
+        );
+        Ok((answer, context))
     }
 
     /// Starts a live voice session for `owner` on the daemon machine's microphone and speakers (DMN-109), speaking
@@ -70,7 +76,7 @@ impl Supervisor {
         owner: LiveOwner,
         voice: Option<LiveVoice>,
     ) -> Result<String> {
-        let answer = self
+        let (answer, _) = self
             .open_live(id, owner, |instructions| {
                 OmpCall::LiveStart(LiveStartCommand {
                     voice: voice.map(|voice| voice.as_str().to_owned()),
@@ -91,13 +97,14 @@ impl Supervisor {
     }
 
     /// Opens the thread's one live session (DMN-101) for `owner`: starts omp when needed, records the owner as a
-    /// `live_session` event, then sends omp the command `call` builds from the live instructions (DMN-105).
+    /// `live_session` event, then sends omp the command `call` builds from the live instructions (DMN-105). Returns
+    /// omp's answer and those instructions.
     async fn open_live(
         &self,
         id: &str,
         owner: LiveOwner,
         call: impl FnOnce(String) -> OmpCall,
-    ) -> Result<Value> {
+    ) -> Result<(Value, String)> {
         let actor = self.actor(id).await?;
         let slot = self.inner.voice_ids.fetch_add(1, Ordering::SeqCst);
         {
@@ -143,10 +150,10 @@ impl Supervisor {
         });
         self.push(&actor, ThreadEvent::LiveSession { owner: Some(owner) });
         self.watch_silence(&actor, slot);
-        let call = call(instructions);
+        let call = call(instructions.clone());
         let answer = blocking(move || process.call(call)).await?;
         actor.touch();
-        answer.map_err(|error| {
+        let answer = answer.map_err(|error| {
             match &error {
                 // omp refused before a session existed: no `live_end` will close it.
                 omp_rpc::Error::Command { error, .. }
@@ -164,7 +171,8 @@ impl Supervisor {
                 }
             }
             live_failure(error)
-        })
+        })?;
+        Ok((answer, instructions))
     }
 
     /// Stops the thread's live voice session (DMN-102); a thread whose omp does not run has none, and omp succeeds

@@ -339,12 +339,13 @@ impl Connection {
             Call::ThreadLiveConnect(params) => {
                 let (supervisor, owner) = (services.supervisor.clone(), self.live_owner());
                 self.respond_later(id, async move {
-                    let answer = supervisor
+                    let (answer, context) = supervisor
                         .live_connect(&params.thread_id, owner, params.sdp_offer, params.voice)
                         .await?;
                     to_value(&LiveConnected {
                         sdp_answer: answer.sdp_answer,
                         voice: answer.voice,
+                        context,
                     })
                 });
             }

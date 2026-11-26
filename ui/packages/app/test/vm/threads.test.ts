@@ -270,6 +270,22 @@ describe("thread list", () => {
     return sidebarSections(threads, workspaces, typed);
   }
 
+  // spec: UI-026, UI-620
+  test("archived threads go most recently archived first, ties by position then id, filter or not", () => {
+    const threads = [
+      thread("x1", "old one", "w", { archivedAt: 1, position: 0 }),
+      thread("x2", "new one", "w", { archivedAt: 9, position: 1 }),
+      thread("x4", "tie late", "w", { archivedAt: 5, position: 3 }),
+      thread("x5", "tie same", "w", { archivedAt: 5, position: 2 }),
+      thread("x3", "tie early", "w", { archivedAt: 5, position: 2 }),
+      thread("live", "live one", "w", { position: 4 }),
+    ];
+    const [all] = sidebarSections(threads, [workspace("w")], NO_FILTER);
+    expect(all?.archivedIds).toEqual(["x2", "x3", "x5", "x4", "x1"]);
+    const [typed] = sidebarSections(threads, [workspace("w")], filter("one"));
+    expect(typed?.archivedIds).toEqual(["x2", "x1"]);
+  });
+
   // spec: UI-989
   test("next and previous thread follow the column across workspaces and wrap around", () => {
     const all = column();

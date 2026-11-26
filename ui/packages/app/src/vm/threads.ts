@@ -194,7 +194,8 @@ export interface Section {
   /** Its non-archived threads that pass the filter, by `position` (UI-620); without a filter, not those listed under
    * its jobs (UI-992). */
   readonly threadIds: readonly string[];
-  /** Its archived threads that pass the filter, by `position` (UI-026, UI-620). */
+  /** Its archived threads that pass the filter, most recently archived first (`archivedAt` descending, ties by
+   * `position`, then id; UI-026). */
   readonly archivedIds: readonly string[];
   /** Its threads listed under their job's row rather than among its threads, filter or not (UI-992). */
   readonly jobThreadIds: readonly string[];
@@ -293,7 +294,10 @@ export function sidebarSections(
         threadIds: shown
           .filter((thread) => !isArchived(thread) && (filtering || !underJobs.includes(thread)))
           .map((thread) => thread.id),
-        archivedIds: shown.filter(isArchived).map((thread) => thread.id),
+        archivedIds: shown
+          .filter(isArchived)
+          .sort((a, b) => (b.archivedAt ?? 0) - (a.archivedAt ?? 0) || a.position - b.position || compare(a.id, b.id))
+          .map((thread) => thread.id),
         jobThreadIds: underJobs.map((thread) => thread.id),
       };
     })

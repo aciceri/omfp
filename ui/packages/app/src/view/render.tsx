@@ -251,9 +251,9 @@ function useTabBar(selected: string | undefined): RefObject<HTMLDivElement | nul
 /**
  * `g t` / `g T` (UI-095): the tabs container holding `anchor` (its tab bar, or a marker) answers {@link TAB_STEP_EVENT}
  * from inside it, selecting the next or previous of its tabs `ids` (wrapping around) and focusing the pane of the tab it
- * shows. `TabsNode` and a phone's tabbed cells (`Cells`) both use it.
+ * shows. `TabsNode`, a phone's tabbed cells (`Cells`) and the floating file panel use it.
  */
-function useTabSteps(
+export function useTabSteps(
   anchor: RefObject<HTMLElement | null>,
   ids: readonly string[],
   selected: string | undefined,

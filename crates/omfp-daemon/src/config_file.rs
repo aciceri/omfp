@@ -709,6 +709,7 @@ j = "nav.next"
 
         let update = SetSettingsParams {
             ui: None,
+            daemon: None,
             keymap: Some(vec![
                 entry(KeymapMode::Threads, "g g", ""),
                 entry(KeymapMode::View, "Ctrl-w x", "pane.right"),

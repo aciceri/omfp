@@ -54,12 +54,11 @@ The version's section is also the source of the GitHub release notes.
   the transcript of the voice conversation so far, so it sees what you actually said and not only the voice's wording.
 - Live voice knows who it is and where it runs: omfp's voice for your agent, the thread's workspace, its repositories
   and the agent's model, also on a new thread; before, it introduced itself as ChatGPT running in the cloud.
-- Live voice now actually reads omfp's instructions and the thread's context in browsers, on phones and in the macOS
-  app: the realtime service ignores the instructions given when the call starts, so the window sends them as silent
-  context once the call connects. Before, the voice knew nothing of the thread, the workspace or its role and said it
-  was ChatGPT. It also hears of the chat as it moves on: what you type in the thread and the agent's answers reach it
-  after each turn, so `chat changed since start` no longer shows there. The Linux desktop app, whose webview has no
-  WebRTC, still lacks both.
+- Live voice now actually knows its role and where it runs in browsers, on phones and in the macOS app: the realtime
+  service ignores the instructions given when the call starts, so the window sends omfp's prompt and the workspace
+  facts as silent context once the call connects. Before, the voice said it was ChatGPT. The thread's conversation is
+  not sent that way: the voice took its old requests for new ones and started answering and forwarding them before you
+  spoke. The Linux desktop app, whose webview has no WebRTC, still lacks this.
 - Agents know how language servers work in a thread: omp starts them per repository from the daemon's `PATH`, never
   from a dev shell. Without one an agent falls back to text search quietly instead of retrying `lsp` or asking you to
   install a server; ask it why `lsp` finds none and it explains how to get one (installed where the daemon sees it,

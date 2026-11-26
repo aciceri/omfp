@@ -12,11 +12,10 @@
  */
 
 import { CallError } from "@omfp/client";
-import type { ThreadState } from "@omfp/core";
 import { AnalyserSource, type Levels, LevelsSource, SILENT_SOURCE, type SpectrumSource, Tap } from "@omfp/kit";
 import { type LiveVoice, threadTopic } from "@omfp/protocol";
 import { strings } from "../strings/index.ts";
-import { contextChunks, IDLE, type LiveSupport, type LocalLive, liveChatUpdate, liveSupport } from "../vm/live.ts";
+import { IDLE, type LiveSupport, type LocalLive, liveSupport } from "../vm/live.ts";
 import type { FrameStore } from "./frame-store.ts";
 import type { SdkClient, TopicRefs } from "./host.tsx";
 import { DRAFT_THREAD, SELECTED_THREAD } from "./keys.ts";
@@ -137,11 +136,6 @@ export class LiveClient {
   #release: (() => void)[] = [];
   /** The thread state showed this window's session: from then on its absence means it ended. */
   #seen = false;
-  /**
-   * The open `live_connect` session's peer and the transcript index the voice knows the chat up to (UI-213):
-   * `undefined` until the thread state shows the session, then its `context_end`.
-   */
-  #chat: { readonly link: LiveLink; from: number | undefined } | undefined;
   /** The open session's peer reached `connected`. */
   #connected = false;
   #speakingUntil = 0;
@@ -322,7 +316,6 @@ export class LiveClient {
     try {
       await link.answer(answer);
       link.context(context);
-      this.#chat = { link, from: undefined };
     } catch (error) {
       if (this.#link === link) {
         this.#stop(threadId);
@@ -472,7 +465,6 @@ export class LiveClient {
   #close(): void {
     const link = this.#link;
     this.#link = undefined;
-    this.#chat = undefined;
     for (const release of this.#release) {
       release();
     }
@@ -504,31 +496,9 @@ export class LiveClient {
     const live = view.state.live;
     if (live !== null && live.owner.connection === connection) {
       this.#seen = true;
-      this.#tellChat(view.state);
     } else if (this.#seen) {
       this.#close();
       this.#set(IDLE);
-    }
-  }
-
-  /**
-   * Appends to this window's `live_connect` session what the chat added since the voice last heard of it, once each
-   * turn settles (UI-213): omp tells the voice only of the turns it started.
-   */
-  #tellChat(state: ThreadState): void {
-    const chat = this.#chat;
-    if (chat === undefined || this.#link !== chat.link || state.live === null) {
-      return;
-    }
-    const from = chat.from ?? state.live.context_end;
-    chat.from = from;
-    if (!state.settled) {
-      return;
-    }
-    const update = liveChatUpdate(state.transcript, from);
-    chat.from = state.transcript.length;
-    if (update !== undefined) {
-      chat.link.context(contextChunks(update));
     }
   }
 
@@ -609,10 +579,14 @@ async function openPeer(onState: (state: RTCPeerConnectionState) => void): Promi
     // Not awaited: without a user activation `resume` waits for one; the analysers stay silent until then.
     void context.resume().catch(() => undefined);
     const output = voiceOutput(context);
-    // The element plays the voice itself only while the context waits for a user activation.
-    const follow = () => {
-      audio.muted = context.state === "running";
-    };
+    // The element plays the voice itself only while the context waits for a user activation; both stay silent while
+    // the voice is held (UI-181).
+    const hold = new VoiceHold(() => {
+      const playback = voicePlayback(hold.held, context.state === "running");
+      audio.muted = playback.elementMuted;
+      output.gain.value = playback.gain;
+    });
+    const follow = () => hold.apply();
     context.addEventListener("statechange", follow);
     source.mic = new Tap(context, context.createMediaStreamSource(microphone));
     const [track] = microphone.getAudioTracks();
@@ -636,6 +610,7 @@ async function openPeer(onState: (state: RTCPeerConnectionState) => void): Promi
       }
     };
     events.addEventListener("open", flush);
+    events.addEventListener("message", (event) => hold.message(event.data));
     peer.addEventListener("track", (event) => {
       const stream = event.streams[0] ?? new MediaStream([event.track]);
       // Chromium feeds a remote WebRTC stream into Web Audio only while a media element plays it.
@@ -658,6 +633,9 @@ async function openPeer(onState: (state: RTCPeerConnectionState) => void): Promi
       source,
       answer: (sdp) => peer.setRemoteDescription({ type: "answer", sdp }),
       context(chunks) {
+        if (chunks.length > 0) {
+          hold.start();
+        }
         pending.push(...chunks);
         if (events.readyState === "open") {
           flush();
@@ -676,8 +654,63 @@ async function openPeer(onState: (state: RTCPeerConnectionState) => void): Promi
   }
 }
 
+/**
+ * Keeps the voice's audio silent from the first context append until the user first speaks (UI-181): while the window
+ * appends the live instructions the voice may answer them aloud ("Mm-hmm"), however it is told not to (checked on real
+ * calls). `apply` makes the playback follow {@link held}.
+ */
+export class VoiceHold {
+  readonly #apply: () => void;
+  #held = false;
+
+  constructor(apply: () => void) {
+    this.#apply = apply;
+  }
+
+  get held(): boolean {
+    return this.#held;
+  }
+
+  /** Makes the playback follow the hold, e.g. once the audio context changed state. */
+  apply(): void {
+    this.#apply();
+  }
+
+  /** The window starts appending context: the voice goes silent. */
+  start(): void {
+    this.#held = true;
+    this.#apply();
+  }
+
+  /** A message of the `oai-events` channel: the first `input_transcript.added` (the user speaking) releases the hold. */
+  message(data: unknown): void {
+    if (!this.#held || typeof data !== "string") {
+      return;
+    }
+    let type: unknown;
+    try {
+      const event: unknown = JSON.parse(data);
+      type = typeof event === "object" && event !== null && "type" in event ? event.type : undefined;
+    } catch {
+      return;
+    }
+    if (type === "input_transcript.added") {
+      this.#held = false;
+      this.#apply();
+    }
+  }
+}
+
+/**
+ * How the remote voice plays: through Web Audio at {@link VOICE_GAIN} once the context runs, else through the media
+ * element; neither while `held` (UI-181).
+ */
+export function voicePlayback(held: boolean, contextRunning: boolean): { elementMuted: boolean; gain: number } {
+  return { elementMuted: held || contextRunning, gain: held ? 0 : VOICE_GAIN };
+}
+
 /** The remote voice's way to the speakers: {@link VOICE_GAIN}, then a limiter so the louder peaks do not clip. */
-function voiceOutput(context: AudioContext): AudioNode {
+function voiceOutput(context: AudioContext): GainNode {
   const gain = context.createGain();
   gain.gain.value = VOICE_GAIN;
   const limiter = context.createDynamicsCompressor();

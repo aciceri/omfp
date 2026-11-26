@@ -347,7 +347,7 @@ describe("transport suite", () => {
     TEST_MS,
   );
 
-  // spec: TST-030, PRT-050, PRT-051, DMN-100, DMN-101, DMN-102, DMN-103
+  // spec: TST-030, PRT-050, PRT-051, DMN-100, DMN-101, DMN-102, DMN-103, DMN-118
   test(
     "live voice",
     async () => {
@@ -366,7 +366,13 @@ describe("transport suite", () => {
         const blank = await owner.call("thread.live_connect", { threadId: thread, sdpOffer: "" }).catch(failure);
         expect(blank).toMatchObject({ kind: "daemon", error: { code: "bad_request" } });
         const answer = await owner.call("thread.live_connect", { threadId: thread, sdpOffer: offer });
-        expect(answer).toEqual({ sdpAnswer: "v=0\r\na=setup:active\r\na=mid:0\r\n", voice: "sol" });
+        expect(answer.sdpAnswer).toBe("v=0\r\na=setup:active\r\na=mid:0\r\n");
+        expect(answer.voice).toBe("sol");
+        // omfp's prompt and `<about>` section for the window to append, never the thread's conversation (DMN-118).
+        const context = (answer.context ?? []).join("");
+        expect(context.includes("You: omfp's voice")).toBe(true);
+        expect(context.includes("</about>")).toBe(true);
+        expect(context.includes("<thread-context>")).toBe(false);
         await until(
           watcher,
           "the listening session",

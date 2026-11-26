@@ -2268,7 +2268,7 @@ fn daemon_settings_carry_the_archived_thread_lifetime_as_written() {
         ..omfp_protocol::Settings::default()
     };
     assert_eq!(
-        serde_json::to_value(&settings).unwrap(),
+        serde_json::to_value(settings).unwrap(),
         json!({
             "daemon": { "deleteArchivedAfter": "14d" },
             "ui": {},

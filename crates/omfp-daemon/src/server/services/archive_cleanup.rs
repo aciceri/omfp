@@ -60,7 +60,7 @@ impl Services {
         };
         let mut deleted = Vec::new();
         for thread in listed {
-            if !thread.archived_at.is_some_and(|at| at <= cutoff) {
+            if thread.archived_at.is_none_or(|at| at > cutoff) {
                 continue;
             }
             if !self.jobs.running_started_by(&thread.id).is_empty() {

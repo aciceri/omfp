@@ -243,7 +243,7 @@ export function useCommand(command: Command): void {
       ...(widget === undefined ? {} : { widget }),
       args: (before) => latest.current.args?.(before) ?? [],
       enabled: (args) => latest.current.enabled?.(args) ?? true,
-      run: (args) => latest.current.run(args),
+      run: (args, element) => latest.current.run(args, element),
     });
   }, [commands, id, scope, title, description, widget]);
 }

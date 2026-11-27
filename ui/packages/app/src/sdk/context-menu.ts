@@ -173,7 +173,7 @@ export function contextMenuEntries(
   return entries;
 }
 
-/** Runs `entry` on `target`: its command in the target's scopes, the target as its argument. */
+/** Runs `entry` on `target`: its command in the target's scopes, the target as its argument and its element. */
 export function runContextEntry(commands: CommandRegistry, entry: ContextMenuEntry, target: ContextTarget): boolean {
-  return commands.run(entry.command, [target.argument], scopesAt(target.element));
+  return commands.run(entry.command, [target.argument], scopesAt(target.element), target.element);
 }

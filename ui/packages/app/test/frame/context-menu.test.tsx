@@ -14,7 +14,7 @@ import { GlobalCommands } from "../../src/frame/commands.tsx";
 import { ContextMenuLayer, MENU_LONG_PRESS_MS } from "../../src/frame/context-menu.tsx";
 import { runRequested } from "../../src/frame/window-requests.tsx";
 import { DEFAULT_BINDINGS } from "../../src/keymap/keymap.ts";
-import { ERRORS, SELECTED_THREAD, SUCCESSES, useCommand, useContextMenu } from "../../src/sdk/index.ts";
+import { ERRORS, OPEN_FILES, SELECTED_THREAD, SUCCESSES, useCommand, useContextMenu } from "../../src/sdk/index.ts";
 import { TranscriptWidget } from "../../src/widgets/chat/index.ts";
 import { ThreadsWidget } from "../../src/widgets/threads/index.ts";
 import { thread, workspace } from "../support/fixtures.ts";
@@ -237,6 +237,20 @@ describe("the context menu", () => {
       expect(test.host.window.get(SUCCESSES).map((success) => success.text)).toEqual(["Copied the path src/lib.rs"]),
     );
     expect(await navigator.clipboard.readText()).toBe("src/lib.rs");
+  });
+
+  // spec: UI-116, UI-316
+  test("Open on a diff's reference opens its diff, as clicking it does", async () => {
+    const test = page(
+      <span data-omfp-path="fe/src/lib.rs" data-omfp-diff="" data-testid="path">
+        lib.rs
+      </span>,
+    );
+    fireEvent.contextMenu(screen.getByTestId("path"), { clientX: 5, clientY: 5 });
+    await test.user.click(item("Open"));
+    expect(test.host.window.get(OPEN_FILES).w1?.tabs.map(({ path, diff }) => ({ path, diff }))).toEqual([
+      { path: "fe/src/lib.rs", diff: true },
+    ]);
   });
 
   // spec: UI-315, UI-316

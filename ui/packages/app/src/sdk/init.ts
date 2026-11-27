@@ -440,11 +440,11 @@ export class InitFiles {
           host.commands.register({
             ...command,
             init: run.file,
-            run: (args) =>
+            run: (args, element) =>
               this.#guard(
                 run,
                 (message) => text.command(command.id, message),
-                () => command.run(args),
+                () => command.run(args, element),
               ),
           }),
         ),

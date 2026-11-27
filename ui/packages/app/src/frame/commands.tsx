@@ -124,14 +124,16 @@ export function GlobalCommands({ viewIds, currentView, widgets, addWidget }: Glo
     title: titles.open,
     aliases: ["open"],
     enabled: () => currentWorkspaceId(host) !== undefined,
-    // `:open <path>[:<line>]`, else the path the focused element (or an ancestor) carries (UI-116).
-    run: (args) => {
+    // `:open <path>[:<line>]`, else the path the focused element (or an ancestor) carries (UI-116); a context menu's
+    // Open on a diff's reference (`omfp:changes`, an `edit` card) opens the diff, as clicking it does.
+    run: (args, element) => {
       if (args.length > 0) {
         // Explicit filenames are not inline prose: unknown extensions and spaces still name files.
         const argument = args.join(" ");
         const suffix = /^(.*?):(\d+)(?::\d+)?$/.exec(argument);
         openFile(host, suffix?.[1] ?? argument, {
           line: suffix?.[2] === undefined ? undefined : Number(suffix[2]),
+          diff: element === undefined ? undefined : focusedPath(element)?.options.diff,
         });
         return;
       }

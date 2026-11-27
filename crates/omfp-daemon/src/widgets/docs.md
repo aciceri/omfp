@@ -400,7 +400,7 @@ an init file, `useCommand` of a widget) with the clicked target as its one argum
 | `on` | The argument | Built-in items |
 | --- | --- | --- |
 | `message` | the message's index in its thread's transcript (`"2"`) | Fork from here (`thread.fork`, messages of the user and the assistant), Copy (`thread.copy`: that message as Markdown) |
-| `file` | its path, `<path>:<line>` when it points at a line (what `:open` takes) | Open (`file.open`), Copy path (`file.copyPath`, `:copy-path`) |
+| `file` | its path, `<path>:<line>` when it points at a line (what `:open` takes) | Open (`file.open`; a diff's reference, `data-omfp-diff`, opens as the diff), Copy path (`file.copyPath`, `:copy-path`) |
 | `thread` | the thread's id | Archive or Unarchive (`thread.archive`, `thread.unarchive`), Copy conversation (`thread.copy`), Export (`thread.export`) |
 
 Add items from an init file with `omfp.contextMenu`, or from a widget with `useContextMenu` (same shape) while it is
@@ -428,7 +428,8 @@ export default function init(omfp: InitApi) {
 ```
 
 A command's `enabled(args)` gets the target's argument when a menu asks (and `undefined` or `[]` from the `:` line and
-keys), so a command can offer itself on some targets only. Of the built-in commands, those in the table and
+keys), so a command can offer itself on some targets only; its `run(args, element)` also gets the target's element
+(`undefined` from the `:` line and keys). Of the built-in commands, those in the table and
 `thread.delete` read the argument; the others act on the focused item or the selected thread as their keys do (and
 `:rename <title>` takes a title), so name them in a menu only for that. A widget makes its own elements targets with
 the attributes the window uses: `data-omfp-path` (and `data-omfp-line`) for a file, `data-omfp-thread` for a thread,

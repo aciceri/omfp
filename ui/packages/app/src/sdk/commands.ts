@@ -37,7 +37,8 @@ export interface Command {
    * menu item passes its target, UI-315), so a command can offer itself for some targets only.
    */
   readonly enabled?: (args?: readonly string[]) => boolean;
-  run(args: readonly string[]): void | Promise<void>;
+  /** `element` is the target a context menu item runs it on (UI-315), `undefined` from the `:` line and keys. */
+  run(args: readonly string[], element?: Element): void | Promise<void>;
 }
 
 /** The HTML attribute naming a widget's command scope. */
@@ -102,13 +103,13 @@ export class CommandRegistry {
     return matching.find((command) => command.scope === undefined);
   }
 
-  /** Runs `name` in `scopes`; `false` when no enabled command answers to it. */
-  run(name: string, args: readonly string[] = [], scopes: readonly string[] = []): boolean {
+  /** Runs `name` in `scopes` (on a context menu's target `element`); `false` when no enabled command answers to it. */
+  run(name: string, args: readonly string[] = [], scopes: readonly string[] = [], element?: Element): boolean {
     const command = this.resolve(name, scopes, args);
     if (command === undefined) {
       return false;
     }
-    void command.run(args);
+    void command.run(args, element);
     return true;
   }
 

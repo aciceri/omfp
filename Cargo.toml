@@ -68,10 +68,12 @@ sha1 = "0.10"
 subtle = "2"
 tempfile = "3"
 # Desktop window (M7, D-15, S-04): Tauri 2 on WebKitGTK 4.1, behind `omfp`'s `desktop` feature. No bundled assets,
-# no IPC: the window loads the daemon's own UI over http. `custom-protocol` is Tauri's production mode (no dev URL).
+# no IPC: the window loads the daemon's own UI over http. `custom-protocol` is Tauri's production mode (no dev URL);
+# `unstable` gives the child webviews of macOS's web views (UI-686).
 tauri = { version = "2.12", default-features = false, features = [
   "wry",
   "custom-protocol",
+  "unstable",
 ] }
 # Tauri's build step has its own version line (2.7.x).
 tauri-build = { version = "2.7", default-features = false }
@@ -81,6 +83,9 @@ gio = "0.18"
 # The Linux desktop window's page zoom (UI-283): the zoom level and script message handlers of the WebKitGTK web view
 # behind Tauri's window, the version wry already builds.
 webkit2gtk = "2.0"
+# The Linux desktop window's web pages (UI-682): the GTK overlay that holds native web views over the window's page,
+# and their captures, the version Tauri's GTK3 stack already builds.
+gtk = "0.18"
 # macOS desktop (M11): posts the window's notifications (UI-252) with Foundation's `NSUserNotificationCenter`,
 # registers the app icon (UI-222) with AppKit's `NSImage`, reads the system accent (UI-512) with `NSColor` and finds
 # the window's WebKit storage under `NSHomeDirectory` (UI-250); the versions wry already builds, only the classes we

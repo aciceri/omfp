@@ -1,6 +1,6 @@
-//! The web frame journey of M17 (E2E-67, UI-670..UI-673, UI-679): a scripted agent mounts `omfp:web` on a page this
-//! test serves on another loopback port; the page shows inside the frame, in its own origin, gets no referrer, cannot
-//! reach the window nor navigate it, and Reload loads it again. Takes `omfp-web-frame.png` (in `/tmp` or
+//! The web view journey of M17 (E2E-67, UI-670..UI-672, UI-679): a scripted agent mounts `omfp:web` on a page this
+//! test serves on another loopback port; the page alone shows inside the frame (no toolbar), in its own origin, gets no
+//! referrer and cannot reach the window nor navigate it. Takes `omfp-web-frame.png` (in `/tmp` or
 //! `OMFP_SCREENSHOT_DIR`). Run with `just test-e2e`.
 
 use std::sync::{Arc, Mutex};
@@ -25,8 +25,8 @@ const PAGE: &str = r#"<!doctype html>
 </body></html>
 "#;
 
-const FRAME_CSS: &str =
-    "[data-testid=view] [data-widget=\"omfp:web\"][data-instance=preview] [data-testid=web-frame]";
+const FRAME_CSS: &str = "[data-testid=view] [data-widget=\"omfp:web\"][data-instance=preview] \
+                         [data-testid=web-frame-frame]";
 
 /// Serves [`PAGE`] on `127.0.0.1:<port 0>` and records each request's head.
 async fn serve_page() -> anyhow::Result<(String, Arc<Mutex<Vec<String>>>)> {
@@ -72,7 +72,7 @@ fn page_requests(requests: &Mutex<Vec<String>>) -> Vec<String> {
         .collect()
 }
 
-// spec: E2E-67, UI-670, UI-672, UI-673, UI-679
+// spec: E2E-67, UI-670, UI-672, UI-679
 #[tokio::test(flavor = "multi_thread")]
 async fn an_agent_frames_a_local_page_that_cannot_reach_or_navigate_the_window()
 -> anyhow::Result<()> {
@@ -97,34 +97,39 @@ async fn an_agent_frames_a_local_page_that_cannot_reach_or_navigate_the_window()
 
     journey.send("show me the dev server").await?;
     journey.reply("The preview is open.").await?;
+    let frame = FRAME_CSS;
     journey
-        .until("the framed page's load", async |page| {
-            Ok(
-                (page.attr(FRAME_CSS, "data-loaded").await?.as_deref() == Some("true"))
-                    .then_some(()),
-            )
+        .until("the framed page", async |page| {
+            page.element(frame).await?.enter_frame().await?;
+            let framed = page
+                .eval(
+                    "return document.querySelector('#framed') !== null;",
+                    Vec::new(),
+                )
+                .await;
+            page.driver.enter_default_frame().await?;
+            Ok((framed? == json!(true)).then_some(()))
         })
         .await?;
     assert_eq!(
-        journey
-            .text(&format!("{FRAME_CSS} [data-testid=web-frame-url]"))
-            .await?,
-        url
-    );
-    let frame = format!("{FRAME_CSS} [data-testid=web-frame-frame]");
-    assert_eq!(
-        journey.attr(&frame, "title").await?.as_deref(),
+        journey.attr(frame, "title").await?.as_deref(),
         Some("Preview")
     );
     assert_eq!(
-        journey.attr(&frame, "sandbox").await?.as_deref(),
+        journey.attr(frame, "sandbox").await?.as_deref(),
         Some(
             "allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
         )
     );
-
+    // The page alone: no toolbar around it (UI-670).
+    assert_eq!(
+        journey
+            .texts("[data-widget=\"omfp:web\"][data-instance=preview] [role=toolbar]")
+            .await?,
+        Vec::<String>::new()
+    );
     // Inside the frame: the page in its own origin, cut off from the window.
-    journey.element(&frame).await?.enter_frame().await?;
+    journey.element(frame).await?.enter_frame().await?;
     let inside = journey
         .eval(
             "const b = document.body; return [document.querySelector('#framed').textContent, b.dataset.origin, \
@@ -140,28 +145,11 @@ async fn an_agent_frames_a_local_page_that_cannot_reach_or_navigate_the_window()
     );
     journey.screenshot("web-frame").await?;
 
-    // Reload loads the page again; the window never left the daemon's page.
-    let before = page_requests(&requests).len();
-    journey
-        .click(&format!("{FRAME_CSS} [data-testid=web-frame-reload]"))
-        .await?;
-    journey
-        .until("the page requested again", async |_| {
-            Ok((page_requests(&requests).len() > before).then_some(()))
-        })
-        .await?;
-    journey
-        .until("the reloaded page's load", async |page| {
-            Ok(
-                (page.attr(FRAME_CSS, "data-loaded").await?.as_deref() == Some("true"))
-                    .then_some(()),
-            )
-        })
-        .await?;
+    // The window never left the daemon's page.
     assert_eq!(journey.driver.current_url().await?, window);
     // No referrer leaves the window (the daemon's address and the thread in it).
     let heads = page_requests(&requests);
-    assert!(heads.len() >= 2, "{heads:?}");
+    assert!(!heads.is_empty(), "{heads:?}");
     assert!(
         heads
             .iter()

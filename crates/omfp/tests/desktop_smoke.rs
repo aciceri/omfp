@@ -208,17 +208,11 @@ fn the_macos_window_has_webrtc_the_microphone_and_notifications() {
     assert_eq!(id.len(), 16);
 }
 
-/// The page a web frame shows in [`a_web_frame_loads_another_origin_and_the_window_stays_on_the_daemon`]: it tells the
-/// window it loaded, then tries to navigate the window away (its sandbox forbids it, UI-672).
-const FRAMED_PAGE: &str = r#"<!doctype html><title>Framed</title><h1>Framed page</h1>
-<script>
-  parent.postMessage("framed page loaded", "*");
-  try { top.location.href = "/escaped"; } catch {}
-</script>
-"#;
+/// The page `omfp:web` shows in [`omfp_web_is_a_native_view_and_the_window_stays_on_the_daemon`].
+const NATIVE_PAGE: &str = "<!doctype html><title>Native</title><h1>Native page</h1>\n";
 
-/// Serves [`FRAMED_PAGE`] on a loopback port until the test ends; returns its base URL and the request lines seen.
-fn serve_framed_page() -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+/// Serves [`NATIVE_PAGE`] on a loopback port until the test ends; returns its base URL and the request lines seen.
+fn serve_native_page() -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
     use std::io::{BufRead as _, BufReader, Write as _};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
@@ -240,8 +234,8 @@ fn serve_framed_page() -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>
             let _ = write!(
                 stream,
                 "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\n\
-                 Connection: close\r\n\r\n{FRAMED_PAGE}",
-                FRAMED_PAGE.len()
+                 Connection: close\r\n\r\n{NATIVE_PAGE}",
+                NATIVE_PAGE.len()
             );
         }
     });
@@ -300,29 +294,39 @@ fn serve_h264_page() -> String {
     base
 }
 
-// spec: TST-033, UI-677, UI-670, UI-672
+// spec: TST-033, UI-682, UI-685
 #[test]
-fn a_web_frame_loads_another_origin_and_the_window_stays_on_the_daemon() {
+fn omfp_web_is_a_native_view_and_the_window_stays_on_the_daemon() {
     let dir = tempfile::tempdir().unwrap();
     let data = dir.path().join("data");
     let workspaces = dir.path().join("workspaces");
-    let (base, requests) = serve_framed_page();
+    let (base, requests) = serve_native_page();
     // The user's init file makes the default view `omfp:web` on the page (there is no workspace, so no panel) and
-    // records the page's message.
+    // records what the window tells its placeholder: listened to as soon as it is in the page, before the window's
+    // script reports it (at the next animation frame) and a view loads anything.
     let config = dir.path().join(".config/omfp");
     std::fs::create_dir_all(&config).unwrap();
     std::fs::write(
         config.join("init.ts"),
         format!(
             r#"export default function init(omfp) {{
-  const loaded = (event) => {{
-    if (event.data === "framed page loaded") document.body.dataset.framedPage = event.origin;
+  const watch = () => {{
+    const placeholder = document.querySelector("[data-omfp-web-view]:not([data-watched])");
+    if (placeholder === null) return;
+    placeholder.dataset.watched = "";
+    placeholder.addEventListener("omfp-web-view-navigate", (event) => {{
+      document.body.dataset.nativeUrl = event.detail.url;
+    }});
+    placeholder.addEventListener("omfp-web-view-load", () => {{
+      document.body.dataset.nativePage = "loaded";
+    }});
   }};
-  window.addEventListener("message", loaded);
+  const observer = new MutationObserver(watch);
+  observer.observe(document.documentElement, {{ childList: true, subtree: true }});
   omfp.views.transform((views) =>
-    views.update("default", () => ["row", {{}}, ["omfp:web", {{ url: "{base}/page", title: "Framed" }}]]),
+    views.update("default", () => ["row", {{}}, ["omfp:web", {{ url: "{base}/page", title: "Native" }}]]),
   );
-  return () => window.removeEventListener("message", loaded);
+  return () => observer.disconnect();
 }}
 "#
         ),
@@ -336,7 +340,7 @@ fn a_web_frame_loads_another_origin_and_the_window_stays_on_the_daemon() {
             ("OMFP_SMOKE", "local"),
             (
                 "OMFP_SMOKE_WAIT",
-                &format!("body[data-framed-page=\"{base}\"]"),
+                &format!("body[data-native-page=\"loaded\"][data-native-url=\"{base}/page\"]"),
             ),
             // A model omp can use, so the window shows its view, not the first run's welcome (UI-500); nothing calls
             // the model.
@@ -361,7 +365,7 @@ fn a_web_frame_loads_another_origin_and_the_window_stays_on_the_daemon() {
         .find_map(|line| line.strip_prefix("OMFP_SMOKE_READY "))
         .map(|json| serde_json::from_str(json).unwrap())
         .unwrap();
-    // The window is still on the daemon's page; the frame loaded the page and nothing else.
+    // The window is still on the daemon's page; the native view loaded the page and nothing else.
     let href = state["href"].as_str().unwrap();
     assert!(
         href.starts_with("http://127.0.0.1:") && !href.starts_with(&base),
@@ -375,6 +379,72 @@ fn a_web_frame_loads_another_origin_and_the_window_stays_on_the_daemon() {
         .cloned()
         .collect();
     assert_eq!(pages, ["GET /page HTTP/1.1"], "{state}");
+}
+
+// spec: TST-033, UI-687
+#[cfg(target_os = "linux")]
+#[test]
+fn a_native_views_page_runs_its_scripts_and_posts_to_its_widget() {
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("data");
+    let workspaces = dir.path().join("workspaces");
+    let (base, _requests) = serve_native_page();
+    // The user's init file puts a placeholder of its own in the page, as `WebView` would: its setup's script posts
+    // the page's address through `window.omfp.post`, which the window hands back to the placeholder.
+    let config = dir.path().join(".config/omfp");
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::write(
+        config.join("init.ts"),
+        format!(
+            r#"export default function init() {{
+  const placeholder = document.createElement("div");
+  placeholder.style.cssText = "position:fixed;left:0;top:0;width:320px;height:240px;z-index:2147483647";
+  placeholder.dataset.omfpWebView = "smoke";
+  placeholder.dataset.url = "{base}/page";
+  placeholder.dataset.setup = JSON.stringify({{
+    scripts: ["window.omfp.post({{ href: location.href }})"],
+    channel: true,
+  }});
+  placeholder.addEventListener("omfp-web-view-message", (event) => {{
+    document.body.dataset.pageMessage = event.detail.data.href;
+  }});
+  document.body.append(placeholder);
+  return () => placeholder.remove();
+}}
+"#
+        ),
+    )
+    .unwrap();
+    let _daemon = BackgroundDaemon(&data);
+    let output = desktop_with(
+        dir.path(),
+        &[
+            ("OMFP_SMOKE", "local"),
+            (
+                "OMFP_SMOKE_WAIT",
+                &format!("body[data-page-message=\"{base}/page\"]"),
+            ),
+            ("ANTHROPIC_API_KEY", "sk-ant-omfp-test"),
+        ],
+        &[
+            "--data-dir",
+            data.to_str().unwrap(),
+            "--",
+            "--static-dir",
+            web_bundle().to_str().unwrap(),
+            "--workspaces-root",
+            workspaces.to_str().unwrap(),
+            "--bind",
+            "127.0.0.1:0",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout
+            .lines()
+            .any(|line| line.starts_with("OMFP_SMOKE_READY ")),
+        "{stdout}"
+    );
 }
 
 // spec: TST-033, ENV-030, UI-541
@@ -397,10 +467,14 @@ fn the_linux_desktop_decodes_h264_and_stays_responsive() {
     }}
   }};
   window.addEventListener("message", media);
-  omfp.views.transform((views) =>
-    views.update("default", () => ["row", {{}}, ["omfp:web", {{ url: "{base}/page", title: "H.264" }}]]),
-  );
-  return () => window.removeEventListener("message", media);
+  // A frame of the page itself: the codecs are the engine's, whatever shows the page.
+  const frame = document.createElement("iframe");
+  frame.src = "{base}/page";
+  document.body.append(frame);
+  return () => {{
+    window.removeEventListener("message", media);
+    frame.remove();
+  }};
 }}
 "#
         ),

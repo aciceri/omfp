@@ -22,19 +22,19 @@ afterAll(() => quiet.mockRestore());
 
 describe("omfp:web", () => {
   // spec: UI-670
-  test("is the built-in omfp:web, titled Web, showing its url prop in a frame named by its title prop", () => {
+  test("is the built-in omfp:web, titled Web: its url prop's page alone, named by its title prop", () => {
     expect(BUILTIN_WIDGETS.get("omfp:web")).toBe(WebWidget);
     expect(strings.shell.frame.widgetTitles["omfp:web"]).toBe("Web");
     render(<WebWidget url="http://localhost:5173/" title="Preview" />);
     const frame = screen.getByTestId("web-frame-frame");
     expect([frame.getAttribute("src"), frame.getAttribute("title")]).toEqual(["http://localhost:5173/", "Preview"]);
-    expect(screen.getByTestId("web-frame-url").textContent).toBe("http://localhost:5173/");
+    expect(screen.queryAllByRole("toolbar").length).toBe(0);
   });
 
   // spec: UI-670, UI-675
   test("a node without a usable url says so instead of a frame", () => {
     render(<WebWidget title={3} />);
-    expect(screen.getByTestId("web-frame-refused").dataset.reason).toBe("missing");
+    expect(screen.getByTestId("web-view-refused").dataset.reason).toBe("missing");
     expect(screen.queryAllByTestId("web-frame-frame").length).toBe(0);
   });
 });

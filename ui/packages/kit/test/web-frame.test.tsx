@@ -1,9 +1,20 @@
-/** L1: the kit's web frame (UI-670..UI-675): the URLs it shows, its sandbox, its toolbar and its refusal hint. */
+/**
+ * L1: the kit's web view and web frame (UI-670..UI-675, UI-682, UI-685): the URLs they show, the sandbox, the bare
+ * view and its handle, the frame's toolbar and its refusal hint.
+ */
 
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { WEB_FRAME_SANDBOX, WebFrame, webFrameUrl } from "../src/index.ts";
+import { createRef } from "react";
+import {
+  WEB_FRAME_SANDBOX,
+  WebFrame,
+  WebView,
+  type WebViewHandle,
+  type WebViewLocation,
+  webFrameUrl,
+} from "../src/index.ts";
 
 afterEach(cleanup);
 
@@ -103,15 +114,15 @@ describe("WebFrame", () => {
   // spec: UI-675
   test("a refused URL shows why and how to fix it, and no frame", () => {
     render(<WebFrame url="javascript:alert(1)" />);
-    const refused = screen.getByTestId("web-frame-refused");
+    const refused = screen.getByTestId("web-view-refused");
     expect(refused.dataset.reason).toBe("scheme");
     expect(refused.textContent).toContain("Only http and https pages can show here");
     expect(refused.textContent).toContain("http://localhost:5173/");
     expect(screen.queryAllByTestId("web-frame-frame").length).toBe(0);
     cleanup();
     render(<WebFrame url="http://127.0.0.1:7421/" />);
-    expect(screen.getByTestId("web-frame-refused").dataset.reason).toBe("own-origin");
-    expect(screen.getByTestId("web-frame-refused").textContent).toContain("omfp's own pages cannot show in a frame");
+    expect(screen.getByTestId("web-view-refused").dataset.reason).toBe("own-origin");
+    expect(screen.getByTestId("web-view-refused").textContent).toContain("omfp's own pages cannot show in a frame");
   });
 
   // spec: UI-673
@@ -170,5 +181,117 @@ describe("WebFrame", () => {
     expect(screen.getByTestId("web-frame-hint").textContent).toContain("frame-ancestors");
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(screen.queryAllByTestId("web-frame-hint").length).toBe(0);
+  });
+});
+
+describe("WebView", () => {
+  // spec: UI-670, UI-685
+  test("is the page alone; in a frame its handle reloads it and onLoad says when it loaded", () => {
+    let loads = 0;
+    const handle = createRef<WebViewHandle>();
+    render(
+      <WebView
+        ref={handle}
+        url="https://example.com/"
+        onLoad={() => {
+          loads += 1;
+        }}
+      />,
+    );
+    expect(screen.queryAllByRole("toolbar").length).toBe(0);
+    expect(handle.current?.native).toBe(false);
+    frame().dataset.marked = "before";
+    act(() => handle.current?.reload());
+    // A new frame: a cross-origin frame cannot be told to reload; back and forward do nothing there.
+    expect(frame().dataset.marked).toBeUndefined();
+    act(() => {
+      handle.current?.back();
+      handle.current?.forward();
+    });
+    fireEvent.load(frame());
+    expect(loads).toBe(1);
+  });
+
+  // spec: UI-687
+  test("in a frame, onMessage gets what its own page posts to the window, not what another window does", () => {
+    const messages: unknown[] = [];
+    render(<WebView url="https://example.com/" onMessage={(data) => messages.push(data)} />);
+    // happy-dom loads no frame, so the frame has no window: give it one to post from.
+    const own: Window = Object.create(null);
+    Object.defineProperty(frame(), "contentWindow", { value: own });
+    globalThis.dispatchEvent(new MessageEvent("message", { data: { from: "page" }, source: own }));
+    globalThis.dispatchEvent(new MessageEvent("message", { data: { from: "elsewhere" } }));
+    expect(messages).toEqual([{ from: "page" }]);
+  });
+});
+
+describe("WebView in a window that draws web pages (UI-682)", () => {
+  // The desktop window's page script defines it before the app runs.
+  const commands: unknown[][] = [];
+  beforeAll(() =>
+    Object.assign(globalThis, { __omfpWebViews: { command: (...args: unknown[]) => commands.push(args) } }),
+  );
+  afterAll(() => Reflect.deleteProperty(globalThis, "__omfpWebViews"));
+
+  // spec: UI-682
+  test("is a placeholder naming its page, and a web frame there has no Blank?", () => {
+    render(<WebView url="https://accounts.google.com/" />);
+    expect(screen.queryAllByTestId("web-frame-frame").length).toBe(0);
+    const placeholder = screen.getByTestId("web-view-native");
+    expect(placeholder.getAttribute("data-url")).toBe("https://accounts.google.com/");
+    expect(placeholder.getAttribute("aria-label")).toBe("accounts.google.com");
+    expect(placeholder.getAttribute("data-omfp-web-view")).toBeTruthy();
+    cleanup();
+    render(<WebFrame url="https://accounts.google.com/" />);
+    expect(screen.queryAllByRole("button", { name: "Blank?" }).length).toBe(0);
+  });
+
+  // spec: UI-685
+  test("hands the widget where its page went and when it loaded, and its handle's commands to the window", () => {
+    const locations: WebViewLocation[] = [];
+    let loads = 0;
+    const handle = createRef<WebViewHandle>();
+    render(
+      <WebView
+        ref={handle}
+        url="https://example.com/"
+        onNavigate={(location) => locations.push(location)}
+        onLoad={() => {
+          loads += 1;
+        }}
+      />,
+    );
+    const placeholder = screen.getByTestId("web-view-native");
+    const id = placeholder.getAttribute("data-omfp-web-view");
+    const detail = { url: "https://example.com/next", canGoBack: true, canGoForward: null };
+    placeholder.dispatchEvent(new CustomEvent("omfp-web-view-navigate", { detail }));
+    placeholder.dispatchEvent(new CustomEvent("omfp-web-view-navigate", { detail: { nothing: 1 } }));
+    placeholder.dispatchEvent(new CustomEvent("omfp-web-view-load"));
+    expect(locations).toEqual([detail]);
+    expect(loads).toBe(1);
+    expect(handle.current?.native).toBe(true);
+    act(() => {
+      handle.current?.back();
+      handle.current?.forward();
+      handle.current?.reload();
+    });
+    expect(commands).toEqual([
+      [id, "back"],
+      [id, "forward"],
+      [id, "reload"],
+    ]);
+  });
+
+  // spec: UI-687
+  test("tells the window its scripts and whether its page gets a channel, and hands the widget what it posts", () => {
+    const messages: unknown[] = [];
+    const { rerender } = render(<WebView url="https://example.com/" />);
+    const setup = () => JSON.parse(screen.getByTestId("web-view-native").getAttribute("data-setup") ?? "null");
+    expect(setup()).toEqual({ scripts: [], channel: false });
+    rerender(<WebView url="https://example.com/" scripts={["hide()"]} onMessage={(data) => messages.push(data)} />);
+    expect(setup()).toEqual({ scripts: ["hide()"], channel: true });
+    const placeholder = screen.getByTestId("web-view-native");
+    placeholder.dispatchEvent(new CustomEvent("omfp-web-view-message", { detail: { data: { n: 1 } } }));
+    expect(messages).toEqual([{ n: 1 }]);
   });
 });

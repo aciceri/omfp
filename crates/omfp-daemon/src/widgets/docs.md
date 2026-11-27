@@ -60,12 +60,14 @@ while the thread's summary has an MCP reason in `restartPending`, "Reload to loa
 in the browser's player; `.pdf` files show in `PdfView`; images, any size, in `ImageView`, compared with `HEAD` when
 they differ; Markdown files show rendered, CSV/TSV files as a sortable table and JSON/YAML files as a tree while
 read-only, with a toggle to the source), `omfp:web` (`{ url, title? }`: a web page — a dashboard, docs, a local dev
-server's preview — in a sandboxed frame under a toolbar with the URL, Reload and Open in browser; `url` is any absolute `http://` or `https://` URL,
-`localhost` and `127.0.0.1` included, except omfp's own address; `title` labels the tab. Place one with
-`omfp_ui_mount { id: "preview", widget: "omfp:web", props: { url: "http://localhost:5173/" } }` and point it elsewhere
-with `omfp_ui_update { id: "preview", props: { url } }`. The page cannot navigate the window; its new windows open in the
-browser. Sites that refuse framing (`X-Frame-Options`, CSP `frame-ancestors`: GitHub, Linear, Google) stay blank, and
-the frame says so when nothing loaded in 10 s: reach them through their API in a widget of your own),
+server's preview, any site — filling its slot and nothing else: no address bar, no buttons; `url` is any absolute
+`http://` or `https://` URL, `localhost` and `127.0.0.1` included, except omfp's own address; `title` labels the tab.
+Place one with `omfp_ui_mount { id: "preview", widget: "omfp:web", props: { url: "http://localhost:5173/" } }` and
+point it elsewhere with `omfp_ui_update { id: "preview", props: { url } }`. The page cannot navigate the window; its
+new windows open in the browser. In the desktop app the page is a native web view, so every site shows, signed in
+across restarts. Elsewhere it is a sandboxed frame, and sites that refuse framing
+(`X-Frame-Options`, CSP `frame-ancestors`: GitHub, Linear, Google) stay blank there. A browser of your own — an
+address bar, back, forward — is a widget around the kit's `WebView`),
 `omfp:terminal` (`{ command?, shell?, cwd?, cols?, rows?, key? }`: an interactive CLI on a daemon-owned PTY, run by
 `sh -c` in the workspace folder or the workspace-relative `cwd`. Without props it starts the daemon's `$SHELL` (`sh`
 when unset). `shell` picks another shell: a program name or path and its arguments, separated by spaces and each
@@ -824,7 +826,8 @@ scheme changes live; the colors you pass in `options.theme` win over them.
 | `PdfView` | A PDF document with pdf.js: `url` (same-origin, e.g. `` `${useFileUrl(path)}?v=${hash}` ``), `labels` (`{ loading, failed(error), zoomIn, zoomOut, fitWidth, page(page, pages), pageLabel(page), toolbar, pages }`). Its pages scroll inside it, drawn when near the view, with selectable text; a toolbar zooms out, in and to the width, and names the page at the top (`3 / 12`). Loaded on first use; sized like `CodeEditor`. |
 | `ImageView` | An image fitted, zoomed (buttons, Ctrl with the wheel, a pinch) and panned by dragging: `src`, `alt`, `labels` (`{ zoomIn, zoomOut, fit, actualSize, toolbar, failed, before, after, slider }`); with `before` (`{ src, alt }`) and `compare` (`"split"` or `"slider"`) it compares the two versions side by side or under a slider. Sized like `CodeEditor`. |
 | `ImageDialog` | An image at full size in a modal dialog as large as the window, in an `ImageView` (fitted, then zoomed and panned): `image` (`{ src, alt }`, `undefined` keeps it closed), `title`, `labels` (as `ImageView`'s), `onClose` (Escape or a click outside). The chat's images open in one. |
-| `WebFrame` | A web page in a sandboxed frame under a toolbar (the URL, Reload, Open in browser), filling its container like `CodeEditor`: `url` (an absolute `http(s)` URL other than omfp's own origin; another shows why it is refused), `title` (the frame's accessible name), `loadTimeoutMs` (default 10000: then it says the site may refuse framing). `omfp:web` is one. |
+| `WebView` | A web page filling its container, and nothing else: a native web view in the desktop app (every site shows), a sandboxed frame elsewhere. `url` (an absolute `http(s)` URL other than omfp's own origin; another shows why it is refused), `title` (the page's accessible name), `onNavigate({ url, canGoBack, canGoForward })` (the page went elsewhere: desktop app only; the flags are `null` where unknown, on macOS), `onLoad()`, `scripts` (JavaScript run in the page at document start, before its own: a user script; desktop app only, a change loads the page anew), `onMessage(data)` (while given, the page has `window.omfp.post(data)`; in a frame, what the page passes to `parent.postMessage`; the data comes from the page, check it; on macOS a page whose CSP forbids frames cannot post), and `ref` to a handle `{ native, reload(), back(), forward() }` (back and forward act on the desktop app's view only). `omfp:web` is one; build a browser of your own around it: an address bar from `onNavigate` setting `url`, back and forward buttons from the handle, page tweaks and data from `scripts` and `onMessage`. |
+| `WebFrame` | A `WebView` under a toolbar (the URL, Reload, Open in browser), filling its container like `CodeEditor`: `url`, `title`, `loadTimeoutMs` (default 10000: then a frame says the site may refuse framing). |
 | `TerminalEmulator` | An xterm.js emulator filling its container, in the theme's colors: `sessionKey` resets replay, `chunks` are base64 bytes, `onData` forwards keyboard input, `onTerminalResize` receives fitted columns and rows, and optional `cols`, `rows`, `options` configure xterm (`options.theme` colors override the theme's). Pair it with `useTerminal`; `omfp:terminal` is one. |
 | `PathLink` | An inline button opening a file path: `reference` (`{ path, line }`), `onOpen` (e.g. from `useOpenFile()`). |
 | `Tabs` | Tabs with `TabList`, `Tab` and `TabPanel`. |

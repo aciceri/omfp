@@ -71,20 +71,30 @@ pub enum Command {
     Forward,
 }
 
+/// What a widget's `WebView` gives its page beyond the URL (UI-687): scripts run in the page at document start, and
+/// whether the page gets `window.omfp.post` to send the widget messages. A change makes a new view.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Setup {
+    pub scripts: Vec<String>,
+    pub channel: bool,
+}
+
 /// What the page posts.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Message {
-    /// Every placeholder, and the viewport's width in CSS pixels (macOS derives the page zoom from it).
+    /// Every placeholder, the setups of those whose setup is new or changed, and the viewport's width in CSS pixels
+    /// (macOS derives the page zoom from it).
     Slots {
         slots: Vec<Slot>,
+        setups: Vec<(String, Setup)>,
         viewport_width: f64,
     },
     /// A command for the view of placeholder `id`.
     Command { id: String, command: Command },
 }
 
-/// A message of [`script`]: `{"slots": […], "vw": …}` or `{"command": "back", "id": …}`; `None` for anything else.
-/// A slot entry that is not a placeholder is left out.
+/// A message of [`script`]: `{"slots": […], "setups": {id: {"scripts": […], "channel": …}}, "vw": …}` or
+/// `{"command": "back", "id": …}`; `None` for anything else. A slot or setup entry of the wrong shape is left out.
 #[must_use]
 pub fn parse_message(json: &str) -> Option<Message> {
     let message: serde_json::Value = serde_json::from_str(json).ok()?;
@@ -117,14 +127,84 @@ pub fn parse_message(json: &str) -> Option<Message> {
             })
         })
         .collect();
+    let setups = message
+        .get("setups")
+        .and_then(serde_json::Value::as_object)
+        .into_iter()
+        .flatten()
+        .filter_map(|(id, setup)| {
+            let scripts = setup
+                .get("scripts")?
+                .as_array()?
+                .iter()
+                .map(|script| script.as_str().map(str::to_owned))
+                .collect::<Option<Vec<_>>>()?;
+            let channel = setup.get("channel")?.as_bool()?;
+            Some((id.clone(), Setup { scripts, channel }))
+        })
+        .collect();
     let viewport_width = message
         .get("vw")
         .and_then(serde_json::Value::as_f64)
         .unwrap_or(0.0);
     Some(Message::Slots {
         slots,
+        setups,
         viewport_width,
     })
+}
+
+/// The largest message a page sends its widget (UI-687), in bytes of JSON: a bigger one is dropped.
+pub const MAX_PAGE_MESSAGE: usize = 1 << 20;
+
+/// The JavaScript that hands the widget of placeholder `id` the message `json` its page posted (UI-687).
+#[must_use]
+pub fn message_call(id: &str, json: &str) -> String {
+    format!(
+        "window.__omfpWebViews?.message({}, {})",
+        serde_json::Value::from(id),
+        serde_json::Value::from(json)
+    )
+}
+
+/// The script message handler a view's page posts its widget's messages to on Linux (UI-687).
+pub const PAGE_HANDLER: &str = "omfp";
+
+/// The scheme of a page's messages to its widget on macOS (UI-687): navigations of hidden frames.
+pub const MESSAGE_SCHEME: &str = "omfp-web-view-message";
+
+/// The script giving a view's page `window.omfp.post(data)` (UI-687): `data` as JSON to its widget's `onMessage`,
+/// through [`PAGE_HANDLER`] or navigations to [`MESSAGE_SCHEME`]; data without a JSON form throws.
+#[must_use]
+pub fn channel_script(transport: Transport) -> String {
+    let send = match transport {
+        Transport::Handler => format!(
+            "(json) => window.webkit.messageHandlers[{}].postMessage(json)",
+            serde_json::Value::from(PAGE_HANDLER)
+        ),
+        Transport::Frames => format!(
+            "(json) => {{ const frame = document.createElement(\"iframe\"); frame.hidden = true; \
+             frame.src = `{MESSAGE_SCHEME}:?${{new URLSearchParams({{ m: json }})}}`; \
+             (document.body ?? document.documentElement).append(frame); setTimeout(() => frame.remove(), 1000); }}"
+        ),
+    };
+    format!(
+        "(() => {{\n  const send = {send};\n  const post = (data) => {{\n    const json = JSON.stringify(data);\n    \
+         if (json === undefined) throw new TypeError(\"omfp.post: the data has no JSON form\");\n    send(json);\n  \
+         }};\n  Object.defineProperty(window, \"omfp\", {{ value: Object.freeze({{ post }}) }});\n}})();"
+    )
+}
+
+/// The message a navigation to [`MESSAGE_SCHEME`] carries (UI-687); `None` for any other URL.
+#[cfg(any(target_os = "macos", test))]
+#[must_use]
+pub fn page_message(url: &Url) -> Option<String> {
+    if url.scheme() != MESSAGE_SCHEME {
+        return None;
+    }
+    url.query_pairs()
+        .find(|(key, _)| key == "m")
+        .map(|(_, json)| json.into_owned())
 }
 
 /// The scheme of the page's messages on macOS (UI-686).
@@ -221,6 +301,8 @@ const BRIDGE: &str = r#"  if (window.top !== window || location.origin !== ORIGI
   // Not covering either: a splitter's grab area reaches a few pixels over the cells beside it (UI-683).
   const EDGE = ".omfp-splitter";
   let last = "";
+  // The setup (`data-setup`: `{ scripts, channel }`) the window last got for each placeholder id (UI-687).
+  let known = new Map();
 
   function send(json) {
     if (!FRAMES) {
@@ -270,14 +352,17 @@ const BRIDGE: &str = r#"  if (window.top !== window || location.origin !== ORIGI
 
   function report() {
     const slots = [];
+    const setups = {};
+    const present = new Set();
     for (const element of document.querySelectorAll(SELECTOR)) {
       const rect = shown(element);
       const visible =
         rect.width > 2 * INSET &&
         rect.height > 2 * INSET &&
         element.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true });
+      const id = element.dataset.omfpWebView;
       slots.push({
-        id: element.dataset.omfpWebView,
+        id,
         url: element.dataset.url ?? "about:blank",
         x: rect.left,
         y: rect.top,
@@ -286,11 +371,23 @@ const BRIDGE: &str = r#"  if (window.top !== window || location.origin !== ORIGI
         visible,
         covered: visible && covered(element, rect),
       });
+      present.add(id);
+      const setup = element.dataset.setup ?? '{"scripts":[],"channel":false}';
+      if (known.get(id) !== setup) {
+        try {
+          setups[id] = JSON.parse(setup);
+          known.set(id, setup);
+        } catch {}
+      }
+    }
+    // A placeholder that comes back gets its setup sent again.
+    if (known.size > present.size) {
+      for (const id of known.keys()) if (!present.has(id)) known.delete(id);
     }
     const json = JSON.stringify({ slots, vw: window.innerWidth });
-    if (json !== last) {
+    if (json !== last || Object.keys(setups).length > 0) {
       last = json;
-      send(json);
+      send(JSON.stringify({ slots, setups, vw: window.innerWidth }));
     }
     requestAnimationFrame(report);
   }
@@ -316,6 +413,16 @@ const BRIDGE: &str = r#"  if (window.top !== window || location.origin !== ORIGI
     // The window's report: the view of `id` finished loading its page.
     loaded(id) {
       placeholder(id)?.dispatchEvent(new CustomEvent("omfp-web-view-load"));
+    },
+    // The window's report: the page of `id` posted `json` with `window.omfp.post` (UI-687).
+    message(id, json) {
+      let data;
+      try {
+        data = JSON.parse(json);
+      } catch {
+        return;
+      }
+      placeholder(id)?.dispatchEvent(new CustomEvent("omfp-web-view-message", { detail: { data } }));
     },
     // Shows the capture `src` (a data: URL) where the view was: the shown part of the placeholder `id`.
     freeze(id, src) {
@@ -380,8 +487,9 @@ pub fn thaw_call(id: &str) -> String {
 /// The native views of one platform.
 pub trait Engine {
     type View;
-    /// A new view of placeholder `id` loading `url`, hidden until placed; `None` when none can be made.
-    fn open(&mut self, id: &str, url: &str) -> Option<Self::View>;
+    /// A new view of placeholder `id` loading `url` with `setup` (UI-687), hidden until placed; `None` when none can
+    /// be made.
+    fn open(&mut self, id: &str, url: &str, setup: &Setup) -> Option<Self::View>;
     /// Loads `url` in `view`.
     fn load(&self, view: &Self::View, url: &str);
     /// The page `view` shows now.
@@ -404,6 +512,8 @@ struct Native<V> {
     view: V,
     /// The page the placeholder asked for last.
     url: String,
+    /// The setup the view was made with.
+    setup: Setup,
     /// Whether the view is hidden behind its capture (or about to be, its capture still coming).
     frozen: Arc<AtomicBool>,
 }
@@ -414,6 +524,8 @@ pub struct Views<E: Engine> {
     /// The daemon's origin: its own pages never show in a view (UI-684).
     origin: String,
     natives: HashMap<String, Native<E::View>>,
+    /// Each placeholder's setup, as the page last sent it (UI-687).
+    setups: HashMap<String, Setup>,
 }
 
 impl<E: Engine> std::fmt::Debug for Views<E> {
@@ -432,6 +544,7 @@ impl<E: Engine> Views<E> {
             engine,
             origin,
             natives: HashMap::new(),
+            setups: HashMap::new(),
         }
     }
 
@@ -441,21 +554,27 @@ impl<E: Engine> Views<E> {
         &self.engine
     }
 
-    /// Brings the views in line with the page's placeholders `slots` at the page zoom `zoom` (UI-683): a view per
-    /// placeholder of a page [`shows`] lets through, closed with its placeholder; placed over the part that shows,
-    /// hidden while none does, frozen while covered. A placeholder asking for the page its view already went to (a
-    /// widget following `onNavigate`) loads nothing.
-    pub fn sync(&mut self, slots: &[Slot], zoom: f64) {
+    /// Brings the views in line with the page's placeholders `slots` and their new `setups` at the page zoom `zoom`
+    /// (UI-683): a view per placeholder of a page [`shows`] lets through, closed with its placeholder and made anew
+    /// when its setup changes (UI-687); placed over the part that shows, hidden while none does, frozen while covered.
+    /// A placeholder asking for the page its view already went to (a widget following `onNavigate`) loads nothing.
+    pub fn sync(&mut self, slots: &[Slot], setups: Vec<(String, Setup)>, zoom: f64) {
+        self.setups.extend(setups);
+        self.setups
+            .retain(|id, _| slots.iter().any(|slot| &slot.id == id));
         let gone: Vec<String> = self
             .natives
-            .keys()
-            .filter(|id| {
-                !slots.iter().any(|slot| {
-                    &&slot.id == id
-                        && Url::parse(&slot.url).is_ok_and(|url| shows(&url, &self.origin))
-                })
+            .iter()
+            .filter(|(id, native)| {
+                self.setups
+                    .get(*id)
+                    .is_some_and(|setup| *setup != native.setup)
+                    || !slots.iter().any(|slot| {
+                        &slot.id == *id
+                            && Url::parse(&slot.url).is_ok_and(|url| shows(&url, &self.origin))
+                    })
             })
-            .cloned()
+            .map(|(id, _)| id.clone())
             .collect();
         for id in gone {
             if let Some(native) = self.natives.remove(&id) {
@@ -472,12 +591,14 @@ impl<E: Engine> Views<E> {
             let native = match self.natives.entry(slot.id.clone()) {
                 Slotted::Occupied(entry) => entry.into_mut(),
                 Slotted::Vacant(entry) => {
-                    let Some(view) = self.engine.open(&slot.id, &slot.url) else {
+                    let setup = self.setups.get(&slot.id).cloned().unwrap_or_default();
+                    let Some(view) = self.engine.open(&slot.id, &slot.url, &setup) else {
                         continue;
                     };
                     entry.insert(Native {
                         view,
                         url: slot.url.clone(),
+                        setup,
                         frozen: Arc::default(),
                     })
                 }
@@ -556,9 +677,12 @@ mod tests {
 
     impl Engine for Fake {
         type View = usize;
-        fn open(&mut self, id: &str, url: &str) -> Option<usize> {
+        fn open(&mut self, id: &str, url: &str, setup: &Setup) -> Option<usize> {
             self.opened += 1;
-            self.log(format!("open {} {id} {url}", self.opened));
+            self.log(format!(
+                "open {} {id} {url} {:?} {}",
+                self.opened, setup.scripts, setup.channel
+            ));
             Some(self.opened)
         }
         fn load(&self, view: &usize, url: &str) {
@@ -633,14 +757,15 @@ mod tests {
         assert_eq!(placement(&slot(0.0, 0.0, 400.0, 300.0), 0.0), None);
     }
 
-    // spec: UI-683, UI-685
+    // spec: UI-683, UI-685, UI-687
     #[test]
-    fn the_page_posts_its_placeholders_and_commands_as_json() {
+    fn the_page_posts_its_placeholders_setups_and_commands_as_json() {
         let report = r#"{"slots":[
             {"id":"r1","url":"https://accounts.google.com/","x":320,"y":80.5,"w":900,"h":740,"visible":true,"covered":true},
             {"id":"broken","url":"https://example.com/"},
             "nothing"
-        ],"vw":1280}"#;
+        ],"setups":{"r1":{"scripts":["window.omfp.post(1)"],"channel":true},"bad":{"scripts":[3],"channel":true}},
+        "vw":1280}"#;
         assert_eq!(
             parse_message(report),
             Some(Message::Slots {
@@ -654,6 +779,13 @@ mod tests {
                     visible: true,
                     covered: true,
                 }],
+                setups: vec![(
+                    "r1".to_owned(),
+                    Setup {
+                        scripts: vec!["window.omfp.post(1)".to_owned()],
+                        channel: true
+                    }
+                )],
                 viewport_width: 1280.0,
             })
         );
@@ -711,18 +843,18 @@ mod tests {
     fn a_placeholder_gets_one_view_placed_frozen_while_covered_and_closed_with_it() {
         let mut views = views();
         let mut a = slot(10.0, 20.0, 300.0, 200.0);
-        views.sync(std::slice::from_ref(&a), 1.0);
+        views.sync(std::slice::from_ref(&a), Vec::new(), 1.0);
         assert_eq!(
             views.engine().take(),
             [
-                "open 1 a https://example.com/",
+                "open 1 a https://example.com/ [] false",
                 "place 1 10,20 300x200",
                 "show 1"
             ]
         );
         a.covered = true;
-        views.sync(std::slice::from_ref(&a), 1.0);
-        views.sync(std::slice::from_ref(&a), 1.0);
+        views.sync(std::slice::from_ref(&a), Vec::new(), 1.0);
+        views.sync(std::slice::from_ref(&a), Vec::new(), 1.0);
         assert_eq!(
             views.engine().take(),
             [
@@ -732,16 +864,53 @@ mod tests {
             ]
         );
         a.covered = false;
-        views.sync(std::slice::from_ref(&a), 1.0);
+        views.sync(std::slice::from_ref(&a), Vec::new(), 1.0);
         assert_eq!(
             views.engine().take(),
             ["place 1 10,20 300x200", "show 1", "thaw a"]
         );
         a.visible = false;
-        views.sync(std::slice::from_ref(&a), 1.0);
+        views.sync(std::slice::from_ref(&a), Vec::new(), 1.0);
         assert_eq!(views.engine().take(), ["hide 1"]);
-        views.sync(&[], 1.0);
+        views.sync(&[], Vec::new(), 1.0);
         assert_eq!(views.engine().take(), ["close 1"]);
+    }
+
+    // spec: UI-687
+    #[test]
+    fn a_view_opens_with_its_setup_and_is_made_anew_when_the_setup_changes() {
+        let mut views = views();
+        let a = slot(0.0, 0.0, 100.0, 100.0);
+        let setup = |script: &str| {
+            vec![(
+                "a".to_owned(),
+                Setup {
+                    scripts: vec![script.to_owned()],
+                    channel: true,
+                },
+            )]
+        };
+        views.sync(std::slice::from_ref(&a), setup("one()"), 1.0);
+        assert_eq!(
+            views.engine().take()[0],
+            r#"open 1 a https://example.com/ ["one()"] true"#
+        );
+        // The page sends a setup only when it changed: nothing new keeps the view.
+        views.sync(std::slice::from_ref(&a), Vec::new(), 1.0);
+        assert_eq!(views.engine().take(), ["place 1 0,0 100x100", "show 1"]);
+        views.sync(std::slice::from_ref(&a), setup("two()"), 1.0);
+        assert_eq!(
+            views.engine().take()[..2],
+            ["close 1", r#"open 2 a https://example.com/ ["two()"] true"#]
+        );
+        // Gone and back: the page sends its setup again, and the old one is forgotten meanwhile.
+        views.sync(&[], Vec::new(), 1.0);
+        views.engine().take();
+        views.sync(std::slice::from_ref(&a), Vec::new(), 1.0);
+        assert_eq!(
+            views.engine().take()[0],
+            "open 3 a https://example.com/ [] false"
+        );
     }
 
     // spec: UI-684, UI-685
@@ -749,10 +918,10 @@ mod tests {
     fn a_new_url_loads_unless_the_view_already_went_there_and_the_daemons_pages_never_show() {
         let mut views = views();
         let mut a = slot(0.0, 0.0, 100.0, 100.0);
-        views.sync(std::slice::from_ref(&a), 1.0);
+        views.sync(std::slice::from_ref(&a), Vec::new(), 1.0);
         views.engine().take();
         a.url = "https://example.com/next".to_owned();
-        views.sync(std::slice::from_ref(&a), 1.0);
+        views.sync(std::slice::from_ref(&a), Vec::new(), 1.0);
         assert_eq!(views.engine().take()[0], "load 1 https://example.com/next");
         // The page followed a link, and the widget passes the address it heard back as its url.
         views
@@ -761,10 +930,10 @@ mod tests {
             .borrow_mut()
             .insert(1, "https://example.com/followed".to_owned());
         a.url = "https://example.com/followed".to_owned();
-        views.sync(std::slice::from_ref(&a), 1.0);
+        views.sync(std::slice::from_ref(&a), Vec::new(), 1.0);
         assert_eq!(views.engine().take(), ["place 1 0,0 100x100", "show 1"]);
         a.url = "http://127.0.0.1:7420/#token=secret".to_owned();
-        views.sync(std::slice::from_ref(&a), 1.0);
+        views.sync(std::slice::from_ref(&a), Vec::new(), 1.0);
         assert_eq!(views.engine().take(), ["close 1"]);
     }
 
@@ -772,10 +941,21 @@ mod tests {
     #[test]
     fn a_widgets_command_reaches_its_view() {
         let mut views = views();
-        views.sync(&[slot(0.0, 0.0, 100.0, 100.0)], 1.0);
+        views.sync(&[slot(0.0, 0.0, 100.0, 100.0)], Vec::new(), 1.0);
         views.engine().take();
         views.command("a", Command::Back);
         views.command("unknown", Command::Reload);
         assert_eq!(views.engine().take(), ["act 1 Back"]);
+    }
+
+    // spec: UI-687
+    #[test]
+    fn on_macos_a_pages_message_is_the_json_of_its_frame_navigation() {
+        let json = r#"{"text":"a & b = c?"}"#;
+        let url =
+            Url::parse_with_params(&format!("{MESSAGE_SCHEME}:"), [("m", json)]).expect("a URL");
+        assert_eq!(page_message(&url).as_deref(), Some(json));
+        let other = Url::parse_with_params("https://example.com/", [("m", json)]).expect("a URL");
+        assert_eq!(page_message(&other), None);
     }
 }

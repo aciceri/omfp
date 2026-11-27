@@ -381,6 +381,72 @@ fn omfp_web_is_a_native_view_and_the_window_stays_on_the_daemon() {
     assert_eq!(pages, ["GET /page HTTP/1.1"], "{state}");
 }
 
+// spec: TST-033, UI-687
+#[cfg(target_os = "linux")]
+#[test]
+fn a_native_views_page_runs_its_scripts_and_posts_to_its_widget() {
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("data");
+    let workspaces = dir.path().join("workspaces");
+    let (base, _requests) = serve_native_page();
+    // The user's init file puts a placeholder of its own in the page, as `WebView` would: its setup's script posts
+    // the page's address through `window.omfp.post`, which the window hands back to the placeholder.
+    let config = dir.path().join(".config/omfp");
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::write(
+        config.join("init.ts"),
+        format!(
+            r#"export default function init() {{
+  const placeholder = document.createElement("div");
+  placeholder.style.cssText = "position:fixed;left:0;top:0;width:320px;height:240px;z-index:2147483647";
+  placeholder.dataset.omfpWebView = "smoke";
+  placeholder.dataset.url = "{base}/page";
+  placeholder.dataset.setup = JSON.stringify({{
+    scripts: ["window.omfp.post({{ href: location.href }})"],
+    channel: true,
+  }});
+  placeholder.addEventListener("omfp-web-view-message", (event) => {{
+    document.body.dataset.pageMessage = event.detail.data.href;
+  }});
+  document.body.append(placeholder);
+  return () => placeholder.remove();
+}}
+"#
+        ),
+    )
+    .unwrap();
+    let _daemon = BackgroundDaemon(&data);
+    let output = desktop_with(
+        dir.path(),
+        &[
+            ("OMFP_SMOKE", "local"),
+            (
+                "OMFP_SMOKE_WAIT",
+                &format!("body[data-page-message=\"{base}/page\"]"),
+            ),
+            ("ANTHROPIC_API_KEY", "sk-ant-omfp-test"),
+        ],
+        &[
+            "--data-dir",
+            data.to_str().unwrap(),
+            "--",
+            "--static-dir",
+            web_bundle().to_str().unwrap(),
+            "--workspaces-root",
+            workspaces.to_str().unwrap(),
+            "--bind",
+            "127.0.0.1:0",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout
+            .lines()
+            .any(|line| line.starts_with("OMFP_SMOKE_READY ")),
+        "{stdout}"
+    );
+}
+
 // spec: TST-033, ENV-030, UI-541
 #[cfg(target_os = "linux")]
 #[test]

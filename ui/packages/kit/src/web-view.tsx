@@ -133,6 +133,18 @@ export interface WebViewProps extends Omit<HTMLAttributes<HTMLElement>, "title" 
   onNavigate?: ((location: WebViewLocation) => void) | undefined;
   /** The page finished loading. */
   onLoad?: (() => void) | undefined;
+  /**
+   * A message from the page (UI-687): in a native view, what the page passed to `window.omfp.post(data)` (defined
+   * only while `onMessage` is given), as JSON; in a frame, what it passed to `parent.postMessage(data, "*")`. It comes
+   * from the page: check it before using it.
+   */
+  onMessage?: ((data: unknown) => void) | undefined;
+  /**
+   * Scripts run in a native view's page at document start, before its own (UI-687): what a user script does —
+   * restyle the page, hide what is in the way, `window.omfp.post` what the widget needs. A change loads the page
+   * anew. Frames run none: a page of another origin cannot be scripted.
+   */
+  scripts?: readonly string[] | undefined;
   texts?: Partial<WebViewTexts>;
   ref?: Ref<WebViewHandle>;
 }
@@ -161,19 +173,30 @@ function locationOf(event: Event): WebViewLocation | undefined {
 /**
  * A web page filling its container, and nothing else (UI-670, UI-682): a native view of the window where it draws them
  * (the desktop app), so sites that refuse framing show too; elsewhere a sandboxed frame. Widgets build their own
- * browser around it from `onNavigate`, `onLoad` and the handle's `reload`, `back` and `forward` (UI-685); the kit's
- * `WebFrame` is one.
+ * browser around it from `onNavigate`, `onLoad` and the handle's `reload`, `back` and `forward` (UI-685), and talk with
+ * the page through `scripts` and `onMessage` (UI-687); the kit's `WebFrame` is one.
  */
-export function WebView({ url, title, onNavigate, onLoad, texts, ref, className, ...props }: WebViewProps): ReactNode {
+export function WebView({
+  url,
+  title,
+  onNavigate,
+  onLoad,
+  onMessage,
+  scripts,
+  texts,
+  ref,
+  className,
+  ...props
+}: WebViewProps): ReactNode {
   const words = { ...WEB_VIEW_TEXTS, ...texts };
   const native = hasNativeWebViews();
   const id = useId();
   const checked = webFrameUrl(url, globalThis.location?.origin ?? "");
   const [reloads, setReloads] = useState(0);
   // The latest callbacks, so that a new function each render neither re-adds the listeners nor misses an event.
-  const callbacks = useRef({ onNavigate, onLoad });
+  const callbacks = useRef({ onNavigate, onLoad, onMessage });
   useLayoutEffect(() => {
-    callbacks.current = { onNavigate, onLoad };
+    callbacks.current = { onNavigate, onLoad, onMessage };
   });
   useImperativeHandle(
     ref,
@@ -205,12 +228,32 @@ export function WebView({ url, title, onNavigate, onLoad, texts, ref, className,
       }
     };
     const loaded = () => callbacks.current.onLoad?.();
+    const message = (event: Event) => {
+      if (event instanceof CustomEvent && typeof event.detail === "object" && event.detail !== null) {
+        callbacks.current.onMessage?.(Reflect.get(event.detail, "data"));
+      }
+    };
     element.addEventListener("omfp-web-view-navigate", navigated);
     element.addEventListener("omfp-web-view-load", loaded);
+    element.addEventListener("omfp-web-view-message", message);
     return () => {
       element.removeEventListener("omfp-web-view-navigate", navigated);
       element.removeEventListener("omfp-web-view-load", loaded);
+      element.removeEventListener("omfp-web-view-message", message);
     };
+  }, []);
+  // A frame's messages: those its own page posted to the window (UI-687).
+  const listenFrame = useCallback((frame: HTMLIFrameElement | null) => {
+    if (frame === null) {
+      return;
+    }
+    const received = (event: MessageEvent) => {
+      if (event.source !== null && event.source === frame.contentWindow) {
+        callbacks.current.onMessage?.(event.data);
+      }
+    };
+    globalThis.addEventListener("message", received);
+    return () => globalThis.removeEventListener("message", received);
   }, []);
   if (!checked.ok) {
     return (
@@ -238,6 +281,7 @@ export function WebView({ url, title, onNavigate, onLoad, texts, ref, className,
         aria-label={name}
         data-omfp-web-view={id}
         data-url={checked.href}
+        data-setup={JSON.stringify({ scripts: scripts ?? [], channel: onMessage !== undefined })}
       />
     );
   }
@@ -246,6 +290,7 @@ export function WebView({ url, title, onNavigate, onLoad, texts, ref, className,
       data-testid="web-frame-frame"
       {...props}
       key={reloads}
+      ref={listenFrame}
       className={cx("omfp-web-view", className)}
       src={checked.href}
       title={name}

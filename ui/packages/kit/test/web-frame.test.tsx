@@ -211,6 +211,18 @@ describe("WebView", () => {
     fireEvent.load(frame());
     expect(loads).toBe(1);
   });
+
+  // spec: UI-687
+  test("in a frame, onMessage gets what its own page posts to the window, not what another window does", () => {
+    const messages: unknown[] = [];
+    render(<WebView url="https://example.com/" onMessage={(data) => messages.push(data)} />);
+    // happy-dom loads no frame, so the frame has no window: give it one to post from.
+    const own: Window = Object.create(null);
+    Object.defineProperty(frame(), "contentWindow", { value: own });
+    globalThis.dispatchEvent(new MessageEvent("message", { data: { from: "page" }, source: own }));
+    globalThis.dispatchEvent(new MessageEvent("message", { data: { from: "elsewhere" } }));
+    expect(messages).toEqual([{ from: "page" }]);
+  });
 });
 
 describe("WebView in a window that draws web pages (UI-682)", () => {
@@ -268,5 +280,18 @@ describe("WebView in a window that draws web pages (UI-682)", () => {
       [id, "forward"],
       [id, "reload"],
     ]);
+  });
+
+  // spec: UI-687
+  test("tells the window its scripts and whether its page gets a channel, and hands the widget what it posts", () => {
+    const messages: unknown[] = [];
+    const { rerender } = render(<WebView url="https://example.com/" />);
+    const setup = () => JSON.parse(screen.getByTestId("web-view-native").getAttribute("data-setup") ?? "null");
+    expect(setup()).toEqual({ scripts: [], channel: false });
+    rerender(<WebView url="https://example.com/" scripts={["hide()"]} onMessage={(data) => messages.push(data)} />);
+    expect(setup()).toEqual({ scripts: ["hide()"], channel: true });
+    const placeholder = screen.getByTestId("web-view-native");
+    placeholder.dispatchEvent(new CustomEvent("omfp-web-view-message", { detail: { data: { n: 1 } } }));
+    expect(messages).toEqual([{ n: 1 }]);
   });
 });

@@ -1,9 +1,10 @@
-//! The macOS engine of the native web views (UI-686): Tauri child webviews (`WKWebView`s) over the window's page.
-//! Unlike Linux, Tauri places a child webview where it is asked to on macOS, so no container is needed. The page posts
-//! through navigations of hidden frames to [`SCHEME`], which the window's navigation handler hands to
-//! [`on_navigation`]. Without `unsafe` code there is no way to the `WKWebView` behind a Tauri webview, so a covered view
-//! hides without a capture, whether the page can go back or forward is unknown, and back and forward run the page's
-//! own `history`.
+//! The macOS engine of the native web views (UI-686, UI-687): Tauri child webviews (`WKWebView`s) over the window's
+//! page. Unlike Linux, Tauri places a child webview where it is asked to on macOS, so no container is needed. The page
+//! posts through navigations of hidden frames to [`SCHEME`], which the window's navigation handler hands to
+//! [`on_navigation`]; a view's page posts its widget's messages the same way, to [`MESSAGE_SCHEME`], caught by the
+//! view's own navigation handler. Without `unsafe` code there is no way to the `WKWebView` behind a Tauri webview, so
+//! a covered view hides without a capture, whether the page can go back or forward is unknown, and back and forward
+//! run the page's own `history`.
 
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -12,7 +13,9 @@ use tauri::webview::{NewWindowResponse, PageLoadEvent, WebviewBuilder};
 use tauri::{LogicalPosition, LogicalSize, Manager as _, Url, Webview, WebviewUrl, WebviewWindow};
 
 use super::{
-    Command, Engine, Message, Placement, SCHEME, Views, loaded_call, navigated_call, posted,
+    Command, Engine, MAX_PAGE_MESSAGE, MESSAGE_SCHEME, Message, Placement, SCHEME, Setup,
+    Transport, Views, channel_script, loaded_call, message_call, navigated_call, page_message,
+    posted,
 };
 
 /// The views of the window once it exists, shared with its navigation handler, which runs before the window is built.
@@ -57,12 +60,13 @@ pub fn on_navigation(views: &SharedViews, url: &Url, nonce: &str) -> Option<bool
         (
             Some(Message::Slots {
                 slots,
+                setups,
                 viewport_width,
             }),
             Some(views),
         ) => {
             let zoom = views.engine().zoom(viewport_width);
-            views.sync(&slots, zoom);
+            views.sync(&slots, setups, zoom);
         }
         (Some(Message::Command { id, command }), Some(views)) => views.command(&id, command),
         _ => {}
@@ -96,8 +100,9 @@ impl Children {
 impl Engine for Children {
     type View = Webview;
 
-    /// A link to a new window opens in the view itself (UI-684).
-    fn open(&mut self, id: &str, url: &str) -> Option<Webview> {
+    /// A link to a new window opens in the view itself (UI-684); the page gets its widget's scripts and channel
+    /// (UI-687).
+    fn open(&mut self, id: &str, url: &str, setup: &Setup) -> Option<Webview> {
         let url = Url::parse(url).ok()?;
         let Some(parent) = self.window.app_handle().get_window(self.window.label()) else {
             note!("omfp desktop: no web view, the window is gone");
@@ -108,8 +113,19 @@ impl Engine for Children {
         let (window, placeholder) = (self.window.clone(), id.to_owned());
         let app = self.window.app_handle().clone();
         let own = label.clone();
-        let builder = WebviewBuilder::new(&label, WebviewUrl::External(url))
+        let messages = (self.window.clone(), id.to_owned());
+        let mut builder = WebviewBuilder::new(&label, WebviewUrl::External(url))
             .data_store_identifier(self.store)
+            .on_navigation(move |url| {
+                if url.scheme() != MESSAGE_SCHEME {
+                    return true;
+                }
+                if let Some(json) = page_message(url).filter(|json| json.len() <= MAX_PAGE_MESSAGE)
+                {
+                    Self::tell(&messages.0, message_call(&messages.1, &json));
+                }
+                false
+            })
             .on_page_load(move |_, payload| {
                 if payload.event() == PageLoadEvent::Finished {
                     Self::tell(
@@ -128,6 +144,12 @@ impl Engine for Children {
                 }
                 NewWindowResponse::Deny
             });
+        if setup.channel {
+            builder = builder.initialization_script(channel_script(Transport::Frames));
+        }
+        for script in &setup.scripts {
+            builder = builder.initialization_script(script);
+        }
         match parent.add_child(
             builder,
             LogicalPosition::new(0.0, 0.0),

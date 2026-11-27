@@ -21,7 +21,8 @@ The version's section is also the source of the GitHub release notes.
   dialog, the `:` line or another panel covers it, the page hides (behind a still picture of it on Linux). The macOS
   app is not tested yet. The web app and phones keep the frame.
 - Widgets can build their own browser: the kit's `WebView` is a page alone, with `onNavigate`, `onLoad` and a handle
-  to reload it and go back and forward.
+  to reload it and go back and forward. In the desktop app a widget can also run scripts in the page, like a user
+  script, and the page can send the widget data with `window.omfp.post`.
 - A transcript scrolled up well away from its end shows a down-arrow button over its bottom corner: click or tap it
   (or press Enter on it) to jump to the latest message and follow the reply again. It is touch-sized on phones too.
 - Links between threads: a reply can link another thread as `[title](omfp://thread/<id>)`, and agents are told to

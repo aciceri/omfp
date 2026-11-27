@@ -149,8 +149,9 @@
   }
 
   /* The minimap (UI-860): a zero-height anchor stuck to the top of the scroll container holds the map, which spans the
-     viewport's height (set by script) in the right gutter, beside the scrollbar. Hidden it takes no pointer; it fades
-     in and out (UI-146; none at motion `none`). */
+     viewport's height from the right gutter, beside the scrollbar, over the text's right edge, as wide as the text's
+     miniature (both set by script), on the app's background. Its prose font gives the miniature its columns and line
+     height. Hidden it takes no pointer; it fades in and out (UI-146; none at motion `none`). */
   .omfp-minimap {
     position: sticky;
     inset-block-start: 0;
@@ -163,6 +164,11 @@
     inset-block-start: 0;
     inset-inline-end: calc(-1 * var(--omfp-gutter));
     inline-size: var(--omfp-gutter);
+    overflow: hidden;
+    background: var(--omfp-app-bg);
+    font-family: var(--omfp-font-prose);
+    font-size: var(--omfp-fs-prose);
+    line-height: var(--omfp-lh-prose);
     opacity: 0;
     pointer-events: none;
     touch-action: none;
@@ -175,10 +181,14 @@
     pointer-events: auto;
   }
 
+  /* The band of the map the canvas holds (its height set by script), moved by a transform as the map scrolls. */
   .omfp-minimap__canvas {
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 0;
     display: block;
     inline-size: 100%;
-    block-size: 100%;
+    will-change: transform;
   }
 
   /* The viewport's box, moved by a transform as the view scrolls. */

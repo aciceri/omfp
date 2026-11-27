@@ -78,7 +78,8 @@ function CommandLineInput({
       return;
     }
     const where = scopes();
-    if (commands.resolve(parsed.name, where) === undefined) {
+    // With the arguments: a command may answer for some only (a thread id, UI-316).
+    if (commands.resolve(parsed.name, where, parsed.args) === undefined) {
       const scope = onlyScope(parsed.name, commands.list());
       setError(scope === undefined ? text.unknownCommand(parsed.name) : text.scopedCommand(parsed.name, scope));
       return;

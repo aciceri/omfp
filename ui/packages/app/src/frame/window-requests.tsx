@@ -33,7 +33,7 @@ const globalTimers: ReportTimers = {
  * answer instead of `ran`.
  */
 export async function runRequested(host: OmfpHost, name: string, args: readonly string[]): Promise<WindowAnswer> {
-  const command = host.commands.resolve(name, []);
+  const command = host.commands.resolve(name, [], args);
   if (command === undefined) {
     const registered = host.commands.list();
     const global = registered.find(

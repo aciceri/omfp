@@ -9,8 +9,10 @@ import type { IndexSnapshot } from "@omfp/protocol";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
+import { CommandLine } from "../../src/frame/command-line.tsx";
 import { GlobalCommands } from "../../src/frame/commands.tsx";
 import { ContextMenuLayer, MENU_LONG_PRESS_MS } from "../../src/frame/context-menu.tsx";
+import { runRequested } from "../../src/frame/window-requests.tsx";
 import { DEFAULT_BINDINGS } from "../../src/keymap/keymap.ts";
 import { ERRORS, SELECTED_THREAD, SUCCESSES, useCommand, useContextMenu } from "../../src/sdk/index.ts";
 import { TranscriptWidget } from "../../src/widgets/chat/index.ts";
@@ -105,12 +107,13 @@ const INDEX: Partial<IndexSnapshot> = {
   threads: [thread("t1", "checkout-v2", "w1", { updatedAt: 5 }), thread("t2", "payments", "w1", { updatedAt: 4 })],
 };
 
-/** The left column with the frame's commands and the context menu; `t2` selected. */
+/** The left column with the frame's commands, the `:` line and the context menu; `t2` selected. */
 function column() {
   const rendered = renderWithHost(
     <>
       <ThreadsWidget />
       {GLOBAL}
+      <CommandLine bindings={DEFAULT_BINDINGS} />
       <ContextMenuLayer />
     </>,
   );
@@ -187,6 +190,9 @@ describe("the context menu", () => {
       expect(test.host.window.get(SUCCESSES).map((success) => success.text)).toEqual(["Copied the message"]),
     );
     expect(await navigator.clipboard.readText()).toBe("first answer\n");
+    // A thread id is the global `:copy`'s (not rendered here), never this transcript's.
+    expect(test.host.commands.resolve("copy", ["transcript"], ["1"])?.scope).toBe("transcript");
+    expect(test.host.commands.resolve("copy", ["transcript"], ["01OTHER"])).toBeUndefined();
   });
 
   // spec: UI-314
@@ -250,6 +256,23 @@ describe("the context menu", () => {
     test.flush();
     expect(test.host.commands.resolve("thread.unarchive", [], ["t3"])?.id).toBe("thread.unarchive");
     expect(test.host.commands.resolve("thread.archive", [], ["t3"])).toBeUndefined();
+    // A thread the window does not know is no thread, never the selected one.
+    expect(test.host.commands.resolve("thread.delete", [], ["gone"])).toBeUndefined();
+    // The `:` line and agents pass the id along: the selected thread is live, the one named archived.
+    expect(await runRequested(test.host, "thread.unarchive", ["t3"])).toEqual({
+      kind: "ran",
+      command: "thread.unarchive",
+    });
+    act(() => {
+      test.host.commands.run("cmdline.open");
+    });
+    await test.user.type(screen.getByTestId("command-line-input"), "unarchive t3{Enter}");
+    await waitFor(() =>
+      expect(test.client.callsTo("threads.unarchive").map((call) => call.params)).toEqual([
+        { threadId: "t3" },
+        { threadId: "t3" },
+      ]),
+    );
     act(() => {
       test.host.commands.run("delete", ["t3"]);
     });
@@ -296,11 +319,16 @@ describe("the context menu", () => {
   });
 
   // spec: UI-318
-  test("a finger resting on a target opens its menu there; the release's click and native menu are taken", async () => {
+  test("a finger resting on a target opens its menu there, a link that keeps its presses too; the release is taken", async () => {
     page(
-      <span data-omfp-path="src/lib.rs" data-testid="path">
+      <button
+        type="button"
+        data-omfp-path="src/lib.rs"
+        data-testid="path"
+        onPointerDown={(event) => event.stopPropagation()}
+      >
         lib.rs
-      </span>,
+      </button>,
     );
     const path = screen.getByTestId("path");
     fireEvent.pointerDown(path, touch(20));

@@ -306,6 +306,11 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
     description: strings.shell.commands.copyDescription,
     aliases: ["copy"],
     scope: "transcript",
+    // A thread id (`:copy <id>`) is the global command's: this one takes a message index only.
+    enabled: (args) => {
+      const [first] = args ?? [];
+      return first === undefined || /^\d+$/.test(first);
+    },
     run: (args) => {
       const row = targetRow(args);
       const content = row === undefined ? undefined : rowContent(state, row);

@@ -169,11 +169,12 @@ export function ContextMenuLayer(): ReactNode {
       window.addEventListener("pointercancel", cancel);
     };
     document.addEventListener("contextmenu", onContextMenu);
-    document.addEventListener("pointerdown", onPointerDown);
+    // Captured: file links stop the propagation of their presses (a tool card's path, `omfp:changes`).
+    document.addEventListener("pointerdown", onPointerDown, { capture: true });
     return () => {
       press?.stop();
       document.removeEventListener("contextmenu", onContextMenu);
-      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("pointerdown", onPointerDown, { capture: true });
     };
   }, [show, close]);
 

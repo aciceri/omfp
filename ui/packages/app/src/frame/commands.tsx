@@ -85,10 +85,14 @@ export function GlobalCommands({ viewIds, currentView, widgets, addWidget }: Glo
       void run(selected);
     }
   };
-  // The thread a command's first argument names (a thread's context menu, UI-316), else the selected one.
+  // The thread a command's first argument names (a thread's context menu, UI-316), else the selected one; a thread
+  // the window does not know (gone since the menu opened, a typo) is none, never the selection.
   const targetOf = (args: readonly string[] | undefined): string | undefined => {
     const [named] = args ?? [];
-    return named !== undefined && host.frames.getSnapshot().index.threads.has(named) ? named : selected;
+    if (named === undefined) {
+      return selected;
+    }
+    return host.frames.getSnapshot().index.threads.has(named) ? named : undefined;
   };
   const targetSummary = (args: readonly string[] | undefined) => {
     const threadId = targetOf(args);

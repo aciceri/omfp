@@ -2,9 +2,10 @@
  * The transcript's minimap (UI-860..UI-863): a schematic overview of the whole conversation, drawn on one canvas beside
  * the transcript's scrollbar while the user scrolls. This module decides what the canvas shows — one block per
  * transcript row colored by its kind, faded lines for its text and bars for its tool cards, marks on the search's
- * matching rows and the focused row — where the viewport box sits, and where a press on the map scrolls to; the widget
- * (`widgets/chat/minimap.tsx`) draws it. Positions come from the virtualizer's measurements (estimates for rows never
- * rendered), scaled so the whole scroll content fits the map's height.
+ * matching rows and the focused row — where the viewport box sits, where a press on the map scrolls to, and which
+ * scrolls are the user's ({@link ScrollIntent}); the widget (`widgets/chat/minimap.tsx`) draws it. Positions come from
+ * the virtualizer's measurements (estimates for rows never rendered), scaled so the whole scroll content fits the map's
+ * height.
  */
 
 import type { Block, RowContent } from "./transcript.ts";
@@ -212,4 +213,75 @@ export function minimapScrollTop(
   }
   const top = (y / height) * scrollHeight - clientHeight / 2;
   return Math.round(Math.min(Math.max(0, scrollHeight - clientHeight), Math.max(0, top)));
+}
+
+/** The user's scroll goes on this long after their last input: a smooth scroll's frames, a released scrollbar's last
+ * page, a touch's momentum. */
+const USER_SCROLL_MS = 500;
+
+/**
+ * Which scroll events of the transcript the user caused, the only ones that show the minimap (UI-860). A scroll event
+ * is not the user's when it finds the view where the app last put it itself ({@link ScrollIntent.wrote}: following the
+ * bottom, a restore, the jump to the bottom, the virtualizer's corrections) since the user's last input, even while
+ * they are scrolling (a wheel down at the bottom just before a streamed delta). Otherwise it is the user's while a
+ * gesture lasts ({@link ScrollIntent.hold}: a press on the scrollbar, a touch) or up to {@link USER_SCROLL_MS} after the
+ * user's last input ({@link ScrollIntent.input}: a wheel notch, a scroll key, a `nav.*` command, a search visit, a
+ * minimap jump, the end of a gesture that scrolled), and with no input, when the view moved while the content and the
+ * view kept their sizes: nothing but the user moves it so (dragging a scrollbar that sends the page no pointer events,
+ * as WebKitGTK's overlay ones, or a smooth scroll lasting longer), while layout moving it (the browser clamping a
+ * content that shrank or a view that grew after a message is sent, a row measured) changes a size.
+ */
+export class ScrollIntent {
+  #until = Number.NEGATIVE_INFINITY;
+  #held = 0;
+  /** Where the app last put the view itself, since the user's last input. */
+  #written: number | undefined;
+  /** Where the last scroll event found the view. */
+  #last: ScrollPosition | undefined;
+
+  /** The user scrolled at `now` (ms). */
+  input(now: number): void {
+    this.#until = now + USER_SCROLL_MS;
+    this.#written = undefined;
+  }
+
+  /** A gesture started: every scroll is the user's until it ends. */
+  hold(): void {
+    this.#held += 1;
+    this.#written = undefined;
+  }
+
+  /** A gesture ended at `now`; one that scrolled goes on a while (`goesOn`). */
+  release(now: number, goesOn: boolean): void {
+    this.#held = Math.max(0, this.#held - 1);
+    if (goesOn) {
+      this.input(now);
+    }
+  }
+
+  /** Whether the user is scrolling at `now`: a gesture lasts, or their last input is recent. */
+  active(now: number): boolean {
+    return this.#held > 0 || now < this.#until;
+  }
+
+  /** The app put the view at `scrollTop` itself. */
+  wrote(scrollTop: number): void {
+    this.#written = scrollTop;
+  }
+
+  /** A scroll event found the view at `position` at `now`: whether the user moved it there. */
+  scrolled(position: ScrollPosition, now: number): boolean {
+    const last = this.#last;
+    this.#last = position;
+    if (this.#written !== undefined && Math.abs(position.scrollTop - this.#written) < 1) {
+      return false;
+    }
+    return (
+      this.active(now) ||
+      (last !== undefined &&
+        Math.abs(position.scrollTop - last.scrollTop) >= 1 &&
+        position.scrollHeight === last.scrollHeight &&
+        position.clientHeight === last.clientHeight)
+    );
+  }
 }

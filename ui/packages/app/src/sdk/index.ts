@@ -11,7 +11,7 @@
 
 // View models, strings and helpers the built-in widgets use (AGT-016, AGT-021): a copied built-in imports them from
 // `omfp/sdk` like any agent widget.
-export { useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
+export { elementScroll, useVirtualizer, type VirtualItem } from "@tanstack/react-virtual";
 export { keyLabel } from "../keymap/keymap.ts";
 export type { Noun } from "../strings/chat.ts";
 export { strings } from "../strings/index.ts";
@@ -243,6 +243,7 @@ export {
   minimapRow,
   minimapScrollTop,
   minimapShapes,
+  ScrollIntent,
   sameMinimapScene,
 } from "../vm/minimap.ts";
 export type { NoticeRow } from "../vm/notice.ts";

@@ -7,6 +7,7 @@ import {
   minimapRow,
   minimapScrollTop,
   minimapShapes,
+  ScrollIntent,
   sameMinimapScene,
 } from "../../src/vm/minimap.ts";
 import { items, rowContent } from "../../src/vm/transcript.ts";
@@ -132,5 +133,58 @@ describe("minimap box and jumps", () => {
     expect(minimapScrollTop(10, 500, content)).toBe(0);
     expect(minimapScrollTop(500, 500, content)).toBe(3500);
     expect(minimapScrollTop(100, 0, content)).toBe(0);
+  });
+});
+
+describe("the user's scrolls", () => {
+  // spec: UI-860
+  test("the user is scrolling for half a second after their input, and while a gesture lasts", () => {
+    const intent = new ScrollIntent();
+    expect(intent.active(0)).toBe(false);
+    // A wheel notch, a key, a command: its smooth scroll goes on for a while.
+    intent.input(1000);
+    expect([intent.active(1000), intent.active(1499), intent.active(1500)]).toEqual([true, true, false]);
+    // A drag of the scrollbar, however long; released, its last page still comes.
+    intent.hold();
+    expect(intent.active(9000)).toBe(true);
+    intent.release(9000, true);
+    expect([intent.active(9499), intent.active(9500)]).toEqual([true, false]);
+    // A touch that did not move (a tap) scrolls nothing once it ends; two at once last until both end.
+    intent.hold();
+    intent.hold();
+    intent.release(20_000, false);
+    expect(intent.active(20_000)).toBe(true);
+    intent.release(20_000, false);
+    expect(intent.active(20_000)).toBe(false);
+    // An end with no gesture held does not cut the next one short.
+    intent.release(30_000, false);
+    intent.hold();
+    expect(intent.active(40_000)).toBe(true);
+  });
+
+  // spec: UI-860
+  test("a scroll event is the user's unless it finds the view where the app put it, or layout moved it with no input", () => {
+    const intent = new ScrollIntent();
+    const at = (scrollTop: number, scrollHeight: number, clientHeight: number) => ({
+      scrollTop,
+      scrollHeight,
+      clientHeight,
+    });
+    // Following the bottom as a reply streams: the view is where the follow put it.
+    intent.wrote(4400);
+    expect(intent.scrolled(at(4400, 5000, 600), 0)).toBe(false);
+    // The composer shrank once a message was sent: the view grew and the browser clamped it to the new end.
+    expect(intent.scrolled(at(4300, 5000, 700), 0)).toBe(false);
+    // A row measured: the content grew and the view moved with it.
+    expect(intent.scrolled(at(4350, 5050, 700), 0)).toBe(false);
+    // With no input, the view alone moved: a scrollbar sending the page no pointer events (WebKitGTK), the user's.
+    expect(intent.scrolled(at(4000, 5050, 700), 0)).toBe(true);
+    // A wheel down at the bottom, then a streamed delta followed: the view is where the follow put it.
+    intent.input(1000);
+    intent.wrote(4500);
+    expect(intent.scrolled(at(4500, 5200, 700), 1000)).toBe(false);
+    // The user's next input: their scrolls are theirs, wherever a follow had put the view and while the content grows.
+    intent.input(1100);
+    expect(intent.scrolled(at(4500, 5300, 700), 1100)).toBe(true);
   });
 });

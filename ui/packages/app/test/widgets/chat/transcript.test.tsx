@@ -12,7 +12,7 @@ import { ERRORS, SELECTED_THREAD, SUCCESSES, scopesAt } from "../../../src/sdk/i
 import { TranscriptWidget } from "../../../src/widgets/chat/index.ts";
 import { renderWithHost } from "../../support/host.tsx";
 import { fixtureEvents, isFrame } from "./fixtures.ts";
-import { renderThread, THREAD } from "./harness.tsx";
+import { ManualClock, renderThread, THREAD } from "./harness.tsx";
 import { fakeLayout, LIST_TOP, pagedLayout } from "./layout.ts";
 import "../../../../kit/test/support/mermaid.ts";
 
@@ -1369,6 +1369,13 @@ function installCanvas(): { draws: () => number; restore: () => void } {
 describe("minimap", () => {
   const minimap = () => screen.getByTestId("transcript-minimap");
   const box = () => minimap().querySelector<HTMLElement>(".omfp-minimap__box");
+  /** Waits for the next animation frame, after the one a map told to show draws in and shows. */
+  const nextFrame = () =>
+    act(() => {
+      const { promise, resolve } = Promise.withResolvers<void>();
+      requestAnimationFrame(() => resolve());
+      return promise;
+    });
 
   // spec: UI-860
   test("a scroll of the user's shows the minimap and the viewport's box; following the bottom does not; it hides after", async () => {
@@ -1388,6 +1395,129 @@ describe("minimap", () => {
     expect([box()?.style.transform, box()?.style.height]).toEqual(["translateY(150px)", "75px"]);
     // Scrolling stopped: it hides.
     await waitFor(() => expect(minimap().dataset.visible).toBeUndefined(), { timeout: 3000 });
+  });
+
+  // spec: UI-860, UI-044, UI-042
+  test("scrolls the user did not cause never show the map: a sent message, the reply, clamps, a restore, the jump to the end", async () => {
+    const clock = new ManualClock(0);
+    const { client, flush, host } = renderThread(<TranscriptWidget />, longHistory(50), clock);
+    let element = transcript();
+    const hidden = async () => {
+      await nextFrame();
+      return minimap().dataset.visible === undefined;
+    };
+    // Pinned: the message sent and the reply streaming in are followed, and the browser clamps the view to the end as
+    // rows get measured.
+    Object.defineProperty(element, "scrollHeight", { configurable: true, value: 5100 });
+    client.thread(THREAD, longHistory(51));
+    flush();
+    fireEvent.scroll(element);
+    scrollTo(element, 4400, 5000);
+    expect([element.dataset.pinned, await hidden()]).toEqual(["true", true]);
+    // A wheel down at the end scrolls nothing; the reply grows right after and the view follows it.
+    fireEvent.wheel(element, { deltaY: 100 });
+    Object.defineProperty(element, "scrollHeight", { configurable: true, value: 5200 });
+    client.thread(THREAD, longHistory(52));
+    flush();
+    expect(element.scrollTop).toBe(5200);
+    fireEvent.scroll(element);
+    expect([element.dataset.pinned, await hidden()]).toEqual(["true", true]);
+    clock.advance(1000);
+    // The user scrolls up and stops: the map shows, then hides.
+    fireEvent.wheel(element, { deltaY: -100 });
+    scrollTo(element, 1200, 4800);
+    await waitFor(() => expect(minimap().dataset.visible).toBe("true"));
+    clock.advance(1000);
+    await waitFor(() => expect(minimap().dataset.visible).toBeUndefined(), { timeout: 3000 });
+    // Scrolled up, the reply streams on below: the content grows and rows measured above move the view.
+    client.thread(THREAD, longHistory(53));
+    flush();
+    scrollTo(element, 1260, 4900);
+    expect([element.dataset.pinned, await hidden()]).toEqual(["false", true]);
+    // Away and back: the view returns where the user left it.
+    act(() => host.window.set(SELECTED_THREAD, "02T"));
+    client.thread("02T", longHistory(3));
+    flush();
+    act(() => host.window.set(SELECTED_THREAD, THREAD));
+    client.thread(THREAD, longHistory(53));
+    flush();
+    element = transcript();
+    scrollTo(element, 1260, 4900);
+    expect([element.dataset.pinned, await hidden()]).toEqual(["false", true]);
+    // The jump to the latest message.
+    await userEvent.click(screen.getByTestId("jump-to-bottom"));
+    fireEvent.scroll(element);
+    expect([element.dataset.pinned, await hidden()]).toEqual(["true", true]);
+  });
+
+  // spec: UI-860, UI-095
+  test("each of the user's ways to scroll shows the map: the wheel, keys, a command, the scrollbar, touch", async () => {
+    type Input = (element: HTMLElement, run: (id: string) => void) => void;
+    const inputs: readonly (readonly [string, Input])[] = [
+      ["wheel", (element) => fireEvent.wheel(element, { deltaY: 100 })],
+      ["ArrowDown", (element) => fireEvent.keyDown(element, { key: "ArrowDown" })],
+      ["Space", (element) => fireEvent.keyDown(element, { key: " " })],
+      ["PageUp", (element) => fireEvent.keyDown(element, { key: "PageUp" })],
+      ["nav.halfUp", (_element, run) => run("nav.halfUp")],
+      ["scrollbar", (element) => fireEvent.pointerDown(element)],
+      [
+        "touch",
+        (element) => {
+          const row = within(element).getAllByTestId("transcript-item")[0] ?? element;
+          fireEvent.touchStart(row);
+          fireEvent.touchMove(row);
+        },
+      ],
+    ];
+    for (const [name, input] of inputs) {
+      const clock = new ManualClock(0);
+      const { host } = renderThread(<TranscriptWidget />, longHistory(50), clock);
+      const element = transcript();
+      act(() => element.focus());
+      input(element, (id) => act(() => void host.commands.run(id, [], scopesAt(document.activeElement))));
+      // Its scroll event comes a little later (a smooth scroll's frames).
+      clock.advance(400);
+      scrollTo(element, 1200, 4800);
+      await waitFor(() => expect([name, minimap().dataset.visible]).toEqual([name, "true"]));
+      cleanup();
+    }
+  });
+
+  // spec: UI-860
+  test("the user's input counts for half a second and a scrollbar drag while it lasts; a tap or a click on a row is no scroll", async () => {
+    const clock = new ManualClock(0);
+    renderThread(<TranscriptWidget />, longHistory(50), clock);
+    const element = transcript();
+    const row = within(element).getAllByTestId("transcript-item")[0] ?? element;
+    // A scroll event too late to be the wheel's.
+    fireEvent.wheel(element, { deltaY: -100 });
+    clock.advance(600);
+    scrollTo(element, 1200, 4800);
+    // A tap and a click on a row, then the view moves (a card expanding).
+    fireEvent.touchStart(row);
+    fireEvent.touchEnd(row);
+    fireEvent.pointerDown(row);
+    fireEvent.pointerUp(row);
+    scrollTo(element, 1300, 4900);
+    await nextFrame();
+    expect(minimap().dataset.visible).toBeUndefined();
+    // A drag on the scrollbar, however long it lasts, while rows get measured.
+    fireEvent.pointerDown(element);
+    clock.advance(5000);
+    scrollTo(element, 2000, 5000);
+    await waitFor(() => expect(minimap().dataset.visible).toBe("true"));
+  });
+
+  // spec: UI-860
+  test("with no input, a move of the view alone is the user's: a scrollbar that sends the page no pointer events", async () => {
+    renderThread(<TranscriptWidget />, longHistory(50), new ManualClock(0));
+    const element = transcript();
+    scrollTo(element, 1200, 4800);
+    await nextFrame();
+    expect(minimap().dataset.visible).toBeUndefined();
+    // WebKitGTK's overlay scrollbar, dragged: the view moves, the content and the view keep their sizes.
+    scrollTo(element, 1000, 4800);
+    await waitFor(() => expect(minimap().dataset.visible).toBe("true"));
   });
 
   // spec: UI-860
@@ -1450,12 +1580,14 @@ describe("minimap", () => {
       await waitFor(() => expect(minimap().dataset.visible).toBe("true"));
       expect(canvas.draws()).toBe(1);
       for (const top of [2400, 2040, 600]) {
+        fireEvent.wheel(element, { deltaY: 100 });
         scrollTo(element, top, 4800);
         await waitFor(() => expect(box()?.style.transform).toBe(`translateY(${top / 8}px)`));
       }
       expect(canvas.draws()).toBe(1);
       client.thread(THREAD, longHistory(51));
       flush();
+      fireEvent.wheel(element, { deltaY: 100 });
       scrollTo(element, 640, 4800);
       await waitFor(() => expect(canvas.draws()).toBe(2));
     } finally {

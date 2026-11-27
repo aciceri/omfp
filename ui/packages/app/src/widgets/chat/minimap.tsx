@@ -9,9 +9,10 @@
  * canvas is redrawn at most every {@link REDRAW_MS}, only while the map shows, and only when what it shows changed:
  * the rows, their measured heights (the virtualizer's measurements, estimates for rows never rendered, so the drawing
  * shifts a little as they get measured), the search matches, the focused row, the transcript's size or the theme.
- * The map shows on the scrolls the transcript reports (not its follows of the bottom) and hides {@link HIDE_MS} after
- * the last one while the pointer is not on it; its fade is a CSS transition, so the motion level decides it (UI-145),
- * and the `mobile` layout hides it. Pressing or dragging on it scrolls the transcript there.
+ * The map shows on the scrolls the transcript reports as the user's (`ScrollIntent`: their wheel, keys, commands,
+ * scrollbar, touch or a drag on the map, never a follow of the bottom, a restore or the jump to the bottom) and hides
+ * {@link HIDE_MS} after the last one while the pointer is not on it; its fade is a CSS transition, so the motion level
+ * decides it (UI-145), and the `mobile` layout hides it. Pressing or dragging on it scrolls the transcript there.
  */
 
 import type { ThreadState } from "@omfp/core";
@@ -54,7 +55,7 @@ const PAINTS: readonly { readonly paint: MinimapPaint; readonly token: string; r
 
 /** What the transcript tells its minimap. */
 export interface MinimapHandle {
-  /** The view moved to `position`: by the user (any input) shows the map, by following the bottom only moves its box. */
+  /** The view moved to `position`: a scroll the user caused (`byUser`) shows the map, any other only moves its box. */
   scrolled(position: ScrollPosition, byUser: boolean): void;
 }
 
@@ -345,7 +346,7 @@ class MinimapView implements MinimapHandle {
   }
 }
 
-/** The minimap of one transcript; the transcript calls its handle's `scrolled` on the user's scrolls. */
+/** The minimap of one transcript; the transcript calls its handle's `scrolled` on every scroll of its view. */
 export function TranscriptMinimap({ ref, ...props }: MinimapProps) {
   const map = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);

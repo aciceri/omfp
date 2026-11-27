@@ -72,6 +72,10 @@ export const shell = {
     placeholder: "First message…",
     send: "Start thread",
   },
+  launch: {
+    /** `omfp desktop --workspace` naming no workspace of the daemon (UI-214). */
+    unknownWorkspace: (name: string) => `No workspace named “${name}”: give its id, name or folder.`,
+  },
   connection: {
     connecting: "Connecting to the daemon…",
     reconnecting: (seconds: number, attempt: number) =>

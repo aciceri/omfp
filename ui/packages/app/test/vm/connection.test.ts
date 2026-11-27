@@ -11,7 +11,6 @@ import {
   fragmentWithoutToken,
   TOKEN_KEY,
   type TokenPage,
-  takeThread,
   takeToken,
 } from "../../src/vm/token.ts";
 import { thread } from "../support/fixtures.ts";
@@ -111,28 +110,5 @@ describe("token", () => {
     expect(takeToken(page)).toBe("abc");
     expect(replaced).toEqual(["/#local=1"]);
     expect([...stored.keys()]).toEqual([TOKEN_KEY]);
-  });
-
-  // spec: UI-218
-  test("`thread=<id>` selects a thread once: it is read and removed from the address bar", () => {
-    const replaced: string[] = [];
-    const page = (hash: string) => ({
-      location: { hash, pathname: "/", search: "?x=1" },
-      history: {
-        replaceState: (_data: unknown, _unused: string, url?: string | URL | null) => replaced.push(String(url)),
-      },
-    });
-    expect(takeThread(page("#local=1&thread=t1"))).toBe("t1");
-    expect(replaced).toEqual(["/?x=1#local=1"]);
-    expect(takeThread(page("#thread=a%26b%3Dc"))).toBe("a&b=c");
-    expect(replaced[1]).toBe("/?x=1");
-    // Nothing to take: the address stays.
-    expect(takeThread(page("#local=1"))).toBeUndefined();
-    expect(takeThread(page("#threads=t1"))).toBeUndefined();
-    expect(replaced).toHaveLength(2);
-    // Empty or malformed: removed, nothing selected.
-    expect(takeThread(page("#thread="))).toBeUndefined();
-    expect(takeThread(page("#thread=%E0%A4%A"))).toBeUndefined();
-    expect(replaced).toHaveLength(4);
   });
 });

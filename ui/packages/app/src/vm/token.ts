@@ -12,7 +12,7 @@ export const TOKEN_KEY = "omfp.token";
 
 /** The `token` parameter of a URL fragment (`#token=…`, possibly among other `&`-separated parameters). */
 export function fragmentToken(fragment: string): string | undefined {
-  for (const parameter of parameters(fragment)) {
+  for (const parameter of fragmentParameters(fragment)) {
     if (parameter.startsWith("token=")) {
       const token = parameter.slice("token=".length).trim();
       return token === "" ? undefined : token;
@@ -23,42 +23,19 @@ export function fragmentToken(fragment: string): string | undefined {
 
 /** Whether the fragment says the window runs on the daemon's machine (`local=1`, UI-188). */
 export function fragmentLocal(fragment: string): boolean {
-  return parameters(fragment).includes("local=1");
+  return fragmentParameters(fragment).includes("local=1");
 }
 
 /** The fragment without its `token` parameter: `""` when nothing else is left, else `#` and the other parameters. */
 export function fragmentWithoutToken(fragment: string): string {
-  const rest = parameters(fragment).filter((parameter) => parameter !== "token" && !parameter.startsWith("token="));
+  const rest = fragmentParameters(fragment).filter(
+    (parameter) => parameter !== "token" && !parameter.startsWith("token="),
+  );
   return rest.length === 0 ? "" : `#${rest.join("&")}`;
 }
 
-/**
- * The thread a window opens on (`#thread=<id>`, `omfp desktop --thread`, UI-218): read once, then removed from the
- * address bar (`history.replaceState`) so a reload keeps the window's own selection.
- */
-export function takeThread(page: Pick<TokenPage, "location" | "history">): string | undefined {
-  const { location } = page;
-  const all = parameters(location.hash);
-  const parameter = all.find((candidate) => candidate.startsWith("thread="));
-  if (parameter === undefined) {
-    return undefined;
-  }
-  const rest = all.filter((candidate) => !candidate.startsWith("thread="));
-  page.history.replaceState(
-    null,
-    "",
-    `${location.pathname}${location.search}${rest.length === 0 ? "" : `#${rest.join("&")}`}`,
-  );
-  let thread: string;
-  try {
-    thread = decodeURIComponent(parameter.slice("thread=".length)).trim();
-  } catch {
-    return undefined;
-  }
-  return thread === "" ? undefined : thread;
-}
-
-function parameters(fragment: string): string[] {
+/** The `&`-separated parameters of a URL fragment, with or without its `#`. */
+export function fragmentParameters(fragment: string): string[] {
   return (fragment.startsWith("#") ? fragment.slice(1) : fragment).split("&").filter((parameter) => parameter !== "");
 }
 

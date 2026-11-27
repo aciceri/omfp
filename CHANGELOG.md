@@ -9,6 +9,11 @@ The version's section is also the source of the GitHub release notes.
 
 ### Added
 
+- `omfp desktop --workspace <name> --view <id>` opens a window on a workspace's new thread with the view you name, on
+  the local daemon or on another one with `--connect`: a launcher or a key of your window manager can open, say, a
+  workspace's browser view straight away. `--view` also works with `--thread`, and `--prompt <text>` writes the new
+  thread's first message without sending it. The thread is created only when you send that message. A web page
+  address takes the same `#workspace=`, `#view=` and `#prompt=` parameters.
 - Right-click menus of omfp's own on messages, files and threads, instead of the browser's: a message offers Fork from
   here and Copy, a file Open and Copy path (also `:copy-path`), a thread Archive or Unarchive, Copy conversation and
   Export, acting on the thread clicked rather than the selected one. `Shift-F10`, the menu key or `:menu` opens the

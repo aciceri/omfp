@@ -447,6 +447,70 @@ fn a_native_views_page_runs_its_scripts_and_posts_to_its_widget() {
     );
 }
 
+// spec: TST-033, UI-683
+#[cfg(target_os = "linux")]
+#[test]
+fn a_native_view_keeps_to_its_placeholder_when_its_page_is_wider() {
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("data");
+    let workspaces = dir.path().join("workspaces");
+    let (base, _requests) = serve_native_page();
+    // The page is 2000 px wide and posts its viewport's width (the placeholder's, less a scrollbar) once loaded and at
+    // every resize. Once it posted, the placeholder narrows from 320 to 200 px: the view must narrow with it, not spread
+    // to the page's width. The widths posted are in `data-smoke`.
+    let config = dir.path().join(".config/omfp");
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::write(
+        config.join("init.ts"),
+        format!(
+            r#"export default function init() {{
+  const placeholder = document.createElement("div");
+  placeholder.style.cssText = "position:fixed;left:0;top:0;width:320px;height:240px;z-index:2147483647";
+  placeholder.dataset.omfpWebView = "smoke";
+  placeholder.dataset.url = "{base}/page";
+  placeholder.dataset.setup = JSON.stringify({{
+    scripts: [
+      `addEventListener("DOMContentLoaded", () => {{ document.body.style.minWidth = "2000px"; }});
+       addEventListener("load", () => window.omfp.post(innerWidth));
+       addEventListener("resize", () => window.omfp.post(innerWidth));`,
+    ],
+    channel: true,
+  }});
+  placeholder.addEventListener("omfp-web-view-message", (event) => {{
+    const width = event.detail.data;
+    document.body.dataset.smoke = `${{document.body.dataset.smoke ?? ""}} ${{width}}`.trim();
+    if (width <= 200) document.body.dataset.narrowed = "";
+    placeholder.style.width = "200px";
+  }});
+  document.body.append(placeholder);
+  return () => placeholder.remove();
+}}
+"#
+        ),
+    )
+    .unwrap();
+    let _daemon = BackgroundDaemon(&data);
+    desktop_with(
+        dir.path(),
+        &[
+            ("OMFP_SMOKE", "local"),
+            ("OMFP_SMOKE_WAIT", "body[data-narrowed]"),
+            ("ANTHROPIC_API_KEY", "sk-ant-omfp-test"),
+        ],
+        &[
+            "--data-dir",
+            data.to_str().unwrap(),
+            "--",
+            "--static-dir",
+            web_bundle().to_str().unwrap(),
+            "--workspaces-root",
+            workspaces.to_str().unwrap(),
+            "--bind",
+            "127.0.0.1:0",
+        ],
+    );
+}
+
 // spec: TST-033, ENV-030, UI-541
 #[cfg(target_os = "linux")]
 #[test]

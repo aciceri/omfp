@@ -3,6 +3,11 @@
 //! went as its `uri` changes and when it finished loading, and its capture (a snapshot of its visible part) stands in
 //! while omfp's UI covers it. Each view has a user content manager of its own: its widget's scripts, and the channel
 //! its page posts its widget messages through (a script message handler of that view only).
+//!
+//! A view's place is its margins (the placeholder's corner) and its size request (the placeholder's size). The overlay
+//! allocates each view exactly that box: by default it would give a view up to its natural width, which `WebKitGTK`
+//! sets to the width of the page's content, so a page wider than its placeholder would spread over the panels beside it
+//! up to the window's edge (UI-683).
 
 use std::path::Path;
 use std::sync::Arc;
@@ -62,6 +67,17 @@ pub fn follow(window: &WebviewWindow, origin: String, nonce: &str, data: &Path) 
             return;
         }
         let overlay = gtk::Overlay::new();
+        overlay.connect_get_child_position(|_, child| {
+            let view = child.downcast_ref::<WebView>()?;
+            let (width, height) = view.size_request();
+            // The margins are part of the box: the allocation takes them off again.
+            Some(gtk::gdk::Rectangle::new(
+                0,
+                0,
+                view.margin_start() + width,
+                view.margin_top() + height,
+            ))
+        });
         parent.remove(&page);
         overlay.add(&page);
         parent.pack_start(&overlay, true, true, 0);

@@ -7,6 +7,7 @@ import {
   minimapRow,
   minimapScrollTop,
   minimapShapes,
+  ScrollIntent,
   sameMinimapScene,
 } from "../../src/vm/minimap.ts";
 import { items, rowContent } from "../../src/vm/transcript.ts";
@@ -132,5 +133,33 @@ describe("minimap box and jumps", () => {
     expect(minimapScrollTop(10, 500, content)).toBe(0);
     expect(minimapScrollTop(500, 500, content)).toBe(3500);
     expect(minimapScrollTop(100, 0, content)).toBe(0);
+  });
+});
+
+describe("the user's scrolls", () => {
+  // spec: UI-860
+  test("a scroll is the user's for half a second after their input, and while a gesture lasts", () => {
+    const intent = new ScrollIntent();
+    // Nothing from the user yet: a follow of the bottom, a restore, a clamp.
+    expect(intent.byUser(0)).toBe(false);
+    // A wheel notch, a key, a command: its smooth scroll goes on for a while, and stops being the user's.
+    intent.input(1000);
+    expect([intent.byUser(1000), intent.byUser(1499), intent.byUser(1500)]).toEqual([true, true, false]);
+    // A drag of the scrollbar, however long; released, its last page is still the user's.
+    intent.hold();
+    expect(intent.byUser(9000)).toBe(true);
+    intent.release(9000, true);
+    expect([intent.byUser(9499), intent.byUser(9500)]).toEqual([true, false]);
+    // A touch that did not move (a tap) scrolls nothing once it ends; two at once last until both end.
+    intent.hold();
+    intent.hold();
+    intent.release(20_000, false);
+    expect(intent.byUser(20_000)).toBe(true);
+    intent.release(20_000, false);
+    expect(intent.byUser(20_000)).toBe(false);
+    // An end with no gesture held holds nothing.
+    intent.release(30_000, false);
+    intent.hold();
+    expect(intent.byUser(40_000)).toBe(true);
   });
 });

@@ -25,7 +25,8 @@ The version's section is also the source of the GitHub release notes.
 - While you scroll a conversation, a minimap of the whole thread shows beside the scrollbar: a faded overview with
   your messages, the assistant's text, tool calls and failures in their own colors, the open search's matches and the
   focused message marked, and a box where you are. Click or drag on it to jump there; it fades out a second after you
-  stop scrolling. Phones do not show it.
+  stop scrolling. Only your own scrolling shows it (wheel, touch, keys, navigation commands, the scrollbar): sending a
+  message, the reply moving the view and the jump to the latest message do not. Phones do not show it.
 
 ### Changed
 

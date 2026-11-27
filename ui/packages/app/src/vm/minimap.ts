@@ -2,9 +2,10 @@
  * The transcript's minimap (UI-860..UI-863): a schematic overview of the whole conversation, drawn on one canvas beside
  * the transcript's scrollbar while the user scrolls. This module decides what the canvas shows — one block per
  * transcript row colored by its kind, faded lines for its text and bars for its tool cards, marks on the search's
- * matching rows and the focused row — where the viewport box sits, and where a press on the map scrolls to; the widget
- * (`widgets/chat/minimap.tsx`) draws it. Positions come from the virtualizer's measurements (estimates for rows never
- * rendered), scaled so the whole scroll content fits the map's height.
+ * matching rows and the focused row — where the viewport box sits, where a press on the map scrolls to, and which
+ * scrolls are the user's ({@link ScrollIntent}); the widget (`widgets/chat/minimap.tsx`) draws it. Positions come from
+ * the virtualizer's measurements (estimates for rows never rendered), scaled so the whole scroll content fits the map's
+ * height.
  */
 
 import type { Block, RowContent } from "./transcript.ts";
@@ -212,4 +213,45 @@ export function minimapScrollTop(
   }
   const top = (y / height) * scrollHeight - clientHeight / 2;
   return Math.round(Math.min(Math.max(0, scrollHeight - clientHeight), Math.max(0, top)));
+}
+
+/** The user's scroll goes on this long after their last input: a smooth scroll's frames, a released scrollbar's last
+ * page, a touch's momentum. */
+const USER_SCROLL_MS = 500;
+
+/**
+ * Which scroll events of the transcript the user caused, the only ones that show the minimap (UI-860), known from the
+ * user's input rather than guessed from where the view went. A scroll event is the user's while a gesture lasts
+ * ({@link ScrollIntent.hold}: a press on the scrollbar, a touch) or up to {@link USER_SCROLL_MS} after the user's last
+ * input ({@link ScrollIntent.input}: a wheel notch, a scroll key, a `nav.*` command, a search visit, a minimap jump, the
+ * end of a gesture that scrolled). Anything else that moves the view — following the bottom while a reply streams or
+ * after a message is sent, a restore, the jump to the bottom, the browser clamping a shrunk content — is not, wherever
+ * it puts the view.
+ */
+export class ScrollIntent {
+  #until = Number.NEGATIVE_INFINITY;
+  #held = 0;
+
+  /** The user scrolled at `now` (ms). */
+  input(now: number): void {
+    this.#until = now + USER_SCROLL_MS;
+  }
+
+  /** A gesture started: every scroll is the user's until it ends. */
+  hold(): void {
+    this.#held += 1;
+  }
+
+  /** A gesture ended at `now`; one that scrolled goes on a while (`goesOn`). */
+  release(now: number, goesOn: boolean): void {
+    this.#held = Math.max(0, this.#held - 1);
+    if (goesOn) {
+      this.input(now);
+    }
+  }
+
+  /** Whether a scroll event at `now` is the user's. */
+  byUser(now: number): boolean {
+    return this.#held > 0 || now < this.#until;
+  }
 }

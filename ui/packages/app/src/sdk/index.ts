@@ -243,6 +243,7 @@ export {
   minimapRow,
   minimapScrollTop,
   minimapShapes,
+  ScrollIntent,
   sameMinimapScene,
 } from "../vm/minimap.ts";
 export type { NoticeRow } from "../vm/notice.ts";

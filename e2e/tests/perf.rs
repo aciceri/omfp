@@ -760,7 +760,8 @@ fn env_number(name: &str, default: u64) -> u64 {
 }
 
 /// Scrolls from the top to the bottom over at most `frames` frames (one step per frame, the remaining distance
-/// spread over the frames left), recording; returns the recording and the frames used.
+/// spread over the frames left) as the user would, a wheel event before each step, so the minimap shows (UI-860);
+/// returns the recording and the frames used.
 async fn scroll_down(journey: &Journey, frames: u64) -> anyhow::Result<(Recording, u64)> {
     let script = "const [css, frames, done] = arguments;
         const t = document.querySelector(css);
@@ -773,6 +774,7 @@ async fn scroll_down(journey: &Journey, frames: u64) -> anyhow::Result<(Recordin
             done([perf.stop(), frame]);
             return;
           }
+          t.dispatchEvent(new WheelEvent('wheel', { deltaY: 100, bubbles: true }));
           t.scrollTop += Math.max(t.clientHeight / 2, remaining / (frames - frame));
           frame += 1;
           requestAnimationFrame(step);

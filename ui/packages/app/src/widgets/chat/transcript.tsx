@@ -10,7 +10,8 @@
  * the one before it shows a day separator inside its item, so `j`/`k` never stop on one (UI-750). `/` searches the
  * conversation, visiting the query's occurrences and highlighting them in the rendered rows (UI-730, UI-736,
  * search.ts). While the user scrolls, a minimap of the whole conversation shows beside the scrollbar (UI-860,
- * minimap.tsx); the view following the bottom does not show it.
+ * minimap.tsx): only on the scrolls their input caused (`ScrollIntent`), never on a follow of the bottom, a restore or
+ * the jump to the bottom.
  */
 
 import type { ThreadState } from "@omfp/core";
@@ -39,6 +40,7 @@ import {
   refocusAfterScroll,
   transcriptRowContent as rowContent,
   SCOPE_ATTRIBUTE,
+  ScrollIntent,
   type ScrollPosition,
   type SearchCursor,
   type SearchMarks,
@@ -79,7 +81,7 @@ import { blockCardKey, MessageRow, NoticeRowView, SystemRowView } from "./messag
 import { type MinimapHandle, TranscriptMinimap } from "./minimap.tsx";
 import type { WidgetProps } from "./props.ts";
 import { collapsedThinkingHints, NO_MARKS, revealInline, textRanges, useSearchHighlights } from "./search.ts";
-import { measurementsKey, pinKey, useExpandCards, useSelectedThread } from "./state.ts";
+import { measurementsKey, pinKey, useClock, useExpandCards, useSelectedThread } from "./state.ts";
 
 /** Height assumed for an item before it is measured. */
 const ESTIMATED_ITEM_PX = 120;
@@ -233,8 +235,9 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
   useEffect(() => () => setMeasurements(virtualizer.measurementsCache), [setMeasurements, virtualizer]);
   const measurementsOf = useCallback(() => virtualizer.measurementsCache, [virtualizer]);
   const minimap = useRef<MinimapHandle>(null);
-  /** Where the last follow moved the view, until its scroll event arrives: that one is no scroll of the user's. */
-  const followTop = useRef<number | undefined>(undefined);
+  const clock = useClock();
+  /** Which scroll events the user caused: those show the minimap (UI-860). */
+  const [intent] = useState(() => new ScrollIntent());
   const [current, setCurrent] = useState<number | undefined>(undefined);
   const today = useToday();
   useSettledAnnouncements(state.settled);
@@ -296,7 +299,6 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
    * after the render a streamed delta caused). */
   const follow = useCallback(
     (container: HTMLElement) => {
-      const before = container.scrollTop;
       const target = restoring.current;
       if (target !== undefined) {
         container.scrollTop = target;
@@ -312,14 +314,53 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
       }
       lastPosition.current = scrollPosition(container);
       setFar(farFromBottom(lastPosition.current));
-      if (lastPosition.current.scrollTop !== before) {
-        followTop.current = lastPosition.current.scrollTop;
-      }
     },
     [dispatch],
   );
+  /** The user scrolls the view: the restore ends and the scroll shows the minimap (UI-860). */
   const userScrolls = () => {
     restoring.current = undefined;
+    intent.input(clock.now());
+  };
+  /**
+   * A press on the container itself is on its scrollbar: what it drags or pages is the user's until the press ends,
+   * wherever the button is released, or at the first move with no button held (an engine may send no `pointerup` after
+   * a scrollbar drag).
+   */
+  const pressScrollbar = () => {
+    intent.hold();
+    const done = new AbortController();
+    const end = () => {
+      done.abort();
+      intent.release(clock.now(), true);
+    };
+    const options = { capture: true, signal: done.signal };
+    window.addEventListener("pointerup", end, options);
+    window.addEventListener("pointercancel", end, options);
+    window.addEventListener("pointermove", (event) => event.buttons === 0 && end(), options);
+  };
+  /**
+   * A touch scrolls the view while it lasts, and one that moved flings on a while. Its moves and its end go to the
+   * element it started on, listened to there: once a row leaves the rendered window, they no longer bubble up here.
+   */
+  const touch = (target: EventTarget) => {
+    intent.hold();
+    let moved = false;
+    const done = new AbortController();
+    const end = () => {
+      done.abort();
+      intent.release(clock.now(), moved);
+    };
+    const options = { signal: done.signal };
+    target.addEventListener(
+      "touchmove",
+      () => {
+        moved = true;
+      },
+      options,
+    );
+    target.addEventListener("touchend", end, options);
+    target.addEventListener("touchcancel", end, options);
   };
   /** Back to the end, following it again (UI-044): instant, like a follow, at every motion level. */
   const jumpToBottom = () => {
@@ -480,7 +521,7 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
       return;
     }
     const top = keyScrollTop(event.key, container.scrollTop, container.clientHeight, container.scrollHeight);
-    if (isScrollUpKey(event.key) || top !== undefined || event.key === "ArrowDown") {
+    if (isScrollUpKey(event.key) || top !== undefined || event.key === "ArrowDown" || event.key === " ") {
       userScrolls();
     }
     if (isScrollUpKey(event.key)) {
@@ -663,10 +704,9 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
             lastPosition.current = now;
             dispatch({ type: "scroll", ...now, previous });
             setFar(farFromBottom(now));
-            // The scroll event of a follow is no scroll of the user's: it does not show the minimap (UI-860).
-            const followed = followTop.current !== undefined && Math.abs(now.scrollTop - followTop.current) < 1;
-            followTop.current = undefined;
-            minimap.current?.scrolled(now, !followed);
+            // Only a scroll the user caused shows the minimap; a follow, a restore or the jump to the bottom only moves
+            // its box.
+            minimap.current?.scrolled(now, intent.byUser(clock.now()));
           }}
           onWheel={(event) => {
             // Ctrl with the wheel zooms the page and scrolls nothing (UI-283): the pin and the restore stay.
@@ -679,8 +719,20 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
             }
           }}
           onKeyDown={onKeyDown}
-          onPointerDown={(event) => fromInside(event) && userScrolls()}
-          onTouchStart={(event) => fromInside(event) && userScrolls()}
+          onPointerDown={(event) => {
+            if (fromInside(event)) {
+              restoring.current = undefined;
+              if (event.target === event.currentTarget) {
+                pressScrollbar();
+              }
+            }
+          }}
+          onTouchStart={(event) => {
+            if (fromInside(event)) {
+              restoring.current = undefined;
+              touch(event.target);
+            }
+          }}
         >
           {NAV.map(({ id, title }) => (
             <NavRegistration key={id} id={id} title={title} run={runNav} />

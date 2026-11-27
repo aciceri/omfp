@@ -326,6 +326,7 @@ describe("the context menu", () => {
         data-omfp-path="src/lib.rs"
         data-testid="path"
         onPointerDown={(event) => event.stopPropagation()}
+        onPointerUp={(event) => event.stopPropagation()}
       >
         lib.rs
       </button>,
@@ -337,7 +338,7 @@ describe("the context menu", () => {
     });
     // Android's own long-press menu during the same press.
     expect(fireEvent.contextMenu(path)).toBe(false);
-    fireEvent.pointerUp(window, touch(20));
+    fireEvent.pointerUp(path, touch(20));
     expect(fireEvent.click(path)).toBe(false);
     expect(titles()).toEqual(["Open", "Copy path"]);
   });

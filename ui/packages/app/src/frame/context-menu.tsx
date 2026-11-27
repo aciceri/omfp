@@ -157,16 +157,17 @@ export function ContextMenuLayer(): ReactNode {
           if (press === current) {
             press = undefined;
           }
-          window.removeEventListener("pointermove", move);
-          window.removeEventListener("pointerup", up);
-          window.removeEventListener("pointercancel", cancel);
+          window.removeEventListener("pointermove", move, { capture: true });
+          window.removeEventListener("pointerup", up, { capture: true });
+          window.removeEventListener("pointercancel", cancel, { capture: true });
         },
       };
       const timer = setTimeout(current.open, MENU_LONG_PRESS_MS);
       press = current;
-      window.addEventListener("pointermove", move);
-      window.addEventListener("pointerup", up);
-      window.addEventListener("pointercancel", cancel);
+      // Captured, as the press is: file links stop the propagation of their releases too.
+      window.addEventListener("pointermove", move, { capture: true });
+      window.addEventListener("pointerup", up, { capture: true });
+      window.addEventListener("pointercancel", cancel, { capture: true });
     };
     document.addEventListener("contextmenu", onContextMenu);
     // Captured: file links stop the propagation of their presses (a tool card's path, `omfp:changes`).

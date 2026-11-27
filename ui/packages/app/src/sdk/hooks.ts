@@ -9,7 +9,8 @@
  * - Calls: {@link useCall} is the full protocol (`call("thread.prompt", { threadId, text })`); `useCall(method, params)`
  *   its result, shown again from the window's last results while a new mount refreshes it (UI-392).
  * - Window: {@link useWindowState} for window-local state shared by key; {@link useCommand} registers a command for
- *   the keymap and the `:` line; {@link useAnnounce} speaks through the live region.
+ *   the keymap and the `:` line; {@link useContextMenu} adds items to the context menus (UI-319); {@link useAnnounce}
+ *   speaks through the live region.
  */
 
 import type { CallMethod, ConnectionStatus, Index, ThreadView, TopicState } from "@omfp/client";
@@ -27,6 +28,7 @@ import {
 } from "@omfp/protocol";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { Command } from "./commands.ts";
+import type { ContextMenu } from "./context-menu.ts";
 import type { Snapshot } from "./frame-store.ts";
 import { type OmfpHost, type SdkClient, useHost } from "./host.tsx";
 import type { LiveClient, LiveSnapshot } from "./live.ts";
@@ -240,7 +242,7 @@ export function useCommand(command: Command): void {
       ...(aliases === undefined ? {} : { aliases }),
       ...(widget === undefined ? {} : { widget }),
       args: (before) => latest.current.args?.(before) ?? [],
-      enabled: () => latest.current.enabled?.() ?? true,
+      enabled: (args) => latest.current.enabled?.(args) ?? true,
       run: (args) => latest.current.run(args),
     });
   }, [commands, id, scope, title, description, widget]);
@@ -250,6 +252,17 @@ export function useCommand(command: Command): void {
  * for init files (UI-261) and frame-level code. */
 export function registerCommand(host: OmfpHost, command: Command): () => void {
   return host.commands.register(command);
+}
+
+/**
+ * Adds `menu`'s items to the context menus of its target kind while mounted (UI-319): `{ on: "message" | "file" |
+ * "thread", items: [<command id or alias> | { command, title? }] }`, after the built-in items and those added before.
+ * The registration changes only when the menu's content does.
+ */
+export function useContextMenu(menu: ContextMenu): void {
+  const { contextMenus } = useHost();
+  const content = JSON.stringify(menu);
+  useEffect(() => contextMenus.register(JSON.parse(content) as ContextMenu), [contextMenus, content]);
 }
 
 /** Announces `message` through the window's ARIA live region (UI-092). */

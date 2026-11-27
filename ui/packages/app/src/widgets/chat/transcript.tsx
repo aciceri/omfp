@@ -6,7 +6,8 @@
  * viewport before moving on (UI-370), `Ctrl-d`/`Ctrl-u` and PageDown/PageUp scroll and keep the focus while the
  * focused item shows (UI-371). Every scroll is instant, so no motion setting changes them. A user message offers
  * "Fork from here" (UI-660), `:fork` forks from the current message (UI-663) and `:copy` copies it as Markdown
- * (UI-790). A message sent on another day than
+ * (UI-790); each message row is a context menu target (`data-omfp-message`, its transcript index), and both commands
+ * take that index as their argument (UI-315, UI-316). A message sent on another day than
  * the one before it shows a day separator inside its item, so `j`/`k` never stop on one (UI-750). `/` searches the
  * conversation, visiting the query's occurrences and highlighting them in the rendered rows (UI-730, UI-736,
  * search.ts). While the user scrolls, a minimap of the whole conversation shows beside the scrollbar (UI-860,
@@ -260,32 +261,53 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
     const position = focused === undefined ? latestCurrent.current : Number(focused);
     return position === undefined ? undefined : rows[position];
   };
+  /**
+   * The row of the message whose transcript index is the first argument (a context menu's message, UI-315), else the
+   * focused row.
+   */
+  const targetRow = (args: readonly string[] | undefined): TranscriptItem | undefined => {
+    const [argument] = args ?? [];
+    if (argument === undefined) {
+      return focusedRow();
+    }
+    return /^\d+$/.test(argument)
+      ? rows.find((row) => row.kind.type === "message" && row.kind.index === Number(argument))
+      : undefined;
+  };
+  /** The transcript index of `row`'s message when it is one to fork from (the user's or an answer). */
+  const forkable = (row: TranscriptItem | undefined): number | undefined => {
+    const message = row?.kind.type === "message" ? state.transcript[row.kind.index]?.message : undefined;
+    return row?.kind.type === "message" && (message?.role === "user" || message?.role === "assistant")
+      ? row.kind.index
+      : undefined;
+  };
   useCommand({
     id: "thread.fork",
     title: strings.shell.commands.fork,
     description: strings.shell.commands.forkDescription,
     aliases: ["fork"],
     scope: "transcript",
-    run: () => {
-      const row = focusedRow();
-      const message = row?.kind.type === "message" ? state.transcript[row.kind.index]?.message : undefined;
-      if (row?.kind.type === "message" && (message?.role === "user" || message?.role === "assistant")) {
-        forkAt(row.kind.index);
-      } else {
+    // A context menu offers it on the messages it forks from only (UI-316).
+    enabled: (args) => args === undefined || args.length === 0 || forkable(targetRow(args)) !== undefined,
+    run: (args) => {
+      const index = forkable(targetRow(args));
+      if (index === undefined) {
         reportError(strings.shell.fork.noMessage);
+      } else {
+        forkAt(index);
       }
     },
   });
   const conversation = useConversationActions();
-  // `:copy` copies the focused message, else the whole conversation (UI-790).
+  // `:copy` copies the focused message (or the one a context menu names), else the whole conversation (UI-790).
   useCommand({
     id: "thread.copy",
     title: strings.shell.commands.copy,
     description: strings.shell.commands.copyDescription,
     aliases: ["copy"],
     scope: "transcript",
-    run: () => {
-      const row = focusedRow();
+    run: (args) => {
+      const row = targetRow(args);
       const content = row === undefined ? undefined : rowContent(state, row);
       void (content?.type === "message" ? conversation.copyMessage(content.view) : conversation.copy(threadId));
     },
@@ -711,6 +733,7 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
                     ref={virtualizer.measureElement}
                     data-index={virtual.index}
                     data-key={row.key}
+                    data-omfp-message={row.kind.type === "message" ? row.kind.index : undefined}
                     data-testid="transcript-item"
                     aria-current={current === virtual.index ? true : undefined}
                     tabIndex={-1}

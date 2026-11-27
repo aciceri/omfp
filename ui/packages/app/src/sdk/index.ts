@@ -390,6 +390,22 @@ export { type Answer, type CardInfoScope, CardScope, useAnswer } from "./answer.
 export { type Background, useBackground, useRunningInBackground, useSubagentRows } from "./background.ts";
 export { CardWidget, type CardWidgetProps, CardWidgetScope } from "./card.tsx";
 export { type Command, CommandRegistry, SCOPE_ATTRIBUTE, scopesAt } from "./commands.ts";
+export {
+  CONTEXT_TARGET_KINDS,
+  type ContextMenu,
+  type ContextMenuEntry,
+  type ContextMenuItem,
+  ContextMenus,
+  type ContextTarget,
+  type ContextTargetKind,
+  contextMenuEntries,
+  contextTargetAt,
+  LINE_ATTRIBUTE,
+  MESSAGE_ATTRIBUTE,
+  PATH_ATTRIBUTE,
+  runContextEntry,
+  THREAD_ATTRIBUTE,
+} from "./context-menu.ts";
 export { type ConversationActions, conversationActions, useConversationActions } from "./conversation.ts";
 export { useThreadCost } from "./cost.ts";
 export {
@@ -424,6 +440,7 @@ export {
   useCall,
   useCommand,
   useConnection,
+  useContextMenu,
   useIndex,
   useLive,
   useSnapshot,

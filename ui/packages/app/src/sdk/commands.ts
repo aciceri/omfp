@@ -32,8 +32,11 @@ export interface Command {
    * `:widget add ` → the widgets).
    */
   readonly args?: (before: readonly string[]) => readonly string[];
-  /** Hidden from the command line and not run when `false`. */
-  readonly enabled?: () => boolean;
+  /**
+   * Hidden from the command line and not run when `false`. `args` are those it would run with when known (a context
+   * menu item passes its target, UI-315), so a command can offer itself for some targets only.
+   */
+  readonly enabled?: (args?: readonly string[]) => boolean;
   run(args: readonly string[]): void | Promise<void>;
 }
 
@@ -81,10 +84,14 @@ export class CommandRegistry {
     return commands.reverse();
   }
 
-  /** The enabled command for `id` (or an alias) in the innermost of `scopes`, else the global one. */
-  resolve(name: string, scopes: readonly string[] = []): Command | undefined {
+  /**
+   * The enabled command for `id` (or an alias) in the innermost of `scopes`, else the global one; `args`, when given,
+   * are what it would run with (its `enabled` sees them).
+   */
+  resolve(name: string, scopes: readonly string[] = [], args?: readonly string[]): Command | undefined {
     const matching = this.list().filter(
-      (command) => (command.enabled?.() ?? true) && (command.id === name || (command.aliases?.includes(name) ?? false)),
+      (command) =>
+        (command.enabled?.(args) ?? true) && (command.id === name || (command.aliases?.includes(name) ?? false)),
     );
     for (const scope of scopes) {
       const scoped = matching.find((command) => command.scope === scope);
@@ -97,7 +104,7 @@ export class CommandRegistry {
 
   /** Runs `name` in `scopes`; `false` when no enabled command answers to it. */
   run(name: string, args: readonly string[] = [], scopes: readonly string[] = []): boolean {
-    const command = this.resolve(name, scopes);
+    const command = this.resolve(name, scopes, args);
     if (command === undefined) {
       return false;
     }

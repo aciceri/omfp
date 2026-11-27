@@ -1,8 +1,9 @@
 /**
  * The global commands of the frame (UI-095), shared by the keymap and the `:` line: a draft thread in the current
  * workspace and thread actions on the selected thread (UI-021, UI-023, UI-026, UI-030; copying and exporting its
- * conversation, UI-790, UI-791; compacting its context, UI-910), a rescan of the current workspace (DMN-023), colour
- * scheme (UI-091, window-local),
+ * conversation, UI-790, UI-791; compacting its context, UI-910) — archiving, unarchiving, copying and exporting take a
+ * thread id as their argument instead, as a thread's context menu passes it (UI-316) —, a rescan of the current
+ * workspace (DMN-023), opening and copying a file's path (UI-116, UI-316), colour scheme (UI-091, window-local),
  * density and `:set` (daemon settings, UI-094, UI-097), the
  * view switch (UI-101), the next and previous view (UI-302) and `:view-reset` (UI-107, UI-430), adding a widget to the view
  * (UI-300), copying a widget into the workspace (UI-106) and
@@ -79,13 +80,24 @@ export function GlobalCommands({ viewIds, currentView, widgets, addWidget }: Glo
     const thread = summary();
     return thread !== undefined && !isArchived(thread);
   };
-  const archived = () => {
-    const thread = summary();
-    return thread !== undefined && isArchived(thread);
-  };
   const onSelected = (run: (threadId: string) => unknown) => () => {
     if (selected !== undefined) {
       void run(selected);
+    }
+  };
+  // The thread a command's first argument names (a thread's context menu, UI-316), else the selected one.
+  const targetOf = (args: readonly string[] | undefined): string | undefined => {
+    const [named] = args ?? [];
+    return named !== undefined && host.frames.getSnapshot().index.threads.has(named) ? named : selected;
+  };
+  const targetSummary = (args: readonly string[] | undefined) => {
+    const threadId = targetOf(args);
+    return threadId === undefined ? undefined : host.frames.getSnapshot().index.threads.get(threadId);
+  };
+  const onTarget = (run: (threadId: string) => unknown) => (args: readonly string[]) => {
+    const threadId = targetOf(args);
+    if (threadId !== undefined) {
+      void run(threadId);
     }
   };
   const titles = strings.shell.commands;
@@ -123,6 +135,27 @@ export function GlobalCommands({ viewIds, currentView, widgets, addWidget }: Glo
       if (target !== undefined) {
         openFile(host, target.path, target.options);
       }
+    },
+  });
+  useCommand({
+    id: "file.copyPath",
+    title: titles.copyPath,
+    aliases: ["copy-path"],
+    // `:copy-path <path>[:<line>]` (a file's context menu passes its reference so), else the focused element's path.
+    run: (args) => {
+      const path =
+        args.length > 0 ? args.join(" ").replace(/:\d+(?::\d+)?$/, "") : focusedPath(document.activeElement)?.path;
+      if (path === undefined || path === "") {
+        reportError(host, strings.shell.contextMenu.noPath);
+        return;
+      }
+      // `navigator.clipboard` is missing outside secure contexts: the throw becomes the rejection.
+      Promise.resolve()
+        .then(() => navigator.clipboard.writeText(path))
+        .then(
+          () => reportSuccess(host, strings.shell.file.copiedPath(path)),
+          (error: unknown) => reportError(host, error),
+        );
     },
   });
   useCommand({
@@ -202,23 +235,29 @@ export function GlobalCommands({ viewIds, currentView, widgets, addWidget }: Glo
     id: "thread.archive",
     title: titles.archive,
     aliases: ["archive"],
-    enabled: live,
-    run: onSelected(actions.archive),
+    enabled: (args) => {
+      const thread = targetSummary(args);
+      return thread !== undefined && !isArchived(thread);
+    },
+    run: onTarget(actions.archive),
   });
   useCommand({
     id: "thread.unarchive",
     title: titles.unarchive,
     aliases: ["unarchive"],
-    enabled: archived,
-    run: onSelected(actions.unarchive),
+    enabled: (args) => {
+      const thread = targetSummary(args);
+      return thread !== undefined && isArchived(thread);
+    },
+    run: onTarget(actions.unarchive),
   });
   useCommand({
     id: "thread.delete",
     title: titles.delete,
     description: titles.deleteDescription,
     aliases: ["delete"],
-    enabled: () => summary() !== undefined,
-    run: onSelected(actions.remove),
+    enabled: (args) => targetSummary(args) !== undefined,
+    run: onTarget(actions.remove),
   });
   useCommand({
     id: "thread.rename",
@@ -279,16 +318,16 @@ export function GlobalCommands({ viewIds, currentView, widgets, addWidget }: Glo
     title: titles.copy,
     description: titles.copyDescription,
     aliases: ["copy"],
-    enabled: () => summary() !== undefined,
-    run: onSelected(conversation.copy),
+    enabled: (args) => targetSummary(args) !== undefined,
+    run: onTarget(conversation.copy),
   });
   useCommand({
     id: "thread.export",
     title: titles.export,
     description: titles.exportDescription,
     aliases: ["export"],
-    enabled: () => summary() !== undefined,
-    run: onSelected(conversation.export),
+    enabled: (args) => targetSummary(args) !== undefined,
+    run: onTarget(conversation.export),
   });
   // `:compact [mode] [focus]`, read as omp's `/compact` reads it; `/compact` runs it too (UI-910, UI-913, UI-976).
   useCommand({

@@ -85,6 +85,18 @@ The view's own tabs, those of `views.json` (`:widget add`, an agent's mount), cl
 alone in its container or holds the chat: closing one writes `views.json` without it, so every window loses it, and
 the toast `Closed <title>` offers Undo while nobody changed the file since. The views of init files keep their tabs.
 
+## Context menus
+
+A right click on a message of the transcript, a file reference (a path in a message or a tool card) or a thread row of
+the left column opens omfp's menu, at the pointer, instead of the browser's: a message offers *Fork from here* (your
+messages and the agent's) and *Copy* (that message as Markdown), a file *Open* and *Copy path*, a thread *Archive* (or
+*Unarchive*), *Copy conversation* and *Export*, acting on the thread clicked, not the selected one. A path inside a
+message gets the file's menu. `Shift-F10` or the menu key (`:menu`) opens the menu of the focused message, file or
+thread; arrows move, Enter runs, Escape closes. On a touch screen, rest a finger on it for half a second (on a thread
+row, moving the finger then drags the row instead). Shift-right-click, text fields and selected text keep the
+browser's menu (to copy a selection); web pages keep the engine's. Init files and widgets add their own commands to
+these menus (omfp://docs/widgets, Context menus).
+
 ## The `:` line
 
 `:` (or `Space :`) opens it; it doubles as the command palette: typing filters the commands by name, Tab completes,
@@ -95,13 +107,14 @@ focus was before the line opened. Every built-in command id is a dotted `<area>.
 | Command | What it does |
 | --- | --- |
 | `:new`, `:workspace` | A draft thread in the current workspace; a new workspace. |
-| `:archive`, `:unarchive`, `:delete`, `:rename [<title>]` | The selected thread; `:delete` removes its history immediately without confirmation (workspace kept). Archive keeps the conversation. |
+| `:archive`, `:unarchive`, `:delete`, `:rename [<title>]` | The selected thread (or, for `:archive`, `:unarchive` and `:delete`, the thread whose id follows); `:delete` removes its history immediately without confirmation (workspace kept). Archive keeps the conversation. |
 | `:stop`, `:stop!`, `:restart`, `:next` | Stop process: end the thread's omp, with its background commands and live voice (`!`: also of every thread it spawned; Abort, `Ctrl-c`, stops only the running turn); restart it; the next thread needing the user. |
 | `:spawned` | Show only the threads the selected one spawned (again: all). |
 | `:fork` | A new thread in the same workspace with the conversation up to the focused message (transcript; `j`/`k` focus messages) or tree entry (`omfp:tree`), the message included (`threads.fork`); the thread forked from is untouched. A user message's *Fork from here* does the same; the fork's header and row say where it comes from. |
-| `:copy`, `:export` | The selected thread's conversation as Markdown, rendered by the window from the thread's state (a stopped thread's too): `:copy` puts it on the clipboard (in the transcript, with a message focused by `j`/`k`, only that message), `:export` saves it as `<title>.md` (the browser downloads it; the desktop window saves it in the Downloads folder). Messages go under `## You` / `## Assistant`, thinking is left out, images are `[image: <type>]`, a tool call is one line with its result in a code block. Also in the header's `⋯`; no default key. |
+| `:copy`, `:export` | The selected thread's conversation (or that of the thread whose id follows) as Markdown, rendered by the window from the thread's state (a stopped thread's too): `:copy` puts it on the clipboard (in the transcript, with a message focused by `j`/`k`, only that message), `:export` saves it as `<title>.md` (the browser downloads it; the desktop window saves it in the Downloads folder). Messages go under `## You` / `## Assistant`, thinking is left out, images are `[image: <type>]`, a tool call is one line with its result in a code block. Also in the header's `⋯`; no default key. |
 | `:compact [soft\|remote\|snapcompact] [focus]` | Compact the selected thread's context, like omp's `/compact`: omp summarizes the conversation so far and continues from the summary (`thread.compact`; the words after it tell the summary what to focus on). A first word naming one of omp's modes sends omp's `/compact <mode> [focus]` instead, which reports in the transcript (`snapcompact` takes no focus). `/compact` in the composer runs `:compact`. Refused while the thread works (Abort ends the turn); the transcript shows the compaction as a notice and a toast says how big the context was. Also in the header's `⋯`, with a field for the focus; no default key. |
-| `:open <path>[:<line>]` | Open a file of the workspace in a tab next to the chat. |
+| `:open <path>[:<line>]`, `:copy-path [<path>]` | Open a file of the workspace in a tab next to the chat; copy a path (without one, the focused path). |
+| `:menu` | The context menu of the focused message, file or thread (`Shift-F10`, the menu key). |
 | `:rescan` | Rescan the current workspace's repositories. |
 | `:login [<provider>]`, `:logout <provider>` | Log omp in to a provider (without one, pick it); remove omp's stored credentials of one. See "Logging in". |
 | `:import-logins` | Copy your standalone omp's provider logins into omfp's omp (`auth.import`). See "Logging in". |

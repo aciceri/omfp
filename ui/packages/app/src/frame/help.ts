@@ -65,6 +65,8 @@ const DESCRIPTIONS: Readonly<Record<string, string>> = {
   "threads.moveToPrevWorkspace": commandTitles.moveToPrevWorkspace,
   "threads.moveToNextWorkspace": commandTitles.moveToNextWorkspace,
   "file.open": commandTitles.open,
+  "file.copyPath": commandTitles.copyPath,
+  "menu.open": commandTitles.menu,
   "notice.open": strings.shell.notices.open,
   "composer.focus": composer.focus,
   "composer.interrupt": composer.interruptCommand,

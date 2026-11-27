@@ -29,8 +29,9 @@ The version's section is also the source of the GitHub release notes.
   delete_archived_after` (`30m`, `12h`, `30d`, `2w`, …), `--delete-archived-after` or `:set delete_archived_after=…`
   from a window, live; `never` keeps archived threads. **On upgrade**, the first check deletes every thread archived
   more than a week ago: set `delete_archived_after = "never"` in `config.toml` first to keep them.
-- While you scroll a conversation, a minimap of the whole thread shows beside the scrollbar: a faded overview with
-  your messages, the assistant's text, tool calls and failures in their own colors, the open search's matches and the
+- While you scroll a conversation, a minimap shows beside the scrollbar: the whole thread in miniature, with its real
+  words, code blocks, headings and tool cards at an eighth of their size (scrolling along on long threads), your
+  messages and failures tinted, the open search's matches and the
   focused message marked, and a box where you are. Click or drag on it to jump there; it fades out a second after you
   stop scrolling. Only your own scrolling shows it (wheel, touch, keys, navigation commands, the scrollbar): sending a
   message, the reply moving the view and the jump to the latest message do not. Phones do not show it.

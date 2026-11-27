@@ -1594,4 +1594,61 @@ describe("minimap", () => {
       canvas.restore();
     }
   });
+
+  // spec: UI-860
+  test("shown, the map covers the text's edge on the app's background, in the prose font its miniature wraps by", () => {
+    const css = parseCss(readFileSync(join(import.meta.dir, "../../../src/widgets/chat/chat.css"), "utf8"));
+    const rule = (selector: string) => findRule(css, ["@layer omfp-widgets"], selector).declarations;
+    const map = rule(".omfp-minimap__map");
+    expect(["overflow", "background", "font-family", "font-size", "line-height"].map((name) => map.get(name))).toEqual([
+      "hidden",
+      "var(--omfp-app-bg)",
+      "var(--omfp-font-prose)",
+      "var(--omfp-fs-prose)",
+      "var(--omfp-lh-prose)",
+    ]);
+    const layer = rule(".omfp-minimap__canvas");
+    expect(["position", "inset-block-start", "will-change"].map((name) => layer.get(name))).toEqual([
+      "absolute",
+      "0",
+      "transform",
+    ]);
+  });
+
+  // spec: UI-860, UI-863
+  test("a miniature taller than the map scrolls with the view: the canvas moves, redrawn once the map leaves its band", async () => {
+    // Items measure as estimated, so scrolling measures nothing new.
+    restoreLayout();
+    restoreLayout = fakeLayout(120);
+    const canvas = installCanvas();
+    const layer = () => minimap().querySelector<HTMLElement>(".omfp-minimap__canvas");
+    const moved = (node: HTMLElement | null | undefined) =>
+      Number.parseFloat(node?.style.transform.slice("translateY(".length) ?? "");
+    try {
+      renderThread(<TranscriptWidget />, longHistory(50));
+      const element = transcript();
+      // 48,000 px at an eighth on a 600 px map: 6,000 px of miniature, the canvas holding 1,800 of them.
+      fireEvent.wheel(element, { deltaY: -100 });
+      scrollTo(element, 0, 48_000);
+      await waitFor(() => expect(minimap().dataset.visible).toBe("true"));
+      expect([canvas.draws(), layer()?.style.height, minimap().style.width]).toEqual([1, "1800px", "48px"]);
+      expect([layer()?.style.transform, box()?.style.transform, box()?.style.height]).toEqual([
+        "translateY(0px)",
+        "translateY(0px)",
+        "75px",
+      ]);
+      // 2,400 px down, the map scrolled 2,400 / 47,400 of the 5,400 px it is taller than the map: the canvas moves up
+      // and the box shows the view below the map's top, with nothing drawn.
+      scrollTo(element, 2400, 48_000);
+      await waitFor(() => expect(moved(layer())).toBeCloseTo(-273.418, 2));
+      expect(moved(box())).toBeCloseTo(300 - 273.418, 2);
+      expect(canvas.draws()).toBe(1);
+      // Half way the map's window left the band: drawn again around it.
+      scrollTo(element, 24_000, 48_000);
+      await waitFor(() => expect(canvas.draws()).toBe(2));
+      await waitFor(() => expect(moved(layer())).toBeCloseTo(-600, 2));
+    } finally {
+      canvas.restore();
+    }
+  });
 });

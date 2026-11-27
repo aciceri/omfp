@@ -1,6 +1,7 @@
 // The performance probe of `e2e/tests/perf.rs` (TST-052), installed before the page's scripts run
 // (`Page.addScriptToEvaluateOnNewDocument`). It stands in for React DevTools to see every commit, and records frame
-// times, long tasks and the time spent handling WebSocket messages while `window.__omfpPerf.recording` is on.
+// times, long tasks, the time spent handling WebSocket messages and the minimap's redraws while
+// `window.__omfpPerf.recording` is on.
 //
 // Renders are counted the way React DevTools does: a commit's tree is walked from the root, entering only subtrees
 // React worked on (a fiber whose child list is not the previous one's, or a new fiber); a function or class
@@ -33,6 +34,8 @@
     keys: [],
     /** Event timing entries of keyboard and input events (`{name, duration, delay, processing}`), Chromium only. */
     events: [],
+    /** Durations of the transcript minimap's canvas redraws (ms), from its `omfp:minimap-draw` User Timing measures. */
+    minimap: [],
     start(trackRenders) {
       this.trackRenders = trackRenders;
       this.commits = 0;
@@ -44,6 +47,7 @@
       this.messages = { count: 0, total: 0, max: 0, bytes: 0 };
       this.keys = [];
       this.events = [];
+      this.minimap = [];
       this.recording = true;
       const tick = (time) => {
         if (this.recording) {
@@ -65,6 +69,7 @@
         messages: this.messages,
         keys: this.keys,
         events: this.events,
+        minimap: this.minimap,
       };
     },
   };
@@ -150,6 +155,7 @@
     }
   };
   observe("longtask", {}, (entry) => perf.longTasks.push({ start: entry.startTime, duration: entry.duration }));
+  observe("measure", {}, (entry) => entry.name === "omfp:minimap-draw" && perf.minimap.push(entry.duration));
   observe("event", { durationThreshold: 16 }, (entry) => {
     if (["keydown", "keypress", "keyup", "beforeinput", "input"].includes(entry.name)) {
       perf.events.push({

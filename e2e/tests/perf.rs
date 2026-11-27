@@ -2,8 +2,9 @@
 //! session of 10,000 messages (prose, Markdown with code blocks, tool calls with their results), and the test plays
 //! omp's streaming frames into it; a linked repository holds big files changed since `HEAD`. A probe installed before
 //! the page's scripts (`perf/probe.js`) stands in for the React developer tools to count commits and component renders
-//! per transcript item, and records frames, long tasks, the time spent handling WebSocket messages, and per key press
-//! the time to the next frame and the event timing entries.
+//! per transcript item, and records frames, long tasks, the time spent handling WebSocket messages, the transcript
+//! minimap's canvas redraws (its User Timing measures, UI-863), and per key press the time to the next frame and the
+//! event timing entries.
 //!
 //! The tests run in headless Chromium and assert structure only (TST-052, TST-107): the DOM stays bounded with 10,000
 //! messages (UI-190), a streamed delta re-renders the streaming row and no other transcript item (UI-191), a key press
@@ -356,6 +357,8 @@ struct Recording {
     keys: Vec<f64>,
     /// Keyboard and input events of 16 ms or more (Chromium's event timing): name and duration.
     slow_events: Vec<(String, f64)>,
+    /// Durations of the transcript minimap's canvas redraws (ms).
+    minimap: Vec<f64>,
 }
 
 impl Recording {
@@ -399,6 +402,7 @@ impl Recording {
                     )
                 })
                 .collect(),
+            minimap: list("minimap").iter().filter_map(Value::as_f64).collect(),
         }
     }
 }
@@ -627,6 +631,14 @@ fn report(name: &str, recording: &Recording, events: u64) {
         stats(&mut long)
     );
     eprintln!("  commits: {}", recording.commits);
+    if !recording.minimap.is_empty() {
+        let mut draws = recording.minimap.clone();
+        let total: f64 = draws.iter().sum();
+        eprintln!(
+            "  minimap redraws ms (total {total:.0}): {}",
+            stats(&mut draws)
+        );
+    }
     if !recording.keys.is_empty() {
         let mut keys = recording.keys.clone();
         eprintln!("  key to next frame ms: {}", stats(&mut keys));

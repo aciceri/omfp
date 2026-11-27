@@ -802,6 +802,7 @@ mod tests {
             [
                 "daemon",
                 "--tray",
+                "--no-wait",
                 "--data-dir",
                 "/d",
                 "--static-dir",
@@ -809,6 +810,17 @@ mod tests {
                 "--bind",
                 "127.0.0.1:0"
             ]
+        );
+        // Passed after `--` already: not twice, which clap would refuse.
+        let no_wait = LocalDaemon::plan(
+            &Some("/d".into()),
+            &["--no-wait".into()],
+            &env(Path::new("/home/u")),
+        )
+        .unwrap();
+        assert_eq!(
+            strings(&no_wait.command_line(None)),
+            ["daemon", "--tray", "--data-dir", "/d", "--no-wait"]
         );
         assert!(LocalDaemon::plan(&None, &["--no-such-flag".into()], &Env::default()).is_err());
     }
@@ -845,6 +857,7 @@ mod tests {
             [
                 "daemon",
                 "--tray",
+                "--no-wait",
                 "--bind",
                 "127.0.0.1:0",
                 "--data-dir",

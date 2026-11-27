@@ -9,6 +9,8 @@ Documentation=https://github.com/aciceri/omfp
 
 [Service]
 ExecStart=@omfp@ daemon
+# Started while another daemon (one `omfp desktop` started) holds the data directory, it waits and takes over when that
+# one exits (DMN-397): it does not fail, so it is not restarted in a loop.
 Restart=on-failure
 RestartSec=2
 # SIGTERM to the daemon alone: it stops its omp processes and jobs itself, marking the turns it cuts (DMN-005, DMN-370).

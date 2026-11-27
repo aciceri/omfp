@@ -518,6 +518,45 @@ fn a_restart_mark_of_a_gone_or_unreachable_process_is_stale() {
     assert!(!restarting(&dir.path().join("missing")).unwrap());
 }
 
+// spec: DMN-392, DMN-397
+#[tokio::test(flavor = "multi_thread")]
+async fn the_lock_freed_by_a_restart_in_place_is_left_to_the_restarted_daemon() {
+    let dir = tempfile::tempdir().unwrap();
+    let data_dir = dir.path().to_owned();
+    // Another live process of this PID namespace, marked restarting in place: between its unlock and its exec.
+    let mut restarting = std::process::Command::new("cat")
+        .stdin(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let namespace = std::fs::read_link("/proc/self/ns/pid")
+        .ok()
+        .map(|link| link.to_string_lossy().into_owned());
+    let mark = json!({
+        "addr": "127.0.0.1:9",
+        "pid": restarting.id(),
+        "started": 1,
+        "restarts_in_place": true,
+        "pid_namespace": namespace,
+        "restarting": true,
+    });
+    std::fs::write(data_dir.join("daemon.json"), mark.to_string()).unwrap();
+    let fresh = || fake_ports(&data_dir, &FakeLauncher::new(), &Arc::new(FakeGit::new()));
+
+    let refused = start_with(Config::loopback(&data_dir, &[]), fresh()).await;
+    let error = refused.unwrap_err().to_string();
+    let holder = format!("(pid {}, listening on 127.0.0.1:9)", restarting.id());
+    assert!(error.contains("already running"), "{error}");
+    assert!(error.contains(&holder), "{error}");
+
+    // Gone without restarting: the mark is stale, the lock free.
+    drop(restarting.stdin.take());
+    restarting.wait().unwrap();
+    let started = start_with(Config::loopback(&data_dir, &[]), fresh())
+        .await
+        .unwrap();
+    started.shutdown().await.unwrap();
+}
+
 // spec: ARC-004, ARC-005, ARC-001, ARC-011
 #[tokio::test(flavor = "multi_thread")]
 async fn two_clients_drive_one_omp_process_and_see_the_same_thread() {

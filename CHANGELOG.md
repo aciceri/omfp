@@ -90,6 +90,11 @@ The version's section is also the source of the GitHub release notes.
   `commit.draft(repo=…)` naming the repository; before, their first commit in a thread failed and was retried.
 - Typing in the composer on an Android phone gets the keyboard's word suggestions and autocorrect; before, the
   composer told the keyboard to suggest nothing (#352).
+- `omfp daemon` started while another daemon runs for the same data directory no longer exits at once, which made
+  `omfp.service` (or any supervisor) restart it again and again: it logs to `daemon.log` why it cannot start, naming
+  the running daemon's pid and address, waits, and starts as soon as that daemon exits. `--no-wait` keeps the old exit
+  for scripts. `omfp desktop` now waits for a daemon that is still starting instead of starting a second one, and the
+  daemon it starts exits rather than waits when it loses that race (#348).
 
 ## 0.4.5 — 2026-11-25
 

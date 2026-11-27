@@ -195,16 +195,47 @@ pub fn channel_script(transport: Transport) -> String {
     )
 }
 
-/// The message a navigation to [`MESSAGE_SCHEME`] carries (UI-687); `None` for any other URL.
+/// The script that reports a macOS view's same-document navigations (UI-685): `history.pushState`, `replaceState`,
+/// back and forward within the document and hash changes load nothing, so no page load reports them; this posts the
+/// new address to [`MESSAGE_SCHEME`] (`?u=<url>`) instead.
+#[cfg(target_os = "macos")]
+#[must_use]
+pub fn location_script() -> String {
+    format!(
+        "(() => {{\n  let last = location.href;\n  const report = () => {{\n    if (location.href === last) return;\n    \
+         last = location.href;\n    const frame = document.createElement(\"iframe\");\n    frame.hidden = true;\n    \
+         frame.src = `{MESSAGE_SCHEME}:?${{new URLSearchParams({{ u: last }})}}`;\n    \
+         (document.body ?? document.documentElement).append(frame);\n    setTimeout(() => frame.remove(), 1000);\n  \
+         }};\n  for (const name of [\"pushState\", \"replaceState\"]) {{\n    const original = history[name];\n    \
+         history[name] = function (...args) {{\n      const result = original.apply(this, args);\n      report();\n      \
+         return result;\n    }};\n  }}\n  addEventListener(\"popstate\", report);\n  \
+         addEventListener(\"hashchange\", report);\n}})();"
+    )
+}
+
+/// What a navigation to [`MESSAGE_SCHEME`] carries on macOS.
+#[cfg(any(target_os = "macos", test))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PagePost {
+    /// The JSON of `window.omfp.post(data)` (UI-687).
+    Message(String),
+    /// The page's address after a same-document navigation (UI-685).
+    Location(String),
+}
+
+/// What a navigation to [`MESSAGE_SCHEME`] carries; `None` for any other URL.
 #[cfg(any(target_os = "macos", test))]
 #[must_use]
-pub fn page_message(url: &Url) -> Option<String> {
+pub fn page_post(url: &Url) -> Option<PagePost> {
     if url.scheme() != MESSAGE_SCHEME {
         return None;
     }
     url.query_pairs()
-        .find(|(key, _)| key == "m")
-        .map(|(_, json)| json.into_owned())
+        .find_map(|(key, value)| match key.as_ref() {
+            "m" => Some(PagePost::Message(value.into_owned())),
+            "u" => Some(PagePost::Location(value.into_owned())),
+            _ => None,
+        })
 }
 
 /// The scheme of the page's messages on macOS (UI-686).
@@ -256,6 +287,18 @@ pub fn placement(slot: &Slot, zoom: f64) -> Option<Placement> {
 #[must_use]
 pub fn shows(url: &Url, origin: &str) -> bool {
     matches!(url.scheme(), "http" | "https") && navigation(url, origin) == Navigation::External
+}
+
+/// Whether a native view may load `url` in its page or one of its frames (UI-684): what [`shows`] lets through, and
+/// documents without an origin of their own (`about:`, `blob:`, `data:`), which pages use in their frames; never the
+/// daemon's pages, never another scheme — a redirect or a link included.
+#[must_use]
+pub fn view_loads(url: &Url, origin: &str) -> bool {
+    match url.scheme() {
+        "http" | "https" => shows(url, origin),
+        "about" | "blob" | "data" => true,
+        _ => false,
+    }
 }
 
 /// How the page's script posts to the window.
@@ -836,6 +879,14 @@ mod tests {
         assert!(!shown("file:///etc/passwd"));
         assert!(!shown("mailto:someone@example.com"));
         assert!(!shown("about:blank"));
+        // What its page and frames may go on to load: never the daemon, never another scheme.
+        let loads = |url: &str| view_loads(&Url::parse(url).expect("a URL"), origin);
+        assert!(loads("https://www.youtube.com/watch?v=1"));
+        assert!(loads("about:blank"));
+        assert!(loads("blob:https://www.youtube.com/1234"));
+        assert!(!loads("http://127.0.0.1:7420/#token=secret"));
+        assert!(!loads("file:///etc/passwd"));
+        assert!(!loads("omfp-web-views:?n=x"));
     }
 
     // spec: UI-682, UI-683
@@ -948,14 +999,23 @@ mod tests {
         assert_eq!(views.engine().take(), ["act 1 Back"]);
     }
 
-    // spec: UI-687
+    // spec: UI-685, UI-687
     #[test]
-    fn on_macos_a_pages_message_is_the_json_of_its_frame_navigation() {
+    fn on_macos_a_page_posts_its_messages_and_addresses_through_frame_navigations() {
         let json = r#"{"text":"a & b = c?"}"#;
-        let url =
-            Url::parse_with_params(&format!("{MESSAGE_SCHEME}:"), [("m", json)]).expect("a URL");
-        assert_eq!(page_message(&url).as_deref(), Some(json));
+        let post = |key: &str, value: &str| {
+            page_post(
+                &Url::parse_with_params(&format!("{MESSAGE_SCHEME}:"), [(key, value)])
+                    .expect("a URL"),
+            )
+        };
+        assert_eq!(post("m", json), Some(PagePost::Message(json.to_owned())));
+        assert_eq!(
+            post("u", "https://example.com/next#a"),
+            Some(PagePost::Location("https://example.com/next#a".to_owned()))
+        );
+        assert_eq!(post("x", "1"), None);
         let other = Url::parse_with_params("https://example.com/", [("m", json)]).expect("a URL");
-        assert_eq!(page_message(&other), None);
+        assert_eq!(page_post(&other), None);
     }
 }

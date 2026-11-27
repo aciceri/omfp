@@ -12,15 +12,17 @@ use gtk::glib;
 use gtk::prelude::*;
 use tauri::{Url, WebviewWindow};
 use webkit2gtk::{
-    CookieManagerExt as _, CookiePersistentStorage, LoadEvent, SnapshotOptions, SnapshotRegion,
-    URIRequestExt as _, UserContentInjectedFrames, UserContentManager, UserContentManagerExt as _,
-    UserScript, UserScriptInjectionTime, WebContext, WebView, WebViewExt as _, WebsiteDataManager,
-    WebsiteDataManagerExt as _,
+    CookieManagerExt as _, CookiePersistentStorage, LoadEvent, NavigationPolicyDecision,
+    NavigationPolicyDecisionExt, PolicyDecisionExt as _, PolicyDecisionType, SnapshotOptions,
+    SnapshotRegion, URIRequestExt as _, UserContentInjectedFrames, UserContentManager,
+    UserContentManagerExt as _, UserScript, UserScriptInjectionTime, WebContext, WebView,
+    WebViewExt as _, WebsiteDataManager, WebsiteDataManagerExt as _,
 };
 
 use super::{
     Command, Engine, MAX_PAGE_MESSAGE, Message, PAGE_HANDLER, Placement, Setup, Transport, Views,
-    channel_script, handler, loaded_call, message_call, navigated_call, parse_message, thaw_call,
+    channel_script, handler, loaded_call, message_call, navigated_call, parse_message, shows,
+    thaw_call, view_loads,
 };
 
 /// The views of the window: GTK widgets over its page.
@@ -29,6 +31,8 @@ struct Gtk {
     context: WebContext,
     /// The window, to tell its page where a view went.
     window: WebviewWindow,
+    /// The daemon's origin: a view never loads its pages (UI-684).
+    origin: String,
 }
 
 /// Puts the window's page into a `gtk::Overlay` and draws a native view over every placeholder the page's [`script`]
@@ -66,6 +70,7 @@ pub fn follow(window: &WebviewWindow, origin: String, nonce: &str, data: &Path) 
             overlay,
             context: web_context(&data),
             window: owner,
+            origin: origin.clone(),
         };
         let views = std::cell::RefCell::new(Views::new(engine, origin));
         // The view keeps its manager, which keeps this handler: a weak reference, no cycle.
@@ -169,11 +174,33 @@ impl Engine for Gtk {
             .build();
         view.set_halign(gtk::Align::Start);
         view.set_valign(gtk::Align::Start);
-        view.connect_create(|view, action| {
+        // Every load of the page or its frames, a redirect or a link included, keeps to what a view may show.
+        let origin = self.origin.clone();
+        view.connect_decide_policy(move |_, decision, kind| {
+            if !matches!(
+                kind,
+                PolicyDecisionType::NavigationAction | PolicyDecisionType::NewWindowAction
+            ) {
+                return false;
+            }
+            let target = decision
+                .downcast_ref::<NavigationPolicyDecision>()
+                .and_then(NavigationPolicyDecisionExt::navigation_action)
+                .and_then(|action| action.request())
+                .and_then(|request| request.uri());
+            if target.is_some_and(|uri| Url::parse(&uri).is_ok_and(|url| view_loads(&url, &origin)))
+            {
+                return false;
+            }
+            decision.ignore();
+            true
+        });
+        let origin = self.origin.clone();
+        view.connect_create(move |view, action| {
             let target = action.clone().request().and_then(|request| request.uri());
-            if let Some(target) = target.filter(|target| {
-                Url::parse(target).is_ok_and(|url| matches!(url.scheme(), "http" | "https"))
-            }) {
+            if let Some(target) =
+                target.filter(|target| Url::parse(target).is_ok_and(|url| shows(&url, &origin)))
+            {
                 view.load_uri(&target);
             }
             None

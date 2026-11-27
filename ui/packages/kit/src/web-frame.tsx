@@ -1,3 +1,8 @@
+/**
+ * The kit's `WebFrame` (UI-673, UI-674): a `WebView` under a toolbar — the URL, Reload, Open in browser — with the hint
+ * that a site may refuse framing when its frame does not load.
+ */
+
 import { type HTMLAttributes, type ReactNode, useEffect, useRef, useState } from "react";
 import { Button, IconButton } from "./button.tsx";
 import { cx } from "./class.ts";

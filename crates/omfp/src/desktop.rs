@@ -519,13 +519,11 @@ fn open_window(
         &nonce,
         &webview_data.join("web-pages"),
     );
+    // UI-686: the native pages' own data store, committed at exit like the window's (UI-250).
     #[cfg(target_os = "macos")]
-    web_views::start(
-        &views,
-        &window,
-        origin.clone(),
-        macos::data_store_identifier(&webview_data.join("web-pages"))?,
-    );
+    let pages = macos::data_store_identifier(&webview_data.join("web-pages"))?;
+    #[cfg(target_os = "macos")]
+    web_views::start(&views, &window, origin.clone(), pages);
     if smoke.is_some() {
         smoke_check(
             window,
@@ -538,6 +536,7 @@ fn open_window(
         #[cfg(target_os = "macos")]
         if matches!(event, tauri::RunEvent::Exit) {
             macos::commit_local_storage(&store);
+            macos::commit_local_storage(&pages);
         }
         #[cfg(not(target_os = "macos"))]
         let _ = event;

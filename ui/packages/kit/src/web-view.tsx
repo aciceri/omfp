@@ -1,3 +1,11 @@
+/**
+ * The kit's `WebView` (UI-670..UI-672, UI-675, UI-682, UI-685, UI-687): a web page alone, filling its container — a
+ * placeholder the desktop window draws a native web view over where the window defines `__omfpWebViews`, a sandboxed
+ * frame elsewhere — with what a widget needs to build a browser around it (where the page went, its loads, reload,
+ * back, forward) and to talk with the page (scripts run in it, messages it posts). Also `webFrameUrl`, the check of the
+ * URLs a web view may show.
+ */
+
 import {
   type HTMLAttributes,
   type ReactNode,

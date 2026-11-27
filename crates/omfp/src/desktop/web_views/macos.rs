@@ -1,10 +1,11 @@
 //! The macOS engine of the native web views (UI-686, UI-687): Tauri child webviews (`WKWebView`s) over the window's
 //! page. Unlike Linux, Tauri places a child webview where it is asked to on macOS, so no container is needed. The page
 //! posts through navigations of hidden frames to [`SCHEME`], which the window's navigation handler hands to
-//! [`on_navigation`]; a view's page posts its widget's messages the same way, to [`MESSAGE_SCHEME`], caught by the
-//! view's own navigation handler. Without `unsafe` code there is no way to the `WKWebView` behind a Tauri webview, so
-//! a covered view hides without a capture, whether the page can go back or forward is unknown, and back and forward
-//! run the page's own `history`.
+//! [`on_navigation`]; a view's page posts its widget's messages and its same-document navigations the same way, to
+//! [`super::MESSAGE_SCHEME`], caught by the view's own navigation handler, which also keeps every load to what a view
+//! may show. Without `unsafe` code there is no way to the `WKWebView` behind a Tauri webview, so a covered view hides
+//! without a capture, whether the page can go back or forward is unknown, and back and forward run the page's own
+//! `history`.
 
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -13,9 +14,9 @@ use tauri::webview::{NewWindowResponse, PageLoadEvent, WebviewBuilder};
 use tauri::{LogicalPosition, LogicalSize, Manager as _, Url, Webview, WebviewUrl, WebviewWindow};
 
 use super::{
-    Command, Engine, MAX_PAGE_MESSAGE, MESSAGE_SCHEME, Message, Placement, SCHEME, Setup,
-    Transport, Views, channel_script, loaded_call, message_call, navigated_call, page_message,
-    posted,
+    Command, Engine, MAX_PAGE_MESSAGE, Message, PagePost, Placement, SCHEME, Setup, Transport,
+    Views, channel_script, loaded_call, location_script, message_call, navigated_call, page_post,
+    posted, shows, view_loads,
 };
 
 /// The views of the window once it exists, shared with its navigation handler, which runs before the window is built.
@@ -26,6 +27,8 @@ pub struct Children {
     window: WebviewWindow,
     /// The data store of every view (cookies: a sign-in), apart from the daemon page's.
     store: [u8; 16],
+    /// The daemon's origin: a view never loads its pages (UI-684).
+    origin: String,
     /// The number of the last view made: a child webview's label must be unique.
     made: u64,
 }
@@ -43,6 +46,7 @@ pub fn start(views: &SharedViews, window: &WebviewWindow, origin: String, store:
     let engine = Children {
         window: window.clone(),
         store,
+        origin: origin.clone(),
         made: 0,
     };
     *views.lock().unwrap_or_else(PoisonError::into_inner) = Some(Views::new(engine, origin));
@@ -113,16 +117,23 @@ impl Engine for Children {
         let (window, placeholder) = (self.window.clone(), id.to_owned());
         let app = self.window.app_handle().clone();
         let own = label.clone();
-        let messages = (self.window.clone(), id.to_owned());
+        let (messages, origin) = ((self.window.clone(), id.to_owned()), self.origin.clone());
+        let new_window_origin = self.origin.clone();
         let mut builder = WebviewBuilder::new(&label, WebviewUrl::External(url))
             .data_store_identifier(self.store)
+            // Every load of the page or its frames, a redirect or a link included, keeps to what a view may show;
+            // the page's posts to its widget come this way too.
             .on_navigation(move |url| {
-                if url.scheme() != MESSAGE_SCHEME {
-                    return true;
-                }
-                if let Some(json) = page_message(url).filter(|json| json.len() <= MAX_PAGE_MESSAGE)
-                {
-                    Self::tell(&messages.0, message_call(&messages.1, &json));
+                match page_post(url) {
+                    Some(PagePost::Message(json)) if json.len() <= MAX_PAGE_MESSAGE => {
+                        Self::tell(&messages.0, message_call(&messages.1, &json));
+                    }
+                    Some(PagePost::Location(address)) => Self::tell(
+                        &messages.0,
+                        navigated_call(&messages.1, &address, None, None),
+                    ),
+                    Some(PagePost::Message(_)) => {}
+                    None => return view_loads(url, &origin),
                 }
                 false
             })
@@ -136,7 +147,7 @@ impl Engine for Children {
                 }
             })
             .on_new_window(move |url, _| {
-                if matches!(url.scheme(), "http" | "https")
+                if shows(&url, &new_window_origin)
                     && let Some(view) = app.get_webview(&own)
                     && let Err(error) = view.navigate(url)
                 {
@@ -144,6 +155,7 @@ impl Engine for Children {
                 }
                 NewWindowResponse::Deny
             });
+        builder = builder.initialization_script(location_script());
         if setup.channel {
             builder = builder.initialization_script(channel_script(Transport::Frames));
         }

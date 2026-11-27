@@ -32,9 +32,13 @@ export interface Command {
    * `:widget add ` → the widgets).
    */
   readonly args?: (before: readonly string[]) => readonly string[];
-  /** Hidden from the command line and not run when `false`. */
-  readonly enabled?: () => boolean;
-  run(args: readonly string[]): void | Promise<void>;
+  /**
+   * Hidden from the command line and not run when `false`. `args` are those it would run with when known (a context
+   * menu item passes its target, UI-315), so a command can offer itself for some targets only.
+   */
+  readonly enabled?: (args?: readonly string[]) => boolean;
+  /** `element` is the target a context menu item runs it on (UI-315), `undefined` from the `:` line and keys. */
+  run(args: readonly string[], element?: Element): void | Promise<void>;
 }
 
 /** The HTML attribute naming a widget's command scope. */
@@ -81,10 +85,14 @@ export class CommandRegistry {
     return commands.reverse();
   }
 
-  /** The enabled command for `id` (or an alias) in the innermost of `scopes`, else the global one. */
-  resolve(name: string, scopes: readonly string[] = []): Command | undefined {
+  /**
+   * The enabled command for `id` (or an alias) in the innermost of `scopes`, else the global one; `args`, when given,
+   * are what it would run with (its `enabled` sees them).
+   */
+  resolve(name: string, scopes: readonly string[] = [], args?: readonly string[]): Command | undefined {
     const matching = this.list().filter(
-      (command) => (command.enabled?.() ?? true) && (command.id === name || (command.aliases?.includes(name) ?? false)),
+      (command) =>
+        (command.enabled?.(args) ?? true) && (command.id === name || (command.aliases?.includes(name) ?? false)),
     );
     for (const scope of scopes) {
       const scoped = matching.find((command) => command.scope === scope);
@@ -95,13 +103,13 @@ export class CommandRegistry {
     return matching.find((command) => command.scope === undefined);
   }
 
-  /** Runs `name` in `scopes`; `false` when no enabled command answers to it. */
-  run(name: string, args: readonly string[] = [], scopes: readonly string[] = []): boolean {
-    const command = this.resolve(name, scopes);
+  /** Runs `name` in `scopes` (on a context menu's target `element`); `false` when no enabled command answers to it. */
+  run(name: string, args: readonly string[] = [], scopes: readonly string[] = [], element?: Element): boolean {
+    const command = this.resolve(name, scopes, args);
     if (command === undefined) {
       return false;
     }
-    void command.run(args);
+    void command.run(args, element);
     return true;
   }
 

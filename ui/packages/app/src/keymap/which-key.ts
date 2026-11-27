@@ -102,6 +102,8 @@ const NAMESPACE_GROUPS: Readonly<Record<string, KeyGroup>> = {
   tab: "navigation",
   notice: "navigation",
   focus: "navigation",
+  // The context menu of the focused item (UI-317); a phone opens it with a long press instead.
+  menu: "navigation",
   cmdline: "commands",
   window: "commands",
   density: "commands",

@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from "bun:test";
 import type { ThreadSummary } from "@omfp/protocol";
-import { type InitApi, NOTICES } from "../../src/sdk/index.ts";
+import { contextMenuEntries, contextTargetAt, type InitApi, NOTICES, runContextEntry } from "../../src/sdk/index.ts";
 import { thread } from "../support/fixtures.ts";
 import { ManualTimers, testHost } from "../support/host.tsx";
 
@@ -190,6 +190,54 @@ describe("init files", () => {
     await host.init.load("workspace", "/bad", "w1");
     expect(host.init.getSnapshot().errors.find((error) => error.file === "workspace")?.message).toBe(
       "invalid view: views.broken.layout[2]: a widget name is empty",
+    );
+  });
+
+  // spec: UI-261, UI-319
+  test("contextMenu adds items after the defaults, the user's file first; a rerun drops them; a bad menu is an error", async () => {
+    const ran: string[] = [];
+    const item =
+      (file: string): Main =>
+      (omfp) => {
+        omfp.command({
+          id: `my.${file}`,
+          title: `Mine ${file}`,
+          run: (args) => void ran.push(`${file} ${args.join(" ")}`),
+        });
+        omfp.contextMenu({ on: "thread", items: [{ command: `my.${file}`, title: `Pin (${file})` }] });
+      };
+    const { host } = setup({
+      "/u": module(item("user")),
+      "/w": module(item("workspace")),
+      "/bad": module((omfp) => {
+        omfp.contextMenu({ on: "web" as "thread", items: ["my.user"] });
+      }),
+    });
+    await host.init.load("workspace", "/w", "w1");
+    await host.init.load("user", "/u");
+    const element = document.createElement("div");
+    element.setAttribute("data-omfp-thread", "t1");
+    const target = contextTargetAt(element);
+    if (target === undefined) {
+      throw new Error("no target");
+    }
+    const entries = contextMenuEntries(host.commands, host.contextMenus, target);
+    // No built-in command is registered here: only the files' items, the user's first.
+    expect(entries.map((entry) => entry.title)).toEqual(["Pin (user)", "Pin (workspace)"]);
+    for (const entry of entries) {
+      runContextEntry(host.commands, entry, target);
+    }
+    expect(ran).toEqual(["user t1", "workspace t1"]);
+
+    await host.init.load("user", "/bad");
+    expect(contextMenuEntries(host.commands, host.contextMenus, target).map((entry) => entry.title)).toEqual([
+      "Pin (workspace)",
+    ]);
+    expect(host.init.getSnapshot().errors).toEqual([
+      { file: "user", message: 'A context menu\'s "on" is "message", "file" or "thread", not "web"' },
+    ]);
+    expect(() => host.contextMenus.register({ on: "file", items: [{ command: "" }] })).toThrow(
+      'A context menu item is a command\'s id or alias, or { command, title? }, not {"command":""}',
     );
   });
 });

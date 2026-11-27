@@ -296,6 +296,7 @@ export default function init(omfp: InitApi) {
 | `file`, `workspaceId` | `"user"` or `"workspace"`; the workspace whose file this is (`undefined` for the user's). |
 | `command(command)` | Registers a `:` command / key binding target: `{ id, title, description?, aliases?, scope?, args?, enabled?, run(args) }` (`useCommand`'s shape; `registerCommand(host, command)` from `omfp/sdk` is the same outside an init file). |
 | `bind(binding \| bindings)` | `{ keys, command, args?, mode? }` (`mode` default `normal`, `command: ""` removes a binding), applied after the defaults, the user's `[keymap]` and `.omfp/keymap.json`: the user's init file, then the workspace's, win last. |
+| `contextMenu({ on, items })` | Adds items to the right-click menu of every `message`, `file` or `thread` (see Context menus): `items` are command ids or aliases, or `{ command, title }`. |
 | `views.load("views.json")` | The workspace's `views.json` as views (the default view while it is missing or invalid): see Views of init files. `"views.json"` is the only file it loads; any other argument throws. |
 | `views.use(views)` | Shows `views`, as they are at the call, in this window instead of `views.json`'s (the workspace's file wins over the user's). |
 | `views.transform(fn)` | `fn(views)` changes the views it gets (or returns other views): applied after `use`, the user's file's first, each in registration order; one that throws changes nothing. |
@@ -388,6 +389,53 @@ init file added (`views.add`) it writes nothing and names the file to edit.
 it was bound (default keymap, `[keymap]`, `.omfp/keymap.json`, the user's or the workspace's init file);
 `:describe-command <name>` shows a command's names, scope, who registered it and every key bound to it. Point the user
 at them to check what an init file did.
+
+## Context menus
+
+A right click (a long press on a touch screen, `Shift-F10` or the menu key on the focused item) on a message of the
+transcript, a file reference (a path in a message or a tool card, a file row) or a thread row of the left column opens
+omfp's own menu instead of the browser's. Each item runs a **command already registered** (built-in, `command(...)` of
+an init file, `useCommand` of a widget) with the clicked target as its one argument, in the target's scopes:
+
+| `on` | The argument | Built-in items |
+| --- | --- | --- |
+| `message` | the message's index in its thread's transcript (`"2"`) | Fork from here (`thread.fork`, messages of the user and the assistant), Copy (`thread.copy`: that message as Markdown) |
+| `file` | its path, `<path>:<line>` when it points at a line (what `:open` takes) | Open (`file.open`; a diff's reference, `data-omfp-diff`, opens as the diff), Copy path (`file.copyPath`, `:copy-path`) |
+| `thread` | the thread's id | Archive or Unarchive (`thread.archive`, `thread.unarchive`), Copy conversation (`thread.copy`), Export (`thread.export`) |
+
+Add items from an init file with `omfp.contextMenu`, or from a widget with `useContextMenu` (same shape) while it is
+shown; they come after the built-in ones, the user's init file's first, then the workspace's, then the widgets'. An
+item whose command is not registered, or whose `enabled(args)` returns `false` for that target, is left out, and a
+command shows once. Give a command a short `title`, or give the item its own:
+
+```ts
+import { type InitApi, SELECTED_THREAD } from "omfp/sdk";
+
+export default function init(omfp: InitApi) {
+  omfp.command({
+    id: "ws.review",
+    title: "Ask the selected thread to review a file",
+    // A file's argument may end in `:<line>`.
+    run: ([reference = ""]) => {
+      const threadId = omfp.host.window.get(SELECTED_THREAD);
+      if (threadId !== undefined) {
+        void omfp.call("thread.prompt", { threadId, text: `Review ${reference}` });
+      }
+    },
+  });
+  omfp.contextMenu({ on: "file", items: [{ command: "ws.review", title: "Review" }] });
+}
+```
+
+A command's `enabled(args)` gets the target's argument when a menu asks (and `undefined` or `[]` from the `:` line and
+keys), so a command can offer itself on some targets only; its `run(args, element)` also gets the target's element
+(`undefined` from the `:` line and keys). Of the built-in commands, those in the table and
+`thread.delete` read the argument; the others act on the focused item or the selected thread as their keys do (and
+`:rename <title>` takes a title), so name them in a menu only for that. A widget makes its own elements targets with
+the attributes the window uses: `data-omfp-path` (and `data-omfp-line`) for a file, `data-omfp-thread` for a thread,
+`data-omfp-message` for a message index; the innermost one under the pointer wins. Shift-right-click, text fields and
+selected text keep the browser's menu, and a widget that handles `onContextMenu` itself (calling `preventDefault()`)
+keeps its own. Web pages (`omfp:web`) keep the engine's menu.
 
 ## Checking your work in the window
 
@@ -491,7 +539,8 @@ export default function Tests({ command = "make test" }: { command?: string }) {
 | `useActiveView(viewIds)`, `chooseView(host, viewId)` | The id among the current workspace's view ids this window shows for the selected thread, else the draft (its own; `undefined`: the default view), and switching it (`host` from `useHost()`), as `:view <id>` does. |
 | `useHost()` | The window's host (`client`, `window` store, `commands`, …): the `host` that `chooseView`, `requestLogin(host, providerId?)` and `registerCommand(host, command)` take; widgets otherwise use the hooks. |
 | `useThreadActions()` | `select`, `rename`, `archive`, `stop`, `restart`, … for threads; `sendDraft()` creates the draft thread with its message, `startDraftLive()` creates it (the message, if any, as its first) and starts a live session on it, the microphone opened first; `compact(threadId, instructions?, mode?)` has omp compact the thread's context (as `:compact` does, `instructions` the focus of its summary, `mode` one of omp's `soft`, `remote`, `snapcompact`) with a success toast, refused while the thread works, and resolves to whether omp compacted. |
-| `useCommand(command)` | Registers a `:` command or key binding target while mounted: `{ id, title, description?, aliases?, scope?, args?, enabled?, run(args) }` (`description` shows in `:describe-command`, `args(before)` completes the argument being typed, `enabled()` returning `false` hides it). With `scope`, it answers only while the focus is inside an element of that scope (`SCOPE_ATTRIBUTE`), before a global command of the same id. |
+| `useCommand(command)` | Registers a `:` command or key binding target while mounted: `{ id, title, description?, aliases?, scope?, args?, enabled?, run(args) }` (`description` shows in `:describe-command`, `args(before)` completes the argument being typed, `enabled(args?)` returning `false` hides it; `args` is a context menu's target when one asks). With `scope`, it answers only while the focus is inside an element of that scope (`SCOPE_ATTRIBUTE`), before a global command of the same id. |
+| `useContextMenu({ on, items })` | Adds items to the context menus of `message`, `file` or `thread` targets while mounted, like an init file's `contextMenu` (see Context menus). |
 | `SCOPE_ATTRIBUTE` | `"data-omfp-scope"`: put `{ [SCOPE_ATTRIBUTE]: "my-scope" }` on your widget's root to own the commands registered with `scope: "my-scope"`; the innermost scope around the focus wins. |
 | `useAnnounce()` | `announce(message)` for screen readers. |
 | `useReportError()` | `report(error)`: adds a failure (an `Error`, a `CallError`, any value) to the window's error list, which the frame shows as an error toast going by itself after 12 s (held while hovered or focused) or dismissed; it stays in `:messages`. Use it in the `catch` of every user action. |

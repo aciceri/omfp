@@ -105,6 +105,9 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { mode: "normal", keys: "[ v", command: "view.prev" },
   // Every effective binding and `:` command, filterable (UI-198).
   { mode: "normal", keys: "?", command: "help.open" },
+  // The context menu of the focused message, file or thread, as the platforms' own keys open one (UI-317).
+  { mode: "normal", keys: "Shift-F10", command: "menu.open" },
+  { mode: "normal", keys: "ContextMenu", command: "menu.open" },
   { mode: "normal", keys: "Space a", command: "thread.nextAttention" },
   { mode: "normal", keys: "] a", command: "thread.nextAttention" },
   { mode: "normal", keys: "Space n", command: "thread.new" },

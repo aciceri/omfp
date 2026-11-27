@@ -172,6 +172,16 @@
     },
     {
       "mode": "normal",
+      "keys": "Shift-F10",
+      "command": "menu.open"
+    },
+    {
+      "mode": "normal",
+      "keys": "ContextMenu",
+      "command": "menu.open"
+    },
+    {
+      "mode": "normal",
       "keys": "Space a",
       "command": "thread.nextAttention"
     },
@@ -585,6 +595,13 @@
       ]
     },
     {
+      "id": "file.copyPath",
+      "title": "Copy a file's path (:copy-path <path>), or the focused path",
+      "aliases": [
+        "copy-path"
+      ]
+    },
+    {
       "id": "file.open",
       "title": "Open a file (:open <path>[:<line>]), or the focused path (:open)",
       "aliases": [
@@ -685,6 +702,13 @@
       "title": "Voice of live sessions (:voice arbor|breeze|cove|ember|juniper|maple|sol|spruce|vale)",
       "aliases": [
         "voice"
+      ]
+    },
+    {
+      "id": "menu.open",
+      "title": "Open the context menu of the focused message, file or thread",
+      "aliases": [
+        "menu"
       ]
     },
     {

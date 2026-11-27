@@ -48,6 +48,7 @@ import { AgentFiles } from "./agent-files.tsx";
 import { AgentNotices } from "./agent-notices.tsx";
 import { CommandLine } from "./command-line.tsx";
 import { GlobalCommands } from "./commands.tsx";
+import { ContextMenuLayer } from "./context-menu.tsx";
 import { Describe } from "./describe.tsx";
 import { CloseThreadDialog, DeleteWorkspaceDialog, ResetViewsDialog } from "./dialogs.tsx";
 import { FilePickerLine } from "./file-picker.tsx";
@@ -288,6 +289,7 @@ export function Frame({
             addWidget={addWidget}
           />
           <PaneCommands />
+          <ContextMenuLayer />
           <Notifier port={notifications} hasFocus={hasFocus} focusWindow={focusWindow} />
           <AgentFiles />
           <AgentNotices />

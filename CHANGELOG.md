@@ -9,6 +9,13 @@ The version's section is also the source of the GitHub release notes.
 
 ### Added
 
+- Right-click menus of omfp's own on messages, files and threads, instead of the browser's: a message offers Fork from
+  here and Copy, a file Open and Copy path (also `:copy-path`), a thread Archive or Unarchive, Copy conversation and
+  Export, acting on the thread clicked rather than the selected one. `Shift-F10`, the menu key or `:menu` opens the
+  menu of the focused item, and on a touch screen a finger resting on it for half a second does. Shift-right-click,
+  text fields and selected text keep the browser's menu. Init files (`omfp.contextMenu({ on, items })`) and widgets
+  (`useContextMenu`) add items from commands already registered, each run with the clicked message, file or thread as
+  its argument; web pages keep the engine's menu.
 - A transcript scrolled up well away from its end shows a down-arrow button over its bottom corner: click or tap it
   (or press Enter on it) to jump to the latest message and follow the reply again. It is touch-sized on phones too.
 - Links between threads: a reply can link another thread as `[title](omfp://thread/<id>)`, and agents are told to

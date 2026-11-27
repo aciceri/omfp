@@ -505,6 +505,23 @@ export const shell = {
     exported: (file: string) => `Exported \u201c${file}\u201d`,
     notLoaded: "The conversation has not loaded yet",
   },
+  /** omfp's context menu on messages, files and threads (UI-314..UI-319). */
+  contextMenu: {
+    label: (kind: string) => `${kind.charAt(0).toUpperCase()}${kind.slice(1)} menu`,
+    fork: "Fork from here",
+    copyMessage: "Copy",
+    open: "Open",
+    copyPath: "Copy path",
+    archive: "Archive",
+    unarchive: "Unarchive",
+    copyConversation: "Copy conversation",
+    export: "Export",
+    noTarget: "The focus is on nothing with a menu: focus a message (j and k), a file or a thread",
+    noPath: "Focus a file's path to copy it, or give one: :copy-path <path>",
+    badTarget: (on: unknown) => `A context menu's "on" is "message", "file" or "thread", not ${JSON.stringify(on)}`,
+    badItem: (item: unknown) =>
+      `A context menu item is a command's id or alias, or { command, title? }, not ${JSON.stringify(item)}`,
+  },
   /** Compacting a thread's context on demand (UI-910..UI-913). */
   compaction: {
     focus: "Focus of the summary",
@@ -922,6 +939,9 @@ export const shell = {
     widget:
       "Add a widget to the view or copy one into the workspace (:widget add <reference>, :widget copy <reference> [<name>])",
     open: "Open a file (:open <path>[:<line>]), or the focused path (:open)",
+    /** `menu.open` (UI-317). */
+    menu: "Open the context menu of the focused message, file or thread",
+    copyPath: "Copy a file's path (:copy-path <path>), or the focused path",
     pickFile: "Pick a workspace file",
     next: "Next item of the focused widget",
     prev: "Previous item of the focused widget",

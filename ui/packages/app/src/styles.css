@@ -36,6 +36,14 @@
     color: var(--omfp-on-surface-variant);
   }
 
+  /* omfp's context menu (UI-314): the point it opens at, an empty box the popover places itself against. */
+  .omfp-context-menu__anchor {
+    position: fixed;
+    inline-size: 0;
+    block-size: 0;
+    pointer-events: none;
+  }
+
   /* Frame. */
   /* The app fills the window and never scrolls it: an entrance that starts below the window (the mode pill's) would
    * otherwise flash a window scrollbar that shifts every column while it plays. Its overflow is clipped, not hidden,

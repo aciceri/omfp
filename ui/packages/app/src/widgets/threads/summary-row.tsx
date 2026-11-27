@@ -100,6 +100,8 @@ export function SummaryRow({
       selectProps={{
         "data-testid": "thread-row",
         "data-thread-id": thread.id,
+        // A context menu's thread (UI-314).
+        "data-omfp-thread": thread.id,
         "data-status": status,
         "data-title-source": thread.titleSource,
         "data-archived": archived ? "true" : undefined,

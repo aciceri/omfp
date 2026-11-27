@@ -17,6 +17,7 @@ import {
 import { createContext, type ReactNode, useContext } from "react";
 import { strings } from "../strings/index.ts";
 import { CommandRegistry } from "./commands.ts";
+import { ContextMenus } from "./context-menu.ts";
 import { type FilePoll, intervalPoll } from "./files.ts";
 import { type FrameScheduler, FrameStore, type ModelSource, type Snapshot } from "./frame-store.ts";
 import { InitFiles } from "./init.ts";
@@ -185,6 +186,8 @@ export interface OmfpHost {
   readonly topics: TopicRefs;
   readonly window: WindowStore;
   readonly commands: CommandRegistry;
+  /** The items init files and widgets add to the context menus (UI-319). */
+  readonly contextMenus: ContextMenus;
   readonly announcer: Announcer;
   /** Workspace and user widget modules, imported once per URL (UI-105). */
   readonly modules: WidgetModules;
@@ -233,6 +236,7 @@ export function createHost(client: SdkClient, options: HostOptions = {}): OmfpHo
     topics,
     window,
     commands: new CommandRegistry(),
+    contextMenus: new ContextMenus(),
     announcer: new Announcer(),
     modules: new WidgetModules(importer, strings.widgets.noDefaultExport),
     reports: new WidgetReporter({ report: (params) => client.call("widgets.report", params) }, options.reportTimers),

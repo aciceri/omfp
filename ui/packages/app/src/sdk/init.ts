@@ -2,11 +2,11 @@
  * Init files (UI-260..UI-263, UI-267): the user's `init.ts` (next to `theme.css`,
  * served by the daemon) and the current workspace's `.omfp/init.ts`, ES modules compiled like widgets. Their default
  * export is called with an {@link InitApi} (the user's file first, then the workspace's); what it registers through
- * the API — commands, key bindings, the views it uses and their transforms, floating panels, thread event listeners,
- * cleanups — is removed again, and the function it returned is called, before the file runs again (a new version,
- * another current workspace, or a new `views.json` or list of repositories it read) or goes away. A failure anywhere
- * (compile error, import, the run, a cleanup, a transform, a command or listener it registered) becomes the file's
- * error, shown in a banner by the frame; the window keeps working.
+ * the API — commands, key bindings, context menu items, the views it uses and their transforms, floating panels, thread
+ * event listeners, cleanups — is removed again, and the function it returned is called, before the file runs again (a
+ * new version, another current workspace, or a new `views.json` or list of repositories it read) or goes away. A
+ * failure anywhere (compile error, import, the run, a cleanup, a transform, a command or listener it registered)
+ * becomes the file's error, shown in a banner by the frame; the window keeps working.
  */
 
 import type { JobView, RunInfo, ThreadSummary } from "@omfp/protocol";
@@ -23,6 +23,7 @@ import type { ResolvedPanel, Views } from "../view/views.ts";
 import type { JobEventKind } from "../vm/jobs.ts";
 import { errorMessage } from "./actions.ts";
 import { type Command, scopesAt } from "./commands.ts";
+import type { ContextMenu } from "./context-menu.ts";
 import type { OmfpHost, SdkClient } from "./host.tsx";
 import { type InitFile, InitViews } from "./init-views.ts";
 import { type JobActions, jobActions } from "./jobs.ts";
@@ -116,6 +117,11 @@ export interface InitApi {
   command(command: InitCommand): () => void;
   /** Binds keys over the defaults, `[keymap]` and `.omfp/keymap.json`; returns the removal of these bindings. */
   bind(bindings: InitBinding | readonly InitBinding[]): () => void;
+  /**
+   * Adds items to the context menus on `on` (`message`, `file`, `thread`): registered commands by id or alias, or
+   * `{ command, title }`, each run with the clicked target as its argument (UI-319); returns their removal.
+   */
+  contextMenu(menu: ContextMenu): () => void;
   /** A notice in the mode line, or a system notification while the window has no focus (UI-194). */
   notify(request: NoticeRequest): void;
   /** Calls `listener` whenever a thread starts needing the user, fails, or finishes a turn; returns its removal. */
@@ -434,11 +440,11 @@ export class InitFiles {
           host.commands.register({
             ...command,
             init: run.file,
-            run: (args) =>
+            run: (args, element) =>
               this.#guard(
                 run,
                 (message) => text.command(command.id, message),
-                () => command.run(args),
+                () => command.run(args, element),
               ),
           }),
         ),
@@ -460,6 +466,7 @@ export class InitFiles {
           }),
         );
       },
+      contextMenu: (menu) => this.#own(run, host.contextMenus.register(menu, run.file)),
       notify: (request) => host.notices.notify(request),
       on: (event: InitEventKind, listener: (value: never) => void) => {
         // Each kind's listener gets that kind's value (`emit`'s overloads).

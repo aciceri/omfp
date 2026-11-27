@@ -7,6 +7,8 @@ The version's section is also the source of the GitHub release notes.
 
 ## Unreleased
 
+## 0.4.6 — 2026-11-27
+
 ### Added
 
 - `omfp desktop --workspace <name> --view <id>` opens a window on a workspace's new thread with the view you name, on

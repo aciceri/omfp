@@ -79,6 +79,10 @@ pub struct Cli {
     /// `delete_archived_after`, which applies live (DMN-396).
     #[arg(long, value_name = "DURATION")]
     pub delete_archived_after: Option<DeleteArchivedAfter>,
+    /// Exit at once (status 1) when another daemon holds the data directory, instead of waiting to start once it
+    /// exits (DMN-397); `omfp desktop` passes it to the daemon it starts (ARC-003).
+    #[arg(long)]
+    pub no_wait: bool,
 }
 
 /// Resolved daemon settings.

@@ -1,5 +1,7 @@
 //! Finding or starting the local daemon of a data directory (ARC-003, D-16): the daemon's own command line and config
-//! file decide its data directory and bind address; a daemon started here runs detached in the background, in the tray.
+//! file decide its data directory and bind address; a daemon holding the data directory's lock is waited for, never
+//! raced; a daemon started here runs detached in the background, in the tray, and exits if another one won the lock
+//! meanwhile (`--no-wait`, DMN-397).
 
 use std::ffi::OsString;
 use std::net::{SocketAddr, TcpListener};
@@ -15,8 +17,10 @@ use omfp_daemon::paths::{DataDir, create_private_dir, open_private_log};
 
 use super::Env;
 
-/// How long a started daemon gets to write `daemon.json`.
+/// How long a started daemon, or one found holding the data directory's lock, gets to write `daemon.json`.
 const START_DEADLINE: Duration = Duration::from_secs(30);
+/// How often `daemon.json` is checked while a daemon starts.
+const POLL: Duration = Duration::from_millis(25);
 
 /// How to find or start the daemon of the data directory (ARC-003): the daemon's own command line and config file
 /// decide its data directory and bind address.
@@ -89,10 +93,14 @@ impl LocalDaemon {
         Config::from_cli(cli, env.xdg_data_home, env.home).map_err(anyhow::Error::msg)
     }
 
-    /// The command line of the background daemon: in the tray (DMN-128).
+    /// The command line of the background daemon: in the tray (DMN-128), exiting rather than waiting when another
+    /// daemon won the lock (DMN-397).
     #[must_use]
     pub fn command_line(&self, bind: Option<SocketAddr>) -> Vec<OsString> {
         let mut line = vec![OsString::from("daemon"), OsString::from("--tray")];
+        if !self.daemon_args.iter().any(|arg| arg == "--no-wait") {
+            line.push("--no-wait".into());
+        }
         if let Some(bind) = bind {
             line.extend(["--bind".into(), bind.to_string().into()]);
         }
@@ -102,11 +110,10 @@ impl LocalDaemon {
 
     /// The address of the running daemon, after starting one in the background when none runs: on the configured
     /// address first, so the window's origin (and its `localStorage`) stays the same across restarts, else on a
-    /// random port (ARC-003). A daemon restarting in place is waited for, never replaced (DMN-392).
+    /// random port (ARC-003). A daemon restarting in place (DMN-392), or holding the lock while it starts, is waited
+    /// for, never replaced.
     pub fn find_or_start(&self) -> anyhow::Result<SocketAddr> {
-        if let Some(info) =
-            omfp_daemon::discover_through_restart(&self.data_dir, omfp_daemon::RESTART_DEADLINE)?
-        {
+        if let Some(info) = self.find()? {
             note!(
                 "omfp desktop: found the daemon (pid {}) on {}",
                 info.pid,
@@ -136,6 +143,40 @@ impl LocalDaemon {
                     );
                 }
             }
+        }
+    }
+
+    /// The running daemon, waiting (at most [`START_DEADLINE`]) for one that holds the data directory's lock but does
+    /// not listen yet, and through a restart in place (DMN-392); `None` only when nothing holds the lock.
+    fn find(&self) -> anyhow::Result<Option<omfp_daemon::DaemonInfo>> {
+        let deadline = Instant::now() + START_DEADLINE;
+        let mut waiting = false;
+        loop {
+            if let Some(info) = omfp_daemon::discover_through_restart(
+                &self.data_dir,
+                omfp_daemon::RESTART_DEADLINE,
+            )? {
+                return Ok(Some(info));
+            }
+            if !omfp_daemon::lock_held(&self.data_dir)? {
+                return Ok(None);
+            }
+            if !waiting {
+                note!(
+                    "omfp desktop: a daemon is starting for {}, waiting for it",
+                    self.data_dir.display()
+                );
+                waiting = true;
+            }
+            if Instant::now() > deadline {
+                bail!(
+                    "the omfp daemon holding {} did not start in {} s, see {}",
+                    self.data_dir.display(),
+                    START_DEADLINE.as_secs(),
+                    self.log().display()
+                );
+            }
+            std::thread::sleep(POLL);
         }
     }
 
@@ -195,7 +236,7 @@ impl LocalDaemon {
                     self.log().display()
                 );
             }
-            std::thread::sleep(Duration::from_millis(25));
+            std::thread::sleep(POLL);
         }
     }
 }
@@ -245,5 +286,46 @@ mod tests {
         let free = taken.local_addr().unwrap();
         drop(taken);
         assert!(!port_in_use(free));
+    }
+
+    // spec: ARC-003, DMN-397
+    #[test]
+    fn a_daemon_holding_the_lock_is_waited_for_not_raced() {
+        let dir = tempfile::tempdir().unwrap();
+        let plan = LocalDaemon {
+            data_dir: dir.path().to_owned(),
+            bind: "127.0.0.1:0".parse().unwrap(),
+            explicit_bind: false,
+            daemon_args: Vec::new(),
+        };
+        // Nothing holds the lock: a daemon is to be started.
+        assert_eq!(plan.find().unwrap(), None);
+
+        // A daemon that holds the lock but does not listen yet (no daemon.json): waited for until it does.
+        let lock = std::fs::File::create(dir.path().join("daemon.lock")).unwrap();
+        lock.lock().unwrap();
+        let finding = std::thread::spawn({
+            let plan = plan.clone();
+            move || plan.find()
+        });
+        let written = dir.path().join("daemon.json.tmp");
+        std::fs::write(
+            &written,
+            format!(r#"{{"addr":"127.0.0.1:9","pid":{}}}"#, std::process::id()),
+        )
+        .unwrap();
+        std::fs::rename(&written, dir.path().join("daemon.json")).unwrap();
+        let found = finding
+            .join()
+            .unwrap()
+            .unwrap()
+            .expect("the daemon holding the lock");
+        assert_eq!(found.addr, "127.0.0.1:9".parse().unwrap());
+
+        // One that exits without ever listening leaves nothing to wait for.
+        std::fs::remove_file(dir.path().join("daemon.json")).unwrap();
+        let finding = std::thread::spawn(move || plan.find());
+        drop(lock);
+        assert_eq!(finding.join().unwrap().unwrap(), None);
     }
 }

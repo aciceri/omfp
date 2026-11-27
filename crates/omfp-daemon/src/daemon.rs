@@ -1,6 +1,7 @@
 //! Starting and stopping a daemon (02-daemon, "Startup and configuration"): in-process with [`start`] (DMN-004), or
-//! as `omfp daemon` with [`run`]; one daemon per data directory, published in `daemon.json` (DMN-007); its log
-//! (DMN-390, [`log`]); restarting it in place (DMN-391, [`restart`]).
+//! as `omfp daemon` with [`run`]; one daemon per data directory, published in `daemon.json` (DMN-007), a refused
+//! `omfp daemon` waiting for the lock (DMN-397); its log (DMN-390, [`log`]); restarting it in place (DMN-391,
+//! [`restart`]).
 
 mod log;
 mod restart;
@@ -9,7 +10,7 @@ use std::ffi::OsString;
 use std::fs::{File, Permissions, TryLockError};
 use std::io::{IsTerminal as _, Write as _};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::fs::{FileExt as _, PermissionsExt as _};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
@@ -21,7 +22,7 @@ use rustix::process::{Pid, test_kill_process};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Notify, watch};
 use tokio::task::JoinHandle;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 pub use restart::{RESTART_DEADLINE, restart};
 
@@ -183,6 +184,8 @@ const INFO_FILE: &str = "daemon.json";
 const LOCK_FILE: &str = "daemon.lock";
 /// How often a client checks `daemon.json` while it waits for a daemon.
 const POLL: Duration = Duration::from_millis(25);
+/// How often `omfp daemon`, refused for the data directory's lock, tries it again (DMN-397).
+const LOCK_RETRY: Duration = Duration::from_millis(100);
 
 /// The daemon running for `data_dir`, if any: `daemon.json` is read and trusted only while its daemon still holds
 /// the data directory's lock (the process is alive) and does not say it is restarting (DMN-392).
@@ -203,13 +206,18 @@ pub fn discover(data_dir: &Path) -> std::io::Result<Option<DaemonInfo>> {
 /// Whether the daemon of `data_dir` is restarting in place (DMN-392): `daemon.json` says so and its process lives (a
 /// daemon that died while restarting left a stale mark, as does one in another PID namespace, which cannot be watched).
 pub fn restarting(data_dir: &Path) -> std::io::Result<bool> {
+    Ok(restarting_pid(data_dir)?.is_some())
+}
+
+/// The pid of the daemon restarting in place for `data_dir`, as [`restarting`] finds it.
+fn restarting_pid(data_dir: &Path) -> std::io::Result<Option<u32>> {
     let text = match std::fs::read_to_string(data_dir.join(INFO_FILE)) {
         Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(error),
     };
     let info: DaemonInfo = serde_json::from_str(&text).map_err(std::io::Error::other)?;
-    Ok(info.restarting && info.local_pid().is_some_and(process_alive))
+    Ok((info.restarting && info.local_pid().is_some_and(process_alive)).then_some(info.pid))
 }
 
 /// [`discover`] through a restart in place (DMN-392): while the daemon restarts, waits (at most `deadline`) for the
@@ -263,27 +271,74 @@ pub fn lock_held(data_dir: &Path) -> std::io::Result<bool> {
 
 /// Takes the data directory's exclusive lock (DMN-007).
 fn lock_data_dir(data_dir: &Path) -> anyhow::Result<File> {
-    let lock = private_file_options()
+    let lock = open_lock(data_dir)?;
+    if !try_lock(&lock, data_dir)? {
+        bail!("{}", refusal(data_dir));
+    }
+    Ok(lock)
+}
+
+/// The data directory's lock file, opened to take its lock (DMN-007).
+fn open_lock(data_dir: &Path) -> anyhow::Result<File> {
+    private_file_options()
         .create(true)
         .truncate(false)
         .write(true)
         .open(data_dir.join(LOCK_FILE))
-        .with_context(|| format!("cannot open the lock file in {}", data_dir.display()))?;
+        .with_context(|| format!("cannot open the lock file in {}", data_dir.display()))
+}
+
+/// Takes the lock of `lock`, the data directory's lock file, and writes this process's pid in it, for the log line of
+/// a daemon it refuses (DMN-397). `false`: another daemon holds it, or restarts in place, which frees it for a moment
+/// and takes it again as its restarted self (DMN-392).
+fn try_lock(lock: &File, data_dir: &Path) -> anyhow::Result<bool> {
     match lock.try_lock() {
-        Ok(()) => Ok(lock),
-        Err(TryLockError::WouldBlock) => {
-            let running = std::fs::read_to_string(data_dir.join(INFO_FILE))
-                .ok()
-                .and_then(|text| serde_json::from_str::<DaemonInfo>(&text).ok())
-                .map(|info| format!(" (pid {}, listening on {})", info.pid, info.addr))
-                .unwrap_or_default();
-            bail!(
-                "another omfp daemon is already running for {}{running}",
-                data_dir.display()
-            )
+        Ok(()) => {}
+        Err(TryLockError::WouldBlock) => return Ok(false),
+        Err(TryLockError::Error(error)) => {
+            return Err(error).context("cannot lock the data directory");
         }
-        Err(TryLockError::Error(error)) => Err(error).context("cannot lock the data directory"),
     }
+    // An unreadable daemon.json marks no restart: the lock is this daemon's, which rewrites that file.
+    if restarting_pid(data_dir).is_ok_and(|pid| pid.is_some_and(|pid| pid != std::process::id())) {
+        lock.unlock().context("cannot unlock the data directory")?;
+        return Ok(false);
+    }
+    lock.set_len(0)
+        .and_then(|()| lock.write_all_at(std::process::id().to_string().as_bytes(), 0))
+        .with_context(|| format!("cannot write the lock file in {}", data_dir.display()))?;
+    Ok(true)
+}
+
+/// Why the data directory's lock is refused (DMN-397): the daemon holding it, by the pid in the lock file (none from an
+/// older omfp), with its address once its `daemon.json` names it.
+fn refusal(data_dir: &Path) -> String {
+    let holder = std::fs::read_to_string(data_dir.join(LOCK_FILE))
+        .ok()
+        .and_then(|text| text.trim().parse::<u32>().ok());
+    let info = std::fs::read_to_string(data_dir.join(INFO_FILE))
+        .ok()
+        .and_then(|text| serde_json::from_str::<DaemonInfo>(&text).ok())
+        // Left by a daemon that died: the holder is still starting.
+        .filter(|info| holder.is_none_or(|pid| pid == info.pid));
+    let running = match (holder, info) {
+        (_, Some(info)) => format!(" (pid {}, listening on {})", info.pid, info.addr),
+        (Some(pid), None) => format!(" (pid {pid}, starting)"),
+        (None, None) => String::new(),
+    };
+    format!(
+        "another omfp daemon is already running for {}{running}",
+        data_dir.display()
+    )
+}
+
+/// Waits until the data directory's lock is free, then takes it (DMN-397): polled, so it works alike wherever flock
+/// does (Linux, macOS), and SIGTERM still ends the process meanwhile.
+async fn wait_for_lock(lock: &File, data_dir: &Path) -> anyhow::Result<()> {
+    while !try_lock(lock, data_dir)? {
+        tokio::time::sleep(LOCK_RETRY).await;
+    }
+    Ok(())
 }
 
 fn write_info(data_dir: &Path, info: &DaemonInfo) -> std::io::Result<()> {
@@ -440,7 +495,13 @@ impl DaemonHandle {
 
 /// Starts a daemon in-process with the real ports (DMN-004), serving the web bundle shipped next to the executable
 /// unless `--static-dir` names one (DMN-008).
-pub async fn start(mut config: Config) -> anyhow::Result<DaemonHandle> {
+pub async fn start(config: Config) -> anyhow::Result<DaemonHandle> {
+    let lock = claim_data_dir(&config)?;
+    start_locked(config, lock).await
+}
+
+/// [`start`] once this process holds the data directory's lock (`lock`): every start line follows it (DMN-397).
+async fn start_locked(mut config: Config, lock: File) -> anyhow::Result<DaemonHandle> {
     let ports = Ports::resolve(&config)?;
     let exe_dir = std::env::current_exe()
         .ok()
@@ -451,7 +512,16 @@ pub async fn start(mut config: Config) -> anyhow::Result<DaemonHandle> {
     } else {
         warn!("no web UI bundle: pass --static-dir to serve one");
     }
-    start_with(config, ports).await
+    serve(config, ports, lock).await
+}
+
+/// Creates the data directory private (DMN-180) and takes its lock (DMN-007).
+fn claim_data_dir(config: &Config) -> anyhow::Result<File> {
+    let data_dir = std::path::absolute(&config.data_dir)?;
+    if let Some(mode) = create_data_dir(&data_dir)? {
+        warn_opened(&data_dir, mode);
+    }
+    lock_data_dir(&data_dir)
 }
 
 /// Creates the data directory private (DMN-180): the mode it had when it was open to other users.
@@ -468,13 +538,15 @@ fn warn_opened(data_dir: &Path, mode: u32) {
 }
 
 /// Starts a daemon in-process on the given ports.
-#[allow(clippy::too_many_lines)] // Startup wires every part in order.
 pub async fn start_with(config: Config, ports: Ports) -> anyhow::Result<DaemonHandle> {
+    let lock = claim_data_dir(&config)?;
+    serve(config, ports, lock).await
+}
+
+/// Starts a daemon on `ports` once this process holds the data directory's lock (`lock`).
+#[allow(clippy::too_many_lines)] // Startup wires every part in order.
+async fn serve(config: Config, ports: Ports, lock: File) -> anyhow::Result<DaemonHandle> {
     let data_dir = std::path::absolute(&config.data_dir)?;
-    if let Some(mode) = create_data_dir(&data_dir)? {
-        warn_opened(&data_dir, mode);
-    }
-    let lock = lock_data_dir(&data_dir)?;
     let data = DataDir::new(&data_dir);
     let token = Token::load_or_create(&data.token()).context("cannot read or create the token")?;
     conventions::write_widget_builder(&data).with_context(|| {
@@ -653,10 +725,13 @@ pub fn run(cli: Cli) -> anyhow::Result<()> {
 
 /// [`run`] with `attach` called on the started daemon (`omfp daemon --tray`, DMN-128); what it returns lives until the
 /// daemon stops, which a [`StopRequest`] also triggers, and is dropped before the shutdown starts. The log goes to
-/// stderr and `daemon.log` (DMN-390); `SIGUSR2` with a restart request restarts the daemon in place (DMN-391).
+/// stderr and `daemon.log` (DMN-390); `SIGUSR2` with a restart request restarts the daemon in place (DMN-391). The
+/// data directory's lock comes before the first log line: refused, the daemon logs why and waits for it, or exits
+/// with `--no-wait` (DMN-397).
 pub fn run_with<A>(mut cli: Cli, attach: impl FnOnce(&DaemonHandle) -> A) -> anyhow::Result<()> {
     let xdg_config_home = std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from);
     let home = std::env::var_os("HOME").map(PathBuf::from);
+    let wait = !cli.no_wait;
     cli.config = cli
         .config
         .or_else(|| default_config_file(xdg_config_home.clone(), home.clone()));
@@ -674,22 +749,37 @@ pub fn run_with<A>(mut cli: Cli, attach: impl FnOnce(&DaemonHandle) -> A) -> any
         .or_else(|| default_init_file(xdg_config_home, home));
     let data_dir = std::path::absolute(&config.data_dir)?;
     let opened = create_data_dir(&data_dir)?;
+    let lock = open_lock(&data_dir)?;
+    let locked = try_lock(&lock, &data_dir)?;
     let log = DataDir::new(&data_dir).daemon_log();
     log::init(&log).with_context(|| format!("cannot open {}", log.display()))?;
     if let Some(mode) = opened {
         warn_opened(&data_dir, mode);
+    }
+    if !locked {
+        let refusal = refusal(&data_dir);
+        error!("{refusal}");
+        if !wait {
+            bail!("{refusal}");
+        }
     }
     let configured_bind = config.bind;
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()?;
     let outcome = runtime.block_on(async {
+        if !locked {
+            // One line however long it waits: a supervisor sees one process running, not a crash loop.
+            info!("waiting for that daemon to exit, then starting (--no-wait exits instead)");
+            wait_for_lock(&lock, &data_dir).await?;
+            info!("the data directory is free: starting");
+        }
         // Caught before daemon.json names this process and says so: from then on `omfp daemon restart` may send it
         // (DMN-394).
         let mut restart_requests =
             tokio::signal::unix::signal(tokio::signal::unix::SignalKind::user_defined2())?;
         config.restarts_in_place = true;
-        let daemon = start(config).await?;
+        let daemon = start_locked(config, lock).await?;
         // Signals are caught before the URL is printed: whoever waits for it may stop the daemon at once.
         let signal = signal_handler()?;
         tokio::pin!(signal);

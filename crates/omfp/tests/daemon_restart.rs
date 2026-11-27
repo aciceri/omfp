@@ -1,6 +1,7 @@
 //! The daemon's log and its restart in place on the real binary: `omfp daemon` appends its log to
-//! `<data-dir>/daemon.log` whoever started it, each line once (DMN-390), and `omfp daemon restart` makes the running
-//! daemon the restart command's executable: the same process on the same address, a new start (DMN-391).
+//! `<data-dir>/daemon.log` whoever started it, each line once (DMN-390), refused for the data directory's lock it logs
+//! why there and waits for it (DMN-397), and `omfp daemon restart` makes the running daemon the restart command's
+//! executable: the same process on the same address, a new start (DMN-391).
 
 use std::io::Read as _;
 use std::os::unix::process::CommandExt as _;
@@ -171,6 +172,66 @@ fn a_daemon_started_anywhere_appends_its_log_to_daemon_log() {
         assert_eq!(text.matches(line).count(), 1, "{text}");
         assert_eq!(written.matches(line).count(), 1, "{written}");
     }
+}
+
+// spec: DMN-397, DMN-007, DMN-390
+#[test]
+fn a_daemon_refused_for_the_lock_logs_why_and_takes_over_when_the_other_exits() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut command, data) = daemon(dir.path());
+    let mut first = command
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let first_stop = Stop(Pid::from_child(&first));
+    let holder = running(&data);
+    until("the first daemon never logged", || {
+        log(&data).contains(LISTENING).then_some(())
+    });
+
+    // A second daemon, as a supervisor restarts one: refused, it says why before any start line, and waits.
+    let (mut command, _) = daemon(dir.path());
+    let mut second = command
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let _second_stop = Stop(Pid::from_child(&second));
+    let text = until("the refused daemon never said it waits", || {
+        let text = log(&data);
+        text.contains("waiting for that daemon to exit")
+            .then_some(text)
+    });
+    let refusal = format!(
+        "another omfp daemon is already running for {} (pid {}, listening on {})",
+        data.display(),
+        holder.pid,
+        holder.addr
+    );
+    let line = text
+        .lines()
+        .find(|line| line.contains(&refusal))
+        .unwrap_or_else(|| panic!("no refusal in {text}"));
+    assert!(line.contains("ERROR"), "{line}");
+    // The only start lines so far are the first daemon's.
+    assert_eq!(text.matches("using omp").count(), 1, "{text}");
+    assert_eq!(second.try_wait().unwrap(), None);
+
+    // With `--no-wait` a refused daemon exits as before, saying why on stderr and in daemon.log.
+    let (mut command, _) = daemon(dir.path());
+    let refused = command.arg("--no-wait").output().unwrap();
+    assert!(!refused.status.success());
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(stderr.contains(&refusal), "{stderr}");
+    assert_eq!(log(&data).matches(&refusal).count(), 2);
+
+    // The first daemon exits: the waiting one starts in its place.
+    kill_process(first_stop.0, Signal::TERM).unwrap();
+    assert!(first.wait().unwrap().success());
+    let taken = running(&data);
+    assert_eq!(taken.pid, second.id());
+    assert_eq!(second.try_wait().unwrap(), None);
 }
 
 /// `omfp daemon restart --data-dir <data>`, which must succeed; returns the restarted daemon.

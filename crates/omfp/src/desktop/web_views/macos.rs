@@ -10,7 +10,7 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use tauri::webview::{NewWindowResponse, PageLoadEvent, WebviewBuilder};
+use tauri::webview::{NewWindowResponse, PageLoadEvent, PermissionResponse, WebviewBuilder};
 use tauri::{LogicalPosition, LogicalSize, Manager as _, Url, Webview, WebviewUrl, WebviewWindow};
 
 use super::{
@@ -121,6 +121,9 @@ impl Engine for Children {
         let new_window_origin = self.origin.clone();
         let mut builder = WebviewBuilder::new(&label, WebviewUrl::External(url))
             .data_store_identifier(self.store)
+            // UI-684: no permission. Wry grants a request nobody answers, and the app may hold the microphone for live
+            // voice (UI-251).
+            .on_permission_request(|_, _| PermissionResponse::Deny)
             // Every load of the page or its frames, a redirect or a link included, keeps to what a view may show;
             // the page's posts to its widget come this way too.
             .on_navigation(move |url| {

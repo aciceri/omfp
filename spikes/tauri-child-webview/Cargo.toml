@@ -1,0 +1,24 @@
+# Spike S-17: a web page as a Tauri child webview over omfp's window (WebKitGTK), not built by `just ci`.
+[package]
+name = "omfp-tauri-child-spike"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# omfp's own Tauri line and features, plus `unstable` for `Window::add_child` (multiwebview) and `webview-data-url`
+# for the host page.
+tauri = { version = "2.12", default-features = false, features = [
+  "wry",
+  "custom-protocol",
+  "unstable",
+  "webview-data-url",
+] }
+# The window's GTK widgets (Linux), the version Tauri builds.
+gtk = "0.18"
+
+[build-dependencies]
+tauri-build = { version = "2.7", default-features = false }
+
+# Not a member of omfp's workspace.
+[workspace]

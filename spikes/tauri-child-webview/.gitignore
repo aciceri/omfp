@@ -1,0 +1,3 @@
+/target
+# Capability schemas tauri-build writes on every build
+/gen/

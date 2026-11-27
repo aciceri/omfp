@@ -78,6 +78,8 @@ The version's section is also the source of the GitHub release notes.
   killed for lack of memory, and when it dies together with the daemon (a signal to the whole process group, a session
   logout), which before left the thread looking idle. Resume tells the agent whether a crash or a daemon restart cut
   its turn (#317).
+- Agents are told that their working directory is the workspace folder, not a repository, and to commit with
+  `commit.draft(repo=…)` naming the repository; before, their first commit in a thread failed and was retried.
 
 ## 0.4.5 — 2026-11-25
 

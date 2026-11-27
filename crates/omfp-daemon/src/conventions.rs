@@ -22,9 +22,16 @@ pub fn workspace_conventions(name: &str, id: &str, path: &Path) -> String {
          - Work on a separate branch: `git -C <repo> worktree add {path}/<name> -b <branch>`.\n\
          - Get a remote repository: `git clone <url> {path}/<name>`.\n\
          - Keep repositories at the top level of the workspace: omfp does not look deeper.\n\
+         - {COMMIT_RULE}\n\
          - {LSP_RULE}"
     )
 }
+
+/// The commit line of the workspace conventions (AGT-100): the cwd is never a repository, so `commit.draft()` needs
+/// `repo`.
+pub const COMMIT_RULE: &str = "Your working directory is the workspace folder, never a repository: commit with \
+    `commit.draft(repo=\"<repository>\")` (`{ repo }` in JavaScript), naming the repository or worktree folder the \
+    change is in.";
 
 /// The language servers line of the workspace conventions (AGT-099): where `lsp` finds servers, the quiet fallback
 /// without one, and the docs section saying how to get one.
@@ -307,6 +314,29 @@ mod tests {
             "omfp://docs/shell, Language servers",
         ] {
             assert!(LSP_RULE.contains(rule), "{rule:?} missing: {LSP_RULE}");
+        }
+    }
+
+    // spec: AGT-100
+    #[test]
+    fn conventions_say_to_name_the_repository_when_committing() {
+        let text = workspace_conventions("checkout", "01WORKSPACE", Path::new("/ws/checkout"));
+        let line = format!("- {COMMIT_RULE}");
+        assert_eq!(
+            text.lines().filter(|candidate| *candidate == line).count(),
+            1,
+            "one line: {text}"
+        );
+        for rule in [
+            "never a repository",
+            "commit.draft(repo=\"<repository>\")",
+            "`{ repo }` in JavaScript",
+            "repository or worktree folder",
+        ] {
+            assert!(
+                COMMIT_RULE.contains(rule),
+                "{rule:?} missing: {COMMIT_RULE}"
+            );
         }
     }
 

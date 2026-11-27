@@ -992,6 +992,96 @@ export default function init(omfp) {
     handle.shutdown().await.unwrap();
 }
 
+// spec: TST-033, UI-214
+#[tokio::test(flavor = "multi_thread")]
+async fn a_window_on_another_daemon_opens_a_workspaces_new_thread_on_the_view_named() {
+    use omfp::remote::{Connection, Target};
+    use omfp_daemon::agent::FakeLauncher;
+    use omfp_daemon::config::Config;
+    use omfp_daemon::git::FakeGit;
+    use omfp_daemon::{Ports, start_with};
+    use omfp_protocol::CreateWorkspaceParams;
+    use omfp_protocol::method::WorkspacesCreate;
+    use std::sync::Arc;
+
+    let dir = tempfile::tempdir().unwrap();
+    // Shows that the draft's composer holds the prompt: a CSS selector cannot read a text area's value.
+    let init = dir.path().join("init.ts");
+    std::fs::write(
+        &init,
+        r#"
+export default function init() {
+  const tick = setInterval(() => {
+    const composer = document.querySelector('[data-testid=draft-thread-view] textarea');
+    if (composer && composer.value === "Sì, due\nrighe") document.body.dataset.prompt = "shown";
+  }, 100);
+  return () => clearInterval(tick);
+}
+"#,
+    )
+    .unwrap();
+    let mut config = Config::loopback(&dir.path().join("daemon"), &[]);
+    config.static_dir = Some(web_bundle());
+    config.init_file = Some(init);
+    let ports = Ports::fake(
+        Arc::new(FakeLauncher::new()),
+        Arc::new(FakeGit::new()),
+        Vec::new(),
+    );
+    let handle = start_with(config, ports).await.unwrap();
+    let token = handle.token().expose().to_owned();
+    let mut client = Connection::open(&Target {
+        url: format!("ws://{}/api/ws", handle.addr()),
+        token: token.clone(),
+    })
+    .await
+    .unwrap();
+    let workspace = client
+        .call::<WorkspacesCreate>(CreateWorkspaceParams {
+            name: Some("Home".into()),
+            link: None,
+        })
+        .await
+        .unwrap();
+    let views = Path::new(&workspace.path).join(".omfp");
+    std::fs::create_dir_all(&views).unwrap();
+    std::fs::write(
+        views.join("views.json"),
+        r#"{"default": "chat", "views": {
+  "chat": {"title": "Chat", "layout": ["tabs", {"id": "main"}, "omfp:chat"]},
+  "web": {"title": "Web", "layout": ["tabs", {"id": "main"}, "omfp:chat"]}
+}}"#,
+    )
+    .unwrap();
+    // The window's own data directory: no daemon of its own runs there.
+    let window_data = dir.path().join("window");
+    desktop_with(
+        dir.path(),
+        &[
+            ("OMFP_SMOKE", "1"),
+            (
+                "OMFP_SMOKE_WAIT",
+                "body[data-prompt=shown] [data-testid=view][data-view=web] [data-testid=draft-thread-view]",
+            ),
+        ],
+        &[
+            "--connect",
+            &format!("http://{}", handle.addr()),
+            "--token",
+            &token,
+            "--data-dir",
+            window_data.to_str().unwrap(),
+            "--workspace",
+            "home",
+            "--view",
+            "web",
+            "--prompt",
+            "Sì, due\nrighe",
+        ],
+    );
+    handle.shutdown().await.unwrap();
+}
+
 /// Two ASCII PDF pages with a selectable text layer.
 fn matrix_pdf() -> Vec<u8> {
     use std::io::Write as _;

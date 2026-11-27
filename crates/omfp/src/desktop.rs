@@ -56,12 +56,57 @@ pub struct Args {
     /// `$XDG_DATA_HOME/omfp`, else `~/.local/share/omfp`, on macOS `~/Library/Application Support/omfp`].
     #[arg(long)]
     pub data_dir: Option<PathBuf>,
-    /// Selects this thread in the new window (the tray's waiting threads, UI-218).
-    #[arg(long, value_name = "ID")]
-    pub thread: Option<String>,
+    /// What the window opens on (UI-214).
+    #[command(flatten)]
+    pub launch: Launch,
     /// Arguments for `omfp daemon` when the local daemon has to be started, e.g. `-- --static-dir ui/dist`.
     #[arg(last = true, value_name = "DAEMON ARGS")]
     pub daemon_args: Vec<String>,
+}
+
+/// What a window opens on (UI-214): an existing thread, or the new thread of a workspace, and the view shown with it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, clap::Args)]
+pub struct Launch {
+    /// Selects this thread in the new window (the tray's waiting threads, UI-218).
+    #[arg(long, value_name = "ID", conflicts_with = "workspace")]
+    pub thread: Option<String>,
+    /// Opens a new thread of this workspace (its id, name or folder), created on its first message (UI-214).
+    #[arg(long, value_name = "WORKSPACE")]
+    pub workspace: Option<String>,
+    /// Shows this view (its id in the workspace's `views.json`) with the thread of --thread or --workspace.
+    #[arg(long, value_name = "ID")]
+    pub view: Option<String>,
+    /// Writes this text in the new thread's composer, unsent.
+    #[arg(
+        long,
+        value_name = "TEXT",
+        requires = "workspace",
+        conflicts_with = "thread"
+    )]
+    pub prompt: Option<String>,
+}
+
+impl Launch {
+    /// A window on `thread` alone.
+    #[must_use]
+    pub fn thread(thread: &str) -> Self {
+        Self {
+            thread: Some(thread.to_owned()),
+            ..Self::default()
+        }
+    }
+
+    /// Its fragment parameters, in a fixed order, values percent-encoded.
+    fn parameters(&self) -> impl Iterator<Item = String> + '_ {
+        [
+            ("thread", &self.thread),
+            ("workspace", &self.workspace),
+            ("view", &self.view),
+            ("prompt", &self.prompt),
+        ]
+        .into_iter()
+        .filter_map(|(key, value)| Some(format!("{key}={}", fragment_value(value.as_deref()?))))
+    }
 }
 
 /// The process environment the defaults depend on.
@@ -141,7 +186,7 @@ pub fn run(args: &Args) -> anyhow::Result<i32> {
             ThemePush::NoThemeFile => {}
         }
         (
-            window_url(&base, args.token.as_deref(), false, args.thread.as_deref()),
+            window_url(&base, args.token.as_deref(), false, &args.launch),
             BrowserUrl {
                 base,
                 token: args.token.clone(),
@@ -166,7 +211,7 @@ pub fn run(args: &Args) -> anyhow::Result<i32> {
         };
         let base = local_base(addr)?;
         (
-            window_url(&base, Some(&token), true, args.thread.as_deref()),
+            window_url(&base, Some(&token), true, &args.launch),
             BrowserUrl {
                 base,
                 token: Some(token),
@@ -212,15 +257,15 @@ fn local_base(addr: SocketAddr) -> anyhow::Result<Url> {
 }
 
 /// The URL a window opens: the token in the fragment (never sent to the server, PRT-002), `local=1` when the window
-/// runs on the daemon's machine (the app then uses omp's `live_start` for live voice, S-09), and `thread=<id>` to
-/// select a thread (UI-218).
+/// runs on the daemon's machine (the app then uses omp's `live_start` for live voice, S-09), and what it opens on:
+/// `thread=<id>` (UI-218), `workspace=`, `view=`, `prompt=` (UI-214).
 #[must_use]
-pub fn window_url(base: &Url, token: Option<&str>, local: bool, thread: Option<&str>) -> Url {
+pub fn window_url(base: &Url, token: Option<&str>, local: bool, launch: &Launch) -> Url {
     let parameters: Vec<String> = token
         .map(|token| format!("token={token}"))
         .into_iter()
         .chain(local.then(|| "local=1".to_owned()))
-        .chain(thread.map(|thread| format!("thread={}", fragment_value(thread))))
+        .chain(launch.parameters())
         .collect();
     let mut url = base.clone();
     url.set_fragment(
@@ -231,13 +276,18 @@ pub fn window_url(base: &Url, token: Option<&str>, local: bool, thread: Option<&
     url
 }
 
-/// A fragment parameter's value with `%`, `&`, `#` and `=` escaped (thread ids are plain, but they come from argv).
+/// A fragment parameter's value percent-encoded as `encodeURIComponent` would, but for `!'()*` too: a prompt keeps
+/// its spaces, newlines and non-ASCII text, which a URL's parser would otherwise drop or leave raw.
 fn fragment_value(value: &str) -> String {
-    value
-        .replace('%', "%25")
-        .replace('&', "%26")
-        .replace('#', "%23")
-        .replace('=', "%3D")
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+            encoded.push(char::from(byte));
+        } else {
+            let _ = write!(encoded, "%{byte:02X}");
+        }
+    }
+    encoded
 }
 
 /// The daemon's URL `omfp desktop` prints for a browser (UI-004).
@@ -257,7 +307,7 @@ impl BrowserUrl {
         if terminal || self.token.is_none() {
             return format!(
                 "omfp desktop: {}",
-                window_url(&self.base, self.token.as_deref(), false, None)
+                window_url(&self.base, self.token.as_deref(), false, &Launch::default())
             );
         }
         let from = self
@@ -725,7 +775,8 @@ fn random_bytes() -> [u8; 16] {
 
 /// The command line of one more window like the one of `args` (UI-282): on the same daemon (`--connect`) or the
 /// local one of `data_dir` (found running, so without the daemon arguments), with the same token when one was given;
-/// not on the thread of `--thread`. The local case is the menu bar's New window (UI-218).
+/// not on what `--thread`, `--workspace`, `--view` and `--prompt` open. The local case is the menu bar's New window
+/// (UI-218).
 #[must_use]
 pub fn new_window_command(args: &Args, data_dir: &Path) -> Vec<OsString> {
     let mut line = vec![OsString::from("desktop")];
@@ -929,11 +980,11 @@ mod tests {
     fn window_urls_carry_the_token_and_the_local_flag_in_the_fragment() {
         let local = local_base("127.0.0.1:7420".parse().unwrap()).unwrap();
         assert_eq!(
-            window_url(&local, Some("t0k"), true, None).as_str(),
+            window_url(&local, Some("t0k"), true, &Launch::default()).as_str(),
             "http://127.0.0.1:7420/#token=t0k&local=1"
         );
         assert_eq!(
-            window_url(&local, Some("t0k"), false, None).as_str(),
+            window_url(&local, Some("t0k"), false, &Launch::default()).as_str(),
             "http://127.0.0.1:7420/#token=t0k"
         );
         assert_eq!(
@@ -956,11 +1007,11 @@ mod tests {
         }
         let remote = connect_base("https://omfp.example.com").unwrap();
         assert_eq!(
-            window_url(&remote, Some("t0k"), false, None).as_str(),
+            window_url(&remote, Some("t0k"), false, &Launch::default()).as_str(),
             "https://omfp.example.com/#token=t0k"
         );
         assert_eq!(
-            window_url(&remote, None, false, None).as_str(),
+            window_url(&remote, None, false, &Launch::default()).as_str(),
             "https://omfp.example.com/"
         );
         assert!(connect_base("ws://host:7420").is_err());
@@ -972,15 +1023,53 @@ mod tests {
     fn a_window_on_a_thread_names_it_in_the_fragment() {
         let local = local_base("127.0.0.1:7420".parse().unwrap()).unwrap();
         assert_eq!(
-            window_url(&local, Some("t0k"), true, Some("th-1")).as_str(),
+            window_url(&local, Some("t0k"), true, &Launch::thread("th-1")).as_str(),
             "http://127.0.0.1:7420/#token=t0k&local=1&thread=th-1"
         );
         assert_eq!(
-            window_url(&local, None, false, Some("a&b=c#d%")).as_str(),
+            window_url(&local, None, false, &Launch::thread("a&b=c#d%")).as_str(),
             "http://127.0.0.1:7420/#thread=a%26b%3Dc%23d%25"
         );
         let args = parse(&["--thread", "th-1", "--data-dir", "/d"]);
-        assert_eq!(args.thread.as_deref(), Some("th-1"));
+        assert_eq!(args.launch, Launch::thread("th-1"));
+    }
+
+    // spec: UI-214
+    #[test]
+    fn a_window_on_a_workspace_names_it_its_view_and_prompt_in_the_fragment() {
+        let remote = connect_base("https://omfp.example.com").unwrap();
+        let args = parse(&[
+            "--connect",
+            "https://omfp.example.com",
+            "--workspace",
+            "Home",
+            "--view",
+            "web",
+            "--prompt",
+            "Sì, due\nrighe & più",
+        ]);
+        assert_eq!(
+            window_url(&remote, None, false, &args.launch).as_str(),
+            "https://omfp.example.com/#workspace=Home&view=web&prompt=S%C3%AC%2C%20due%0Arighe%20%26%20pi%C3%B9"
+        );
+        assert_eq!(
+            window_url(
+                &remote,
+                Some("t"),
+                false,
+                &parse(&["--thread", "t1", "--view", "v"]).launch
+            )
+            .as_str(),
+            "https://omfp.example.com/#token=t&thread=t1&view=v"
+        );
+        // A window opens on one thread: an existing one or a workspace's new one; a prompt goes to the new one.
+        let refused = |line: &[&str]| {
+            Line::try_parse_from(std::iter::once("desktop").chain(line.iter().copied())).is_err()
+        };
+        assert!(refused(&["--thread", "t1", "--workspace", "Home"]));
+        assert!(refused(&["--thread", "t1", "--prompt", "hi"]));
+        assert!(refused(&["--prompt", "hi"]));
+        assert!(!refused(&["--view", "web"]));
     }
 
     // spec: DMN-181, UI-004
@@ -1079,7 +1168,7 @@ mod tests {
             &url("http://127.0.0.1:7420/"),
             Some("t"),
             true,
-            Some("a&b=c#d%"),
+            &Launch::thread("a&b=c#d%"),
         );
         assert_eq!(linked_thread(&window, origin).as_deref(), Some("a&b=c#d%"));
     }
@@ -1276,7 +1365,10 @@ mod tests {
     fn a_new_window_opens_on_the_same_daemon() {
         let dir = Path::new("/data");
         assert_eq!(
-            strings(&new_window_command(&parse(&["--thread", "t1"]), dir)),
+            strings(&new_window_command(
+                &parse(&["--workspace", "w", "--view", "v", "--prompt", "p"]),
+                dir
+            )),
             ["desktop", "--data-dir", "/data"]
         );
         // The daemon arguments of a daemon already running are not needed again.

@@ -220,26 +220,35 @@ export function minimapScrollTop(
 const USER_SCROLL_MS = 500;
 
 /**
- * Which scroll events of the transcript the user caused, the only ones that show the minimap (UI-860), known from the
- * user's input rather than guessed from where the view went. A scroll event is the user's while a gesture lasts
- * ({@link ScrollIntent.hold}: a press on the scrollbar, a touch) or up to {@link USER_SCROLL_MS} after the user's last
- * input ({@link ScrollIntent.input}: a wheel notch, a scroll key, a `nav.*` command, a search visit, a minimap jump, the
- * end of a gesture that scrolled). Anything else that moves the view — following the bottom while a reply streams or
- * after a message is sent, a restore, the jump to the bottom, the browser clamping a shrunk content — is not, wherever
- * it puts the view.
+ * Which scroll events of the transcript the user caused, the only ones that show the minimap (UI-860). A scroll event
+ * is not the user's when it finds the view where the app last put it itself ({@link ScrollIntent.wrote}: following the
+ * bottom, a restore, the jump to the bottom, the virtualizer's corrections) since the user's last input, even while
+ * they are scrolling (a wheel down at the bottom just before a streamed delta). Otherwise it is the user's while a
+ * gesture lasts ({@link ScrollIntent.hold}: a press on the scrollbar, a touch) or up to {@link USER_SCROLL_MS} after the
+ * user's last input ({@link ScrollIntent.input}: a wheel notch, a scroll key, a `nav.*` command, a search visit, a
+ * minimap jump, the end of a gesture that scrolled), and with no input, when the view moved while the content and the
+ * view kept their sizes: nothing but the user moves it so (dragging a scrollbar that sends the page no pointer events,
+ * as WebKitGTK's overlay ones, or a smooth scroll lasting longer), while layout moving it (the browser clamping a
+ * content that shrank or a view that grew after a message is sent, a row measured) changes a size.
  */
 export class ScrollIntent {
   #until = Number.NEGATIVE_INFINITY;
   #held = 0;
+  /** Where the app last put the view itself, since the user's last input. */
+  #written: number | undefined;
+  /** Where the last scroll event found the view. */
+  #last: ScrollPosition | undefined;
 
   /** The user scrolled at `now` (ms). */
   input(now: number): void {
     this.#until = now + USER_SCROLL_MS;
+    this.#written = undefined;
   }
 
   /** A gesture started: every scroll is the user's until it ends. */
   hold(): void {
     this.#held += 1;
+    this.#written = undefined;
   }
 
   /** A gesture ended at `now`; one that scrolled goes on a while (`goesOn`). */
@@ -250,8 +259,29 @@ export class ScrollIntent {
     }
   }
 
-  /** Whether a scroll event at `now` is the user's. */
-  byUser(now: number): boolean {
+  /** Whether the user is scrolling at `now`: a gesture lasts, or their last input is recent. */
+  active(now: number): boolean {
     return this.#held > 0 || now < this.#until;
+  }
+
+  /** The app put the view at `scrollTop` itself. */
+  wrote(scrollTop: number): void {
+    this.#written = scrollTop;
+  }
+
+  /** A scroll event found the view at `position` at `now`: whether the user moved it there. */
+  scrolled(position: ScrollPosition, now: number): boolean {
+    const last = this.#last;
+    this.#last = position;
+    if (this.#written !== undefined && Math.abs(position.scrollTop - this.#written) < 1) {
+      return false;
+    }
+    return (
+      this.active(now) ||
+      (last !== undefined &&
+        Math.abs(position.scrollTop - last.scrollTop) >= 1 &&
+        position.scrollHeight === last.scrollHeight &&
+        position.clientHeight === last.clientHeight)
+    );
   }
 }

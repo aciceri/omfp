@@ -1414,6 +1414,15 @@ describe("minimap", () => {
     fireEvent.scroll(element);
     scrollTo(element, 4400, 5000);
     expect([element.dataset.pinned, await hidden()]).toEqual(["true", true]);
+    // A wheel down at the end scrolls nothing; the reply grows right after and the view follows it.
+    fireEvent.wheel(element, { deltaY: 100 });
+    Object.defineProperty(element, "scrollHeight", { configurable: true, value: 5200 });
+    client.thread(THREAD, longHistory(52));
+    flush();
+    expect(element.scrollTop).toBe(5200);
+    fireEvent.scroll(element);
+    expect([element.dataset.pinned, await hidden()]).toEqual(["true", true]);
+    clock.advance(1000);
     // The user scrolls up and stops: the map shows, then hides.
     fireEvent.wheel(element, { deltaY: -100 });
     scrollTo(element, 1200, 4800);
@@ -1421,7 +1430,7 @@ describe("minimap", () => {
     clock.advance(1000);
     await waitFor(() => expect(minimap().dataset.visible).toBeUndefined(), { timeout: 3000 });
     // Scrolled up, the reply streams on below: the content grows and rows measured above move the view.
-    client.thread(THREAD, longHistory(52));
+    client.thread(THREAD, longHistory(53));
     flush();
     scrollTo(element, 1260, 4900);
     expect([element.dataset.pinned, await hidden()]).toEqual(["false", true]);
@@ -1430,7 +1439,7 @@ describe("minimap", () => {
     client.thread("02T", longHistory(3));
     flush();
     act(() => host.window.set(SELECTED_THREAD, THREAD));
-    client.thread(THREAD, longHistory(52));
+    client.thread(THREAD, longHistory(53));
     flush();
     element = transcript();
     scrollTo(element, 1260, 4900);
@@ -1492,10 +1501,22 @@ describe("minimap", () => {
     scrollTo(element, 1300, 4900);
     await nextFrame();
     expect(minimap().dataset.visible).toBeUndefined();
-    // A drag on the scrollbar, however long it lasts.
+    // A drag on the scrollbar, however long it lasts, while rows get measured.
     fireEvent.pointerDown(element);
     clock.advance(5000);
-    scrollTo(element, 2000, 4900);
+    scrollTo(element, 2000, 5000);
+    await waitFor(() => expect(minimap().dataset.visible).toBe("true"));
+  });
+
+  // spec: UI-860
+  test("with no input, a move of the view alone is the user's: a scrollbar that sends the page no pointer events", async () => {
+    renderThread(<TranscriptWidget />, longHistory(50), new ManualClock(0));
+    const element = transcript();
+    scrollTo(element, 1200, 4800);
+    await nextFrame();
+    expect(minimap().dataset.visible).toBeUndefined();
+    // WebKitGTK's overlay scrollbar, dragged: the view moves, the content and the view keep their sizes.
+    scrollTo(element, 1000, 4800);
     await waitFor(() => expect(minimap().dataset.visible).toBe("true"));
   });
 

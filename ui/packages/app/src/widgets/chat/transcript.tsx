@@ -10,8 +10,8 @@
  * the one before it shows a day separator inside its item, so `j`/`k` never stop on one (UI-750). `/` searches the
  * conversation, visiting the query's occurrences and highlighting them in the rendered rows (UI-730, UI-736,
  * search.ts). While the user scrolls, a minimap of the whole conversation shows beside the scrollbar (UI-860,
- * minimap.tsx): only on the scrolls their input caused (`ScrollIntent`), never on a follow of the bottom, a restore or
- * the jump to the bottom.
+ * minimap.tsx): only on the user's scrolls (`ScrollIntent`), never on a follow of the bottom, a restore, the jump to
+ * the bottom or a clamp.
  */
 
 import type { ThreadState } from "@omfp/core";
@@ -20,6 +20,7 @@ import {
   arrivalScroll,
   type DayMark,
   daySeparator,
+  elementScroll,
   farFromBottom,
   halfPageScrollTop,
   highlightRegistry,
@@ -219,6 +220,9 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
   const [initialMeasurements] = useState(() => [...measurements]);
   // A new `getItemKey` makes the virtualizer lay out every item again: keep it while the rows stay the same.
   const getItemKey = useCallback((index: number) => rows[index]?.key ?? index, [rows]);
+  const clock = useClock();
+  /** Which scroll events the user caused: those show the minimap (UI-860). */
+  const [intent] = useState(() => new ScrollIntent());
   const virtualizer = useVirtualizer({
     initialMeasurementsCache: initialMeasurements,
     count: rows.length,
@@ -227,6 +231,15 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
     overscan: OVERSCAN,
     getItemKey,
     ...(restoring.current === undefined ? {} : { initialOffset: restoring.current }),
+    // Its corrections (a row measured above the view) are no scroll of the user's; its scrolls for a `nav.*` command or
+    // a search visit, while the user scrolls, are.
+    scrollToFn: (offset, options, instance) => {
+      elementScroll(offset, options, instance);
+      const container = containerRef.current;
+      if (container !== null && !intent.active(clock.now())) {
+        intent.wrote(container.scrollTop);
+      }
+    },
   });
   // Pinned, the bottom is followed anyway: the virtualizer must not shift the scroll position when an item above
   // changes size, so the only scrolls up away from the bottom are the user's.
@@ -235,9 +248,6 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
   useEffect(() => () => setMeasurements(virtualizer.measurementsCache), [setMeasurements, virtualizer]);
   const measurementsOf = useCallback(() => virtualizer.measurementsCache, [virtualizer]);
   const minimap = useRef<MinimapHandle>(null);
-  const clock = useClock();
-  /** Which scroll events the user caused: those show the minimap (UI-860). */
-  const [intent] = useState(() => new ScrollIntent());
   const [current, setCurrent] = useState<number | undefined>(undefined);
   const today = useToday();
   useSettledAnnouncements(state.settled);
@@ -302,6 +312,7 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
       const target = restoring.current;
       if (target !== undefined) {
         container.scrollTop = target;
+        intent.wrote(container.scrollTop);
         if (container.scrollTop >= target - 1) {
           restoring.current = undefined;
         }
@@ -311,11 +322,12 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
         // Instant: a smooth follow keeps animating while the user scrolls up, and its scroll events near the bottom pin
         // the view again.
         container.scrollTop = container.scrollHeight;
+        intent.wrote(container.scrollTop);
       }
       lastPosition.current = scrollPosition(container);
       setFar(farFromBottom(lastPosition.current));
     },
-    [dispatch],
+    [dispatch, intent],
   );
   /** The user scrolls the view: the restore ends and the scroll shows the minimap (UI-860). */
   const userScrolls = () => {
@@ -371,6 +383,7 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
     restoring.current = undefined;
     dispatch({ type: "pin" });
     container.scrollTop = container.scrollHeight;
+    intent.wrote(container.scrollTop);
     lastPosition.current = scrollPosition(container);
     setFar(false);
     // The button goes away: the keyboard stays on the transcript.
@@ -704,9 +717,9 @@ export function Transcript({ threadId, state, footer }: { threadId: string; stat
             lastPosition.current = now;
             dispatch({ type: "scroll", ...now, previous });
             setFar(farFromBottom(now));
-            // Only a scroll the user caused shows the minimap; a follow, a restore or the jump to the bottom only moves
-            // its box.
-            minimap.current?.scrolled(now, intent.byUser(clock.now()));
+            // Only a scroll the user caused shows the minimap; a follow, a restore, the jump to the bottom or a clamp
+            // only moves its box.
+            minimap.current?.scrolled(now, intent.scrolled(now, clock.now()));
           }}
           onWheel={(event) => {
             // Ctrl with the wheel zooms the page and scrolls nothing (UI-283): the pin and the restore stay.

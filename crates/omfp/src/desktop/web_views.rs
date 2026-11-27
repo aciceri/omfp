@@ -5,17 +5,23 @@
 //!
 //! An initialization script of the daemon's top-level page ([`script`]) reports every placeholder each time one
 //! changes — the part of it that shows, cut by the viewport and every ancestor clipping it, and whether anything of the
-//! page lies on top of it — and posts the commands of a widget's `WebView` handle (reload, back, forward). It posts to
-//! a channel only that script knows (DMN-182): a script message handler named after the window's nonce on Linux (as
-//! the zoom does, UI-283), a navigation of a hidden frame to `omfp-web-views:?n=<nonce>&m=…` on macOS (as the
-//! notifications do, UI-252). [`Views`] keeps one view per placeholder through a platform [`Engine`]: `WebKitGTK` views
-//! in a `gtk::Overlay` on Linux (`gtk`; Tauri's child webviews are packed into a `GtkBox` there and ignore their
-//! position, S-17), Tauri child webviews on macOS (`macos`). Each view tells the page where it went
-//! (`__omfpWebViews.navigated`) and when it loaded, which `WebView` hands to the widget.
+//! page lies on top of it — and posts the commands of a widget's `WebView` handle (reload, back, forward, focus, blur,
+//! post). It posts to a channel only that script knows (DMN-182): a script message handler named after the window's
+//! nonce on Linux (as the zoom does, UI-283), a navigation of a hidden frame to `omfp-web-views:?n=<nonce>&m=…` on
+//! macOS (as the notifications do, UI-252). [`Views`] keeps one view per placeholder through a platform [`Engine`]:
+//! `WebKitGTK` views in a `gtk::Overlay` on Linux (`gtk`; Tauri's child webviews are packed into a `GtkBox` there and
+//! ignore their position, S-17), Tauri child webviews on macOS (`macos`). Each view tells the page where it went
+//! (`__omfpWebViews.navigated`), when it loaded and when it took or lost the keyboard focus (`focused`), which
+//! `WebView` hands to the widget.
 //!
 //! A native view is always on top of the page, so omfp's own UI (the `:` line, dialogs, another panel) would show under
 //! it. While anything covers a placeholder the view hides, behind a capture of it in the placeholder where the engine
-//! can take one (Linux); uncovered, the view shows again (S-16's freeze).
+//! can take one (Linux); uncovered, the view shows again (S-16's freeze). A view that has the keyboard focus gives it
+//! back to the window's page when it hides, freezes or closes, so what covers it gets the keys (UI-688).
+//!
+//! A widget's messages reach its page (UI-687) through a script of the view run in its top frame: the window calls
+//! `window.omfp.deliver(key, json)` there, with a key only the view's channel script knows, so the page's own code
+//! cannot pass itself off as the widget.
 
 use std::collections::HashMap;
 use std::collections::hash_map::Entry as Slotted;
@@ -91,22 +97,34 @@ pub enum Message {
     },
     /// A command for the view of placeholder `id`.
     Command { id: String, command: Command },
+    /// The view of placeholder `id` takes the keyboard focus (`true`) or gives it back to the window's page (UI-688).
+    Focus { id: String, focus: bool },
+    /// A widget's message for the page of placeholder `id`, as JSON (UI-687).
+    Post { id: String, json: String },
 }
 
-/// A message of [`script`]: `{"slots": […], "setups": {id: {"scripts": […], "channel": …}}, "vw": …}` or
-/// `{"command": "back", "id": …}`; `None` for anything else. A slot or setup entry of the wrong shape is left out.
+/// A message of [`script`]: `{"slots": […], "setups": {id: {"scripts": […], "channel": …}}, "vw": …}`,
+/// `{"command": "back", "id": …}` (also `"focus"` and `"blur"`) or `{"post": "<json>", "id": …}`; `None` for anything
+/// else. A slot or setup entry of the wrong shape is left out.
 #[must_use]
 pub fn parse_message(json: &str) -> Option<Message> {
     let message: serde_json::Value = serde_json::from_str(json).ok()?;
     if let Some(command) = message.get("command") {
+        let id = message.get("id")?.as_str()?.to_owned();
         let command = match command.as_str()? {
             "reload" => Command::Reload,
             "back" => Command::Back,
             "forward" => Command::Forward,
+            "focus" => return Some(Message::Focus { id, focus: true }),
+            "blur" => return Some(Message::Focus { id, focus: false }),
             _ => return None,
         };
-        let id = message.get("id")?.as_str()?.to_owned();
         return Some(Message::Command { id, command });
+    }
+    if let Some(post) = message.get("post") {
+        let json = post.as_str()?.to_owned();
+        let id = message.get("id")?.as_str()?.to_owned();
+        return Some(Message::Post { id, json });
     }
     let slots = message
         .get("slots")?
@@ -154,7 +172,7 @@ pub fn parse_message(json: &str) -> Option<Message> {
     })
 }
 
-/// The largest message a page sends its widget (UI-687), in bytes of JSON: a bigger one is dropped.
+/// The largest message between a page and its widget (UI-687), either way, in bytes of JSON: a bigger one is dropped.
 pub const MAX_PAGE_MESSAGE: usize = 1 << 20;
 
 /// The JavaScript that hands the widget of placeholder `id` the message `json` its page posted (UI-687).
@@ -167,16 +185,40 @@ pub fn message_call(id: &str, json: &str) -> String {
     )
 }
 
+/// The JavaScript, run in a view's page, that hands the page's `window.omfp.listen` listeners the widget's message
+/// `json` (UI-687), signed with the `key` of the view's [`channel_script`].
+#[must_use]
+pub fn deliver_call(key: &str, json: &str) -> String {
+    format!(
+        "window.omfp?.deliver?.({}, {})",
+        serde_json::Value::from(key),
+        serde_json::Value::from(json)
+    )
+}
+
+/// The JavaScript that tells the page the view of placeholder `id` took (`true`) or lost the keyboard focus (UI-688).
+#[must_use]
+pub fn focused_call(id: &str, focused: bool) -> String {
+    format!(
+        "window.__omfpWebViews?.focused({}, {focused})",
+        serde_json::Value::from(id)
+    )
+}
+
 /// The script message handler a view's page posts its widget's messages to on Linux (UI-687).
 pub const PAGE_HANDLER: &str = "omfp";
 
 /// The scheme of a page's messages to its widget on macOS (UI-687): navigations of hidden frames.
 pub const MESSAGE_SCHEME: &str = "omfp-web-view-message";
 
-/// The script giving a view's page `window.omfp.post(data)` (UI-687): `data` as JSON to its widget's `onMessage`,
-/// through [`PAGE_HANDLER`] or navigations to [`MESSAGE_SCHEME`]; data without a JSON form throws.
+/// The script giving a view's page `window.omfp` (UI-687): `post(data)` hands `data` as JSON to its widget's
+/// `onMessage`, through [`PAGE_HANDLER`] or navigations to [`MESSAGE_SCHEME`] (data without a JSON form throws);
+/// `listen(listener)` calls `listener(data)` with each message of the widget's `post` and returns the function that
+/// stops it. The window delivers those with [`deliver_call`]: `deliver` ignores a call without the view's `key`, which
+/// the page's own code never sees. `JSON.parse` is taken before the page runs, so the page cannot read the messages
+/// by replacing it.
 #[must_use]
-pub fn channel_script(transport: Transport) -> String {
+pub fn channel_script(transport: Transport, key: &str) -> String {
     let send = match transport {
         Transport::Handler => format!(
             "(json) => window.webkit.messageHandlers[{}].postMessage(json)",
@@ -189,27 +231,72 @@ pub fn channel_script(transport: Transport) -> String {
         ),
     };
     format!(
-        "(() => {{\n  const send = {send};\n  const post = (data) => {{\n    const json = JSON.stringify(data);\n    \
-         if (json === undefined) throw new TypeError(\"omfp.post: the data has no JSON form\");\n    send(json);\n  \
-         }};\n  Object.defineProperty(window, \"omfp\", {{ value: Object.freeze({{ post }}) }});\n}})();"
+        "(() => {{\n  const send = {send};\n  const KEY = {};\n{CHANNEL}",
+        serde_json::Value::from(key)
     )
 }
 
+// The page shares this script's world and can replace any built-in after document start, so the listeners live in a
+// null-prototype object reached only by property access, `for…in` and direct calls: no method or setter of the page
+// ever sees them (a replaced `Set.prototype.add` would get the registry as `this`, then call each listener itself).
+const CHANNEL: &str = r#"  const parse = JSON.parse;
+  const stringify = JSON.stringify;
+  const listeners = Object.create(null);
+  let next = 0;
+  const post = (data) => {
+    const json = stringify(data);
+    if (json === undefined) throw new TypeError("omfp.post: the data has no JSON form");
+    send(json);
+  };
+  const listen = (listener) => {
+    if (typeof listener !== "function") throw new TypeError("omfp.listen: the listener is not a function");
+    const id = next;
+    next += 1;
+    listeners[id] = listener;
+    return () => {
+      delete listeners[id];
+    };
+  };
+  const deliver = (key, json) => {
+    if (key !== KEY) return;
+    let data;
+    try {
+      data = parse(json);
+    } catch {
+      return;
+    }
+    for (const id in listeners) {
+      const listener = listeners[id];
+      try {
+        listener(data);
+      } catch (error) {
+        globalThis.reportError?.(error);
+      }
+    }
+  };
+  Object.defineProperty(window, "omfp", { value: Object.freeze({ post, listen, deliver }) });
+})();"#;
+
 /// The script that reports a macOS view's same-document navigations (UI-685): `history.pushState`, `replaceState`,
 /// back and forward within the document and hash changes load nothing, so no page load reports them; this posts the
-/// new address to [`MESSAGE_SCHEME`] (`?u=<url>`) instead.
+/// new address to [`MESSAGE_SCHEME`] (`?u=<url>`) instead. It also posts whether the page has the keyboard focus
+/// (`?f=1`, `?f=0`, UI-688) when it changes: the engine cannot read the view's first responder.
 #[cfg(target_os = "macos")]
 #[must_use]
 pub fn location_script() -> String {
     format!(
-        "(() => {{\n  let last = location.href;\n  const report = () => {{\n    if (location.href === last) return;\n    \
-         last = location.href;\n    const frame = document.createElement(\"iframe\");\n    frame.hidden = true;\n    \
-         frame.src = `{MESSAGE_SCHEME}:?${{new URLSearchParams({{ u: last }})}}`;\n    \
+        "(() => {{\n  const tell = (key, value) => {{\n    const frame = document.createElement(\"iframe\");\n    \
+         frame.hidden = true;\n    \
+         frame.src = `{MESSAGE_SCHEME}:?${{new URLSearchParams({{ [key]: value }})}}`;\n    \
          (document.body ?? document.documentElement).append(frame);\n    setTimeout(() => frame.remove(), 1000);\n  \
+         }};\n  let last = location.href;\n  const report = () => {{\n    if (location.href === last) return;\n    \
+         last = location.href;\n    tell(\"u\", last);\n  \
          }};\n  for (const name of [\"pushState\", \"replaceState\"]) {{\n    const original = history[name];\n    \
          history[name] = function (...args) {{\n      const result = original.apply(this, args);\n      report();\n      \
          return result;\n    }};\n  }}\n  addEventListener(\"popstate\", report);\n  \
-         addEventListener(\"hashchange\", report);\n}})();"
+         addEventListener(\"hashchange\", report);\n  let focused = false;\n  const focus = () => {{\n    \
+         if (document.hasFocus() === focused) return;\n    focused = !focused;\n    tell(\"f\", focused ? \"1\" : \"0\");\n  \
+         }};\n  addEventListener(\"focus\", focus);\n  addEventListener(\"blur\", () => setTimeout(focus, 0));\n}})();"
     )
 }
 
@@ -221,6 +308,8 @@ pub enum PagePost {
     Message(String),
     /// The page's address after a same-document navigation (UI-685).
     Location(String),
+    /// Whether the page has the keyboard focus now (UI-688).
+    Focus(bool),
 }
 
 /// What a navigation to [`MESSAGE_SCHEME`] carries; `None` for any other URL.
@@ -234,6 +323,7 @@ pub fn page_post(url: &Url) -> Option<PagePost> {
         .find_map(|(key, value)| match key.as_ref() {
             "m" => Some(PagePost::Message(value.into_owned())),
             "u" => Some(PagePost::Location(value.into_owned())),
+            "f" => Some(PagePost::Focus(value == "1")),
             _ => None,
         })
 }
@@ -443,9 +533,17 @@ const BRIDGE: &str = r#"  if (window.top !== window || location.origin !== ORIGI
   }
 
   window.__omfpWebViews = {
-    // A widget's command for the view of placeholder `id`: "reload", "back" or "forward".
+    // A widget's command for the view of placeholder `id`: "reload", "back", "forward", "focus" or "blur".
     command(id, command) {
       send(JSON.stringify({ command, id }));
+    },
+    // A widget's message `json` (its data as JSON) for the page of placeholder `id` (UI-687).
+    post(id, json) {
+      send(JSON.stringify({ post: json, id }));
+    },
+    // The window's report: the view of `id` took (true) or lost (false) the keyboard focus (UI-688).
+    focused(id, focused) {
+      placeholder(id)?.dispatchEvent(new CustomEvent("omfp-web-view-focus", { detail: { focused } }));
     },
     // The window's report: the view of `id` shows `url` (`canGoBack`, `canGoForward`: booleans, or null unknown).
     navigated(id, url, canGoBack, canGoForward) {
@@ -530,9 +628,9 @@ pub fn thaw_call(id: &str) -> String {
 /// The native views of one platform.
 pub trait Engine {
     type View;
-    /// A new view of placeholder `id` loading `url` with `setup` (UI-687), hidden until placed; `None` when none can
-    /// be made.
-    fn open(&mut self, id: &str, url: &str, setup: &Setup) -> Option<Self::View>;
+    /// A new view of placeholder `id` loading `url` with `setup` (UI-687), hidden until placed; `key` signs the
+    /// widget's messages to its page ([`channel_script`]). `None` when none can be made.
+    fn open(&mut self, id: &str, url: &str, setup: &Setup, key: &str) -> Option<Self::View>;
     /// Loads `url` in `view`.
     fn load(&self, view: &Self::View, url: &str);
     /// The page `view` shows now.
@@ -546,6 +644,14 @@ pub trait Engine {
     /// Drops the capture of placeholder `id`.
     fn thaw(&self, id: &str);
     fn act(&self, view: &Self::View, command: Command);
+    /// Gives `view` the keyboard focus (UI-688).
+    fn focus(&self, view: &Self::View);
+    /// Gives the keyboard focus to the window's page (UI-688).
+    fn blur(&self, view: &Self::View);
+    /// Whether `view` has the keyboard focus (UI-688).
+    fn focused(&self, view: &Self::View) -> bool;
+    /// Runs `js` in the top frame of `view`'s page.
+    fn run(&self, view: &Self::View, js: &str);
     fn close(&self, view: Self::View);
 }
 
@@ -557,6 +663,10 @@ struct Native<V> {
     url: String,
     /// The setup the view was made with.
     setup: Setup,
+    /// The key of the view's channel: what the widget posts its page is signed with it (UI-687).
+    key: String,
+    /// Whether the view shows (placed, neither hidden nor frozen): only then does it take the keyboard focus.
+    shown: bool,
     /// Whether the view is hidden behind its capture (or about to be, its capture still coming).
     frozen: Arc<AtomicBool>,
 }
@@ -621,6 +731,7 @@ impl<E: Engine> Views<E> {
             .collect();
         for id in gone {
             if let Some(native) = self.natives.remove(&id) {
+                self.release(&native.view);
                 if native.frozen.swap(false, Ordering::SeqCst) {
                     self.engine.thaw(&id);
                 }
@@ -635,13 +746,16 @@ impl<E: Engine> Views<E> {
                 Slotted::Occupied(entry) => entry.into_mut(),
                 Slotted::Vacant(entry) => {
                     let setup = self.setups.get(&slot.id).cloned().unwrap_or_default();
-                    let Some(view) = self.engine.open(&slot.id, &slot.url, &setup) else {
+                    let key = super::page_nonce();
+                    let Some(view) = self.engine.open(&slot.id, &slot.url, &setup, &key) else {
                         continue;
                     };
                     entry.insert(Native {
                         view,
                         url: slot.url.clone(),
                         setup,
+                        key,
+                        shown: false,
                         frozen: Arc::default(),
                     })
                 }
@@ -653,6 +767,10 @@ impl<E: Engine> Views<E> {
                 native.url.clone_from(&slot.url);
             }
             let Some(place) = placement(slot, zoom) else {
+                native.shown = false;
+                if self.engine.focused(&native.view) {
+                    self.engine.blur(&native.view);
+                }
                 self.engine.hide(&native.view);
                 if native.frozen.swap(false, Ordering::SeqCst) {
                     self.engine.thaw(&slot.id);
@@ -661,10 +779,15 @@ impl<E: Engine> Views<E> {
             };
             self.engine.place(&native.view, place);
             if slot.covered {
+                native.shown = false;
                 if !native.frozen.swap(true, Ordering::SeqCst) {
+                    if self.engine.focused(&native.view) {
+                        self.engine.blur(&native.view);
+                    }
                     self.engine.freeze(&native.view, &slot.id, &native.frozen);
                 }
             } else {
+                native.shown = true;
                 self.engine.show(&native.view);
                 if native.frozen.swap(false, Ordering::SeqCst) {
                     self.engine.thaw(&slot.id);
@@ -677,6 +800,38 @@ impl<E: Engine> Views<E> {
     pub fn command(&self, id: &str, command: Command) {
         if let Some(native) = self.natives.get(id) {
             self.engine.act(&native.view, command);
+        }
+    }
+
+    /// Gives the view of placeholder `id` the keyboard focus (`focus`), only while it shows, or gives the focus back
+    /// to the window's page if the view has it (UI-688); nothing for an unknown placeholder.
+    pub fn focus(&self, id: &str, focus: bool) {
+        let Some(native) = self.natives.get(id) else {
+            return;
+        };
+        if focus && native.shown {
+            self.engine.focus(&native.view);
+        } else if !focus {
+            self.release(&native.view);
+        }
+    }
+
+    /// Hands the page of placeholder `id` the widget's message `json` (UI-687): only a page with a channel (its widget
+    /// listens to it, so the page has `window.omfp`), and only up to [`MAX_PAGE_MESSAGE`].
+    pub fn post(&self, id: &str, json: &str) {
+        if let Some(native) = self.natives.get(id)
+            && native.setup.channel
+            && json.len() <= MAX_PAGE_MESSAGE
+        {
+            self.engine
+                .run(&native.view, &deliver_call(&native.key, json));
+        }
+    }
+
+    /// Gives the keyboard focus back to the window's page if `view` has it.
+    fn release(&self, view: &E::View) {
+        if self.engine.focused(view) {
+            self.engine.blur(view);
         }
     }
 }
@@ -707,6 +862,8 @@ mod tests {
         opened: usize,
         /// The page every view went to by itself (a link followed), by view number.
         current: RefCell<HashMap<usize, String>>,
+        /// The view with the keyboard focus, if any.
+        focus: RefCell<Option<usize>>,
     }
 
     impl Fake {
@@ -720,7 +877,7 @@ mod tests {
 
     impl Engine for Fake {
         type View = usize;
-        fn open(&mut self, id: &str, url: &str, setup: &Setup) -> Option<usize> {
+        fn open(&mut self, id: &str, url: &str, setup: &Setup, _: &str) -> Option<usize> {
             self.opened += 1;
             self.log(format!(
                 "open {} {id} {url} {:?} {}",
@@ -755,6 +912,20 @@ mod tests {
         fn act(&self, view: &usize, command: Command) {
             self.log(format!("act {view} {command:?}"));
         }
+        fn focus(&self, view: &usize) {
+            self.log(format!("focus {view}"));
+            self.focus.replace(Some(*view));
+        }
+        fn blur(&self, view: &usize) {
+            self.log(format!("blur {view}"));
+            self.focus.replace(None);
+        }
+        fn focused(&self, view: &usize) -> bool {
+            *self.focus.borrow() == Some(*view)
+        }
+        fn run(&self, view: &usize, js: &str) {
+            self.log(format!("run {view} {js}"));
+        }
         fn close(&self, view: usize) {
             self.log(format!("close {view}"));
         }
@@ -762,6 +933,136 @@ mod tests {
 
     fn views() -> Views<Fake> {
         Views::new(Fake::default(), "http://127.0.0.1:7420".to_owned())
+    }
+
+    // spec: UI-687, UI-688
+    #[test]
+    fn the_page_posts_focus_blur_and_the_widgets_messages_for_a_view() {
+        let focus =
+            |command: &str| parse_message(&format!(r#"{{"command":"{command}","id":"r1"}}"#));
+        assert_eq!(
+            focus("focus"),
+            Some(Message::Focus {
+                id: "r1".to_owned(),
+                focus: true
+            })
+        );
+        assert_eq!(
+            focus("blur"),
+            Some(Message::Focus {
+                id: "r1".to_owned(),
+                focus: false
+            })
+        );
+        assert_eq!(parse_message(r#"{"command":"focus"}"#), None);
+        assert_eq!(
+            parse_message(r#"{"post":"{\"go\":\"https://example.com/\"}","id":"r1"}"#),
+            Some(Message::Post {
+                id: "r1".to_owned(),
+                json: r#"{"go":"https://example.com/"}"#.to_owned()
+            })
+        );
+        // The widget's data travels as JSON text: anything else, or no placeholder, is no message.
+        assert_eq!(parse_message(r#"{"post":{"go":1},"id":"r1"}"#), None);
+        assert_eq!(parse_message(r#"{"post":"1"}"#), None);
+        // macOS: the view's page says when it took or lost the focus.
+        let page = |value: &str| {
+            page_post(
+                &Url::parse_with_params(&format!("{MESSAGE_SCHEME}:"), [("f", value)])
+                    .expect("a URL"),
+            )
+        };
+        assert_eq!(page("1"), Some(PagePost::Focus(true)));
+        assert_eq!(page("0"), Some(PagePost::Focus(false)));
+    }
+
+    // spec: UI-688
+    #[test]
+    fn a_view_takes_the_keys_only_while_shown_and_gives_them_back_covered_hidden_or_closed() {
+        let mut views = views();
+        let mut a = slot(0.0, 0.0, 100.0, 100.0);
+        views.sync(std::slice::from_ref(&a), Vec::new(), 1.0);
+        views.engine().take();
+        // Blurring a view without the focus leaves the focus where it is (another view, the window's page).
+        views.focus("a", false);
+        views.focus("a", true);
+        views.focus("unknown", true);
+        assert_eq!(views.engine().take(), ["focus 1"]);
+        views.focus("a", false);
+        assert_eq!(views.engine().take(), ["blur 1"]);
+        // Covered: the focus goes back to the page before the view hides, and the view does not take it while frozen;
+        // uncovered, it does not take it back by itself.
+        views.focus("a", true);
+        a.covered = true;
+        views.sync(std::slice::from_ref(&a), Vec::new(), 1.0);
+        views.focus("a", true);
+        a.covered = false;
+        views.sync(std::slice::from_ref(&a), Vec::new(), 1.0);
+        assert_eq!(
+            views.engine().take(),
+            [
+                "focus 1",
+                "place 1 0,0 100x100",
+                "blur 1",
+                "freeze 1 a",
+                "place 1 0,0 100x100",
+                "show 1",
+                "thaw a"
+            ]
+        );
+        // Hidden (another tab), then gone.
+        views.focus("a", true);
+        a.visible = false;
+        views.sync(std::slice::from_ref(&a), Vec::new(), 1.0);
+        views.focus("a", true);
+        assert_eq!(views.engine().take(), ["focus 1", "blur 1", "hide 1"]);
+        a.visible = true;
+        views.sync(std::slice::from_ref(&a), Vec::new(), 1.0);
+        views.focus("a", true);
+        views.engine().take();
+        views.sync(&[], Vec::new(), 1.0);
+        assert_eq!(views.engine().take(), ["blur 1", "close 1"]);
+    }
+
+    // spec: UI-687
+    #[test]
+    fn a_widgets_message_reaches_only_a_page_with_a_channel_signed_with_its_views_key() {
+        let mut views = views();
+        let channel = Setup {
+            scripts: Vec::new(),
+            channel: true,
+        };
+        let b = Slot {
+            id: "b".to_owned(),
+            ..slot(0.0, 0.0, 100.0, 100.0)
+        };
+        views.sync(
+            &[slot(0.0, 0.0, 100.0, 100.0), b],
+            vec![("a".to_owned(), channel)],
+            1.0,
+        );
+        views.engine().take();
+        let key = views.natives["a"].key.clone();
+        assert_eq!(key.len(), 32);
+        assert_ne!(key, views.natives["b"].key);
+        views.post("a", r#"{"go":1}"#);
+        // Without `onMessage` the page has no `window.omfp`: whatever defines one there gets nothing.
+        views.post("b", "1");
+        views.post("a", &format!("\"{}\"", "x".repeat(MAX_PAGE_MESSAGE)));
+        views.post("unknown", "1");
+        let view = views.natives["a"].view;
+        assert_eq!(
+            views.engine().take(),
+            [format!(
+                r#"run {view} window.omfp?.deliver?.("{key}", "{{\"go\":1}}")"#
+            )]
+        );
+        // The page's channel script checks that key.
+        let script = channel_script(Transport::Handler, &key);
+        assert!(
+            script.contains(&format!("const KEY = \"{key}\";")),
+            "{script}"
+        );
     }
 
     // spec: UI-683

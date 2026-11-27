@@ -1,11 +1,13 @@
-//! The macOS engine of the native web views (UI-686, UI-687): Tauri child webviews (`WKWebView`s) over the window's
-//! page. Unlike Linux, Tauri places a child webview where it is asked to on macOS, so no container is needed. The page
-//! posts through navigations of hidden frames to [`SCHEME`], which the window's navigation handler hands to
-//! [`on_navigation`]; a view's page posts its widget's messages and its same-document navigations the same way, to
-//! [`super::MESSAGE_SCHEME`], caught by the view's own navigation handler, which also keeps every load to what a view
-//! may show. Without `unsafe` code there is no way to the `WKWebView` behind a Tauri webview, so a covered view hides
-//! without a capture, whether the page can go back or forward is unknown, and back and forward run the page's own
-//! `history`.
+//! The macOS engine of the native web views (UI-686, UI-687, UI-688): Tauri child webviews (`WKWebView`s) over the
+//! window's page. Unlike Linux, Tauri places a child webview where it is asked to on macOS, so no container is needed.
+//! The page posts through navigations of hidden frames to [`SCHEME`], which the window's navigation handler hands to
+//! [`on_navigation`]; a view's page posts its widget's messages, its same-document navigations and whether it has the
+//! keyboard focus the same way, to [`super::MESSAGE_SCHEME`], caught by the view's own navigation handler, which also
+//! keeps every load to what a view may show. Without `unsafe` code there is no way to the `WKWebView` behind a Tauri
+//! webview, so a covered view hides without a capture, whether the page can go back or forward is unknown, back and
+//! forward run the page's own `history`, and whether a view has the focus is what its page last said. Focus moves
+//! with Tauri's `set_focus` (the webview becomes the window's first responder), and the widget's messages to the page
+//! run in it with `eval`.
 
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -15,8 +17,8 @@ use tauri::{LogicalPosition, LogicalSize, Manager as _, Url, Webview, WebviewUrl
 
 use super::{
     Command, Engine, MAX_PAGE_MESSAGE, Message, PagePost, Placement, SCHEME, Setup, Transport,
-    Views, channel_script, loaded_call, location_script, message_call, navigated_call, page_post,
-    posted, shows, view_loads,
+    Views, channel_script, focused_call, loaded_call, location_script, message_call,
+    navigated_call, page_post, posted, shows, view_loads,
 };
 
 /// The views of the window once it exists, shared with its navigation handler, which runs before the window is built.
@@ -31,6 +33,9 @@ pub struct Children {
     origin: String,
     /// The number of the last view made: a child webview's label must be unique.
     made: u64,
+    /// The label of the view with the keyboard focus (UI-688): as its page last said, or as last given by `focus`.
+    /// One view at most: the window has one first responder.
+    focus: Arc<Mutex<Option<String>>>,
 }
 
 impl std::fmt::Debug for Children {
@@ -48,6 +53,7 @@ pub fn start(views: &SharedViews, window: &WebviewWindow, origin: String, store:
         store,
         origin: origin.clone(),
         made: 0,
+        focus: Arc::default(),
     };
     *views.lock().unwrap_or_else(PoisonError::into_inner) = Some(Views::new(engine, origin));
 }
@@ -73,6 +79,8 @@ pub fn on_navigation(views: &SharedViews, url: &Url, nonce: &str) -> Option<bool
             views.sync(&slots, setups, zoom);
         }
         (Some(Message::Command { id, command }), Some(views)) => views.command(&id, command),
+        (Some(Message::Focus { id, focus }), Some(views)) => views.focus(&id, focus),
+        (Some(Message::Post { id, json }), Some(views)) => views.post(&id, &json),
         _ => {}
     }
     Some(false)
@@ -99,6 +107,14 @@ impl Children {
             note!("omfp desktop: cannot tell the page about a web view: {error}");
         }
     }
+
+    /// The view of `label` no longer has the focus; another view keeps it.
+    fn forget(focus: &Mutex<Option<String>>, label: &str) {
+        let mut focus = focus.lock().unwrap_or_else(PoisonError::into_inner);
+        if focus.as_deref() == Some(label) {
+            *focus = None;
+        }
+    }
 }
 
 impl Engine for Children {
@@ -106,7 +122,7 @@ impl Engine for Children {
 
     /// A link to a new window opens in the view itself (UI-684); the page gets its widget's scripts and channel
     /// (UI-687).
-    fn open(&mut self, id: &str, url: &str, setup: &Setup) -> Option<Webview> {
+    fn open(&mut self, id: &str, url: &str, setup: &Setup, key: &str) -> Option<Webview> {
         let url = Url::parse(url).ok()?;
         let Some(parent) = self.window.app_handle().get_window(self.window.label()) else {
             note!("omfp desktop: no web view, the window is gone");
@@ -118,6 +134,7 @@ impl Engine for Children {
         let app = self.window.app_handle().clone();
         let own = label.clone();
         let (messages, origin) = ((self.window.clone(), id.to_owned()), self.origin.clone());
+        let (focus, focus_label) = (Arc::clone(&self.focus), label.clone());
         let new_window_origin = self.origin.clone();
         let mut builder = WebviewBuilder::new(&label, WebviewUrl::External(url))
             .data_store_identifier(self.store)
@@ -136,6 +153,15 @@ impl Engine for Children {
                         navigated_call(&messages.1, &address, None, None),
                     ),
                     Some(PagePost::Message(_)) => {}
+                    Some(PagePost::Focus(focused)) => {
+                        if focused {
+                            *focus.lock().unwrap_or_else(PoisonError::into_inner) =
+                                Some(focus_label.clone());
+                        } else {
+                            Self::forget(&focus, &focus_label);
+                        }
+                        Self::tell(&messages.0, focused_call(&messages.1, focused));
+                    }
                     None => return view_loads(url, &origin),
                 }
                 false
@@ -160,7 +186,7 @@ impl Engine for Children {
             });
         builder = builder.initialization_script(location_script());
         if setup.channel {
-            builder = builder.initialization_script(channel_script(Transport::Frames));
+            builder = builder.initialization_script(channel_script(Transport::Frames, key));
         }
         for script in &setup.scripts {
             builder = builder.initialization_script(script);
@@ -234,7 +260,42 @@ impl Engine for Children {
         }
     }
 
+    /// The view has the focus from now on, whether or not its page can report it (UI-686: a page whose CSP forbids
+    /// frames cannot), and no other view has it.
+    fn focus(&self, view: &Webview) {
+        match view.set_focus() {
+            Ok(()) => {
+                *self.focus.lock().unwrap_or_else(PoisonError::into_inner) =
+                    Some(view.label().to_owned());
+            }
+            Err(error) => note!("omfp desktop: a web view cannot take the focus: {error}"),
+        }
+    }
+
+    fn blur(&self, view: &Webview) {
+        if let Err(error) = AsRef::<Webview>::as_ref(&self.window).set_focus() {
+            note!("omfp desktop: the window's page cannot take the focus back: {error}");
+        }
+        // Its page says so too, but later: until then, a second release must not take the focus again.
+        Self::forget(&self.focus, view.label());
+    }
+
+    fn focused(&self, view: &Webview) -> bool {
+        self.focus
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .as_deref()
+            == Some(view.label())
+    }
+
+    fn run(&self, view: &Webview, js: &str) {
+        if let Err(error) = view.eval(js) {
+            note!("omfp desktop: cannot hand a web view's page its widget's message: {error}");
+        }
+    }
+
     fn close(&self, view: Webview) {
+        Self::forget(&self.focus, view.label());
         if let Err(error) = view.close() {
             note!("omfp desktop: cannot close a web view: {error}");
         }

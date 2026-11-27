@@ -447,6 +447,92 @@ fn a_native_views_page_runs_its_scripts_and_posts_to_its_widget() {
     );
 }
 
+// spec: TST-033, UI-687, UI-688
+#[cfg(target_os = "linux")]
+#[test]
+fn a_widget_posts_to_its_native_views_page_and_hands_it_the_keyboard_until_covered() {
+    let dir = tempfile::tempdir().unwrap();
+    let data = dir.path().join("data");
+    let workspaces = dir.path().join("workspaces");
+    let (base, _requests) = serve_native_page();
+    // The page echoes what the widget posts it; once the echo is back, the placeholder takes the keyboard, and once
+    // its view has it, something covers the view, which must give the keyboard back to the window's page.
+    let config = dir.path().join(".config/omfp");
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::write(
+        config.join("init.ts"),
+        format!(
+            r#"export default function init() {{
+  const views = window.__omfpWebViews;
+  const placeholder = document.createElement("div");
+  placeholder.style.cssText = "position:fixed;left:0;top:0;width:320px;height:240px;z-index:2147483646";
+  placeholder.dataset.omfpWebView = "smoke";
+  placeholder.dataset.url = "{base}/page";
+  placeholder.dataset.setup = JSON.stringify({{
+    scripts: [
+      `window.omfp.listen((data) => window.omfp.post({{ echo: data }}));
+       addEventListener("load", () => window.omfp.post("ready"));`,
+    ],
+    channel: true,
+  }});
+  placeholder.addEventListener("omfp-web-view-message", (event) => {{
+    const data = event.detail.data;
+    if (data === "ready") {{
+      views.post("smoke", JSON.stringify("hi"));
+    }} else if (data?.echo === "hi") {{
+      document.body.dataset.echo = "hi";
+      views.command("smoke", "focus");
+    }}
+  }});
+  placeholder.addEventListener("omfp-web-view-focus", (event) => {{
+    if (event.detail.focused) {{
+      document.body.dataset.focused = "";
+      const cover = document.createElement("div");
+      cover.style.cssText = "position:fixed;left:0;top:0;width:400px;height:300px;z-index:2147483647;background:#000";
+      document.body.append(cover);
+    }} else if ("focused" in document.body.dataset) {{
+      document.body.dataset.released = "";
+    }}
+  }});
+  document.body.append(placeholder);
+  return () => placeholder.remove();
+}}
+"#
+        ),
+    )
+    .unwrap();
+    let _daemon = BackgroundDaemon(&data);
+    let output = desktop_with(
+        dir.path(),
+        &[
+            ("OMFP_SMOKE", "local"),
+            (
+                "OMFP_SMOKE_WAIT",
+                "body[data-echo=\"hi\"][data-focused][data-released]",
+            ),
+            ("ANTHROPIC_API_KEY", "sk-ant-omfp-test"),
+        ],
+        &[
+            "--data-dir",
+            data.to_str().unwrap(),
+            "--",
+            "--static-dir",
+            web_bundle().to_str().unwrap(),
+            "--workspaces-root",
+            workspaces.to_str().unwrap(),
+            "--bind",
+            "127.0.0.1:0",
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout
+            .lines()
+            .any(|line| line.starts_with("OMFP_SMOKE_READY ")),
+        "{stdout}"
+    );
+}
+
 // spec: TST-033, UI-683
 #[cfg(target_os = "linux")]
 #[test]

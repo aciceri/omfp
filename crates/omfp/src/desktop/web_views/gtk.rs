@@ -1,8 +1,10 @@
-//! The Linux engine of the native web views (UI-682..UI-685, UI-687): `WebKitGTK` views in a `gtk::Overlay` holding
-//! the window's page. The page posts through a script message handler (UI-283's channel); each view reports where it
-//! went as its `uri` changes and when it finished loading, and its capture (a snapshot of its visible part) stands in
-//! while omfp's UI covers it. Each view has a user content manager of its own: its widget's scripts, and the channel
-//! its page posts its widget messages through (a script message handler of that view only).
+//! The Linux engine of the native web views (UI-682..UI-685, UI-687, UI-688): `WebKitGTK` views in a `gtk::Overlay`
+//! holding the window's page. The page posts through a script message handler (UI-283's channel); each view reports
+//! where it went as its `uri` changes, when it finished loading and when it became or stopped being the window's focus
+//! widget (`is-focus`: where the keys go, whether or not the window is active), and its capture (a snapshot of its
+//! visible part) stands in while omfp's UI covers it. Each view has a user content manager of its own: its widget's
+//! scripts, and the channel its page posts its widget messages through (a script message handler of that view only).
+//! The widget's messages to the page run in the view with `evaluate_javascript`, in the page's own script world.
 //!
 //! A view's place is its margins (the placeholder's corner) and its size request (the placeholder's size). The overlay
 //! allocates each view exactly that box: by default it would give a view up to its natural width, which `WebKitGTK`
@@ -26,8 +28,8 @@ use webkit2gtk::{
 
 use super::{
     Command, Engine, MAX_PAGE_MESSAGE, Message, PAGE_HANDLER, Placement, Setup, Transport, Views,
-    channel_script, handler, loaded_call, message_call, navigated_call, parse_message, shows,
-    thaw_call, view_loads,
+    channel_script, focused_call, handler, loaded_call, message_call, navigated_call,
+    parse_message, shows, thaw_call, view_loads,
 };
 
 /// The views of the window: GTK widgets over its page.
@@ -36,6 +38,9 @@ struct Gtk {
     context: WebContext,
     /// The window, to tell its page where a view went.
     window: WebviewWindow,
+    /// The window's page, which gets the keyboard focus back from a view (UI-688). Weak: the page keeps its message
+    /// handler, which keeps the views.
+    page: glib::WeakRef<WebView>,
     /// The daemon's origin: a view never loads its pages (UI-684).
     origin: String,
 }
@@ -86,6 +91,7 @@ pub fn follow(window: &WebviewWindow, origin: String, nonce: &str, data: &Path) 
             overlay,
             context: web_context(&data),
             window: owner,
+            page: page.downgrade(),
             origin: origin.clone(),
         };
         let views = std::cell::RefCell::new(Views::new(engine, origin));
@@ -100,6 +106,8 @@ pub fn follow(window: &WebviewWindow, origin: String, nonce: &str, data: &Path) 
                     views.borrow_mut().sync(&slots, setups, page.zoom_level());
                 }
                 Some(Message::Command { id, command }) => views.borrow().command(&id, command),
+                Some(Message::Focus { id, focus }) => views.borrow().focus(&id, focus),
+                Some(Message::Post { id, json }) => views.borrow().post(&id, &json),
                 None => {}
             }
         });
@@ -152,7 +160,7 @@ impl Engine for Gtk {
 
     /// A link to a new window opens in the view itself (UI-684); the view gets no permission (`WebKitGTK` denies the
     /// requests nobody handles), and only its widget's scripts (UI-687).
-    fn open(&mut self, id: &str, url: &str, setup: &Setup) -> Option<WebView> {
+    fn open(&mut self, id: &str, url: &str, setup: &Setup, key: &str) -> Option<WebView> {
         let manager = UserContentManager::new();
         let script = |source: &str| {
             UserScript::new(
@@ -165,7 +173,7 @@ impl Engine for Gtk {
         };
         if setup.channel {
             if manager.register_script_message_handler(PAGE_HANDLER) {
-                manager.add_script(&script(&channel_script(Transport::Handler)));
+                manager.add_script(&script(&channel_script(Transport::Handler, key)));
                 let (window, placeholder) = (self.window.clone(), id.to_owned());
                 manager.connect_script_message_received(Some(PAGE_HANDLER), move |_, message| {
                     let Some(json) = message.js_value().map(|value| value.to_string()) else {
@@ -229,6 +237,10 @@ impl Engine for Gtk {
                 report(&window, &placeholder, view);
                 tell(&window, loaded_call(&placeholder));
             }
+        });
+        let (window, placeholder) = (self.window.clone(), id.to_owned());
+        view.connect_is_focus_notify(move |view| {
+            tell(&window, focused_call(&placeholder, view.is_focus()));
         });
         self.overlay.add_overlay(&view);
         view.load_uri(url);
@@ -298,6 +310,24 @@ impl Engine for Gtk {
             Command::Back => view.go_back(),
             Command::Forward => view.go_forward(),
         }
+    }
+
+    fn focus(&self, view: &WebView) {
+        view.grab_focus();
+    }
+
+    fn blur(&self, _: &WebView) {
+        if let Some(page) = self.page.upgrade() {
+            page.grab_focus();
+        }
+    }
+
+    fn focused(&self, view: &WebView) -> bool {
+        view.is_focus()
+    }
+
+    fn run(&self, view: &WebView, js: &str) {
+        view.evaluate_javascript(js, None, None, None::<&gtk::gio::Cancellable>, |_| {});
     }
 
     fn close(&self, view: WebView) {

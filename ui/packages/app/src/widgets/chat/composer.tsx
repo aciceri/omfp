@@ -433,12 +433,14 @@ function ComposerTextArea({ touch, keys, inputRef, onPaste, ghost, ...props }: C
         inputRef={inputRef}
         inputProps={{
           ...testId("composer-input"),
-          // Prose (UI-422): autocorrect, capitals and the spell check on, which React Aria's `Autocomplete` would turn
-          // off as for a search field; the on-screen keyboard's Enter reads "enter" on a touch screen, where it makes a
-          // new line (UI-421), else "send".
+          // Prose (UI-422): autocorrect, capitals, the spell check and the keyboard's suggestions on, which React Aria's
+          // `Autocomplete` would turn off as for a search field (its `autocomplete="off"` reaches Android's keyboard as
+          // "no suggestions", which also stops its autocorrect); the on-screen keyboard's Enter reads "enter" on a
+          // touch screen, where it makes a new line (UI-421), else "send".
           autoCorrect: "on",
           autoCapitalize: "sentences",
           spellCheck: true,
+          autoComplete: "on",
           enterKeyHint: touch ? "enter" : "send",
           "aria-keyshortcuts": `${keys} ${ariaKeys(rawPasteKeys())}`,
           onPaste,

@@ -155,8 +155,9 @@ export function GlobalCommands({ viewIds, currentView, widgets, addWidget }: Glo
         reportError(host, strings.shell.contextMenu.noPath);
         return;
       }
-      // `navigator.clipboard` is missing outside secure contexts: the throw becomes the rejection.
-      Promise.resolve()
+      // `navigator.clipboard` is missing outside secure contexts: the throw becomes the rejection. Returned, so an
+      // agent's `omfp_window_run` hears of a refused copy (UI-305).
+      return Promise.resolve()
         .then(() => navigator.clipboard.writeText(path))
         .then(
           () => reportSuccess(host, strings.shell.file.copiedPath(path)),

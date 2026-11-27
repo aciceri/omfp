@@ -3,7 +3,7 @@
  * built-in items, the keyboard, a resting finger and the items a widget adds.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import type { ThreadEvent } from "@omfp/core";
 import type { IndexSnapshot } from "@omfp/protocol";
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
@@ -237,6 +237,23 @@ describe("the context menu", () => {
       expect(test.host.window.get(SUCCESSES).map((success) => success.text)).toEqual(["Copied the path src/lib.rs"]),
     );
     expect(await navigator.clipboard.readText()).toBe("src/lib.rs");
+  });
+
+  // spec: UI-316
+  test("an agent running `:copy-path` hears of a copy the clipboard refused", async () => {
+    const test = page(null);
+    const writeText = spyOn(navigator.clipboard, "writeText").mockImplementation(() =>
+      Promise.reject(new Error("denied")),
+    );
+    try {
+      expect(await runRequested(test.host, "file.copyPath", ["src/lib.rs:4"])).toEqual({
+        kind: "not_run",
+        reason: "failed",
+        message: "denied",
+      });
+    } finally {
+      writeText.mockRestore();
+    }
   });
 
   // spec: UI-116, UI-316

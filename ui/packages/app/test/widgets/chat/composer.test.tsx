@@ -727,13 +727,15 @@ describe("the composer's bar by pointer and width", () => {
   });
 
   // spec: UI-422
-  test("the composer takes prose: autocorrect, capitals and the spell check are on, touch or not", () => {
+  test("the composer takes prose: autocorrect, capitals, the spell check and the keyboard's suggestions are on, touch or not", () => {
     for (const coarse of [false, true]) {
       pointer = new PointerMedia(coarse);
       renderThread(<ComposerWidget />, fixtureEvents("text_reply"));
+      // Not React Aria's `autocomplete="off"`: Chrome on Android hands it to the keyboard as "no suggestions", which
+      // also turns off its autocorrect (#352).
       expect(
         ["autocorrect", "autocapitalize", "spellcheck", "autocomplete"].map((name) => input().getAttribute(name)),
-      ).toEqual(["on", "sentences", "true", "off"]);
+      ).toEqual(["on", "sentences", "true", "on"]);
       cleanup();
       pointer.restore();
     }

@@ -365,8 +365,10 @@ describe("draft thread", () => {
       const { client, user } = setup();
       const input = screen.getByTestId("composer-input");
       expect(
-        ["autocorrect", "autocapitalize", "spellcheck", "enterkeyhint"].map((name) => input.getAttribute(name)),
-      ).toEqual(["on", "sentences", "true", "enter"]);
+        ["autocorrect", "autocapitalize", "spellcheck", "autocomplete", "enterkeyhint"].map((name) =>
+          input.getAttribute(name),
+        ),
+      ).toEqual(["on", "sentences", "true", "on", "enter"]);
       expect(screen.getByTestId("composer").querySelectorAll(".omfp-compose__hint, .omfp-kbd").length).toBe(0);
       await user.type(input, "fix{Enter}the checkout");
       expect(client.callsTo("threads.create")).toHaveLength(0);

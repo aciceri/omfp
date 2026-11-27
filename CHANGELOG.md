@@ -88,6 +88,8 @@ The version's section is also the source of the GitHub release notes.
   its turn (#317).
 - Agents are told that their working directory is the workspace folder, not a repository, and to commit with
   `commit.draft(repo=…)` naming the repository; before, their first commit in a thread failed and was retried.
+- Typing in the composer on an Android phone gets the keyboard's word suggestions and autocorrect; before, the
+  composer told the keyboard to suggest nothing (#352).
 
 ## 0.4.5 — 2026-11-25
 

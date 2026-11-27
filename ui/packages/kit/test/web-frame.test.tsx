@@ -1,10 +1,10 @@
 /**
- * L1: the kit's web view and web frame (UI-670..UI-675, UI-682, UI-685): the URLs they show, the sandbox, the bare
- * view and its handle, the frame's toolbar and its refusal hint.
+ * L1: the kit's web view and web frame (UI-670..UI-675, UI-682, UI-685, UI-687, UI-688): the URLs they show, the
+ * sandbox, the bare view and its handle, the frame's toolbar and its refusal hint.
  */
 
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createRef } from "react";
 import {
@@ -223,13 +223,54 @@ describe("WebView", () => {
     globalThis.dispatchEvent(new MessageEvent("message", { data: { from: "elsewhere" } }));
     expect(messages).toEqual([{ from: "page" }]);
   });
+
+  // spec: UI-687, UI-688
+  test("in a frame, the handle posts to its page and hands it the keyboard, and onFocusChange follows", async () => {
+    const focus: boolean[] = [];
+    const handle = createRef<WebViewHandle>();
+    render(
+      <>
+        <WebView ref={handle} url="https://example.com/" onFocusChange={(focused) => focus.push(focused)} />
+        <button type="button">omfp</button>
+      </>,
+    );
+    const posted: unknown[][] = [];
+    const own = { postMessage: (...args: unknown[]) => posted.push(args), focus: () => undefined };
+    Object.defineProperty(frame(), "contentWindow", { value: own });
+    act(() => handle.current?.post({ go: 1 }));
+    expect(posted).toEqual([[{ go: 1 }, "*"]]);
+    act(() => handle.current?.focus());
+    expect(document.activeElement === frame()).toBe(true);
+    act(() => handle.current?.blur());
+    expect(document.activeElement === frame()).toBe(false);
+    expect(focus).toEqual([true, false]);
+    // A click into the page: the window loses the focus, and the frame has it once the move settled.
+    act(() => {
+      frame().focus();
+      globalThis.dispatchEvent(new Event("blur"));
+    });
+    await waitFor(() => expect(focus).toEqual([true, false, true]));
+    // A click back in omfp.
+    act(() => screen.getByRole("button", { name: "omfp" }).focus());
+    expect(focus).toEqual([true, false, true, false]);
+    // A reload replaces the frame, which does not have the focus.
+    act(() => handle.current?.focus());
+    act(() => handle.current?.reload());
+    expect(focus).toEqual([true, false, true, false, true, false]);
+  });
 });
 
 describe("WebView in a window that draws web pages (UI-682)", () => {
   // The desktop window's page script defines it before the app runs.
   const commands: unknown[][] = [];
+  const posts: unknown[][] = [];
   beforeAll(() =>
-    Object.assign(globalThis, { __omfpWebViews: { command: (...args: unknown[]) => commands.push(args) } }),
+    Object.assign(globalThis, {
+      __omfpWebViews: {
+        command: (...args: unknown[]) => commands.push(args),
+        post: (...args: unknown[]) => posts.push(args),
+      },
+    }),
   );
   afterAll(() => Reflect.deleteProperty(globalThis, "__omfpWebViews"));
 
@@ -293,5 +334,39 @@ describe("WebView in a window that draws web pages (UI-682)", () => {
     const placeholder = screen.getByTestId("web-view-native");
     placeholder.dispatchEvent(new CustomEvent("omfp-web-view-message", { detail: { data: { n: 1 } } }));
     expect(messages).toEqual([{ n: 1 }]);
+  });
+
+  // spec: UI-687, UI-688
+  test("hands the window the handle's focus, blur and messages, and the widget its view's focus", () => {
+    commands.length = 0;
+    const focus: boolean[] = [];
+    const handle = createRef<WebViewHandle>();
+    render(
+      <WebView
+        ref={handle}
+        url="https://example.com/"
+        onMessage={() => undefined}
+        onFocusChange={(focused) => focus.push(focused)}
+      />,
+    );
+    const placeholder = screen.getByTestId("web-view-native");
+    const id = placeholder.getAttribute("data-omfp-web-view");
+    act(() => {
+      handle.current?.focus();
+      handle.current?.blur();
+      handle.current?.post({ go: "https://example.com/next" });
+    });
+    expect(commands).toEqual([
+      [id, "focus"],
+      [id, "blur"],
+    ]);
+    expect(posts).toEqual([[id, '{"go":"https://example.com/next"}']]);
+    // Data without a JSON form cannot reach the page.
+    expect(() => handle.current?.post(undefined)).toThrow(TypeError);
+    expect(() => handle.current?.post(() => 1)).toThrow(TypeError);
+    placeholder.dispatchEvent(new CustomEvent("omfp-web-view-focus", { detail: { focused: true } }));
+    placeholder.dispatchEvent(new CustomEvent("omfp-web-view-focus", { detail: { focused: "yes" } }));
+    placeholder.dispatchEvent(new CustomEvent("omfp-web-view-focus", { detail: { focused: false } }));
+    expect(focus).toEqual([true, false]);
   });
 });

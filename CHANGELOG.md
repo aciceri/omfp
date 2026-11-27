@@ -22,7 +22,9 @@ The version's section is also the source of the GitHub release notes.
   app is not tested yet. The web app and phones keep the frame.
 - Widgets can build their own browser: the kit's `WebView` is a page alone, with `onNavigate`, `onLoad` and a handle
   to reload it and go back and forward. In the desktop app a widget can also run scripts in the page, like a user
-  script, and the page can send the widget data with `window.omfp.post`.
+  script, and the page can send the widget data with `window.omfp.post`. Widgets can send the page data too (the
+  handle's `post`, heard with `window.omfp.listen` in the page) and hand it the keyboard and take it back (`focus`,
+  `blur`, `onFocusChange`); a dialog, the `:` line or a panel covering the page takes the keyboard back for omfp.
 - A transcript scrolled up well away from its end shows a down-arrow button over its bottom corner: click or tap it
   (or press Enter on it) to jump to the latest message and follow the reply again. It is touch-sized on phones too.
 - Links between threads: a reply can link another thread as `[title](omfp://thread/<id>)`, and agents are told to

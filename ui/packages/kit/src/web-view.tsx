@@ -1,9 +1,9 @@
 /**
- * The kit's `WebView` (UI-670..UI-672, UI-675, UI-682, UI-685, UI-687): a web page alone, filling its container — a
- * placeholder the desktop window draws a native web view over where the window defines `__omfpWebViews`, a sandboxed
- * frame elsewhere — with what a widget needs to build a browser around it (where the page went, its loads, reload,
- * back, forward) and to talk with the page (scripts run in it, messages it posts). Also `webFrameUrl`, the check of the
- * URLs a web view may show.
+ * The kit's `WebView` (UI-670..UI-672, UI-675, UI-682, UI-685, UI-687, UI-688): a web page alone, filling its container
+ * — a placeholder the desktop window draws a native web view over where the window defines `__omfpWebViews`, a
+ * sandboxed frame elsewhere — with what a widget needs to build a browser around it (where the page went, its loads,
+ * reload, back, forward), to talk with the page (scripts run in it, messages either way) and to hand it the keyboard
+ * and take it back. Also `webFrameUrl`, the check of the URLs a web view may show.
  */
 
 import {
@@ -122,7 +122,7 @@ export interface WebViewLocation {
   canGoForward: boolean | null;
 }
 
-/** What a widget can ask of its web view's page (UI-685). */
+/** What a widget can ask of its web view's page (UI-685, UI-687, UI-688). */
 export interface WebViewHandle {
   /** Whether the page is a native view of the window (UI-682): `back` and `forward` work only then. */
   readonly native: boolean;
@@ -130,6 +130,19 @@ export interface WebViewHandle {
   reload(): void;
   back(): void;
   forward(): void;
+  /**
+   * Gives the page the keyboard focus (UI-688): the keys go to it, not to omfp's window, until {@link blur}, a click
+   * in omfp, or something covering the page. A covered or hidden native view does not take it.
+   */
+  focus(): void;
+  /** Gives the keyboard focus back to omfp's window if the page has it (UI-688). */
+  blur(): void;
+  /**
+   * Sends the page `data` (UI-687): in a native view, as JSON to the listeners of the page's
+   * `window.omfp.listen(listener)`, which exists only while `onMessage` is given (data without a JSON form throws;
+   * over 1 MiB of JSON is dropped); in a frame, `postMessage(data, "*")` to its window.
+   */
+  post(data: unknown): void;
 }
 
 export interface WebViewProps extends Omit<HTMLAttributes<HTMLElement>, "title" | "children" | "onLoad"> {
@@ -148,6 +161,11 @@ export interface WebViewProps extends Omit<HTMLAttributes<HTMLElement>, "title" 
    */
   onMessage?: ((data: unknown) => void) | undefined;
   /**
+   * The page took (`true`) or lost (`false`) the keyboard focus (UI-688): a click in it, the handle's `focus` and
+   * `blur`, a click in omfp, something covering it. A frame's is a best guess from the window's own focus.
+   */
+  onFocusChange?: ((focused: boolean) => void) | undefined;
+  /**
    * Scripts run in a native view's page at document start, before its own (UI-687): what a user script does —
    * restyle the page, hide what is in the way, `window.omfp.post` what the widget needs. A change loads the page
    * anew. Frames run none: a page of another origin cannot be scripted.
@@ -157,11 +175,29 @@ export interface WebViewProps extends Omit<HTMLAttributes<HTMLElement>, "title" 
   ref?: Ref<WebViewHandle>;
 }
 
-/** Hands `command` for the native view of placeholder `id` to the window's script (UI-685). */
-function command(id: string, name: "reload" | "back" | "forward"): void {
-  const bridge: unknown = Reflect.get(globalThis, "__omfpWebViews");
-  if (typeof bridge === "object" && bridge !== null && "command" in bridge && typeof bridge.command === "function") {
-    bridge.command(id, name);
+/** The window's script (`__omfpWebViews`), where it defines one: the desktop window's (UI-682). */
+function bridge(): Record<string, unknown> | undefined {
+  const value: unknown = Reflect.get(globalThis, "__omfpWebViews");
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : undefined;
+}
+
+/** Hands `command` for the native view of placeholder `id` to the window's script (UI-685, UI-688). */
+function command(id: string, name: "reload" | "back" | "forward" | "focus" | "blur"): void {
+  const send = bridge()?.command;
+  if (typeof send === "function") {
+    send(id, name);
+  }
+}
+
+/** Hands the window's script the widget's message for the page of placeholder `id` (UI-687). */
+function post(id: string, data: unknown): void {
+  const json = JSON.stringify(data);
+  if (json === undefined) {
+    throw new TypeError("WebView.post: the data has no JSON form");
+  }
+  const send = bridge()?.post;
+  if (typeof send === "function") {
+    send(id, json);
   }
 }
 
@@ -181,8 +217,9 @@ function locationOf(event: Event): WebViewLocation | undefined {
 /**
  * A web page filling its container, and nothing else (UI-670, UI-682): a native view of the window where it draws them
  * (the desktop app), so sites that refuse framing show too; elsewhere a sandboxed frame. Widgets build their own
- * browser around it from `onNavigate`, `onLoad` and the handle's `reload`, `back` and `forward` (UI-685), and talk with
- * the page through `scripts` and `onMessage` (UI-687); the kit's `WebFrame` is one.
+ * browser around it from `onNavigate`, `onLoad` and the handle's `reload`, `back` and `forward` (UI-685), talk with
+ * the page through `scripts`, `onMessage` and the handle's `post` (UI-687), and hand it the keyboard with the handle's
+ * `focus` and `blur`, following it with `onFocusChange` (UI-688); the kit's `WebFrame` is one.
  */
 export function WebView({
   url,
@@ -190,6 +227,7 @@ export function WebView({
   onNavigate,
   onLoad,
   onMessage,
+  onFocusChange,
   scripts,
   texts,
   ref,
@@ -202,10 +240,20 @@ export function WebView({
   const checked = webFrameUrl(url, globalThis.location?.origin ?? "");
   const [reloads, setReloads] = useState(0);
   // The latest callbacks, so that a new function each render neither re-adds the listeners nor misses an event.
-  const callbacks = useRef({ onNavigate, onLoad, onMessage });
+  const callbacks = useRef({ onNavigate, onLoad, onMessage, onFocusChange });
   useLayoutEffect(() => {
-    callbacks.current = { onNavigate, onLoad, onMessage };
+    callbacks.current = { onNavigate, onLoad, onMessage, onFocusChange };
   });
+  // The frame, and whether it has the keyboard focus as last reported (UI-688).
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+  const frameFocused = useRef(false);
+  const checkFrameFocus = useCallback(() => {
+    const focused = frameRef.current !== null && document.activeElement === frameRef.current;
+    if (focused !== frameFocused.current) {
+      frameFocused.current = focused;
+      callbacks.current.onFocusChange?.(focused);
+    }
+  }, []);
   useImperativeHandle(
     ref,
     () => ({
@@ -221,8 +269,35 @@ export function WebView({
           command(id, "forward");
         }
       },
+      focus: () => {
+        if (native) {
+          command(id, "focus");
+          return;
+        }
+        frameRef.current?.focus();
+        frameRef.current?.contentWindow?.focus();
+        checkFrameFocus();
+      },
+      blur: () => {
+        if (native) {
+          command(id, "blur");
+          return;
+        }
+        if (frameRef.current !== null && document.activeElement === frameRef.current) {
+          frameRef.current.blur();
+          globalThis.focus?.();
+        }
+        checkFrameFocus();
+      },
+      post: (data: unknown) => {
+        if (native) {
+          post(id, data);
+          return;
+        }
+        frameRef.current?.contentWindow?.postMessage(data, "*");
+      },
     }),
-    [native, id],
+    [native, id, checkFrameFocus],
   );
   // The placeholder's listeners, from its mount to its unmount: the window's script dispatches its view's events there.
   const listen = useCallback((element: HTMLDivElement | null) => {
@@ -241,28 +316,62 @@ export function WebView({
         callbacks.current.onMessage?.(Reflect.get(event.detail, "data"));
       }
     };
+    const focused = (event: Event) => {
+      const detail: unknown = event instanceof CustomEvent ? event.detail : undefined;
+      const value: unknown = typeof detail === "object" && detail !== null ? Reflect.get(detail, "focused") : undefined;
+      if (typeof value === "boolean") {
+        callbacks.current.onFocusChange?.(value);
+      }
+    };
     element.addEventListener("omfp-web-view-navigate", navigated);
     element.addEventListener("omfp-web-view-load", loaded);
     element.addEventListener("omfp-web-view-message", message);
+    element.addEventListener("omfp-web-view-focus", focused);
     return () => {
       element.removeEventListener("omfp-web-view-navigate", navigated);
       element.removeEventListener("omfp-web-view-load", loaded);
       element.removeEventListener("omfp-web-view-message", message);
+      element.removeEventListener("omfp-web-view-focus", focused);
     };
   }, []);
-  // A frame's messages: those its own page posted to the window (UI-687).
-  const listenFrame = useCallback((frame: HTMLIFrameElement | null) => {
-    if (frame === null) {
-      return;
-    }
-    const received = (event: MessageEvent) => {
-      if (event.source !== null && event.source === frame.contentWindow) {
-        callbacks.current.onMessage?.(event.data);
+  // A frame's messages: those its own page posted to the window (UI-687). Its focus: the window loses it when the
+  // frame takes it, and the frame is then the active element (only once the move settled, in some engines); the
+  // window or one of its elements takes it back (UI-688).
+  const listenFrame = useCallback(
+    (frame: HTMLIFrameElement | null) => {
+      frameRef.current = frame;
+      if (frame === null) {
+        return;
       }
-    };
-    globalThis.addEventListener("message", received);
-    return () => globalThis.removeEventListener("message", received);
-  }, []);
+      const received = (event: MessageEvent) => {
+        if (event.source !== null && event.source === frame.contentWindow) {
+          callbacks.current.onMessage?.(event.data);
+        }
+      };
+      let settling: ReturnType<typeof setTimeout> | undefined;
+      const left = () => {
+        clearTimeout(settling);
+        settling = setTimeout(checkFrameFocus, 0);
+      };
+      globalThis.addEventListener("message", received);
+      globalThis.addEventListener("blur", left);
+      globalThis.addEventListener("focus", checkFrameFocus);
+      document.addEventListener("focusin", checkFrameFocus);
+      return () => {
+        clearTimeout(settling);
+        globalThis.removeEventListener("message", received);
+        globalThis.removeEventListener("blur", left);
+        globalThis.removeEventListener("focus", checkFrameFocus);
+        document.removeEventListener("focusin", checkFrameFocus);
+        // A reload replaces the frame: the new one does not have the focus.
+        if (frameRef.current === frame) {
+          frameRef.current = null;
+          checkFrameFocus();
+        }
+      };
+    },
+    [checkFrameFocus],
+  );
   if (!checked.ok) {
     return (
       <EmptyState

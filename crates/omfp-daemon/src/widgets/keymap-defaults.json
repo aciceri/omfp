@@ -342,6 +342,26 @@
     },
     {
       "mode": "normal",
+      "keys": "Alt-h",
+      "command": "view.prev"
+    },
+    {
+      "mode": "insert",
+      "keys": "Alt-h",
+      "command": "view.prev"
+    },
+    {
+      "mode": "normal",
+      "keys": "Alt-l",
+      "command": "view.next"
+    },
+    {
+      "mode": "insert",
+      "keys": "Alt-l",
+      "command": "view.next"
+    },
+    {
+      "mode": "normal",
       "keys": "Alt-n",
       "command": "thread.new"
     },

@@ -149,6 +149,11 @@ export const DEFAULT_BINDINGS: readonly Binding[] = [
   { mode: "insert", keys: "Alt-j", command: "thread.next" },
   { mode: "normal", keys: "Alt-k", command: "thread.prev" },
   { mode: "insert", keys: "Alt-k", command: "thread.prev" },
+  // The previous and next view, from anywhere, beside the threads' Alt-j / Alt-k (UI-302).
+  { mode: "normal", keys: "Alt-h", command: "view.prev" },
+  { mode: "insert", keys: "Alt-h", command: "view.prev" },
+  { mode: "normal", keys: "Alt-l", command: "view.next" },
+  { mode: "insert", keys: "Alt-l", command: "view.next" },
   { mode: "normal", keys: "Alt-n", command: "thread.new" },
   { mode: "insert", keys: "Alt-n", command: "thread.new" },
   // readline's line editing in the composer (UI-760); `Ctrl-Shift-a` keeps select-all. A browser tab never gets

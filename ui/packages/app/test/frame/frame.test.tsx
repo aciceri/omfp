@@ -1214,6 +1214,17 @@ describe("views of the current workspace", () => {
     expect(host.window.get(VIEW_CHOICES)).toEqual({ threads: [{ threadId: "t1", viewId: "lean" }] });
   });
 
+  // spec: UI-302
+  test("Alt-l and Alt-h cycle views like `] v` and `[ v`", () => {
+    inWorkspace({ manifest: MANIFEST });
+    const shown = () => screen.getByTestId("view").dataset.view;
+    press("l", { altKey: true, code: "KeyL" });
+    expect(shown()).toBe("lean");
+    press("h", { altKey: true, code: "KeyH" });
+    press("h", { altKey: true, code: "KeyH" });
+    expect(shown()).toBe("review");
+  });
+
   // spec: UI-302, UI-431
   test("the view picker cancels without changing the view, wraps arrows and never resets views.json", async () => {
     const { client, user } = inWorkspace({ manifest: MANIFEST });

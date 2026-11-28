@@ -7,6 +7,11 @@ The version's section is also the source of the GitHub release notes.
 
 ## Unreleased
 
+### Added
+
+- `Alt-l` and `Alt-h` switch to the next and previous view from anywhere, even while typing, as `Alt-j` and `Alt-k`
+  switch threads.
+
 ### Changed
 
 - Hiding the threads column is remembered per view: a view where you hid it shows it hidden again, in every new

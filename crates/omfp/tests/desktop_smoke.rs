@@ -1005,7 +1005,7 @@ async fn a_window_on_another_daemon_opens_a_workspaces_new_thread_on_the_view_na
     use std::sync::Arc;
 
     let dir = tempfile::tempdir().unwrap();
-    // Shows that the draft's composer holds the prompt: a CSS selector cannot read a text area's value.
+    // Shows that the draft's composer holds the prompt and the focus: a CSS selector can read neither.
     let init = dir.path().join("init.ts");
     std::fs::write(
         &init,
@@ -1013,7 +1013,9 @@ async fn a_window_on_another_daemon_opens_a_workspaces_new_thread_on_the_view_na
 export default function init() {
   const tick = setInterval(() => {
     const composer = document.querySelector('[data-testid=draft-thread-view] textarea');
-    if (composer && composer.value === "Sì, due\nrighe") document.body.dataset.prompt = "shown";
+    if (composer && composer.value === "Sì, due\nrighe" && document.activeElement === composer) {
+      document.body.dataset.prompt = "shown";
+    }
   }, 100);
   return () => clearInterval(tick);
 }
@@ -1075,6 +1077,37 @@ export default function init() {
             "home",
             "--view",
             "web",
+            "--prompt",
+            "Sì, due\nrighe",
+        ],
+    );
+    // A workspace without `views.json`: its draft's composer mounts while the window is still hidden and stays (the
+    // built-in view stands in and is the workspace's own), so it must take the focus while hidden.
+    client
+        .call::<WorkspacesCreate>(CreateWorkspaceParams {
+            name: Some("Plain".into()),
+            link: None,
+        })
+        .await
+        .unwrap();
+    desktop_with(
+        dir.path(),
+        &[
+            ("OMFP_SMOKE", "1"),
+            (
+                "OMFP_SMOKE_WAIT",
+                "body[data-prompt=shown] [data-testid=draft-thread-view]",
+            ),
+        ],
+        &[
+            "--connect",
+            &format!("http://{}", handle.addr()),
+            "--token",
+            &token,
+            "--data-dir",
+            window_data.to_str().unwrap(),
+            "--workspace",
+            "plain",
             "--prompt",
             "Sì, due\nrighe",
         ],

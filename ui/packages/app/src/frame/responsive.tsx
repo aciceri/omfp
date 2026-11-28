@@ -194,7 +194,8 @@ export function useLeftCollapsed(): boolean {
 /**
  * Collapses the wide column or shows it again on the view the frame shows and as the window's last choice (UI-224),
  * rendered at once so the focus can move: from inside the column to the mode line's Show threads, from that button to
- * the column's Hide threads (UI-985, UI-986).
+ * the column's Hide threads (UI-985, UI-986). The views' states are added to the stored ones, which other windows may
+ * have changed since this one read them.
  */
 function useSetCollapsed(): (collapse: boolean) => void {
   const host = useHost();
@@ -207,7 +208,9 @@ function useSetCollapsed(): (collapse: boolean) => void {
     flushSync(() => {
       host.window.set(LEFT_COLLAPSED, collapse);
       if (shown !== undefined) {
-        host.window.set(VIEW_COLUMNS, (columns) => withViewColumn(columns, shown, collapse));
+        host.window.set(VIEW_COLUMNS, (columns) =>
+          withViewColumn(host.window.stored(VIEW_COLUMNS) ?? columns, shown, collapse),
+        );
       }
     });
     if (moveFocus) {

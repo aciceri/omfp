@@ -266,6 +266,19 @@ describe("collapsing the left column", () => {
     expect(collapsed()).toBe(true);
     show(second, "b");
     expect(collapsed()).toBe(false);
+    // Another window's choice, saved after this one read the stored states, is kept when this one saves its own.
+    const other = setup(storage);
+    other.client.views("w1", { manifest });
+    other.flush();
+    show(other, "c");
+    act(() => {
+      other.host.commands.run("threads.collapse");
+    });
+    act(() => {
+      second.host.commands.run("threads.collapse");
+    });
+    const saved = JSON.parse(storage.stored.get("omfp.leftCollapsedViews") ?? "[]") as { viewId: string }[];
+    expect(saved.map((column) => column.viewId)).toEqual(["a", "c", "b"]);
   });
 
   // spec: UI-985, UI-986

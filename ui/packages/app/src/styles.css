@@ -106,9 +106,11 @@
   }
 
   /* A window opened on a thread or workspace (UI-223) shows nothing but its banners until it shows that workspace's
-   * views; laid out meanwhile, so the frame keeps its measured width. */
+   * views; laid out meanwhile, so the frame keeps its measured width, and focusable, so the composer mounted meanwhile
+   * keeps the focus it takes (`visibility: hidden` would refuse it). */
   .omfp-app[data-launching] > :not(.omfp-banner) {
-    visibility: hidden;
+    opacity: 0;
+    pointer-events: none;
   }
 
   /* The left column (UI-100): the frame's, outside any view. By default a fifth of the window, between

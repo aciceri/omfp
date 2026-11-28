@@ -71,9 +71,12 @@ async fn a_command_line_opened_before_the_index_keeps_the_focus() -> anyhow::Res
     journey.keys(":").await?;
     journey.until_focused("command-line-input").await?;
 
-    // The index arrives without a workspace: "+ workspace" leaves the focus on the command line.
+    // The index arrives without a workspace: the column shows "+ workspace" and leaves the focus on the command line.
     journey.eval("releaseIndex();", Vec::new()).await?;
-    journey.element("[data-testid=no-workspaces-hint]").await?;
+    journey
+        .gone("[data-testid=sidebar][aria-busy=true]")
+        .await?;
+    journey.element("[data-testid=add-workspace]").await?;
     assert_eq!(
         journey.focused().await?.as_deref(),
         Some("command-line-input")

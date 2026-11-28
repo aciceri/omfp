@@ -160,7 +160,7 @@ works in Threads and View mode both.
 | `?`, `Space h h` | Help; `Space h k` is `:describe-key`, `Space h e` is `:messages`. |
 | `Shift-F10`, `ContextMenu` | The context menu of the focused message, file or thread (`:menu`; `ContextMenu` is the menu key). |
 | `Space v` | Fuzzy view picker: type a title/id subsequence; visible `1`–`9` selects that matching row immediately, or use arrows and Enter. Escape cancels. |
-| `] v`, `[ v` | Next / previous view (round the list). |
+| `] v`, `[ v`, `Alt-l`, `Alt-h` | Next / previous view (round the list); `Alt-l` / `Alt-h` from anywhere, like `Alt-j` / `Alt-k` for threads. |
 | `Space f` | Fuzzy file picker across every workspace repository and the folder. Each row shows basename, repository and containing folder; type a path subsequence, arrows/Enter choose, Escape cancels. The query searches all eligible files before the 50-result limit; refine it when the list says more matches exist. |
 | `Space a`, `] a`, `Alt-a` | Next thread needing the user. |
 | `Alt-j`, `Alt-k` | Next / previous thread of the left column, across workspaces (round the list), from anywhere; archived threads, folded workspaces and threads the filter hides are skipped. |

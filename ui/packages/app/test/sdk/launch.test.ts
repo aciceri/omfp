@@ -3,7 +3,7 @@
 import { describe, expect, test } from "bun:test";
 import { DRAFT_MESSAGE, DRAFT_THREAD, ERRORS, SELECTED_THREAD } from "../../src/sdk/index.ts";
 import { VIEW_CHOICES } from "../../src/sdk/keys.ts";
-import { applyLaunch } from "../../src/sdk/launch.ts";
+import { applyLaunch, LAUNCHING } from "../../src/sdk/launch.ts";
 import { thread, workspace } from "../support/fixtures.ts";
 import { testHost } from "../support/host.tsx";
 
@@ -53,5 +53,24 @@ describe("launch", () => {
     expect(test.host.window.get(ERRORS).map((error) => error.text)).toEqual([
       "No workspace named “nope”: give its id, name or folder.",
     ]);
+    expect(test.host.window.get(LAUNCHING)).toBe(false);
+  });
+
+  // spec: UI-223
+  test("the window waits for the views of the thread or workspace named, unless the daemon lacks it", () => {
+    const test = testHost();
+    const { host, client } = test;
+    applyLaunch(host, { view: "web" });
+    expect(host.window.get(LAUNCHING)).toBe(false);
+    applyLaunch(host, { workspace: "w1" });
+    applyLaunch(host, { thread: "gone" });
+    expect(host.window.get(LAUNCHING)).toBe(true);
+    client.connected();
+    client.index({ workspaces: [workspace("w1")], threads: [thread("t1", "Old", "w1")] });
+    test.flush();
+    // A thread the index lacks has no views to wait for; the frame clears it for the others once it shows them.
+    expect(host.window.get(LAUNCHING)).toBe(false);
+    applyLaunch(host, { thread: "t1" });
+    expect(host.window.get(LAUNCHING)).toBe(true);
   });
 });

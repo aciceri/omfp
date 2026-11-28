@@ -68,6 +68,14 @@ export class WindowStore {
     this.set(key, key.initial);
   }
 
+  /**
+   * The value of a persisted `key` as stored now, which another window on the same storage may have changed since
+   * this one read it; `undefined` for a key not persisted, without storage or without a stored value.
+   */
+  stored<T>(key: WindowKey<T>): T | undefined {
+    return key.persist === undefined ? undefined : this.#load(key.name, key.persist);
+  }
+
   subscribe<T>(key: WindowKey<T>, listener: () => void): () => void {
     let listeners = this.#listeners.get(key.name);
     if (listeners === undefined) {

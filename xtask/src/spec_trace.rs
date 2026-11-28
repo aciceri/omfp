@@ -8,11 +8,12 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use regex::Regex;
 
-/// Requirement IDs defined in a spec document: first cell of a table row (`| DMN-012 | ... |`). Only the requirement
-/// prefixes count: decisions (`D-01`), spikes (`S-01`) and milestones (`M9`) are not requirements.
+/// Requirement IDs defined in a spec document: first cell of a table row (`| DMN-012 | ... |`, `| UI-1000 | ... |`
+/// once a prefix passed 999). Only the requirement prefixes count: decisions (`D-01`), spikes (`S-01`) and milestones
+/// (`M9`) are not requirements.
 #[must_use]
 pub fn defined_ids(markdown: &str) -> Vec<String> {
-    let row = Regex::new(r"(?m)^\|\s*((?:ARC|ENV|DMN|PRT|UI|TRM|TST|AGT)-\d{3}|E2E-\d{2})\s*\|")
+    let row = Regex::new(r"(?m)^\|\s*((?:ARC|ENV|DMN|PRT|UI|TRM|TST|AGT)-\d{3,4}|E2E-\d{2})\s*\|")
         .expect("valid regex");
     row.captures_iter(markdown)
         .map(|captures| captures[1].to_owned())
@@ -376,12 +377,13 @@ mod tests {
 | --- | --- |
 | DMN-012 | Transcripts are not stored; see DMN-013. |
 | E2E-04 | Reload mid-stream. |
+| UI-1000 | A row past 999. |
 | D-01 | A decision. |
 | S-10 | A spike. |
 | M9 | A milestone. |
 Text mentioning ARC-001 is not a definition.
 ";
-        assert_eq!(defined_ids(markdown), ["DMN-012", "E2E-04"]);
+        assert_eq!(defined_ids(markdown), ["DMN-012", "E2E-04", "UI-1000"]);
     }
 
     // spec: TST-040

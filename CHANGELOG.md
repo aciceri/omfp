@@ -7,6 +7,16 @@ The version's section is also the source of the GitHub release notes.
 
 ## Unreleased
 
+### Changed
+
+- Hiding the threads column is remembered per view: a view where you hid it shows it hidden again, in every new
+  window too, while views where you never changed it follow your last choice.
+
+### Fixed
+
+- A window opened with `omfp desktop --workspace … --view …` or `--thread …` no longer shows the default view for a
+  moment before the one you asked for.
+
 ## 0.4.6 — 2026-11-27
 
 ### Added

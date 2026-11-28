@@ -32,6 +32,7 @@ import {
   useViews,
   useWindowState,
 } from "../sdk/index.ts";
+import { LAUNCHING } from "../sdk/launch.ts";
 import { strings } from "../strings/index.ts";
 import { useAppearance, useUserTheme } from "../theme/theme.ts";
 import { CardWidgetView, WidgetRegistryScope } from "../view/card.tsx";
@@ -64,7 +65,7 @@ import type { NotificationPort } from "./notifications.ts";
 import { Notifier } from "./notifier.tsx";
 import { OpenedUrls } from "./opened-urls.tsx";
 import { PaneCommands } from "./pane-commands.tsx";
-import { LEFT_COLLAPSED, LEFT_OPEN, MOBILE_AREA } from "./responsive.ts";
+import { LEFT_OPEN, MOBILE_AREA } from "./responsive.ts";
 import {
   Areas,
   HideThreadsButton,
@@ -74,6 +75,7 @@ import {
   LeftStrip,
   ShowThreadsButton,
   useFrameBreakpoint,
+  useLeftCollapsed,
   useLeftDrawer,
   useRevealColumn,
   useVisualViewport,
@@ -143,6 +145,15 @@ export function Frame({
   // Where opening a file or a widget tab selects it (UI-372); a tab opened right after a thread switch waits for the
   // workspace's views, not the built-in view standing in while they load.
   useShownView(view?.id, state !== undefined);
+  // A window opened on a thread or workspace (UI-223) hides its shell until it shows that workspace's views, not the
+  // built-in view standing in while the index and those views arrive.
+  const [launching, setLaunching] = useWindowState(LAUNCHING);
+  const launched = state !== undefined && workspaceId !== undefined;
+  useLayoutEffect(() => {
+    if (launching && launched) {
+      setLaunching(false);
+    }
+  }, [launching, launched, setLaunching]);
   const keeping = keepViews(kept, workspaceId, view === undefined ? undefined : { id: view.id, view }, views.views);
   if (keeping !== kept) {
     setKept(keeping);
@@ -177,8 +188,9 @@ export function Frame({
   const revealColumn = useRevealColumn(breakpoint);
   useVisualViewport(breakpoint);
   const [leftOpen] = useWindowState(LEFT_OPEN);
-  // A wide frame's column collapsed to nothing (UI-985); narrow and phone frames keep their strip and drawer.
-  const [leftCollapsed] = useWindowState(LEFT_COLLAPSED);
+  // A wide frame's column collapsed to nothing, as chosen on the view shown (UI-985, UI-224); narrow and phone frames
+  // keep their strip and drawer.
+  const leftCollapsed = useLeftCollapsed();
   const collapsed = breakpoint === "wide" && leftCollapsed;
   const [area] = useWindowState(MOBILE_AREA);
   const side = view !== undefined && chatCell(view.tree) !== undefined;
@@ -196,7 +208,13 @@ export function Frame({
   return (
     <WidgetRegistryScope value={registry}>
       <CardWidgetScope value={CardWidgetView}>
-        <div ref={appRef} className="omfp-app" data-testid="app" data-layout={breakpoint}>
+        <div
+          ref={appRef}
+          className="omfp-app"
+          data-testid="app"
+          data-layout={breakpoint}
+          data-launching={(launching && !launched) || undefined}
+        >
           <ConnectionBanner />
           {views.error !== undefined && (
             <div className="omfp-banner" data-tone="error" role="alert" data-testid="view-error">

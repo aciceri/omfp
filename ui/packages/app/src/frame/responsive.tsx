@@ -19,7 +19,8 @@ import {
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
 import { THREADS_ATTRIBUTE } from "../keymap/handler.ts";
-import { DRAFT_THREAD, SELECTED_THREAD, useCommand, useThreads, useWindowState } from "../sdk/index.ts";
+import { DRAFT_THREAD, SELECTED_THREAD, useCommand, useHost, useThreads, useWindowState } from "../sdk/index.ts";
+import { SHOWN_VIEW, type ShownView } from "../sdk/keys.ts";
 import { strings } from "../strings/index.ts";
 import type { Area } from "../view/layout.ts";
 import { LEFT_WIDTH, resizeLeft } from "../view/sizes.ts";
@@ -30,11 +31,15 @@ import {
   type Breakpoint,
   breakpointOf,
   COARSE_POINTER,
+  collapsedOn,
   LEFT_COLLAPSED,
   LEFT_OPEN,
   MOBILE_AREA,
   SHORT_TOUCH_SCREEN,
   stripThreads,
+  VIEW_COLUMNS,
+  type WorkspaceView,
+  withViewColumn,
 } from "./responsive.ts";
 
 const text = strings.shell.responsive;
@@ -129,7 +134,7 @@ export function useLeftDrawer(breakpoint: Breakpoint, aside: RefObject<HTMLEleme
  */
 export function LeftColumnCommands({ breakpoint }: { breakpoint: Breakpoint }): ReactNode {
   const [, setOpen] = useWindowState(LEFT_OPEN);
-  const [collapsed] = useWindowState(LEFT_COLLAPSED);
+  const collapsed = useLeftCollapsed();
   const setCollapsed = useSetCollapsed();
   const reveal = useRevealColumn(breakpoint);
   useCommand({
@@ -158,7 +163,7 @@ export function LeftColumnCommands({ breakpoint }: { breakpoint: Breakpoint }): 
  * column's `workspace.new` (UI-987).
  */
 export function useRevealColumn(breakpoint: Breakpoint): () => void {
-  const [collapsed] = useWindowState(LEFT_COLLAPSED);
+  const collapsed = useLeftCollapsed();
   const setCollapsed = useSetCollapsed();
   return () => {
     if (breakpoint === "wide" && collapsed) {
@@ -170,18 +175,41 @@ export function useRevealColumn(breakpoint: Breakpoint): () => void {
 const COLLAPSE_BUTTON = "left-collapse";
 const EXPAND_BUTTON = "left-expand";
 
+/** The workspace's view the frame shows, once that workspace's views arrived (UI-372). */
+function workspaceView(shown: ShownView | undefined): WorkspaceView | undefined {
+  return shown?.ready === true && shown.workspaceId !== undefined
+    ? { workspaceId: shown.workspaceId, viewId: shown.viewId }
+    : undefined;
+}
+
+/** Whether the wide column is collapsed on the view the frame shows: as last chosen there, else as last chosen in the
+ * window (UI-985, UI-224). */
+export function useLeftCollapsed(): boolean {
+  const [fallback] = useWindowState(LEFT_COLLAPSED);
+  const [columns] = useWindowState(VIEW_COLUMNS);
+  const [shown] = useWindowState(SHOWN_VIEW);
+  return collapsedOn(columns, fallback, workspaceView(shown));
+}
+
 /**
- * Collapses the wide column or shows it again, rendered at once so the focus can move: from inside the column to the
- * mode line's Show threads, from that button to the column's Hide threads (UI-985, UI-986).
+ * Collapses the wide column or shows it again on the view the frame shows and as the window's last choice (UI-224),
+ * rendered at once so the focus can move: from inside the column to the mode line's Show threads, from that button to
+ * the column's Hide threads (UI-985, UI-986).
  */
 function useSetCollapsed(): (collapse: boolean) => void {
-  const [, setCollapsed] = useWindowState(LEFT_COLLAPSED);
+  const host = useHost();
   return (collapse) => {
     const from = collapse
       ? document.getElementById(LEFT_COLUMN_ID)
       : document.querySelector(`[data-testid="${EXPAND_BUTTON}"]`);
     const moveFocus = from?.contains(document.activeElement) ?? false;
-    flushSync(() => setCollapsed(collapse));
+    const shown = workspaceView(host.window.get(SHOWN_VIEW));
+    flushSync(() => {
+      host.window.set(LEFT_COLLAPSED, collapse);
+      if (shown !== undefined) {
+        host.window.set(VIEW_COLUMNS, (columns) => withViewColumn(columns, shown, collapse));
+      }
+    });
     if (moveFocus) {
       document.querySelector<HTMLElement>(`[data-testid="${collapse ? EXPAND_BUTTON : COLLAPSE_BUTTON}"]`)?.focus();
     }

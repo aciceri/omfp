@@ -9,7 +9,7 @@ import { commandGroup } from "../../src/keymap/which-key.ts";
 import { type KeyValueStorage, SELECTED_THREAD, type WidgetComponent } from "../../src/sdk/index.ts";
 import type { WidgetRegistry } from "../../src/view/resolve.ts";
 import { thread, workspace } from "../support/fixtures.ts";
-import { ManualTimers, renderWithHost, testHost } from "../support/host.tsx";
+import { ManualTimers, renderWithHost, type TestHost, testHost } from "../support/host.tsx";
 import { installResizeObserver, resize } from "../support/resize.ts";
 
 let restore = () => {};
@@ -223,6 +223,49 @@ describe("collapsing the left column", () => {
     cleanup();
     setup(storage);
     expect([collapsed(), expandButtons().length]).toEqual([true, 1]);
+  });
+
+  // spec: UI-224, UI-988
+  test("each view keeps the state chosen on it; a view never chosen on follows the window's last choice", () => {
+    const storage = memoryStorage();
+    const manifest = {
+      default: "a",
+      views: {
+        a: { title: "A", layout: "omfp:chat" },
+        b: { title: "B", layout: "omfp:header" },
+        c: { title: "C", layout: "omfp:workspace" },
+      },
+    };
+    const show = ({ host }: TestHost, view: string) =>
+      act(() => {
+        host.commands.run("view.switch", [view]);
+      });
+    const first = setup(storage);
+    first.client.views("w1", { manifest });
+    first.flush();
+    act(() => {
+      first.host.commands.run("threads.collapse");
+    });
+    show(first, "b");
+    // Never chosen on b: the window's last choice.
+    expect(collapsed()).toBe(true);
+    act(() => {
+      first.host.commands.run("threads.collapse");
+    });
+    expect(collapsed()).toBe(false);
+    show(first, "a");
+    expect(collapsed()).toBe(true);
+    show(first, "c");
+    expect(collapsed()).toBe(false);
+    cleanup();
+    // After a reload too.
+    const second = setup(storage);
+    second.client.views("w1", { manifest });
+    second.flush();
+    show(second, "a");
+    expect(collapsed()).toBe(true);
+    show(second, "b");
+    expect(collapsed()).toBe(false);
   });
 
   // spec: UI-985, UI-986

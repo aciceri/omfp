@@ -7,8 +7,9 @@ import { isObject } from "../sdk/json.ts";
 import { strings } from "../strings/index.ts";
 import { type LayoutNode, type LayoutTree, type Parsed, parseLayout, type View } from "./layout.ts";
 
-/** Header over the `main` tabs with the conversation (the slot reserved for opened files), the workspace and changes
- * widgets as the `side` tabs on the right; the frame renders the threads column itself (UI-100). */
+/** Header over the `main` tabs with the conversation (the slot reserved for opened files), and the `side` tabs on the
+ * right holding only the empty canvas, for the agent to fill (UI-1000); the frame renders the threads column itself
+ * (UI-100). */
 export const DEFAULT_VIEW: View = {
   id: "default",
   title: strings.shell.frame.defaultView,
@@ -16,7 +17,7 @@ export const DEFAULT_VIEW: View = {
     "row",
     { sizes: [3, 1] },
     ["col", {}, "omfp:header", ["tabs", { id: "main" }, "omfp:chat"]],
-    ["tabs", { id: "side" }, "omfp:workspace", "omfp:changes", "omfp:background", "omfp:mcp"],
+    ["tabs", { id: "side" }, "omfp:canvas"],
   ],
 };
 

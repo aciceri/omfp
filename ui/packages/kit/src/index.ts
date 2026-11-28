@@ -251,6 +251,8 @@ export {
   ModeSegment,
   type ModeSegmentProps,
   type ModeView,
+  ModeViewPick,
+  type ModeViewPickProps,
   ModeViews,
   type ModeViewsProps,
   NestedRow,

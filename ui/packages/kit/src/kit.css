@@ -518,6 +518,12 @@
     display: none;
   }
 
+  /* The engine's own clear button (WebKitGTK draws a ⌫ beside the kit's ×). */
+  .omfp-search .omfp-input::-webkit-search-cancel-button {
+    display: none;
+    appearance: none;
+  }
+
   /* Path field (UI-151): the completion list drops over what follows the field; in a row, the field takes the room
      its controls leave (a path is long). */
   .omfp-path-field {
@@ -611,6 +617,13 @@
   .omfp-select__value {
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /* An icon-only select (the header's model, UI-030): a square button, the value its tooltip. */
+  .omfp-select[data-icon-only] .omfp-select__button {
+    justify-content: center;
+    aspect-ratio: 1;
+    padding: 0;
   }
 
   .omfp-select__button[data-hovered],
@@ -2639,6 +2652,19 @@
     color: var(--omfp-primary);
   }
 
+  /* A phone's current view, opening the view picker (UI-1003): its title cut with an ellipsis, a chevron after it. */
+  .omfp-modeline__view-pick {
+    display: inline-flex;
+    flex: 0 1 auto;
+    align-items: center;
+    gap: var(--omfp-s1);
+    min-inline-size: 0;
+    max-inline-size: 40%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .omfp-cmd {
     display: flex;
     flex: 1;
@@ -3001,7 +3027,7 @@
   }
 
   .omfp-wsection + .omfp-wsection {
-    margin-block-start: var(--omfp-s3);
+    margin-block-start: var(--omfp-s2);
   }
 
   /* A section's head (UI-442): the toggle, the name, then the count flush right, which the actions replace on hover

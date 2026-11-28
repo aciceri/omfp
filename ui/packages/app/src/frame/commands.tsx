@@ -34,6 +34,7 @@ import {
   useWindowState,
 } from "../sdk/index.ts";
 import { strings } from "../strings/index.ts";
+import { applyUserTheme, effectiveTheme, THEME_ATTRIBUTE, userTheme } from "../theme/theme.ts";
 import { COMPACT_MODES, parseCompact } from "../vm/compaction.ts";
 import { displayTitle, isArchived, nextNeedingAttention, spawnerOf } from "../vm/threads.ts";
 import { DENSITIES, parseSet, parseTheme, SET_KEYS, themeArgs, VOICES } from "./set.ts";
@@ -380,6 +381,42 @@ export function GlobalCommands({ viewIds, currentView, widgets, addWidget }: Glo
     aliases: ["theme"],
     // UI-513: the window's colour scheme and the daemon's built-in theme, either or both.
     args: themeArgs,
+    // UI-1002: the highlighted scheme or theme shows at once; the settings' next change takes over after a run.
+    preview: (args) => {
+      const parsed = parseTheme(args);
+      if (!parsed.ok) {
+        return undefined;
+      }
+      const root = document.documentElement;
+      const { theme, colorScheme } = root.dataset;
+      // The user theme's stylesheet goes with the theme (only `matugen` has one), once the page holds it as a
+      // `<style>` (the index is live).
+      const style = document.querySelector(`[${THEME_ATTRIBUTE}]`);
+      const css = style instanceof HTMLStyleElement ? style.textContent : undefined;
+      if (parsed.theme !== undefined) {
+        root.dataset.theme = effectiveTheme(root, parsed.theme);
+        if (css !== undefined) {
+          applyUserTheme(document, userTheme(parsed.theme, host.frames.getSnapshot().index.theme.css));
+        }
+      }
+      if (parsed.scheme !== undefined) {
+        root.dataset.colorScheme = parsed.scheme;
+      }
+      const restore = (key: "theme" | "colorScheme", value: string | undefined) => {
+        if (value === undefined) {
+          delete root.dataset[key];
+        } else {
+          root.dataset[key] = value;
+        }
+      };
+      return () => {
+        restore("theme", theme);
+        restore("colorScheme", colorScheme);
+        if (css !== undefined) {
+          applyUserTheme(document, css === "" ? null : css);
+        }
+      };
+    },
     run: (args) => {
       const parsed = parseTheme(args);
       if (!parsed.ok) {

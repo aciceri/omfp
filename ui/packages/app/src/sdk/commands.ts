@@ -37,6 +37,11 @@ export interface Command {
    * menu item passes its target, UI-315), so a command can offer itself for some targets only.
    */
   readonly enabled?: (args?: readonly string[]) => boolean;
+  /**
+   * Shows what running with `args` would do while the `:` line highlights that completion (UI-1002, the themes of
+   * `:theme`); returns what undoes it, called when the highlight moves on or the line closes without running it.
+   */
+  readonly preview?: (args: readonly string[]) => (() => void) | undefined;
   /** `element` is the target a context menu item runs it on (UI-315), `undefined` from the `:` line and keys. */
   run(args: readonly string[], element?: Element): void | Promise<void>;
 }

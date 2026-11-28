@@ -3,7 +3,8 @@
  * pattern). Tab completes, the arrows move through the options, Enter runs the line (or the highlighted option),
  * Escape closes. Commands run in the scopes around the element that had the focus before the line opened, and the
  * focus goes back there first. `cmdline.open` with arguments opens the line on them, followed by a space, so a
- * command with arguments can immediately offer its completions.
+ * command with arguments can immediately offer its completions. A highlighted option whose command has a `preview`
+ * shows it until the highlight moves or the line closes without running it (UI-1002).
  */
 
 import { CommandItem, CommandMenu, Kbd, KeyHint, ModeSegment, CommandLine as Prompt } from "@omfp/kit";
@@ -71,6 +72,22 @@ function CommandLineInput({
       document.getElementById(`${listId}-${active}`)?.scrollIntoView({ block: "nearest" });
     }
   }, [active, listId]);
+  // UI-1002: the highlighted option's preview; running it keeps what the preview shows (`undo` dropped first).
+  const undo = useRef<(() => void) | undefined>(undefined);
+  const scopesNow = useRef(scopes);
+  scopesNow.current = scopes;
+  const highlightedLine = highlighted?.value;
+  useEffect(() => {
+    const parsed = highlightedLine === undefined ? undefined : parseCommandLine(highlightedLine);
+    if (parsed !== undefined) {
+      const command = commands.resolve(parsed.name, scopesNow.current(), parsed.args);
+      undo.current = command?.preview?.(parsed.args);
+    }
+    return () => {
+      undo.current?.();
+      undo.current = undefined;
+    };
+  }, [highlightedLine, commands]);
   const run = (line: string) => {
     const parsed = parseCommandLine(line);
     if (parsed === undefined) {
@@ -84,6 +101,11 @@ function CommandLineInput({
       setError(scope === undefined ? text.unknownCommand(parsed.name) : text.scopedCommand(parsed.name, scope));
       return;
     }
+    // Running the previewed option keeps its preview; running another undoes it first (it may change less).
+    if (line !== highlightedLine) {
+      undo.current?.();
+    }
+    undo.current = undefined;
     close(true);
     commands.run(parsed.name, parsed.args, where);
   };

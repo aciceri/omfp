@@ -1,5 +1,5 @@
 /**
- * The left column (UI-020..023, UI-026): state badges, workspace chips, one section per workspace with its threads and
+ * The left column (UI-020..023, UI-026): state badges, one section per workspace with its threads and
  * its archived ones, the full-text filter (local fields plus `threads.search`), collapsed sections, unread marks and
  * the "next thread needing attention" and next/previous thread shortcuts.
  */
@@ -53,33 +53,6 @@ export function displayTitle(thread: Pick<ThreadSummary, "title">): string {
 }
 
 export type RepoKind = WorkspaceRepo["kind"];
-
-/** A thread's workspace as its header shows it (UI-340): one chip, its repositories only in the tooltip. */
-export interface WorkspaceChip {
-  readonly workspaceId: string;
-  /** The workspace's name and how many repositories it holds (`geosurge · 10 repos`). */
-  readonly label: string;
-  /** The repositories in folder order, one `name:branch (kind)` per line; says so when there is none. */
-  readonly tooltip: string;
-  readonly repoCount: number;
-}
-
-/** The workspace chip of a thread's header; `undefined` for an unknown id. */
-export function workspaceChip(workspaceId: string, workspaces: readonly Workspace[]): WorkspaceChip | undefined {
-  const workspace = workspaces.find((candidate) => candidate.id === workspaceId);
-  if (workspace === undefined) {
-    return undefined;
-  }
-  const text = strings.shell.chip;
-  const repoCount = workspace.repos.length;
-  return {
-    workspaceId: workspace.id,
-    label: text.label(workspace.name, repoCount),
-    tooltip:
-      repoCount === 0 ? text.noRepos : workspace.repos.map((repo) => `${repoLabel(repo)} (${repo.kind})`).join("\n"),
-    repoCount,
-  };
-}
 
 /** `name:branch`, or `name` on a detached HEAD. */
 function repoLabel(repo: Pick<WorkspaceRepo, "name" | "branch">): string {

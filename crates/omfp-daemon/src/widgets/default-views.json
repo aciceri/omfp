@@ -28,10 +28,7 @@
           {
             "id": "side"
           },
-          "omfp:workspace",
-          "omfp:changes",
-          "omfp:background",
-          "omfp:mcp"
+          "omfp:canvas"
         ]
       ],
       "title": "Default"

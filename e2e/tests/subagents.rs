@@ -48,10 +48,11 @@ async fn a_subagent_opens_under_its_background_row_with_its_transcript_and_steer
     journey.env.configure(&[], "async:\n  enabled: false\n")?;
     journey.connected().await?;
     let thread = journey.create_thread("subagents journey").await?;
+    journey.side_widgets(&["omfp:background"]).await?;
     journey.send("what colour is the sky?").await?;
     journey.fake.wait_for_gate(1).await;
 
-    // The badge shows the default view's Background tab with the running subagent; its row opens it in place.
+    // The badge shows the view's Background tab with the running subagent; its row opens it in place.
     journey
         .until("the badge", async |page| {
             let badge = page.text("[data-testid=background-badge]").await?;

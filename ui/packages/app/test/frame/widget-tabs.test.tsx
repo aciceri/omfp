@@ -142,9 +142,9 @@ describe("revealed widgets as tabs of the main slot", () => {
     expect(tabs()).toEqual(["Chat", "lib.rs", "README.md", "Activity"]);
     expect(selectedTab()).toBe("Activity");
 
-    // Each reveal goes the same way: a widget the view holds (the side tabs' Workspace) is shown in place, no tab;
+    // Each reveal goes the same way: a widget the view holds (the side tabs' Canvas) is shown in place, no tab;
     // another it lacks opens its tab too.
-    reveal(test, "omfp:workspace", 3);
+    reveal(test, "omfp:canvas", 3);
     expect(tabs()).toEqual(["Chat", "lib.rs", "README.md", "Activity"]);
     expect(test.host.window.get(REVEAL_WIDGET)).toBeUndefined();
     reveal(test, "omfp:todos", 4);

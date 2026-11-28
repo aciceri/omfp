@@ -344,8 +344,9 @@ methods! {
     McpTools = "mcp.tools" (mcp::McpToolsParams) -> mcp::McpTools;
     /// Calls a tool of a workspace's remote MCP server from the daemon, with omp's OAuth login for it (PRT-221).
     McpCall = "mcp.call" (mcp::McpCallParams) -> mcp::McpCallResult;
-    /// How many models omp can use; checked by a short-lived omp the first time, then kept current (PRT-140).
-    AuthStatus = "auth.status" (params::Empty) -> auth::AuthStatus;
+    /// How many models omp can use; checked by a short-lived omp the first time or on `recheck`, then kept current,
+    /// and the `.env` file where API keys go (PRT-140).
+    AuthStatus = "auth.status" (auth::AuthStatusParams) -> auth::AuthStatus;
     /// Available usable models before creating a thread, from a short-lived omp (UI-023, UI-030). Each entry supplies
     /// `provider` and `id`: use `threads.create { model: "<provider>/<id>", workspace: ... }`, or
     /// `thread.set_model { threadId: ..., provider: "<provider>", modelId: "<id>" }`.

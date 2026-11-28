@@ -13,10 +13,6 @@ export const shell = {
     idle: "idle",
     stopped: "stopped",
   },
-  chip: {
-    label: (name: string, repos: number) => `${name} · ${repos} ${repos === 1 ? "repo" : "repos"}`,
-    noRepos: "No repositories",
-  },
   threads: {
     label: "Threads",
     filter: "Filter threads",
@@ -64,8 +60,7 @@ export const shell = {
   },
   newWorkspace: {
     label: "+ workspace",
-    placeholder: "+ workspace: name, or /path of a repository to link, Enter",
-    hint: "No workspace yet: type a name, or the path of a repository to link (/ or ~), and press Enter to start a thread in it.",
+    placeholder: "Name or /path",
   },
   draft: {
     empty: "A new thread: send the first message to start it.",
@@ -129,7 +124,9 @@ export const shell = {
     moreTitle: "Thread",
     /** Log in beside a failed start that says omp needs a login, and in an empty model list (UI-387, UI-388). */
     logIn: "Log in",
-    logInHint: "omp has no model it can use: log in to a provider",
+    logInHint: "oh-my-pi has no model it can use: log in to a provider",
+    /** The model list's last entry (UI-030). */
+    logInAnother: "Log in to a provider…",
     noModels: "No models",
     /** The saved model of a thread whose omp could not start, absent from the usable models (UI-751). */
     unavailableOption: (model: string) => `${model} (unavailable)`,
@@ -355,12 +352,12 @@ export const shell = {
     noneHint: (projectConfig: string) =>
       `Add them to this workspace's ${projectConfig}, as ` +
       '{ "mcpServers": { "<name>": { "command": "<program>", "args": [] } } } or ' +
-      '{ "mcpServers": { "<name>": { "type": "http", "url": "<url>" } } }. omp also reads the configs of ' +
+      '{ "mcpServers": { "<name>": { "type": "http", "url": "<url>" } } }. oh-my-pi also reads the configs of ' +
       "Claude Code (.claude/), Cursor (.cursor/) and VS Code (.vscode/mcp.json).",
     workspaceOnly: "No thread selected: the servers configured for this workspace, not checked.",
     notRunning: "The thread is not running: its servers start with it.",
-    checked: "Checked by the thread's omp.",
-    notCheckable: "omp checks only the workspace's .omp/mcp.json: it loads this one without a check.",
+    checked: "Checked by the thread's oh-my-pi.",
+    notCheckable: "oh-my-pi checks only the workspace's .omp/mcp.json: it loads this one without a check.",
     state: {
       configured: "configured",
       connected: "connected",
@@ -372,9 +369,9 @@ export const shell = {
     openSource: (path: string) => `Open ${path}`,
     checkAgain: "Check again",
     reloadAll: "Reload all",
-    reloadAllHint: "Restarts the thread's omp, which connects every MCP server again",
+    reloadAllHint: "Restarts the thread's oh-my-pi, which connects every MCP server again",
     reconnect: "Reconnect",
-    reconnectLabel: (name: string) => `Reconnect ${name} (restarts the thread's omp)`,
+    reconnectLabel: (name: string) => `Reconnect ${name} (restarts the thread's oh-my-pi)`,
     /** `/mcp reauth <name>` in the thread (UI-348). */
     reauthorize: "Reauthorize",
     reauthorizeLabel: (name: string) => `Reauthorize ${name} (sends /mcp reauth ${name} to the thread)`,
@@ -382,15 +379,15 @@ export const shell = {
     restartPending: {
       mcp: {
         label: "Reload to load MCP tools",
-        hint: "The MCP servers changed while background work ran, so the thread's omp was not restarted; this restarts it now",
+        hint: "The MCP servers changed while background work ran, so the thread's oh-my-pi was not restarted; this restarts it now",
       },
       login: {
         label: "Restart to load new models",
-        hint: "You logged in to a provider while background work ran, so the thread's omp was not restarted; this restarts it now to list the provider's models",
+        hint: "You logged in to a provider while background work ran, so the thread's oh-my-pi was not restarted; this restarts it now to list the provider's models",
       },
       both: {
         label: "Restart to load new models and MCP tools",
-        hint: "You logged in to a provider and the MCP servers changed while background work ran, so the thread's omp was not restarted; this restarts it now",
+        hint: "You logged in to a provider and the MCP servers changed while background work ran, so the thread's oh-my-pi was not restarted; this restarts it now",
       },
     },
   },
@@ -399,7 +396,7 @@ export const shell = {
     label: "Browser tabs",
     noThread: "No thread selected",
     none: "No browser tabs",
-    noneHint: "The tabs the agent opens with omp's browser in its eval cells show here.",
+    noneHint: "The tabs the agent opens with oh-my-pi's browser in its eval cells show here.",
     note: "What the agent's browser calls reported, not the live page.",
     closed: "closed",
     noUrl: "No address yet",
@@ -433,6 +430,13 @@ export const shell = {
       running: "running",
       terminated: "terminated",
     } as Readonly<Record<string, string>>,
+  },
+  /** `omfp:canvas`, the default view's empty side panel (UI-1000). */
+  canvas: {
+    title: "This panel is empty",
+    body: "Ask the agent to fill it: GitHub or Linear issues, the git diff, the repos in your workspace, anything. It can add tabs or remove the panel too. The limit is your imagination (or your agent's 😄).",
+    views: "Each workspace can have several views; this is the default one.",
+    tour: "New here? Ask the agent for a crash course on what omfp can do, from views and scheduled jobs to modal (vim-like) keybindings.",
   },
   /** `omfp:todos` (UI-082). */
   todos: {
@@ -687,12 +691,14 @@ export const shell = {
   frame: {
     /** The view tabs of the mode line (UI-301). */
     viewTabs: "Views",
+    /** A phone's view button (UI-1003). */
+    pickViewLabel: (view: string) => `View: ${view}. Pick another view`,
     invalidView: (error: string) => `The view is invalid, showing the default view: ${error}`,
     dismiss: "Dismiss",
     /** The button of a success toast whose action can be taken back (UI-376). */
     undo: "Undo",
     /** A URL omp opened in a browser (UI-346). */
-    openedUrl: (host: string) => `omp opened ${host} in the browser`,
+    openedUrl: (host: string) => `oh-my-pi opened ${host} in the browser`,
     commandLine: "Command line",
     /** The completion menu's `╭─` title and its key row (UI-168). */
     commandMenu: "commands",
@@ -711,6 +717,7 @@ export const shell = {
       "omfp:composer": "Composer",
       "omfp:workspace": "Workspace",
       "omfp:changes": "Changes",
+      "omfp:canvas": "Canvas",
       "omfp:file": "File",
       "omfp:background": "Background",
       "omfp:jobs": "Jobs",
@@ -729,6 +736,10 @@ export const shell = {
     strip: "Threads column",
     showThreads: "Show threads",
     hideThreads: "Hide threads",
+    hidePanel: "Hide panel",
+    showPanel: "Show panel",
+    version: (omfp: string) => `v${omfp}`,
+    versions: (omfp: string, omp: string) => `omfp ${omfp} · oh-my-pi ${omp}`,
     areas: "Areas",
     threads: "Threads",
     chat: "Chat",
@@ -794,8 +805,8 @@ export const shell = {
     /** The provider picker (UI-382). */
     pickerTitle: "Log in to a provider",
     pickerLabel: "Providers",
-    loadingProviders: "Asking omp which providers it can log in to…",
-    noProviders: "omp offers no provider to log in to",
+    loadingProviders: "Asking oh-my-pi which providers it can log in to…",
+    noProviders: "oh-my-pi offers no provider to log in to",
     providersFailed: (message: string) => `Could not list the providers: ${message}`,
     authenticated: "logged in",
     unavailable: "not available here",
@@ -808,28 +819,33 @@ export const shell = {
     url: (name: string, host: string) => `Log in to ${name} at ${host}`,
     /** The paste dialog of a `login_input` (UI-384). */
     inputTitle: (name: string) => `Log in to ${name}`,
+    pageStep: (name: string, host: string) => `Sign in to ${name} at ${host}, then paste the code below.`,
+    openPage: "Open the login page",
     submit: "Continue",
     /** Outcomes (UI-385, UI-386). */
     loggedIn: (name: string) => `Logged in to ${name}`,
     removed: (name: string, count: number) =>
       `Logged out of ${name}: removed ${count} stored ${count === 1 ? "credential" : "credentials"}.`,
-    removedNone: (name: string) => `omp held no stored credential of ${name}.`,
+    removedNone: (name: string) => `oh-my-pi held no stored credential of ${name}.`,
     stillAuthenticated: (name: string, source: string) => `${name} still authenticates with ${source}.`,
     logoutUsage: "Usage: :logout <provider>",
     /** Copying standalone omp's logins (UI-505, UI-506). */
-    imported: (providers: string) => `Copied omp's logins: ${providers}`,
-    nothingToImport: "omp has no logins to copy",
+    imported: (providers: string) => `Copied oh-my-pi's logins: ${providers}`,
+    nothingToImport: "oh-my-pi has no logins to copy",
     oauthCaveat: "A browser login then lives in both apps: if one of them gets signed out, log in there again.",
   },
   /** The first run's welcome when omp has no usable model (UI-500, UI-501). */
   welcome: {
     title: "Welcome to omfp",
-    why: "omp has no model it can use yet. Log in to a provider to start your first thread.",
+    why: "oh-my-pi, the agent behind omfp, has no model it can use yet. Log in to a provider to start your first thread.",
     logIn: "Log in to a provider",
-    keys: "Or give omp an API key (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, …) in the daemon's environment and restart it.",
+    keysBefore: "Or put an API key, one per line like ANTHROPIC_API_KEY=… (or OPENAI_API_KEY, GEMINI_API_KEY, …), in ",
+    keysAfter: ", then:",
+    checkAgain: "Check again",
+    stillNone: "Still no model oh-my-pi can use.",
     /** The offer to copy standalone omp's logins (UI-505). */
-    importLogins: (providers: string) => `Use my omp logins (${providers})`,
-    importNote: "Copies only omp's logins, nothing else.",
+    importLogins: (providers: string) => `Use my oh-my-pi logins (${providers})`,
+    importNote: "Copies only oh-my-pi's logins, nothing else.",
   },
   /** Notices in the mode line and system notifications (UI-096, UI-192). */
   notices: {
@@ -871,7 +887,7 @@ export const shell = {
     stop: "Stop process",
     /** `:describe-command stop` (UI-524, UI-747): what Stop process ends, unlike Abort. */
     stopDescription:
-      "Ends the thread's omp process, with its background commands and live voice; Restart starts it again. To stop only the running turn, use Abort (ctrl+c).",
+      "Ends the thread's oh-my-pi process, with its background commands and live voice; Restart starts it again. To stop only the running turn, use Abort (ctrl+c).",
     stopSpawned: "Stop process of the thread and of every thread it spawned",
     spawnedBy: "Show only the threads the selected one spawned (again: every thread)",
     restart: "Restart the thread's process",
@@ -894,7 +910,7 @@ export const shell = {
     compact: "Compact the context (:compact [soft|remote|snapcompact] [focus of the summary])",
     /** `:describe-command compact` (UI-910, UI-913). */
     compactDescription:
-      "Has omp summarize the selected thread's conversation so far and continue from the summary, freeing context. Words after :compact tell the summary what to focus on; a first word soft, remote or snapcompact picks omp's method for this once (snapcompact takes no focus). Refused while the thread works; the transcript shows the compaction as a notice.",
+      "Has oh-my-pi summarize the selected thread's conversation so far and continue from the summary, freeing context. Words after :compact tell the summary what to focus on; a first word soft, remote or snapcompact picks oh-my-pi's method for this once (snapcompact takes no focus). Refused while the thread works; the transcript shows the compaction as a notice.",
     nextAttention: "Next thread needing attention",
     nextThread: "Next thread",
     prevThread: "Previous thread",
@@ -959,10 +975,10 @@ export const shell = {
     collapseThreads: "Hide or show the left column",
     login: "Log in to a provider (:login [<provider>]; without one, pick it)",
     logout: "Log out of a provider (:logout <provider>)",
-    importLogins: "Copy omp's logins (:import-logins)",
+    importLogins: "Copy oh-my-pi's logins (:import-logins)",
     /** `:describe-command import-logins` (UI-506). */
     importLoginsDescription:
-      "Copies the provider logins of your standalone omp into omfp's omp, through omp's own auth export and import: only model-provider logins, never its configuration or MCP credentials. A browser (OAuth) login then lives in both apps: a provider that rotates its tokens may sign one of them out later, and you log in there again.",
+      "Copies the provider logins of your standalone oh-my-pi into omfp's, through oh-my-pi's own auth export and import: only model-provider logins, never its configuration or MCP credentials. A browser (OAuth) login then lives in both apps: a provider that rotates its tokens may sign one of them out later, and you log in there again.",
     messages: "Show the notices and toasts that went by (newest first)",
     /** `:model` (UI-980). */
     pickModel: "Pick the thread's model (opens the header's model list)",

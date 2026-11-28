@@ -6,13 +6,16 @@ expression: golden
   "request": {
     "id": "c42",
     "method": "auth.status",
-    "params": {},
+    "params": {
+      "recheck": true
+    },
     "type": "request"
   },
   "response": {
     "id": "c42",
     "ok": true,
     "result": {
+      "keysFile": "/home/u/.local/share/omfp/omp-profile/agent/.env",
       "models": 0
     },
     "type": "response"

@@ -5,6 +5,7 @@ import type { WidgetComponent } from "../sdk/index.ts";
 import { ActivityWidget } from "../widgets/activity/index.ts";
 import { BackgroundWidget } from "../widgets/background/index.ts";
 import { BrowserWidget } from "../widgets/browser/index.ts";
+import { CanvasWidget } from "../widgets/canvas/index.ts";
 import { ChangesWidget } from "../widgets/changes/index.ts";
 import { ChatWidget, ComposerWidget, InteractionsWidget, TranscriptWidget } from "../widgets/chat/index.ts";
 import { DebugWidget } from "../widgets/debug/index.ts";
@@ -25,6 +26,7 @@ export const BUILTIN_WIDGETS: WidgetRegistry = new Map<string, WidgetComponent>(
   ["omfp:changes", ChangesWidget],
   ["omfp:background", BackgroundWidget],
   ["omfp:todos", TodosWidget],
+  ["omfp:canvas", CanvasWidget],
   ["omfp:debug", DebugWidget],
   ["omfp:tree", TreeWidget],
   ["omfp:activity", ActivityWidget],

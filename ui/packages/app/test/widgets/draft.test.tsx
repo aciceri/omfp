@@ -49,19 +49,21 @@ function setup() {
 }
 
 describe("draft thread", () => {
-  // spec: UI-023
-  test("it shows an empty conversation, a placeholder title with its workspace's chip, and a focused composer", async () => {
+  // spec: UI-023, UI-030
+  test("it shows an empty conversation, a placeholder title with the model beside it, and a focused composer", async () => {
     setup();
     expect(screen.getByTestId("draft-thread-view").dataset.workspaceId).toBe("w1");
     expect(screen.getByTestId("draft-empty")).toBeDefined();
     const header = screen.getByTestId("thread-header");
     expect(header.dataset.draft).toBe("true");
     expect(within(header).getByTestId("thread-title").textContent).toBe("New thread");
-    expect(
-      within(header)
-        .getAllByTestId("workspace-chip")
-        .map((chip) => chip.textContent),
-    ).toEqual(["checkout · 1 repo"]);
+    // The model is in the title row; no bar, no workspace chip.
+    const top = header.querySelector(".omfp-chat-header__top");
+    expect(top?.querySelectorAll("[data-testid='model-select']").length).toBe(1);
+    expect([
+      header.querySelectorAll(".omfp-chat-header__bar").length,
+      within(header).queryAllByTestId("workspace-chip").length,
+    ]).toEqual([0, 0]);
     await waitFor(() => expect(document.activeElement === screen.getByTestId("composer-input")).toBe(true));
   });
 

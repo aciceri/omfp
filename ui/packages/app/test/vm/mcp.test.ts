@@ -82,7 +82,7 @@ describe("mcpRows", () => {
 
   // spec: UI-290
   test("the status line says whose servers these are", () => {
-    expect(mcpStatus(listing([]))).toBe("Checked by the thread's omp.");
+    expect(mcpStatus(listing([]))).toBe("Checked by the thread's oh-my-pi.");
     expect(mcpStatus(listing([], { running: false }))).toBe("The thread is not running: its servers start with it.");
     expect(mcpStatus(listing([], { threadId: null, running: false }))).toBe(
       "No thread selected: the servers configured for this workspace, not checked.",

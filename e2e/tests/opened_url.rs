@@ -41,7 +41,7 @@ async fn an_opened_url_toasts_with_open_and_copy_and_a_local_command_shows_its_o
         .await?;
     assert_eq!(
         journey.text(&format!("{TOAST} .omfp-toast__text")).await?,
-        "omp opened login.example.com in the browser"
+        "oh-my-pi opened login.example.com in the browser"
     );
     assert_eq!(
         journey

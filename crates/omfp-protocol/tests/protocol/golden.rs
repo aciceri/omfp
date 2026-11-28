@@ -35,7 +35,7 @@ use omfp_protocol::{
     WindowSummary, WindowView,
 };
 use omfp_protocol::{
-    AuthProvider, AuthProviders, AuthStatus, LoggedIn, LoggedOut, LoginCancelled,
+    AuthProvider, AuthProviders, AuthStatus, AuthStatusParams, LoggedIn, LoggedOut, LoginCancelled,
     OAuthCallbackParams, OAuthCallbackRelayed, OmpLogin, OmpLogins, ProviderRef,
 };
 use omfp_protocol::{CardAnswer, CardAnswerParams, CompileWidgetParams, CompiledWidget};
@@ -1610,7 +1610,13 @@ fn auth_examples() -> Vec<(&'static str, Value)> {
         provider_id: "anthropic".to_owned(),
     };
     vec![
-        example::<method::AuthStatus>(Empty {}, &AuthStatus { models: 0 }),
+        example::<method::AuthStatus>(
+            AuthStatusParams { recheck: true },
+            &AuthStatus {
+                models: 0,
+                keys_file: "/home/u/.local/share/omfp/omp-profile/agent/.env".to_owned(),
+            },
+        ),
         example::<method::AuthModels>(Empty {}, &wire(json!({ "models": [model_info()] }))),
         example::<method::AuthProviders>(
             Empty {},

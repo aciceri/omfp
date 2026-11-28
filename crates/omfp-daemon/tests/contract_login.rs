@@ -70,8 +70,8 @@ async fn on_a_fresh_install_threads_cannot_start_and_the_login_omp_lists_the_pro
 
     // The same refusal, without starting a thread: the window's cue to propose a login.
     assert_eq!(
-        client.ok("auth.status", json!({})).await,
-        json!({ "models": 0 })
+        client.ok("auth.status", json!({})).await["models"],
+        json!(0)
     );
 
     let logout = client

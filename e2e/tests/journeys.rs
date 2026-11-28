@@ -1,7 +1,7 @@
 //! The critical journeys (06-testing.md, "End-to-end scenarios") against the TypeScript UI, each in a fresh browser,
 //! daemon, omp environment and fake LLM. Run with `just test-e2e`.
 
-use e2e::{Journey, row, system_prompt, workspace_roots};
+use e2e::{Journey, OLD_SIDE_WIDGETS, row, system_prompt, workspace_roots};
 use fake_llm::{Reply, Step, ToolCall};
 use omfp_testkit::TempRepo;
 use serde_json::json;
@@ -18,18 +18,7 @@ fn repository(marker: &str) -> TempRepo {
     repo
 }
 
-/// The header's chips (UI-340: the workspace's only) as `(text, tooltip)`, the tooltip listing the repositories.
-async fn header_chips(journey: &Journey) -> anyhow::Result<Vec<(String, String)>> {
-    let css = "[data-testid=thread-header] [data-testid=workspace-chip]";
-    let texts = journey.texts(css).await?;
-    let tooltips = journey.attrs(&format!("{css} [title]"), "title").await?;
-    Ok(texts
-        .into_iter()
-        .zip(tooltips.into_iter().map(Option::unwrap_or_default))
-        .collect())
-}
-
-// spec: E2E-01, UI-002, UI-023, UI-340, TST-031
+// spec: E2E-01, UI-002, UI-023, TST-031
 #[tokio::test(flavor = "multi_thread")]
 async fn a_draft_thread_in_a_workspace_linking_a_repository_is_created_by_its_first_message()
 -> anyhow::Result<()> {
@@ -53,31 +42,20 @@ async fn a_draft_thread_in_a_workspace_linking_a_repository_is_created_by_its_fi
     journey
         .new_linked_workspace(&partial(repo.path()), &repo.path().to_string_lossy())
         .await?;
+    // The Workspace widget shows the link, named after the repository's folder.
+    journey.side_widgets(&["omfp:workspace"]).await?;
     assert_eq!(
         journey.thread_ids().await?,
         Vec::<String>::new(),
         "a draft is no thread yet"
     );
+    let name = dir_name(&repo);
     journey
-        .element("[data-testid=workspace-repo][data-kind=link]")
+        .element(&format!(
+            "[data-testid=workspace-repo][data-kind=link][data-name=\"{name}\"]"
+        ))
         .await?;
     let thread = journey.first_message("hello").await?;
-
-    // One workspace chip, named after the repository's folder with its one repository, the link in its tooltip.
-    let name = dir_name(&repo);
-    let chips = journey
-        .until("the workspace chip counting the link", async |page| {
-            let chips = header_chips(page).await?;
-            Ok(chips
-                .iter()
-                .any(|(text, _)| text.ends_with("1 repo"))
-                .then_some(chips))
-        })
-        .await?;
-    assert_eq!(chips.len(), 1, "{chips:?}");
-    assert!(chips[0].0.contains(&name), "{chips:?}");
-    assert!(chips[0].1.contains(&name), "{chips:?}");
-    assert!(chips[0].1.contains("(link)"), "{chips:?}");
 
     journey.reply("Hello from the linked repository.").await?;
     journey.status(&thread, "idle").await?;
@@ -567,14 +545,8 @@ async fn link_two_by_completion(
     }
     journey
         .until(
-            "the workspace chip counting both repositories",
-            async |page| {
-                let chips = header_chips(page).await?;
-                Ok(chips
-                    .iter()
-                    .any(|(text, _)| text.ends_with("2 repos"))
-                    .then_some(()))
-            },
+            "the Workspace widget listing both repositories",
+            async |page| Ok((page.count(links).await? == 2).then_some(())),
         )
         .await
 }
@@ -609,6 +581,7 @@ async fn repositories_picked_by_completion_make_the_thread_findable_by_their_nam
     journey.until_focused("composer-input").await?;
     let thread = journey.first_message("hello").await?;
     journey.reply("Ready.").await?;
+    journey.side_widgets(&["omfp:workspace"]).await?;
 
     // Two links from two different folders, both picked from the completions.
     link_two_by_completion(&journey, &front, &back).await?;
@@ -655,6 +628,7 @@ async fn workspace_folder_entries_follow_the_ui_and_the_agent_live() -> anyhow::
     .await?;
     journey.connected().await?;
     let thread = journey.create_thread("folders journey").await?;
+    journey.side_widgets(&["omfp:workspace"]).await?;
 
     // A link made in the Workspace panel shows there, and the next turn loads its AGENTS.md.
     let name = link(&journey, &linked.path().to_string_lossy()).await?;
@@ -1297,10 +1271,12 @@ async fn a_repository_seen_in_one_workspace_is_suggested_in_another() -> anyhow:
     let journey = Journey::start(Vec::new()).await?;
     journey.connected().await?;
     journey.create_thread("first sighting").await?;
+    journey.side_widgets(&["omfp:workspace"]).await?;
     link(&journey, &repo.path().to_string_lossy()).await?;
 
     // In another workspace the empty path field suggests it first; picking it fills the field, Add links it.
     journey.create_thread("second sighting").await?;
+    journey.side_widgets(&["omfp:workspace"]).await?;
     journey
         .until("the second workspace in the widget", async |page| {
             let name = page.text("[data-testid=workspace-name]").await?;
@@ -1439,6 +1415,9 @@ async fn a_file_the_agent_edits_shows_its_diff_in_the_changes_widget() -> anyhow
         .new_linked_workspace(&partial(repo.path()), &repo.path().to_string_lossy())
         .await?;
     let thread = journey.first_message("edit the agents file").await?;
+    journey
+        .side_widgets(&["omfp:workspace", "omfp:changes"])
+        .await?;
     journey.reply("Edited").await?;
     journey.status(&thread, "idle").await?;
     for tool in ["read", "write", "grep", "todo", "bash"] {
@@ -1477,7 +1456,7 @@ async fn changes_widget_shows_the_diff(journey: &Journey) -> anyhow::Result<()> 
             Vec::new(),
         )
         .await?;
-    assert_eq!(clicked, json!(true), "the default view has a Changes tab");
+    assert_eq!(clicked, json!(true), "the view has a Changes tab");
     let entry = "[data-testid=changes-file][data-path=\"AGENTS.md\"]";
     journey.element(entry).await?;
     // The counts count up from 0 at motion `full` (UI-146): wait for their final value. They are two flex items, so
@@ -1550,7 +1529,8 @@ async fn a_background_job_runs_on_its_card_the_badge_and_the_background_tab() ->
         })
         .await?;
 
-    // The badge shows the default view's Background tab with the job.
+    // The badge shows the view's Background tab with the job.
+    journey.side_widgets(&OLD_SIDE_WIDGETS).await?;
     journey.click("[data-testid=background-badge]").await?;
     journey
         .element("[data-testid=background-row][data-kind=job][data-status=running]")

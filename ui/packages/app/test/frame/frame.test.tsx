@@ -36,6 +36,7 @@ import {
 import { VIEW_CHOICES } from "../../src/sdk/keys.ts";
 import { markTabEdges } from "../../src/view/render.tsx";
 import type { WidgetRegistry } from "../../src/view/resolve.ts";
+import { SIDE_COLLAPSED } from "../../src/view/side.ts";
 import { DEFAULT_MANIFEST } from "../../src/view/views.ts";
 import { COLLAPSED_WORKSPACES } from "../../src/widgets/threads/index.ts";
 import { thread, workspace } from "../support/fixtures.ts";
@@ -316,15 +317,17 @@ describe("frame", () => {
     expect(edges()).toEqual([true, false]);
   });
 
-  // spec: UI-024, UI-100, UI-303
-  test("the left column is the frame's; the default view renders its widgets; one view needs no view tabs", () => {
+  // spec: UI-024, UI-100, UI-303, UI-301
+  test("the left column is the frame's; the default view renders its widgets; even one view has its tab", () => {
     setup();
     const left = screen.getByTestId("left-column");
     expect(within(left).getByTestId("sidebar")).toBeDefined();
     expect(left.contains(screen.getByTestId("view"))).toBe(false);
     expect(screen.getByTestId("view").dataset.view).toBe("default");
-    expect(shownWidgets()).toEqual(["omfp:header", "omfp:chat", "omfp:workspace"]);
-    expect(screen.queryByTestId("mode-views")).toBeNull();
+    expect(shownWidgets()).toEqual(["omfp:header", "omfp:chat", "omfp:canvas"]);
+    expect(screen.getAllByTestId("mode-view").map((tab) => [tab.textContent, tab.dataset.current])).toEqual([
+      ["Default", "true"],
+    ]);
     expect(screen.queryByTestId("layout-edit")).toBeNull();
     expect(screen.queryByTestId("view-switcher")).toBeNull();
     expect(screen.queryByTestId("safety-net")).toBeNull();
@@ -355,7 +358,7 @@ describe("frame", () => {
     expect(document.activeElement?.getAttribute("data-testid")).toBe("command-line-input");
     client.index({ workspaces: [], threads: [] });
     flush();
-    expect(screen.getByTestId("no-workspaces-hint")).toBeDefined();
+    expect(screen.getByTestId("add-workspace")).toBeDefined();
     expect(document.activeElement?.getAttribute("data-testid")).toBe("command-line-input");
   });
 
@@ -399,6 +402,44 @@ describe("frame", () => {
     client.indexEvents({ kind: "settings_changed", settings: { ui: { density: "normal" }, keymap: [], error: null } });
     flush();
     expect(document.documentElement.dataset.density).toBe("normal");
+  });
+
+  // spec: UI-1002
+  test("the `:` line previews the highlighted theme, undone when the highlight moves or the line closes, kept when run", async () => {
+    const { user } = setup();
+    const root = document.documentElement;
+    const shown = () => [root.dataset.theme, root.dataset.colorScheme];
+    expect(shown()).toEqual(["synth", "system"]);
+    press(":");
+    const input = screen.getByTestId("command-line-input");
+    await user.type(input, "theme ");
+    await user.keyboard("{ArrowDown}{ArrowDown}");
+    expect(shown()).toEqual(["synth", "light"]);
+    await user.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
+    expect(shown()).toEqual(["catppuccin", "system"]);
+    // Typing moves the highlight away: nothing previews.
+    await user.type(input, "g");
+    expect(shown()).toEqual(["synth", "system"]);
+    await user.keyboard("{ArrowDown}");
+    expect(shown()).toEqual(["gruvbox", "system"]);
+    await user.keyboard("{Escape}");
+    expect(shown()).toEqual(["synth", "system"]);
+    press(":");
+    await user.type(screen.getByTestId("command-line-input"), "theme ");
+    await user.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}{Enter}");
+    expect(screen.queryByTestId("command-line")).toBeNull();
+    expect(shown()).toEqual(["synth", "dark"]);
+    // Running another option than the previewed one undoes the preview first.
+    press(":");
+    await user.type(screen.getByTestId("command-line-input"), "theme ");
+    await user.keyboard("{ArrowDown}{ArrowDown}");
+    expect(shown()).toEqual(["synth", "light"]);
+    const gruvbox = screen.getAllByTestId("command-option").find((option) => option.dataset.value === "theme gruvbox");
+    if (gruvbox === undefined) {
+      throw new Error("no gruvbox option");
+    }
+    await user.click(gruvbox);
+    expect(shown()).toEqual(["synth", "dark"]);
   });
 
   // spec: UI-513, UI-510, UI-511
@@ -1540,7 +1581,7 @@ describe("adding a widget", () => {
     expect(shownWidgets()).toEqual(["omfp:chat", "omfp:workspace", "./widgets/clock"]);
   });
 
-  // spec: UI-300
+  // spec: UI-300, UI-1000
   test("without views.json the default view is written with the widget as its last side tab", async () => {
     const test = adding();
     press(":");
@@ -1557,15 +1598,7 @@ describe("adding a widget", () => {
                 "row",
                 { sizes: [3, 1] },
                 ["col", {}, "omfp:header", ["tabs", { id: "main" }, "omfp:chat"]],
-                [
-                  "tabs",
-                  { id: "side" },
-                  "omfp:workspace",
-                  "omfp:changes",
-                  "omfp:background",
-                  "omfp:mcp",
-                  "omfp:transcript",
-                ],
+                ["tabs", { id: "side" }, "omfp:canvas", "omfp:transcript"],
               ],
             },
           },
@@ -1824,6 +1857,53 @@ describe("responsive frame", () => {
         Object.defineProperty(window, "visualViewport", originalViewport);
       }
     }
+  });
+
+  // spec: UI-1001
+  test("the mode line ends with Hide panel, which hides the view's side panel and its splitter, then Show panel", async () => {
+    const { host, user } = setup();
+    const toggle = () => screen.getByTestId("side-toggle");
+    const state = () => [
+      toggle().getAttribute("aria-label"),
+      shownWidgets().includes("omfp:canvas"),
+      screen.queryAllByTestId("splitter").length,
+    ];
+    expect(state()).toEqual(["Hide panel", true, 1]);
+    await user.click(toggle());
+    expect(state()).toEqual(["Show panel", false, 0]);
+    expect(host.window.get(SIDE_COLLAPSED)).toEqual(["-/default"]);
+    // Kept mounted while hidden.
+    expect(screen.getAllByTestId("widget").filter((widget) => widget.dataset.widget === "omfp:canvas").length).toBe(1);
+    await user.click(toggle());
+    expect(state()).toEqual(["Hide panel", true, 1]);
+    expect(host.window.get(SIDE_COLLAPSED)).toEqual([]);
+    // A reveal of a widget the hidden panel holds shows the panel.
+    await user.click(toggle());
+    act(() => host.window.set(REVEAL_WIDGET, { reference: "omfp:canvas", nonce: 1 }));
+    expect(state()).toEqual(["Hide panel", true, 1]);
+    // A view without a side panel has no toggle; neither has a phone.
+    cleanup();
+    inWorkspace({ manifest: { default: "work", views: { work: MANIFEST.views.work } } });
+    expect(screen.queryAllByTestId("side-toggle").length).toBe(0);
+    cleanup();
+    setup();
+    resize(screen.getByTestId("app"), 390);
+    expect(screen.queryAllByTestId("side-toggle").length).toBe(0);
+  });
+
+  // spec: UI-1003
+  test("on a phone the mode line shows the current view's title, a button opening the view picker, not the tabs", async () => {
+    const { user } = setup();
+    expect(screen.queryAllByTestId("mode-view-pick").length).toBe(0);
+    resize(screen.getByTestId("app"), 390);
+    expect(screen.queryAllByTestId("mode-view").length).toBe(0);
+    const pick = screen.getByTestId("mode-view-pick");
+    expect([pick.textContent, pick.getAttribute("aria-label")]).toEqual([
+      "Default",
+      "View: Default. Pick another view",
+    ]);
+    await user.click(pick);
+    expect(screen.getAllByTestId("view-picker-option").map((option) => option.dataset.id)).toEqual(["default"]);
   });
 });
 

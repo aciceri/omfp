@@ -86,13 +86,30 @@ export type AuthProviders = {
   providers: AuthProvider[];
 };
 
-/** `auth.status` result (PRT-140): whether omp has a model it can use, as the daemon last checked it (DMN-235). */
+/**
+ * `auth.status` result (PRT-140): whether omp has a model it can use, as the daemon last checked it (DMN-235), and
+ * where an API key goes.
+ */
 export type AuthStatus = {
+  /**
+   * The `.env` file of omfp's omp profile on the daemon's host (DMN-914): `ANTHROPIC_API_KEY=…` lines there give
+   * omp API keys, read by every omp the daemon starts afterwards.
+   */
+  keysFile: string;
   /**
    * How many models omp can use: of a provider it holds a credential for (a login, a key from the environment or
    * omp's config) or of a keyless one. `0` on a fresh install, where every thread start fails until a login.
    */
   models: number;
+};
+
+/** `auth.status` params (PRT-140). */
+export type AuthStatusParams = {
+  /**
+   * Check the usable models again instead of answering the kept count (DMN-914): after an API key was added to
+   * `keysFile`, which nothing else tells the daemon about.
+   */
+  recheck?: boolean;
 };
 
 /** Selection fields of an omp model descriptor; other upstream model capabilities may also be present. */
@@ -2631,7 +2648,7 @@ export interface Methods {
   "thread.mcp_reconnect": { params: McpReconnectParams; result: McpServers };
   "mcp.tools": { params: McpToolsParams; result: McpTools };
   "mcp.call": { params: McpCallParams; result: McpCallResult };
-  "auth.status": { params: Empty; result: AuthStatus };
+  "auth.status": { params: AuthStatusParams; result: AuthStatus };
   "auth.models": { params: Empty; result: AvailableModels };
   "auth.providers": { params: Empty; result: AuthProviders };
   "auth.login": { params: ProviderRef; result: LoggedIn };

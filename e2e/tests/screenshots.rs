@@ -208,8 +208,10 @@ async fn a_busy_thread_in_every_theme_the_command_line_and_the_new_workspace_pat
     journey.reply("The follow-up is done.").await?;
     journey.status(&thread, "idle").await?;
 
-    // "+ workspace" with a path: the field switches to path mode and completes on the daemon host (UI-023, DMN-021).
+    // "+ workspace" with a path: its row opens the field, which switches to path mode and completes on the daemon
+    // host (UI-020, UI-023, DMN-021).
     let (_folder, typed) = completion_folder()?;
+    journey.click("[data-testid=add-workspace]").await?;
     journey
         .type_into("[data-testid=new-workspace-input]", &typed)
         .await?;
@@ -305,6 +307,7 @@ async fn the_workspace_panel_path_completion_a_pending_approval_and_an_ask_quest
     journey.connected().await?;
     journey.scheme("light").await?;
     let thread = journey.create_asking_thread("approval screenshot").await?;
+    journey.side_widgets(&["omfp:workspace"]).await?;
 
     for repo in [&linked, &other] {
         let before = journey

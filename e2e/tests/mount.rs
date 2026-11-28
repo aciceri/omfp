@@ -193,12 +193,12 @@ async fn the_user_closes_a_tab_an_agent_mounted_and_takes_it_back() -> anyhow::R
         journey
             .count("[data-testid=view] [data-testid=layout-tab-close]")
             .await?,
-        5
+        2
     );
     journey.click(tab).await?;
     progress_shows(&journey, "value", "1").await?;
     let mounted = views_json(&folder)?;
-    assert_eq!(side_tabs(&mounted).len(), 5, "{mounted}");
+    assert_eq!(side_tabs(&mounted).len(), 2, "{mounted}");
     journey.hover(tab).await?;
     journey.screenshot("m17-close-mounted-tab").await?;
 
@@ -211,16 +211,7 @@ async fn the_user_closes_a_tab_an_agent_mounted_and_takes_it_back() -> anyhow::R
     journey.element(toast).await?;
     assert_eq!(journey.text(toast).await?, "Closed Progress");
     let closed = views_json(&folder)?;
-    assert_eq!(
-        side_tabs(&closed),
-        [
-            "omfp:workspace",
-            "omfp:changes",
-            "omfp:background",
-            "omfp:mcp"
-        ],
-        "{closed}"
-    );
+    assert_eq!(side_tabs(&closed), ["omfp:canvas"], "{closed}");
 
     // Undo writes the file back as it was: the tab returns.
     journey.click("[data-testid=success-undo]").await?;

@@ -26,7 +26,6 @@ import {
   toggled,
   updateSeen,
   waitingCount,
-  workspaceChip,
 } from "../../src/vm/threads.ts";
 import { NO_FILTER, repo, thread, workspace } from "../support/fixtures.ts";
 
@@ -109,19 +108,6 @@ describe("thread list", () => {
   test("a thread without a title yet shows the placeholder title", () => {
     expect(displayTitle(thread("t", "", "w"))).toBe("New thread");
     expect(displayTitle(thread("t", "checkout", "w"))).toBe("checkout");
-  });
-
-  // spec: UI-340, UI-011
-  test("the workspace chip is the name and repository count, the repositories with branch and kind its tooltip", () => {
-    const { workspaces, threads } = index();
-    const workspaceId = threads[0]?.workspaceId ?? "";
-    expect(workspaceChip(workspaceId, workspaces)).toEqual({
-      workspaceId,
-      label: "checkout · 2 repos",
-      tooltip: "fe:feat/checkout (worktree)\nbe:main (link)",
-      repoCount: 2,
-    });
-    expect(workspaceChip("w-unknown", workspaces)).toBeUndefined();
   });
 
   // spec: UI-020, UI-026

@@ -133,8 +133,11 @@ describe("closing layout tabs", () => {
 
   // spec: UI-375
   test("the default view's chat stays without ×, and so does a view while views.json is invalid", () => {
-    setup({ manifest: null, error: "views: no view" });
-    expect(tabs()).toEqual(["Workspace", "Changes", "Background", "MCP servers"]);
+    const test = setup({ manifest: null, error: "views: no view" });
+    // The default view's slots hold one tab each (the chat, the canvas): no tab bar until a file opens beside the chat.
+    expect(tabs()).toEqual([]);
+    act(() => openFile(test.host, "fe/src/lib.rs"));
+    expect(tabs()).toEqual(["Chat", "lib.rs"]);
     expect(closable()).toEqual([]);
   });
 

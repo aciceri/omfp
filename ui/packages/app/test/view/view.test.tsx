@@ -64,7 +64,7 @@ describe("layouts", () => {
       "row",
       { sizes: [3, 1] },
       ["col", {}, "omfp:header", ["tabs", { id: "main" }, "omfp:chat"]],
-      ["tabs", { id: "side" }, "omfp:workspace", "omfp:changes", "omfp:background", "omfp:mcp"],
+      ["tabs", { id: "side" }, "omfp:canvas"],
     ]);
     expect(DEFAULT_VIEW.title).toBe("Default");
     const tree = views[0]?.tree;

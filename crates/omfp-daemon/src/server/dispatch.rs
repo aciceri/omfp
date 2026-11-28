@@ -276,7 +276,7 @@ async fn run(services: &Services, principal: &Principal, call: Call) -> Reply {
                 .await?;
             empty()
         }
-        Call::AuthStatus(_) => ok(&services.auth_status().await?),
+        Call::AuthStatus(params) => ok(&services.auth_status(params.recheck).await?),
         Call::AuthModels(_) => ok(&services.auth_models().await?),
         Call::AuthProviders(_) => ok(&services.auth_providers().await?),
         // A window's own `auth.login` is the connection's (DMN-221); an agent's goes to the focused window.

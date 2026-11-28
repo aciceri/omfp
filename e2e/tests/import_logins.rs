@@ -4,7 +4,7 @@
 //! PRT-136, PRT-137), and the window shows its view once omp can use a model.
 
 use e2e::{Journey, fresh_install, standalone_omp};
-use omfp_protocol::Empty;
+use omfp_protocol::AuthStatusParams;
 use omfp_protocol::method::AuthStatus;
 use serde_json::json;
 
@@ -38,10 +38,13 @@ async fn the_welcome_copies_standalone_omps_logins_and_then_shows_the_view() -> 
         0,
         "the welcome stands for the view"
     );
-    assert_eq!(journey.text(IMPORT).await?, "Use my omp logins (anthropic)");
+    assert_eq!(
+        journey.text(IMPORT).await?,
+        "Use my oh-my-pi logins (anthropic)"
+    );
     assert_eq!(
         journey.text("[data-testid=welcome-import-note]").await?,
-        "Copies only omp's logins, nothing else.",
+        "Copies only oh-my-pi's logins, nothing else.",
         "an API key needs no browser-login caveat"
     );
     journey.screenshot("import-logins-welcome").await?;
@@ -50,13 +53,15 @@ async fn the_welcome_copies_standalone_omps_logins_and_then_shows_the_view() -> 
     journey.element("[data-testid=success]").await?;
     assert_eq!(
         journey.text("[data-testid=success]").await?,
-        "Copied omp's logins: anthropic"
+        "Copied oh-my-pi's logins: anthropic"
     );
     journey.gone(WELCOME).await?;
     journey.element(VIEW).await?;
 
     let mut connection = journey.connect().await?;
-    let status = connection.call::<AuthStatus>(Empty {}).await?;
+    let status = connection
+        .call::<AuthStatus>(AuthStatusParams::default())
+        .await?;
     connection.close().await?;
     assert!(
         status.models > 0,

@@ -65,6 +65,7 @@ async fn selecting_the_model_before_the_first_prompt_works_for_drafts_and_create
         "modelRoles:\n  default: fake/default\n",
     )?;
 
+    journey.click("[data-testid=add-workspace]").await?;
     journey
         .type_into("[data-testid=new-workspace-input]", "initial model")
         .await?;
@@ -119,6 +120,7 @@ async fn a_partial_first_prompt_failure_retries_the_surviving_conversation() -> 
     let gate = launcher.gate("prompt");
     let journey = Journey::start_fake(launcher.clone()).await?;
     journey.connected().await?;
+    journey.click("[data-testid=add-workspace]").await?;
     journey
         .type_into("[data-testid=new-workspace-input]", "partial-first-prompt")
         .await?;

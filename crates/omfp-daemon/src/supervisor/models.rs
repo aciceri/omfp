@@ -1,7 +1,10 @@
-//! What the daemon knows of the models omp can use (DMN-235..DMN-237): `auth.status` and the `index` topic's `models`.
-//! omp exits at startup when it has none (`No default model selected`), so the count comes from a short-lived omp
-//! started like the login omp (DMN-219). The first `auth.status` checks; later ones answer the known count, which a
-//! login, a logout and a thread start contradicting it check again.
+//! What the daemon knows of the models omp can use (DMN-235..DMN-237, DMN-914): `auth.status` and the `index` topic's
+//! `models`. omp exits at startup when it has none (`No default model selected`), so the count comes from a
+//! short-lived omp started like the login omp (DMN-219). The first `auth.status` checks; later ones answer the known
+//! count, which a login, a logout, a thread start contradicting it and `auth.status { recheck }` (an API key added to
+//! the profile's `.env`) check again.
+
+use std::path::PathBuf;
 
 use tokio::sync::watch;
 use tracing::warn;
@@ -47,6 +50,30 @@ impl Supervisor {
             return Ok(models);
         }
         self.check_usable_models().await
+    }
+
+    /// `auth.status { recheck }` (DMN-914): checks the usable models again and waits for the count; a caller arriving
+    /// during a check waits for it and answers its count.
+    pub async fn recheck_usable_models_now(&self) -> Result<u32> {
+        let mut known = self.inner.models.known.subscribe();
+        known.borrow_and_update();
+        let _check = self.inner.models.check.lock().await;
+        if known.has_changed().unwrap_or(false)
+            && let Some(models) = *known.borrow_and_update()
+        {
+            return Ok(models);
+        }
+        self.check_usable_models().await
+    }
+
+    /// The `.env` file of omfp's omp profile, which every omp the daemon starts reads for API keys (DMN-914).
+    #[must_use]
+    pub fn keys_file(&self) -> PathBuf {
+        let profile = self.inner.data.omp_profile();
+        std::path::absolute(&profile)
+            .unwrap_or(profile)
+            .join("agent")
+            .join(".env")
     }
 
     /// Checks the usable models again in the background (DMN-236, DMN-237), unless nobody asked yet: with no count

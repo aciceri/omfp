@@ -324,15 +324,16 @@ export function Login(): ReactNode {
     }
   }, [running]);
 
+  // Cancel ends the login itself: omp's OAuth flow would otherwise keep waiting for its callback and ask again.
   const answer = (requestId: string, value: string | null) => {
     setInput(undefined);
-    if (value === null) {
-      host.window.set(LOGIN_RUN, (current) => (current === undefined ? current : { ...current, cancelled: true }));
-    }
     const answered: WindowAnswer = { kind: "login_input", value };
     host.client.call("windows.answer", { requestId, answer: answered }).catch((error: unknown) => {
       reportError(host, error);
     });
+    if (value === null) {
+      cancelLogin(host);
+    }
   };
 
   return (
@@ -452,7 +453,9 @@ function ProviderPicker({
   );
 }
 
-/** The paste dialog's form (UI-384): omp's message labels the field; Enter submits, Escape or Cancel cancels. */
+/** The paste dialog's form (UI-384): first the provider's page, whose Open stands out until pressed (a window may not
+ * open it by itself: the desktop's web view lets only a click open a page), then the field omp's message labels;
+ * Enter submits, Escape or Cancel cancels. */
 function LoginInputForm({
   input,
   page,
@@ -466,6 +469,7 @@ function LoginInputForm({
 }): ReactNode {
   const urls = useUrlActions();
   const [value, setValue] = useState("");
+  const [opened, setOpened] = useState(false);
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const typed = value.trim();
@@ -473,8 +477,29 @@ function LoginInputForm({
       onSubmit(typed);
     }
   };
+  const opening = page !== undefined && !opened;
   return (
     <form onSubmit={submit}>
+      {page !== undefined && (
+        <div className="omfp-login__page" data-testid="login-page">
+          <span>{text.pageStep(input.name, urlHost(page))}</span>
+          <Button
+            type="button"
+            variant={opening ? "primary" : "secondary"}
+            icon={<Icon name="external-link" />}
+            onPress={() => {
+              setOpened(true);
+              urls.open(page);
+            }}
+            data-testid="login-page-open"
+          >
+            {text.openPage}
+          </Button>
+          <Button type="button" variant="quiet" onPress={() => urls.copy(page)} data-testid="login-page-copy">
+            {strings.chat.notice.copyUrlAction}
+          </Button>
+        </div>
+      )}
       <TextField
         label={input.message}
         value={value}
@@ -486,22 +511,16 @@ function LoginInputForm({
         {...(input.placeholder === undefined ? {} : { placeholder: input.placeholder })}
         inputProps={{ "data-testid": "login-input" }}
       />
-      {page !== undefined && (
-        <div className="omfp-login__page" data-testid="login-page">
-          <span>{text.url(input.name, urlHost(page))}</span>
-          <Button type="button" variant="quiet" onPress={() => urls.open(page)} data-testid="login-page-open">
-            {strings.chat.notice.openUrlAction}
-          </Button>
-          <Button type="button" variant="quiet" onPress={() => urls.copy(page)} data-testid="login-page-copy">
-            {strings.chat.notice.copyUrlAction}
-          </Button>
-        </div>
-      )}
       <div className="omfp-dialog__actions">
         <Button variant="quiet" onPress={onCancel} kbd={keyLabel("Escape")} data-testid="login-input-cancel">
           {text.cancel}
         </Button>
-        <Button type="submit" variant="primary" kbd={keyLabel("Enter")} data-testid="login-input-submit">
+        <Button
+          type="submit"
+          variant={opening ? "secondary" : "primary"}
+          kbd={keyLabel("Enter")}
+          data-testid="login-input-submit"
+        >
           {text.submit}
         </Button>
       </div>

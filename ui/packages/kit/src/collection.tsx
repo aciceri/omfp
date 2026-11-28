@@ -166,6 +166,8 @@ export interface SelectProps
   icon?: ReactNode;
   /** A visible word before the value, inside the control (e.g. `thinking`). */
   prefix?: string;
+  /** Only the icon shows in the control (the value is its tooltip and accessible text); the list opens as usual. */
+  iconOnly?: boolean;
 }
 
 /**
@@ -175,6 +177,7 @@ export interface SelectProps
 export function Select({
   icon,
   prefix,
+  iconOnly = false,
   label,
   hideLabel = false,
   items,
@@ -183,21 +186,23 @@ export function Select({
   className,
   ...props
 }: SelectProps) {
+  const selected = items.find((item) => item.id === selectedKey)?.label;
   return (
     <AriaSelect<SelectItem>
       {...props}
       value={selectedKey}
       onChange={onSelectionChange}
       className={withClass("omfp-field omfp-select", className)}
+      data-icon-only={iconOnly || undefined}
     >
       <Label className={cx("omfp-field__label", hideLabel && "omfp-visually-hidden")}>{label}</Label>
       <AriaButton className="omfp-select__button">
-        {icon}
+        {iconOnly ? <span title={selected === undefined ? label : `${label}: ${selected}`}>{icon}</span> : icon}
         {prefix !== undefined && <span className="omfp-select__prefix">{prefix}</span>}
-        <SelectValue<SelectItem> className="omfp-select__value">
+        <SelectValue<SelectItem> className={cx("omfp-select__value", iconOnly && "omfp-visually-hidden")}>
           {({ isPlaceholder, selectedText, defaultChildren }) => (isPlaceholder ? defaultChildren : selectedText)}
         </SelectValue>
-        <Icon name="chevron-down" className="omfp-select__chevron" />
+        {!iconOnly && <Icon name="chevron-down" className="omfp-select__chevron" />}
       </AriaButton>
       <Popover className="omfp-select__popover">
         <ListBox<SelectItem> items={items}>

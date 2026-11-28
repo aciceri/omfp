@@ -175,7 +175,13 @@ export function useUrlActions(): UrlActions {
   return useMemo(
     () => ({
       open: (url) => {
-        window.open(url, "_blank", "noopener");
+        // The Linux desktop window's own way, which needs no click (UI-380): a login's page arrives seconds after it.
+        const desktop = (window as Window & { omfpOpenExternal?: (url: string) => void }).omfpOpenExternal;
+        if (desktop === undefined) {
+          window.open(url, "_blank", "noopener");
+        } else {
+          desktop(url);
+        }
       },
       copy: (url) => {
         // `navigator.clipboard` is missing outside secure contexts: the throw becomes the rejection.

@@ -1055,31 +1055,30 @@ export default function init() {
 }}"#,
     )
     .unwrap();
-    // The window's own data directory: no daemon of its own runs there.
+    // A window on the daemon from its own data directory (no daemon of its own runs there), with the prompt.
     let window_data = dir.path().join("window");
-    desktop_with(
-        dir.path(),
-        &[
-            ("OMFP_SMOKE", "1"),
-            (
-                "OMFP_SMOKE_WAIT",
-                "body[data-prompt=shown] [data-testid=view][data-view=web] [data-testid=draft-thread-view]",
-            ),
-        ],
-        &[
+    let connect = format!("http://{}", handle.addr());
+    let launch = |wait: &str, workspace: &[&str]| {
+        let mut args = vec![
             "--connect",
-            &format!("http://{}", handle.addr()),
+            &connect,
             "--token",
             &token,
             "--data-dir",
             window_data.to_str().unwrap(),
-            "--workspace",
-            "home",
-            "--view",
-            "web",
             "--prompt",
             "Sì, due\nrighe",
-        ],
+        ];
+        args.extend_from_slice(workspace);
+        desktop_with(
+            dir.path(),
+            &[("OMFP_SMOKE", "1"), ("OMFP_SMOKE_WAIT", wait)],
+            &args,
+        );
+    };
+    launch(
+        "body[data-prompt=shown] [data-testid=view][data-view=web] [data-testid=draft-thread-view]",
+        &["--workspace", "home", "--view", "web"],
     );
     // A workspace without `views.json`: its draft's composer mounts while the window is still hidden and stays (the
     // built-in view stands in and is the workspace's own), so it must take the focus while hidden.
@@ -1090,27 +1089,9 @@ export default function init() {
         })
         .await
         .unwrap();
-    desktop_with(
-        dir.path(),
-        &[
-            ("OMFP_SMOKE", "1"),
-            (
-                "OMFP_SMOKE_WAIT",
-                "body[data-prompt=shown] [data-testid=draft-thread-view]",
-            ),
-        ],
-        &[
-            "--connect",
-            &format!("http://{}", handle.addr()),
-            "--token",
-            &token,
-            "--data-dir",
-            window_data.to_str().unwrap(),
-            "--workspace",
-            "plain",
-            "--prompt",
-            "Sì, due\nrighe",
-        ],
+    launch(
+        "body[data-prompt=shown] [data-testid=draft-thread-view]",
+        &["--workspace", "plain"],
     );
     handle.shutdown().await.unwrap();
 }

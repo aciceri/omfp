@@ -177,8 +177,8 @@ async fn fresh_profile_never_imports_standalone_state_and_mutations_are_bidirect
     let daemon = start_with(config, ports).await.unwrap();
     let mut client = Client::hello(daemon.addr(), daemon.token().expose(), "test").await;
     assert_eq!(
-        client.ok("auth.status", json!({})).await,
-        json!({"models":0})
+        client.ok("auth.status", json!({})).await["models"],
+        json!(0)
     );
     assert_eq!(
         client
@@ -422,8 +422,8 @@ async fn copy_scenario(store: StandaloneStore) {
     let mut client = Client::hello(daemon.addr(), daemon.token().expose(), "test").await;
     client.ok("subscribe", json!({ "topic": "index" })).await;
     assert_eq!(
-        client.ok("auth.status", json!({})).await,
-        json!({"models":0}),
+        client.ok("auth.status", json!({})).await["models"],
+        json!(0),
         "the fresh profile holds no login"
     );
     let openai = json!({"providers":[{"providerId":"openai","oauth":false}]});

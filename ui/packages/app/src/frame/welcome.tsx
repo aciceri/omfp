@@ -8,8 +8,16 @@
 
 import { Button, Wordmark } from "@omfp/kit";
 import type { OmpLogin } from "@omfp/protocol";
-import { type ReactNode, useEffect, useId } from "react";
-import { requestLogin, useConnection, useHost, useSnapshot, useWindowState, windowKey } from "../sdk/index.ts";
+import { type ReactNode, useEffect, useId, useState } from "react";
+import {
+  reportError,
+  requestLogin,
+  useConnection,
+  useHost,
+  useSnapshot,
+  useWindowState,
+  windowKey,
+} from "../sdk/index.ts";
 import { strings } from "../strings/index.ts";
 import { importOffer } from "../vm/login.ts";
 import { IMPORT_RUN, importLogins, LOGIN_RUN } from "./login.tsx";
@@ -97,12 +105,48 @@ function ImportOffer({ logins }: { readonly logins: readonly OmpLogin[] }): Reac
   );
 }
 
-/** The welcome (UI-500, UI-501, UI-505): why nothing can start yet, the login that fixes it, and the copy of
- * standalone omp's logins when it holds some. */
+/** Where omp reads API keys (`auth.status`'s `keysFile`, DMN-914), asked once when the welcome shows, and the check
+ * that looks for usable models again once the user added one: `undefined` until the daemon answers. */
+function useKeys(): { file: string | undefined; checking: boolean; none: boolean; check: () => void } {
+  const host = useHost();
+  const [file, setFile] = useState<string | undefined>(undefined);
+  const [checking, setChecking] = useState(false);
+  const [none, setNone] = useState(false);
+  useEffect(() => {
+    let live = true;
+    host.client.call("auth.status", {}).then(
+      (status) => live && setFile(status.keysFile),
+      () => {
+        // The welcome still offers the login.
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [host]);
+  const check = () => {
+    setChecking(true);
+    host.client.call("auth.status", { recheck: true }).then(
+      (status) => {
+        setChecking(false);
+        setNone(status.models === 0);
+      },
+      (error: unknown) => {
+        setChecking(false);
+        reportError(host, error);
+      },
+    );
+  };
+  return { file, checking, none, check };
+}
+
+/** The welcome (UI-500, UI-501, UI-505): why nothing can start yet, the login that fixes it, the copy of standalone
+ * omp's logins when it holds some, and the file an API key goes in with the check that finds it (DMN-914). */
 export function Welcome(): ReactNode {
   const host = useHost();
   const [run] = useWindowState(LOGIN_RUN);
   const importable = useImportable();
+  const keys = useKeys();
   return (
     <section className="omfp-welcome" data-testid="welcome" aria-labelledby="omfp-welcome-title">
       <Wordmark className="omfp-welcome__mark" aria-hidden="true" />
@@ -121,9 +165,19 @@ export function Welcome(): ReactNode {
         {text.logIn}
       </Button>
       {importable.length > 0 && <ImportOffer logins={importable} />}
-      <p className="omfp-welcome__keys" data-testid="welcome-keys">
-        {text.keys}
-      </p>
+      {keys.file !== undefined && (
+        <div className="omfp-welcome__keys" data-testid="welcome-keys">
+          <p>
+            {text.keysBefore}
+            <code data-testid="welcome-keys-file">{keys.file}</code>
+            {text.keysAfter}
+          </p>
+          <Button variant="quiet" isPending={keys.checking} onPress={keys.check} data-testid="welcome-keys-check">
+            {text.checkAgain}
+          </Button>
+          {keys.none && !keys.checking && <p data-testid="welcome-keys-none">{text.stillNone}</p>}
+        </div>
+      )}
     </section>
   );
 }

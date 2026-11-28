@@ -1,10 +1,11 @@
 /**
  * The left column the frame renders outside any view (UI-020..023, UI-026, UI-100, UI-169, UI-170, UI-240): the
- * brand, the full-text filter (`/`), the "+ workspace" field, the "spawned by" filter in force, then one section per
+ * brand, the full-text filter (`/`), the "spawned by" filter in force, then one section per
  * workspace in the daemon's order (UI-620) — `▾`/`▸`, name (the current one in gradient text), path as its tooltip,
  * the thread count flush right, which a menu with rename and remove and a delete button replace on hover and focus,
  * its threads (state mark, title, time; unread titles bold) but those listed under their job (UI-992), its draft
- * thread, "+ thread", then the collapsed "Jobs (N)" (UI-740, `job-rows.tsx`) and "Archived (N)" rows. Sections
+ * thread, "+ thread", then the collapsed "Jobs (N)" (UI-740, `job-rows.tsx`) and "Archived (N)" rows, a light rule
+ * between sections, and "+ workspace" below the last one, a row turning into its field (`workspace-fields.tsx`). Sections
  * collapse (`za`); the collapsed set is window-local and survives reloads. Threads and sections are dragged (and moved
  * by keys) into another place, a thread into another workspace (UI-621..UI-627, `reorder.ts`). It registers Threads
  * mode's moves (UI-095), which work with the column shown, collapsed or hidden: `thread.next` / `thread.prev` (`j` /
@@ -74,7 +75,7 @@ import { WorkspaceJobs } from "./job-rows.tsx";
 import { ARCHIVED_OPEN, COLLAPSED_WORKSPACES, SEEN, SPAWNED_BY, THREAD_QUERY } from "./keys.ts";
 import { type DragStart, type DragState, useMoveCommands, useReorder, useReorderDrag } from "./reorder.ts";
 import { SummaryRow } from "./summary-row.tsx";
-import { NewWorkspace, RenameWorkspace } from "./workspace-fields.tsx";
+import { AddWorkspace, RenameWorkspace } from "./workspace-fields.tsx";
 
 const text = strings.shell.threads;
 
@@ -82,14 +83,9 @@ const text = strings.shell.threads;
 const HALF_PAGE = 10;
 const NO_SNIPPETS: ReadonlyMap<string, string> = new Map();
 
-/**
- * The frame's hooks into its column: `brandActions` on the brand's row (Hide threads, UI-985), `reveal` showing a
- * collapsed column before a command focuses inside it (UI-987).
- */
-export function ThreadsWidget({
-  brandActions,
-  reveal,
-}: WidgetProps & { readonly brandActions?: ReactNode; readonly reveal?: () => void }): ReactNode {
+/** The frame's hook into its column: `reveal` showing a collapsed column before a command focuses inside it
+ * (UI-987). */
+export function ThreadsWidget({ reveal }: WidgetProps & { readonly reveal?: () => void }): ReactNode {
   const threads = useThreadList();
   const workspaces = useWorkspaceList();
   const [selected] = useWindowState(SELECTED_THREAD);
@@ -126,6 +122,7 @@ export function ThreadsWidget({
   );
   const root = useRef<HTMLElement>(null);
   const newWorkspace = useRef<HTMLInputElement>(null);
+  const [addingWorkspace, setAddingWorkspace] = useState(false);
   const filtering = isFiltering(filter);
   const nameOf = useCallback(
     (source: ReorderSource) => {
@@ -143,14 +140,18 @@ export function ThreadsWidget({
   useMoveCommands(sections, filtering, reorder);
   useStepCommands(sections, collapsed, filter, root);
   useSectionCommands(root);
-  useFocusAfterRemoval(sections, root, newWorkspace);
+  useFocusAfterRemoval(sections, root);
   useCommand({
     id: "workspace.new",
     title: strings.shell.commands.newWorkspace,
     aliases: ["workspace"],
     run: () => {
       reveal?.();
-      newWorkspace.current?.focus();
+      if (newWorkspace.current === null) {
+        setAddingWorkspace(true);
+      } else {
+        newWorkspace.current.focus();
+      }
     },
   });
   useCommand({
@@ -160,26 +161,6 @@ export function ThreadsWidget({
     enabled: () => spawnedRoot !== undefined || (selected !== undefined && counts.has(selected)),
     run: () => setSpawnedBy((current) => (current !== undefined || selected === undefined ? undefined : selected)),
   });
-  if (workspaces.length === 0) {
-    return (
-      <nav
-        ref={root}
-        className="omfp-threads"
-        aria-label={text.label}
-        aria-busy={!loaded}
-        data-testid="sidebar"
-        data-omfp-scope="threads"
-      >
-        <Brand host={location.hostname} actions={brandActions} />
-        <NewWorkspace inputRef={newWorkspace} focus={loaded} />
-        {loaded && (
-          <p className="omfp-muted" data-testid="no-workspaces-hint">
-            {strings.shell.newWorkspace.hint}
-          </p>
-        )}
-      </nav>
-    );
-  }
   return (
     <nav
       ref={root}
@@ -190,9 +171,8 @@ export function ThreadsWidget({
       data-omfp-scope="threads"
       data-reordering={drag?.source.kind}
     >
-      <Brand host={location.hostname} actions={brandActions} />
+      <Brand host={location.hostname} />
       <ThreadFilterField />
-      <NewWorkspace inputRef={newWorkspace} focus={false} />
       {spawnedRoot !== undefined && (
         <SpawnedByBar thread={byId.get(spawnedRoot)} clear={() => setSpawnedBy(undefined)} />
       )}
@@ -211,7 +191,8 @@ export function ThreadsWidget({
             last={index === sections.length - 1}
           />
         ))}
-        {sections.length === 0 && <HintRow data-testid="no-threads">{text.noMatch}</HintRow>}
+        {workspaces.length > 0 && sections.length === 0 && <HintRow data-testid="no-threads">{text.noMatch}</HintRow>}
+        <AddWorkspace open={addingWorkspace} onOpenChange={setAddingWorkspace} inputRef={newWorkspace} />
       </div>
     </nav>
   );
@@ -402,11 +383,7 @@ function useSectionCommands(root: RefObject<HTMLElement | null>): void {
  * last has left the page and the focus fell back to it, {@link focusAfterRemoval} picks the row, head or field that
  * takes the focus (a collapsed section's head when its rows are hidden).
  */
-function useFocusAfterRemoval(
-  sections: readonly Section[],
-  root: RefObject<HTMLElement | null>,
-  newWorkspace: RefObject<HTMLInputElement | null>,
-): void {
+function useFocusAfterRemoval(sections: readonly Section[], root: RefObject<HTMLElement | null>): void {
   const last = useRef<Element | null>(null);
   useEffect(() => {
     const track = (event: FocusEvent) => {
@@ -426,7 +403,7 @@ function useFocusAfterRemoval(
       return;
     }
     if (target.kind === "newWorkspace") {
-      newWorkspace.current?.focus();
+      root.current?.querySelector<HTMLElement>('[data-testid="add-workspace"]')?.focus();
       return;
     }
     const section = root.current?.querySelector(
@@ -444,7 +421,7 @@ function useFocusAfterRemoval(
         return;
       }
     }
-  }, [sections, root, newWorkspace]);
+  }, [sections, root]);
 }
 
 /** The column's persistent filter (UI-022); Space / opens the separate live thread picker. */

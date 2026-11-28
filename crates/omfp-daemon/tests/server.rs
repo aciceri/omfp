@@ -3207,7 +3207,7 @@ async fn models_changed(client: &mut Client) -> Value {
     }
 }
 
-// spec: PRT-140, PRT-141, DMN-235
+// spec: PRT-140, PRT-141, DMN-235, DMN-914
 #[tokio::test(flavor = "multi_thread")]
 async fn the_usable_models_are_checked_once_by_a_login_omp_and_published_on_the_index() {
     let daemon = daemon(&[]).await;
@@ -3218,12 +3218,18 @@ async fn the_usable_models_are_checked_once_by_a_login_omp_and_published_on_the_
 
     let status = client.ok("auth.status", json!({})).await;
 
-    assert_eq!(status, json!({ "models": 0 }));
-    assert_eq!(models_changed(&mut client).await, 0);
+    let keys = daemon
+        .dir
+        .path()
+        .join("omp-profile")
+        .join("agent")
+        .join(".env");
     assert_eq!(
-        client.ok("auth.status", json!({})).await,
-        json!({ "models": 0 })
+        status,
+        json!({ "models": 0, "keysFile": keys.to_str().unwrap() })
     );
+    assert_eq!(models_changed(&mut client).await, 0);
+    assert_eq!(client.ok("auth.status", json!({})).await["models"], 0);
     let checks = daemon.launcher.model_checks();
     assert_eq!(checks.len(), 1, "the count is kept");
     assert_eq!(
@@ -3235,6 +3241,26 @@ async fn the_usable_models_are_checked_once_by_a_login_omp_and_published_on_the_
     let mut late = daemon.client("late").await;
     let index = late.ok("subscribe", json!({ "topic": "index" })).await;
     assert_eq!(index["state"]["models"], 0);
+}
+
+// spec: DMN-914, PRT-140
+#[tokio::test(flavor = "multi_thread")]
+async fn a_recheck_counts_the_usable_models_again_where_a_plain_status_keeps_the_count() {
+    let daemon = daemon(&[]).await;
+    daemon.launcher.set_usable_models(0);
+    let mut client = daemon.client("test").await;
+    client.ok("subscribe", json!({ "topic": "index" })).await;
+    assert_eq!(client.ok("auth.status", json!({})).await["models"], 0);
+    assert_eq!(models_changed(&mut client).await, 0);
+    // An API key added to the profile's `.env`: nothing tells the daemon.
+    daemon.launcher.set_usable_models(3);
+
+    assert_eq!(client.ok("auth.status", json!({})).await["models"], 0);
+    let rechecked = client.ok("auth.status", json!({ "recheck": true })).await;
+
+    assert_eq!(rechecked["models"], 3);
+    assert_eq!(models_changed(&mut client).await, 3);
+    assert_eq!(daemon.launcher.model_checks().len(), 2);
 }
 
 // spec: DMN-235
@@ -3253,8 +3279,8 @@ async fn a_check_that_cannot_start_omp_fails_with_its_stderr_and_the_next_one_ch
     assert_eq!(error["details"]["stderrTail"], "fatal: out of memory");
     assert_eq!(daemon.launcher.model_checks().len(), 0);
     assert_eq!(
-        client.ok("auth.status", json!({})).await,
-        json!({ "models": 1 })
+        client.ok("auth.status", json!({})).await["models"],
+        json!(1)
     );
 }
 
@@ -3322,8 +3348,8 @@ async fn a_login_or_a_logout_checks_the_usable_models_again_once_someone_asked()
     assert_eq!(daemon.launcher.model_checks().len(), 0, "nobody asked yet");
 
     assert_eq!(
-        window.ok("auth.status", json!({})).await,
-        json!({ "models": 0 })
+        window.ok("auth.status", json!({})).await["models"],
+        json!(0)
     );
     assert_eq!(models_changed(&mut window).await, 0);
     daemon.launcher.set_usable_models(4);
@@ -3564,8 +3590,8 @@ async fn copying_imports_the_provider_logins_into_the_profile_then_reloads_threa
         .await;
     launched(&daemon, 1).await;
     assert_eq!(
-        window.ok("auth.status", json!({})).await,
-        json!({ "models": 0 })
+        window.ok("auth.status", json!({})).await["models"],
+        json!(0)
     );
     assert_eq!(models_changed(&mut window).await, 0);
     daemon.launcher.set_usable_models(3);
@@ -3822,8 +3848,8 @@ async fn a_thread_start_contradicting_the_usable_models_checks_them_again() {
     let mut client = daemon.client("test").await;
     client.ok("subscribe", json!({ "topic": "index" })).await;
     assert_eq!(
-        client.ok("auth.status", json!({})).await,
-        json!({ "models": 1 })
+        client.ok("auth.status", json!({})).await["models"],
+        json!(1)
     );
     assert_eq!(models_changed(&mut client).await, 1);
     let thread = create_thread(&mut client).await;

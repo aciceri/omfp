@@ -25,13 +25,27 @@ pub struct AvailableModel {
     pub name: String,
 }
 
-/// `auth.status` result (PRT-140): whether omp has a model it can use, as the daemon last checked it (DMN-235).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+/// `auth.status` params (PRT-140).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthStatusParams {
+    /// Check the usable models again instead of answering the kept count (DMN-914): after an API key was added to
+    /// `keysFile`, which nothing else tells the daemon about.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub recheck: bool,
+}
+
+/// `auth.status` result (PRT-140): whether omp has a model it can use, as the daemon last checked it (DMN-235), and
+/// where an API key goes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthStatus {
     /// How many models omp can use: of a provider it holds a credential for (a login, a key from the environment or
     /// omp's config) or of a keyless one. `0` on a fresh install, where every thread start fails until a login.
     pub models: u32,
+    /// The `.env` file of omfp's omp profile on the daemon's host (DMN-914): `ANTHROPIC_API_KEY=…` lines there give
+    /// omp API keys, read by every omp the daemon starts afterwards.
+    pub keys_file: String,
 }
 
 /// `auth.providers` result (PRT-129): the providers omp can log in to with OAuth, in omp's order.

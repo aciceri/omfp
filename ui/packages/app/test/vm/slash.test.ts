@@ -81,15 +81,15 @@ describe("slash commands over omp's RPC", () => {
   test("TUI-only builtins without an equivalent are refused with the reason", () => {
     expect(action("/settings")).toEqual({
       type: "refuse",
-      message: "/settings was not sent: Needs omp's terminal UI",
+      message: "/settings was not sent: Needs oh-my-pi's terminal UI",
     });
     expect(action("/q")).toEqual({
       type: "refuse",
-      message: "/quit was not sent: Needs omp's terminal UI; :stop stops the thread's process",
+      message: "/quit was not sent: Needs oh-my-pi's terminal UI; :stop stops the thread's process",
     });
     expect(action("/rewind")).toEqual({
       type: "refuse",
-      message: "/branch was not sent: Needs omp's terminal UI; omfp:tree navigates the session tree",
+      message: "/branch was not sent: Needs oh-my-pi's terminal UI; omfp:tree navigates the session tree",
     });
     expect(action("/fork pane")).toEqual({
       type: "refuse",
@@ -122,7 +122,7 @@ describe("slash commands over omp's RPC", () => {
     expect(named("setup")).toEqual({
       name: "setup",
       aliases: ["providers"],
-      description: "Needs omp's terminal UI; :login logs in to a provider",
+      description: "Needs oh-my-pi's terminal UI; :login logs in to a provider",
       hint: undefined,
       disabled: true,
     });

@@ -11,16 +11,35 @@ The version's section is also the source of the GitHub release notes.
 
 - `Alt-l` and `Alt-h` switch to the next and previous view from anywhere, even while typing, as `Alt-j` and `Alt-k`
   switch threads.
+- The right panel can be hidden and shown again with the button at the right end of the mode line, remembered per
+  view.
+- `:theme` previews the theme or colour scheme you move to in its list; Enter keeps it, Escape goes back.
+- The model list ends with `Log in to a provider…`.
+- The welcome shows the file where an API key goes (`ANTHROPIC_API_KEY=…` in the profile's `agent/.env`) and a
+  `Check again` button that looks for usable models once you saved it.
+- The running omfp version sits at the bottom of the threads column, oh-my-pi's in its tooltip.
 
 ### Changed
 
 - Hiding the threads column is remembered per view: a view where you hid it shows it hidden again, in every new
   window too, while views where you never changed it follow your last choice.
+- The default view's right panel is an empty canvas saying what you can ask the agent to put there, instead of the
+  Workspace, Changes, Background and MCP tabs; add any of them back with `:widget add omfp:changes` and the like.
+  Workspaces that already have a `.omfp/views.json` keep theirs.
+- "+ workspace" is a row at the end of the threads column that opens its field when pressed (or with `Space w`); the
+  thread filter shows even before the first workspace.
+- The thread header no longer shows the workspace chip; the model is a brain button at the end of the title row, and
+  the hide-threads button moved to the bottom of the threads column, where showing them again is.
+- View tabs show in the mode line even with a single view; on a phone the current view's name opens the view picker.
+- The app names its agent oh-my-pi instead of omp.
+- In the desktop app on Linux a login's page opens in your browser by itself, without pressing Open.
 
 ### Fixed
 
 - A window opened with `omfp desktop --workspace … --view …` or `--thread …` no longer shows the default view for a
   moment before the one you asked for.
+- Cancelling a login's code dialog ends the login instead of asking for the code again.
+- Search fields in the desktop app on Linux no longer show a second clear button.
 
 ## 0.4.6 — 2026-11-27
 

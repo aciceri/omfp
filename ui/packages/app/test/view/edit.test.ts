@@ -19,13 +19,13 @@ describe("resize", () => {
 });
 
 describe("add", () => {
-  // spec: UI-300
+  // spec: UI-300, UI-1000
   test("as the last tab of the side tabs, else at the end of the root container; a root widget becomes a row", () => {
     expect(addWidget(DEFAULT_VIEW.layout, "./widgets/charts")).toEqual([
       "row",
       { sizes: [3, 1] },
       ["col", {}, "omfp:header", MAIN_TABS],
-      ["tabs", { id: "side" }, "omfp:workspace", "omfp:changes", "omfp:background", "omfp:mcp", "./widgets/charts"],
+      ["tabs", { id: "side" }, "omfp:canvas", "./widgets/charts"],
     ]);
     expect(addWidget(["row", { sizes: [1, 3] }, "a", "b"], "./widgets/tests")).toEqual([
       "row",
@@ -59,15 +59,7 @@ describe("manifest to write", () => {
               "row",
               { sizes: [3, 1] },
               ["col", {}, "omfp:header", MAIN_TABS],
-              [
-                "tabs",
-                { id: "side" },
-                "omfp:workspace",
-                "omfp:changes",
-                "omfp:background",
-                "omfp:mcp",
-                "omfp:transcript",
-              ],
+              ["tabs", { id: "side" }, "omfp:canvas", "omfp:transcript"],
             ],
           },
         },
@@ -122,30 +114,16 @@ describe("closing a layout tab", () => {
   });
 
   // spec: UI-375
-  test("without views.json: the default view minus that tab", () => {
+  test("without views.json: the default view's canvas, its side tabs' only tab, does not close", () => {
     const changes = manifestWithoutTab(
       { manifest: null, error: null },
       "default",
-      ["tabs#0", "omfp:changes#0"],
-      widget("omfp:changes"),
+      ["tabs#0", "omfp:canvas#0"],
+      widget("omfp:canvas"),
     );
     expect(changes).toEqual({
-      ok: true,
-      value: {
-        $schema: "omfp://schemas/views.json",
-        default: "default",
-        views: {
-          default: {
-            title: "Default",
-            layout: [
-              "row",
-              { sizes: [3, 1] },
-              ["col", {}, "omfp:header", MAIN_TABS],
-              ["tabs", { id: "side" }, "omfp:workspace", "omfp:background", "omfp:mcp"],
-            ],
-          },
-        },
-      },
+      ok: false,
+      error: "View default no longer has that tab: .omfp/views.json changed meanwhile",
     });
   });
 

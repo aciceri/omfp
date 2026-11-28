@@ -1,12 +1,12 @@
 /**
- * `omfp:header`, the selected thread's header (UI-030): title with rename in place, the workspace chip (UI-340),
- * model and thinking selectors, context usage, session cost, the process state with stop/restart, the restart the
- * daemon holds back named by its reasons (UI-349), and archive/unarchive/immediate delete (UI-026).
- * For the draft thread (UI-023): its placeholder title and its workspace's chip. The
- * title row gives the title the room (UI-482): the state, one state-dependent action and a `⋯` popover holding rename,
- * archive and delete. Narrower than {@link COMPACT_BELOW_REM} it is one row (UI-202): title, state and model, the rest
- * in the `⋯` popover. When omp has no model it can use — its start failed saying so, or it lists no model — it offers
- * Log in (UI-388). A forked thread says where it comes from beside its workspace chip (UI-664). When a failed start's
+ * `omfp:header`, the selected thread's header (UI-030): title with rename in place, the model as a brain button at the
+ * title row's end (its list ends with a login, UI-030), thinking selector, context usage, session cost, the process
+ * state with stop/restart, the restart the daemon holds back named by its reasons (UI-349), and
+ * archive/unarchive/immediate delete (UI-026). For the draft thread (UI-023): its placeholder title and the model. The
+ * title row gives the title the room (UI-482): the state, one state-dependent action, the model and a `⋯` popover
+ * holding rename, archive and delete. Narrower than {@link COMPACT_BELOW_REM} it is one row (UI-202): title, state and
+ * model, the rest in the `⋯` popover. When omp has no model it can use — its start failed saying so, or it lists no
+ * model — it offers Log in (UI-388). A forked thread says where it comes from (UI-664). When a failed start's
  * saved model is not among the usable ones, it says so and offers them and Log in; only a pick changes it (UI-751).
  */
 
@@ -69,12 +69,9 @@ import {
   useThreadSummary,
   useThreads,
   useWindowState,
-  useWorkspaces,
   type WidgetProps,
-  type WorkspaceChip,
-  workspaceChip,
 } from "omfp/sdk";
-import { type FormEvent, type KeyboardEvent, type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
+import { type FormEvent, type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from "react";
 
 const text = strings.shell.header;
 
@@ -106,37 +103,26 @@ export function HeaderWidget(_props: WidgetProps): ReactNode {
 }
 
 function DraftHeader({ draft }: { draft: DraftThread }): ReactNode {
-  const workspaces = useWorkspaces();
-  const chip = useMemo(() => workspaceChip(draft.workspaceId, [...workspaces.values()]), [draft, workspaces]);
   const [details] = useThreadDetails(undefined, undefined);
   const [, setDraft] = useWindowState(DRAFT_THREAD);
   // The thread is created with the model chosen so far: no change while `threads.create` is on its way (UI-023).
   const [creating] = useWindowState(DRAFT_CREATING);
   return (
-    <ChatHeader
-      className="omfp-thread-header"
-      data-testid="thread-header"
-      data-draft="true"
-      bar={
-        <>
-          <WorkspaceChipButton chip={chip} />
-          <ModelPicker
-            model={draft.model}
-            models={details.models.map(modelOption)}
-            noModels={details.modelsLoaded && details.models.length === 0}
-            disabled={creating}
-            onSelectionChange={(key) => {
-              if (key !== null) {
-                setDraft((current) => (current === undefined ? current : { ...current, model: String(key) }));
-              }
-            }}
-          />
-        </>
-      }
-    >
+    <ChatHeader className="omfp-thread-header" data-testid="thread-header" data-draft="true">
       <ChatTitle data-testid="thread-title" placeholder>
         {strings.shell.untitled}
       </ChatTitle>
+      <ModelPicker
+        model={draft.model}
+        models={details.models.map(modelOption)}
+        noModels={details.modelsLoaded && details.models.length === 0}
+        disabled={creating}
+        onSelectionChange={(key) => {
+          if (key !== null) {
+            setDraft((current) => (current === undefined ? current : { ...current, model: String(key) }));
+          }
+        }}
+      />
     </ChatHeader>
   );
 }
@@ -170,10 +156,9 @@ function ThreadHeader({ summary }: { summary: ThreadSummary }): ReactNode {
       bar={
         compact ? undefined : (
           <>
-            <Chips view={view} summary={summary} />
+            <Chips summary={summary} />
             <UnavailableModel view={view} />
             <div className="omfp-thread-header__session">
-              {model}
               <ThinkingSelect threadId={summary.id} view={view} onChanged={refreshSession} />
               <Usage threadId={summary.id} view={view} />
             </div>
@@ -198,8 +183,9 @@ function ThreadHeader({ summary }: { summary: ThreadSummary }): ReactNode {
             <BackgroundBadge threadId={summary.id} />
             <ProcessAction threadId={summary.id} view={view} />
             <PendingRestart threadId={summary.id} view={view} />
-            <More threadId={summary.id} summary={summary} view={view} onChanged={refreshSession} compact={false} />
           </div>
+          {model}
+          <More threadId={summary.id} summary={summary} view={view} onChanged={refreshSession} compact={false} />
         </>
       )}
     </ChatHeader>
@@ -276,10 +262,8 @@ export function ThreadRename({ summary }: { summary: ThreadSummary }): ReactNode
 
 /** The header's view of the thread (UI-202) and the function refreshing its session after a model or thinking change. */
 function useHeaderView(summary: ThreadSummary): [HeaderView, () => void] {
-  const workspaces = useWorkspaces();
-  const list = useMemo(() => [...workspaces.values()], [workspaces]);
   const [details, refreshSession] = useThreadDetails(summary.id, summary.process.state);
-  return [headerView(summary, details, list), refreshSession];
+  return [headerView(summary, details), refreshSession];
 }
 
 /** `thread.pickModel` (`:model`, omp's `/model`, UI-980): `open` shows the model list; without a model, logs in. */
@@ -302,7 +286,7 @@ function usePickModel(view: HeaderView, open: () => void): void {
 /**
  * The header's `⋯` (UI-482): a popover with why the process failed, rename, archive and delete, copying and exporting
  * the conversation (UI-793), compacting the context with an optional focus (UI-912); the compact header's (UI-202) adds
- * stop or restart, the thinking level, the chips, context usage and cost, and in a phone's mode line the model
+ * stop or restart, the thinking level, the fork and job lineage, context usage and cost, and in a phone's mode line the model
  * (UI-419). An action closes it.
  */
 function More({
@@ -365,7 +349,7 @@ function More({
               <>
                 {model}
                 <ThinkingSelect threadId={threadId} view={view} onChanged={onChanged} />
-                <Chips view={view} summary={summary} onDone={close} />
+                <Chips summary={summary} onDone={close} />
                 <div className="omfp-thread-header__actions">
                   <Usage threadId={threadId} view={view} />
                 </div>
@@ -621,18 +605,9 @@ function InlineEditor({
   );
 }
 
-function Chips({
-  view,
-  summary,
-  onDone,
-}: {
-  view: HeaderView;
-  summary: ThreadSummary;
-  onDone?: () => void;
-}): ReactNode {
+function Chips({ summary, onDone }: { summary: ThreadSummary; onDone?: () => void }): ReactNode {
   return (
     <div className="omfp-thread-header__chips">
-      <WorkspaceChipButton chip={view.workspace} onDone={onDone} />
       <Lineage summary={summary} onDone={onDone} />
       <MadeByJob summary={summary} onDone={onDone} />
     </div>
@@ -708,48 +683,6 @@ function Lineage({ summary, onDone }: { summary: ThreadSummary; onDone?: (() => 
   );
 }
 
-/**
- * The thread's workspace (UI-340, UI-484): a bordered button with its name and repository count, the repositories as
- * its tooltip and description; a press shows `omfp:workspace`, which lists them — its tab, or a floating panel when
- * the view lacks it — after `onDone` (closing the compact header's popover).
- */
-function WorkspaceChipButton({
-  chip,
-  onDone,
-}: {
-  chip: WorkspaceChip | undefined;
-  onDone?: (() => void) | undefined;
-}): ReactNode {
-  const [, reveal] = useWindowState(REVEAL_WIDGET);
-  const reposId = useId();
-  if (chip === undefined) {
-    return null;
-  }
-  return (
-    <>
-      <Button
-        size="sm"
-        icon={<Icon name="folder" />}
-        className="omfp-thread-header__workspace"
-        data-testid="workspace-chip"
-        data-repos={chip.repoCount}
-        aria-describedby={reposId}
-        onPress={() => {
-          onDone?.();
-          reveal({ reference: "omfp:workspace", nonce: Date.now() });
-        }}
-      >
-        <span className="omfp-thread-header__workspace-label" title={chip.tooltip}>
-          {chip.label}
-        </span>
-      </Button>
-      <span id={reposId} hidden>
-        {chip.tooltip}
-      </span>
-    </>
-  );
-}
-
 interface SessionProps {
   readonly threadId: string;
   readonly view: HeaderView;
@@ -793,8 +726,11 @@ function ModelSelect({
   );
 }
 
+/** The model list's last entry (UI-030): starts a login instead of picking a model; model values hold a `/`. */
+const LOGIN_ITEM = "omfp:login";
+
 /** The same usable-model control before and after daemon thread creation; a saved model omp cannot use shows as the
- * selection, marked unavailable and not pickable (UI-751). */
+ * selection, marked unavailable and not pickable (UI-751). Its last entry logs in to another provider. */
 function ModelPicker({
   model,
   models,
@@ -832,19 +768,29 @@ function ModelPicker({
     <Select
       label={text.model}
       hideLabel
+      iconOnly
       icon={<Icon name={unavailable ? "circle-alert" : "brain"} />}
       placeholder={text.modelPlaceholder}
       data-testid="model-select"
       data-unavailable={unavailable || undefined}
       className="omfp-thread-header__model"
       isDisabled={disabled || models.length === 0}
-      items={models.map((option) => ({
-        id: option.value,
-        label: option.label,
-        ...(option.unavailable === true ? { isDisabled: true } : {}),
-      }))}
+      items={[
+        ...models.map((option) => ({
+          id: option.value,
+          label: option.label,
+          ...(option.unavailable === true ? { isDisabled: true } : {}),
+        })),
+        { id: LOGIN_ITEM, label: text.logInAnother },
+      ]}
       selectedKey={model ?? null}
-      onSelectionChange={onSelectionChange}
+      onSelectionChange={(key) => {
+        if (key === LOGIN_ITEM) {
+          requestLogin(host);
+        } else {
+          onSelectionChange(key);
+        }
+      }}
       {...(isOpen === undefined ? {} : { isOpen })}
       {...(onOpenChange === undefined ? {} : { onOpenChange })}
     />

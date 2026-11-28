@@ -241,7 +241,7 @@ async fn opens_against_head_from_changes(journey: &Journey) -> anyhow::Result<()
             Vec::new(),
         )
         .await?;
-    assert_eq!(clicked, json!(true), "the default view has a Changes tab");
+    assert_eq!(clicked, json!(true), "the view has a Changes tab");
     let entry = "[data-testid=changes-file][data-path=\"notes.txt\"]";
     journey
         .click(&format!("{entry} [data-testid=changes-open]"))
@@ -312,6 +312,9 @@ async fn a_file_opened_from_a_tool_card_is_edited_reloaded_conflicted_and_diffed
         .new_linked_workspace(&partial(repo.path()), &repo.path().to_string_lossy())
         .await?;
     let thread = journey.first_message("look at the notes").await?;
+    journey
+        .side_widgets(&["omfp:workspace", "omfp:changes"])
+        .await?;
 
     opens_from_the_read_card(&journey).await?;
 

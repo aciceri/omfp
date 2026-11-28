@@ -41,6 +41,7 @@ import { chatCell, containsWidget, hasMainSlot } from "../view/layout.ts";
 import { BUILTIN_WIDGETS, INTERACTION_WIDGETS } from "../view/registry.ts";
 import { ViewRenderer } from "../view/render.tsx";
 import { resolveWidget, type WidgetRegistry } from "../view/resolve.ts";
+import { hasSideSlot, sideKey } from "../view/side.ts";
 import { WidgetBoundary } from "../view/slot.tsx";
 import { type ResolvedView, resolveViews, type Views, withInitPanels } from "../view/views.ts";
 import { InteractionsWidget } from "../widgets/chat/index.ts";
@@ -68,12 +69,14 @@ import { PaneCommands } from "./pane-commands.tsx";
 import { LEFT_OPEN, MOBILE_AREA } from "./responsive.ts";
 import {
   Areas,
+  DaemonVersion,
   HideThreadsButton,
   LEFT_COLUMN_ID,
   LeftColumnCommands,
   LeftSplitter,
   LeftStrip,
   ShowThreadsButton,
+  SidePanelButton,
   useFrameBreakpoint,
   useLeftCollapsed,
   useLeftDrawer,
@@ -194,6 +197,9 @@ export function Frame({
   const collapsed = breakpoint === "wide" && leftCollapsed;
   const [area] = useWindowState(MOBILE_AREA);
   const side = view !== undefined && chatCell(view.tree) !== undefined;
+  // The view's side panel toggle (UI-1001); a phone shows the panel as its side area.
+  const sidePanel =
+    breakpoint !== "mobile" && view !== undefined && hasSideSlot(view.tree) ? sideKey(workspaceId, view.id) : undefined;
   const host = useHost();
   const modeViews = useMemo(
     (): ModeLineViews => ({
@@ -242,12 +248,15 @@ export function Frame({
             >
               <div className="omfp-frame__threads">
                 <WidgetBoundary reference="omfp:threads">
-                  <ThreadsWidget
-                    brandActions={breakpoint === "wide" ? <HideThreadsButton /> : undefined}
-                    reveal={revealColumn}
-                  />
+                  <ThreadsWidget reveal={revealColumn} />
                 </WidgetBoundary>
               </div>
+              {breakpoint === "wide" && (
+                <div className="omfp-frame__left-foot">
+                  <HideThreadsButton />
+                  <DaemonVersion />
+                </div>
+              )}
             </aside>
             {breakpoint === "wide" && !collapsed && <LeftSplitter aside={asideRef} />}
             <div className="omfp-frame__main">
@@ -284,6 +293,7 @@ export function Frame({
                 views={modeViews}
                 whichKey={whichKey}
                 threadsCollapsed={collapsed}
+                trail={sidePanel === undefined ? undefined : <SidePanelButton panel={sidePanel} />}
                 phone={breakpoint === "mobile"}
               />
             </div>
@@ -330,6 +340,7 @@ function FrameModeLine({
   views,
   whichKey,
   threadsCollapsed,
+  trail,
   phone,
 }: {
   appRef: RefObject<HTMLDivElement | null>;
@@ -337,6 +348,7 @@ function FrameModeLine({
   views: ModeLineViews;
   whichKey: WhichKeyState;
   threadsCollapsed: boolean;
+  trail: ReactNode;
   phone: boolean;
 }): ReactNode {
   const mode = useMode();
@@ -352,6 +364,7 @@ function FrameModeLine({
       bindings={bindings}
       views={views}
       lead={threadsCollapsed ? <ShowThreadsButton /> : undefined}
+      trail={trail}
       phone={phone}
     >
       <CommandLine bindings={bindings} />

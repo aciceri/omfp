@@ -264,10 +264,16 @@ fn cancel(id: String) -> ExtensionUiResponse {
 }
 
 impl Services {
-    /// `auth.status` (PRT-140, DMN-235): how many models omp can use, checked by a login omp the first time.
-    pub async fn auth_status(&self) -> Result<AuthStatus, ErrorBody> {
-        let models = self.supervisor.usable_models().await?;
-        Ok(AuthStatus { models })
+    /// `auth.status` (PRT-140, DMN-235, DMN-914): how many models omp can use, checked by a login omp the first time
+    /// and on `recheck`, and the `.env` file where API keys go.
+    pub async fn auth_status(&self, recheck: bool) -> Result<AuthStatus, ErrorBody> {
+        let models = if recheck {
+            self.supervisor.recheck_usable_models_now().await?
+        } else {
+            self.supervisor.usable_models().await?
+        };
+        let keys_file = self.supervisor.keys_file().to_string_lossy().into_owned();
+        Ok(AuthStatus { models, keys_file })
     }
 
     /// Lists usable models without creating or starting a thread (UI-023, UI-030).

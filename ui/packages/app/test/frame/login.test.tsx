@@ -372,7 +372,7 @@ describe("logging in", () => {
   });
 
   // spec: UI-384
-  test("a login_input request asks for the code: Enter answers it, Escape or Cancel answers null", async () => {
+  test("a login_input request asks for the code: Enter answers it, Escape or Cancel answers null and cancels the login", async () => {
     const test = setup();
     run(test, "login anthropic");
     const asked = { kind: "login_input", ...ANTHROPIC, message: "Paste the authorization code" } as const;
@@ -384,6 +384,7 @@ describe("logging in", () => {
     await test.user.type(field, "abc#xyz{Enter}");
     expect(answers(test)).toEqual([{ requestId: "i1", answer: { kind: "login_input", value: "abc#xyz" } }]);
     expect(screen.queryAllByTestId("login-input-dialog").length).toBe(0);
+    expect(test.client.callsTo("auth.login_cancel").length).toBe(0);
 
     request(test, "i2", asked);
     await screen.findByTestId("login-input-dialog");
@@ -394,10 +395,46 @@ describe("logging in", () => {
       { requestId: "i2", answer: { kind: "login_input", value: null } },
       { requestId: "i3", answer: { kind: "login_input", value: null } },
     ]);
-    // Cancelling the input cancels the login: its rejection is no error.
+    // Cancelling the input cancels the login (`auth.login_cancel`): its rejection is no error.
+    expect(test.client.callsTo("auth.login_cancel").map((call) => call.params)).toEqual([{}, {}]);
     const [login] = test.client.callsTo("auth.login");
     await settle(() => login?.reject(new Error("Login cancelled")));
     expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual([]);
+  });
+
+  // spec: UI-384
+  test("the paste dialog first offers the login page: Open stands out until pressed, then Continue does", async () => {
+    const test = setup();
+    const opened: string[] = [];
+    const desktop = window as Window & { omfpOpenExternal?: (url: string) => void };
+    desktop.omfpOpenExternal = (url) => opened.push(url);
+    try {
+      run(test, "login anthropic");
+      const url = "https://claude.ai/oauth/authorize?code=true&state=s";
+      request(test, "u1", { kind: "login_url", ...ANTHROPIC, url, launchUrl: null, instructions: null });
+      // The desktop window's own opener, not `window.open`.
+      expect(opened).toEqual([url]);
+      request(test, "i1", { kind: "login_input", ...ANTHROPIC, message: "Paste the code", placeholder: null });
+      const dialog = await screen.findByTestId("login-input-dialog");
+      const page = within(dialog).getByTestId("login-page");
+      expect(page.textContent).toContain(
+        "Sign in to Anthropic (Claude Pro/Max) at claude.ai, then paste the code below.",
+      );
+      // The page comes before the field.
+      const field = within(dialog).getByTestId("login-input");
+      expect(page.compareDocumentPosition(field) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      const variants = () => [
+        within(dialog).getByTestId("login-page-open").dataset.variant,
+        within(dialog).getByTestId("login-input-submit").dataset.variant,
+      ];
+      expect(within(dialog).getByTestId("login-page-open").textContent).toBe("Open the login page");
+      expect(variants()).toEqual(["primary", "secondary"]);
+      await test.user.click(within(dialog).getByTestId("login-page-open"));
+      expect(opened).toEqual([url, url]);
+      expect(variants()).toEqual(["secondary", "primary"]);
+    } finally {
+      delete desktop.omfpOpenExternal;
+    }
   });
 
   // spec: UI-385
@@ -444,7 +481,7 @@ describe("logging in", () => {
   test(":import-logins copies omp's logins with auth.import and says what it copied, that there was none, or why it failed", async () => {
     const test = setup();
     const command = test.host.commands.list().find((listed) => listed.id === "auth.import");
-    expect([command?.title, command?.aliases]).toEqual(["Copy omp's logins (:import-logins)", ["import-logins"]]);
+    expect([command?.title, command?.aliases]).toEqual(["Copy oh-my-pi's logins (:import-logins)", ["import-logins"]]);
     expect(command?.description).toContain("never its configuration or MCP credentials");
 
     run(test, "import-logins");
@@ -460,7 +497,7 @@ describe("logging in", () => {
     );
     expect(test.host.window.get(SUCCESSES).map((shown) => [shown.text, shown.tone])).toEqual([
       [
-        "Copied omp's logins: anthropic, openai. A browser login then lives in both apps: if one of them gets signed out, log in there again.",
+        "Copied oh-my-pi's logins: anthropic, openai. A browser login then lives in both apps: if one of them gets signed out, log in there again.",
         undefined,
       ],
     ]);
@@ -469,7 +506,10 @@ describe("logging in", () => {
     run(test, "import-logins");
     const [, second] = test.client.callsTo("auth.import");
     await settle(() => second?.resolve({ providers: [] }));
-    expect(test.host.window.get(SUCCESSES).at(-1)).toMatchObject({ text: "omp has no logins to copy", tone: "info" });
+    expect(test.host.window.get(SUCCESSES).at(-1)).toMatchObject({
+      text: "oh-my-pi has no logins to copy",
+      tone: "info",
+    });
     expect(test.host.window.get(ERRORS).map(({ text }) => text)).toEqual([]);
 
     run(test, "import-logins");

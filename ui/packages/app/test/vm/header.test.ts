@@ -17,7 +17,7 @@ import {
   threadCost,
   untrackedCost,
 } from "../../src/vm/header.ts";
-import { repo, thread, workspace } from "../support/fixtures.ts";
+import { thread } from "../support/fixtures.ts";
 import { fixture, fixtureEvents, isFrame, priced } from "../widgets/chat/fixtures.ts";
 
 const opus = {
@@ -61,10 +61,9 @@ function withCosts(...costs: number[]): ThreadState {
 }
 
 describe("header", () => {
-  // spec: UI-030, UI-011, UI-340
-  test("the header shows model, thinking, context and the workspace chip", () => {
-    const workspaces = [workspace("w1", [repo("w1", "fe", "main")])];
-    const view = headerView(thread("t", "checkout", "w1"), details(), workspaces);
+  // spec: UI-030, UI-011
+  test("the header shows model, thinking and context", () => {
+    const view = headerView(thread("t", "checkout", "w1"), details());
     expect(view.model).toBe("anthropic/opus");
     expect(view.models).toEqual([
       { value: "anthropic/opus", label: "Opus (anthropic)" },
@@ -73,20 +72,15 @@ describe("header", () => {
     expect(view.thinking).toBe("high");
     expect(view.thinkingLevels).toEqual(["high", "off", "low"]);
     expect(view.context).toBe("42% of 200k");
-    expect(view.workspace).toEqual({
-      workspaceId: "w1",
-      label: "w1 · 1 repo",
-      tooltip: "fe:main (worktree)",
-      repoCount: 1,
-    });
+    expect(Object.keys(view)).not.toContain("workspace");
     expect(view.action).toBe("stop");
   });
 
   // spec: UI-030
   test("an unnamed thread shows the placeholder title; process state decides stop or restart", () => {
-    const unnamed = headerView(thread("t", "", "w"), NO_DETAILS, []);
+    const unnamed = headerView(thread("t", "", "w"), NO_DETAILS);
     expect([unnamed.title, unnamed.placeholder]).toEqual(["New thread", true]);
-    const failed = headerView(thread("t", "x", "w", { process: { state: "failed", message: "boom" } }), NO_DETAILS, []);
+    const failed = headerView(thread("t", "x", "w", { process: { state: "failed", message: "boom" } }), NO_DETAILS);
     expect([failed.status, failed.failure, failed.action, failed.placeholder]).toEqual([
       "failed",
       "boom",
@@ -97,13 +91,13 @@ describe("header", () => {
 
   // spec: UI-026
   test("an archived thread's header offers unarchive", () => {
-    expect(headerView(thread("t", "x", "w", { archivedAt: 4 }), NO_DETAILS, []).archived).toBe(true);
-    expect(headerView(thread("t", "x", "w"), NO_DETAILS, []).archived).toBe(false);
+    expect(headerView(thread("t", "x", "w", { archivedAt: 4 }), NO_DETAILS).archived).toBe(true);
+    expect(headerView(thread("t", "x", "w"), NO_DETAILS).archived).toBe(false);
   });
 
   // spec: UI-349
   test("a thread whose daemon holds a restart offers it, named by its reasons", () => {
-    const restart = (summary: ReturnType<typeof thread>) => headerView(summary, NO_DETAILS, []).restart?.label;
+    const restart = (summary: ReturnType<typeof thread>) => headerView(summary, NO_DETAILS).restart?.label;
     expect(restart(thread("t", "x", "w", { restartPending: ["mcp_config"] }))).toBe("Reload to load MCP tools");
     expect(restart(thread("t", "x", "w", { restartPending: ["login"] }))).toBe("Restart to load new models");
     expect(restart(thread("t", "x", "w"))).toBeUndefined();
@@ -117,7 +111,6 @@ describe("header", () => {
           process: { state: "failed", message, ...(stderr_tail === undefined ? {} : { stderr_tail }) },
         }),
         NO_DETAILS,
-        [],
       ).login;
     const noDefault =
       "No default model selected. Use /login, set an API key environment variable, or select a local model with /model or --model.";
@@ -127,13 +120,13 @@ describe("header", () => {
       failed("omp failed to start: server closed", "error: unknown option --foo"),
       failed("boom"),
     ]).toEqual([true, true, false, false]);
-    expect(headerView(thread("t", "x", "w"), NO_DETAILS, []).login).toBe(false);
+    expect(headerView(thread("t", "x", "w"), NO_DETAILS).login).toBe(false);
 
     const noModels = { ...NO_DETAILS, modelsLoaded: true };
-    expect(headerView(thread("t", "x", "w"), noModels, []).noModels).toBe(true);
+    expect(headerView(thread("t", "x", "w"), noModels).noModels).toBe(true);
     // Not before `thread.models` answered, nor while omp lists models.
-    expect(headerView(thread("t", "x", "w"), NO_DETAILS, []).noModels).toBe(false);
-    expect(headerView(thread("t", "x", "w"), details(), []).noModels).toBe(false);
+    expect(headerView(thread("t", "x", "w"), NO_DETAILS).noModels).toBe(false);
+    expect(headerView(thread("t", "x", "w"), details()).noModels).toBe(false);
   });
 
   // spec: UI-751
@@ -142,7 +135,7 @@ describe("header", () => {
       process: { state: "failed", message: "omp failed to start: server closed" },
     });
     const saved = { ...details(), session: undefined, saved: "anthropic/claude-opus-5-5" };
-    const view = headerView(failed, saved, []);
+    const view = headerView(failed, saved);
     expect([view.unavailable, view.model, view.login, view.noModels]).toEqual([
       "anthropic/claude-opus-5-5",
       "anthropic/claude-opus-5-5",
@@ -154,13 +147,13 @@ describe("header", () => {
       { value: "anthropic/haiku", label: "Haiku (anthropic)" },
     ]);
     // No usable model at all: `No models` and Log in.
-    expect(headerView(failed, { ...saved, models: [] }, []).noModels).toBe(true);
+    expect(headerView(failed, { ...saved, models: [] }).noModels).toBe(true);
 
     // A usable saved model, a running thread, or models not read yet: nothing is unavailable.
     const usable = { ...saved, saved: "anthropic/haiku" };
-    expect(headerView(failed, usable, []).unavailable).toBeUndefined();
-    expect(headerView(thread("t", "x", "w"), saved, []).unavailable).toBeUndefined();
-    expect(headerView(failed, { ...saved, modelsLoaded: false }, []).unavailable).toBeUndefined();
+    expect(headerView(failed, usable).unavailable).toBeUndefined();
+    expect(headerView(thread("t", "x", "w"), saved).unavailable).toBeUndefined();
+    expect(headerView(failed, { ...saved, modelsLoaded: false }).unavailable).toBeUndefined();
 
     // The model set on the thread wins over the one its session file saved.
     expect(savedModel({ model: "fake/scripted", sessionModel: "anthropic/claude-opus-5-5" })).toBe("fake/scripted");

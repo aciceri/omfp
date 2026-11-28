@@ -8,8 +8,6 @@
 import {
   AreaBar,
   type AreaItem,
-  Icon,
-  IconButton,
   ModeButton,
   type StripItem,
   ThreadStrip,
@@ -19,10 +17,19 @@ import {
 import { type ReactNode, type RefObject, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { flushSync } from "react-dom";
 import { THREADS_ATTRIBUTE } from "../keymap/handler.ts";
-import { DRAFT_THREAD, SELECTED_THREAD, useCommand, useHost, useThreads, useWindowState } from "../sdk/index.ts";
+import {
+  DRAFT_THREAD,
+  SELECTED_THREAD,
+  useCommand,
+  useHost,
+  useSnapshot,
+  useThreads,
+  useWindowState,
+} from "../sdk/index.ts";
 import { SHOWN_VIEW, type ShownView } from "../sdk/keys.ts";
 import { strings } from "../strings/index.ts";
 import type { Area } from "../view/layout.ts";
+import { SIDE_COLLAPSED, withSide } from "../view/side.ts";
 import { LEFT_WIDTH, resizeLeft } from "../view/sizes.ts";
 import { Resizer } from "../view/splitter.tsx";
 import { threadMark } from "../vm/threads.ts";
@@ -61,7 +68,7 @@ function focusColumn(column: HTMLElement | null): void {
     '[data-testid="thread-row"][aria-current="true"]',
     '[data-testid="thread-row"]',
     '[data-testid="workspace-collapse"]',
-    '[data-testid="new-workspace-input"]',
+    '[data-testid="add-workspace"]',
   ]) {
     const target = column?.querySelector<HTMLElement>(selector);
     if (target?.checkVisibility()) {
@@ -219,17 +226,30 @@ function useSetCollapsed(): (collapse: boolean) => void {
   };
 }
 
-/** Hide threads, on the wide column's brand row (UI-985). */
+/** Hide threads, at the start of the wide column's foot, where Show threads takes its place on the mode line once
+ * the column is collapsed (UI-985, UI-986). */
 export function HideThreadsButton(): ReactNode {
   const setCollapsed = useSetCollapsed();
   return (
-    <IconButton
+    <ModeButton
       label={text.hideThreads}
-      icon={<Icon name="panel-left-close" />}
+      icon="panel-left-close"
       aria-controls={LEFT_COLUMN_ID}
       data-testid={COLLAPSE_BUTTON}
       onPress={() => setCollapsed(true)}
     />
+  );
+}
+
+/** The running daemon's version at the end of the wide column's foot, omp's beside it in the tooltip (UI-985). */
+export function DaemonVersion(): ReactNode {
+  const hello = useSnapshot((snapshot) =>
+    snapshot.connection.kind === "connected" ? snapshot.connection.hello : undefined,
+  );
+  return hello === undefined ? null : (
+    <span className="omfp-frame__version" title={text.versions(hello.daemon, hello.omp)} data-testid="daemon-version">
+      {text.version(hello.daemon)}
+    </span>
   );
 }
 
@@ -247,6 +267,22 @@ export function ShowThreadsButton(): ReactNode {
       aria-controls={LEFT_COLUMN_ID}
       data-testid={EXPAND_BUTTON}
       onPress={() => setCollapsed(false)}
+    />
+  );
+}
+
+/** Hide panel / Show panel, at the mode line's end while the view has a side panel `panel` ({@link sideKey}), outside
+ * a phone (UI-1001). */
+export function SidePanelButton({ panel }: { panel: string }): ReactNode {
+  const [collapsed, setCollapsed] = useWindowState(SIDE_COLLAPSED);
+  const hidden = collapsed.includes(panel);
+  return (
+    <ModeButton
+      label={hidden ? text.showPanel : text.hidePanel}
+      icon={hidden ? "panel-right-open" : "panel-right-close"}
+      data-testid="side-toggle"
+      data-collapsed={hidden || undefined}
+      onPress={() => setCollapsed((list) => withSide(list, panel, !hidden))}
     />
   );
 }

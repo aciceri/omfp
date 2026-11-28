@@ -25,9 +25,9 @@ pub use activity::{
     ThreadsStopped,
 };
 pub use auth::{
-    AuthProvider, AuthProviders, AuthStatus, AvailableModel, AvailableModels, LoggedIn, LoggedOut,
-    LoginActivity, LoginCancelled, OAuthCallbackParams, OAuthCallbackRelayed, OmpLogin, OmpLogins,
-    ProviderRef,
+    AuthProvider, AuthProviders, AuthStatus, AuthStatusParams, AvailableModel, AvailableModels,
+    LoggedIn, LoggedOut, LoginActivity, LoginCancelled, OAuthCallbackParams, OAuthCallbackRelayed,
+    OmpLogin, OmpLogins, ProviderRef,
 };
 pub use dto::{
     AllThreads, BuiltinTheme, CreatedBy, DaemonSettings, Density, DiffPage, FileCandidate,

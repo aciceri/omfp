@@ -163,8 +163,8 @@ describe("composer", () => {
         .getAllByTestId("slash-suggestion")
         .map((item) => [item.textContent, item.getAttribute("aria-disabled")]),
     ).toEqual([
-      ["/settings Needs omp's terminal UI", "true"],
-      ["/setup Needs omp's terminal UI; :login logs in to a provider", "true"],
+      ["/settings Needs oh-my-pi's terminal UI", "true"],
+      ["/setup Needs oh-my-pi's terminal UI; :login logs in to a provider", "true"],
     ]);
     // Tab picks no disabled command.
     await userEvent.keyboard("{Tab}");
@@ -223,7 +223,7 @@ describe("composer", () => {
     await userEvent.keyboard("/settings{Enter}");
     expect(client.callsTo("thread.prompt")).toEqual([]);
     expect(host.window.get(ERRORS).map(({ text }) => text)).toEqual([
-      "/settings was not sent: Needs omp's terminal UI",
+      "/settings was not sent: Needs oh-my-pi's terminal UI",
     ]);
     expect(input().value).toBe("/settings");
   });

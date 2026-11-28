@@ -1,24 +1,17 @@
 /**
- * The thread header (UI-030): title (placeholder until named, DMN-073), the workspace chip (UI-340), model and
- * thinking options, context usage, the cost with its subagents' (UI-690), and process state with its action; archive
+ * The thread header (UI-030): title (placeholder until named, DMN-073), model and thinking options, context usage, the
+ * cost with its subagents' (UI-690), and process state with its action; archive
  * state (UI-026); the saved model a failed start could not use (UI-751).
  */
 
 import type { ThreadState } from "@omfp/core";
 import { compactNumber } from "@omfp/kit";
-import type { ThreadSession, ThreadSummary, Workspace } from "@omfp/protocol";
+import type { ThreadSession, ThreadSummary } from "@omfp/protocol";
 import { isObject } from "../sdk/json.ts";
 import { strings } from "../strings/index.ts";
 import { needsLogin } from "./login.ts";
 import { type PendingRestart, pendingRestart } from "./mcp.ts";
-import {
-  displayTitle,
-  isArchived,
-  type ThreadStatus,
-  threadStatus,
-  type WorkspaceChip,
-  workspaceChip,
-} from "./threads.ts";
+import { displayTitle, isArchived, type ThreadStatus, threadStatus } from "./threads.ts";
 
 /** A model as `thread.models` and `thread.state` describe it (the fields the header uses). */
 export interface ModelInfo {
@@ -71,8 +64,6 @@ export interface HeaderView {
   readonly title: string;
   /** The title is the "New thread" placeholder (DMN-073). */
   readonly placeholder: boolean;
-  /** The thread's workspace; `undefined` while it is unknown. */
-  readonly workspace: WorkspaceChip | undefined;
   /** `provider/id` of the current model. */
   readonly model: string | undefined;
   /** The available models; the current one is included even when the list has not arrived. */
@@ -103,11 +94,7 @@ export interface HeaderView {
 
 /** The header of a thread; the cost comes from {@link threadCost} and {@link costLabel}, so the header does not depend
  * on the reducer state, which changes with every streamed delta. */
-export function headerView(
-  summary: ThreadSummary,
-  details: ThreadDetails,
-  workspaces: readonly Workspace[],
-): HeaderView {
+export function headerView(summary: ThreadSummary, details: ThreadDetails): HeaderView {
   const current = details.session?.model;
   const process = summary.process;
   const unavailable =
@@ -137,7 +124,6 @@ export function headerView(
   return {
     title: displayTitle(summary),
     placeholder: summary.titleSource === "placeholder" || summary.title.trim() === "",
-    workspace: workspaceChip(summary.workspaceId, workspaces),
     model,
     models,
     thinking,

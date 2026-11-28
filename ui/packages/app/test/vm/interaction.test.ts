@@ -139,7 +139,7 @@ describe("interactions", () => {
     );
     expect(rows.map((row) => [row.id, row.text])).toEqual([
       ["a", "Answered elsewhere by omfp/web"],
-      ["b", "Closed by omp (timed out or cancelled)"],
+      ["b", "Closed by oh-my-pi (timed out or cancelled)"],
     ]);
     expect(rows[0]?.title).toBe("Proceed?");
     expect(

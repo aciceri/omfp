@@ -79,7 +79,7 @@ const focused = () => document.activeElement?.getAttribute("data-testid");
 
 describe("collapsing the left column", () => {
   // spec: UI-985
-  test("the column's Hide threads button collapses it to nothing: no strip, no splitter, the view fills the frame", async () => {
+  test("the column foot's Hide threads collapses it to nothing: no strip, no splitter, the view fills the frame", async () => {
     const { user } = setup();
     expect([collapsed(), screen.queryAllByTestId("left-splitter").length, expandButtons().length]).toEqual([
       false,
@@ -87,7 +87,15 @@ describe("collapsing the left column", () => {
       0,
     ]);
     const hide = screen.getByRole("button", { name: "Hide threads" });
-    expect(hide.closest(".omfp-brand")).not.toBeNull();
+    // Hide threads starts the column's foot, which ends with the daemon's version (omp's in the tooltip).
+    const foot = hide.closest(".omfp-frame__left-foot");
+    expect(foot?.firstElementChild?.getAttribute("data-testid")).toBe("left-collapse");
+    const version = screen.getByTestId("daemon-version");
+    expect([version.textContent, version.title, foot?.lastElementChild === version]).toEqual([
+      "v0.1.0",
+      "omfp 0.1.0 · oh-my-pi 18.18.6",
+      true,
+    ]);
     await user.click(hide);
     expect(collapsed()).toBe(true);
     expect(column().dataset.collapsed).toBe("true");

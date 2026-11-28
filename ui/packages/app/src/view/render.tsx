@@ -51,6 +51,7 @@ import {
   MAIN_SLOT,
 } from "./layout.ts";
 import type { WidgetRegistry } from "./resolve.ts";
+import { isSideSlot, SIDE_COLLAPSED, sideKey, withSide } from "./side.ts";
 import { effectiveSizes, PANE_SIZES, sizesKey, withSizes } from "./sizes.ts";
 import { WidgetSlot } from "./slot.tsx";
 import { Resizer } from "./splitter.tsx";
@@ -195,6 +196,31 @@ function useRevealTab(tabs: readonly { child: LayoutTree; id: string }[], select
       latest.current(target);
     }
   }, [request, target]);
+}
+
+/**
+ * Shows the view's collapsed side panel when the window's latest reveal request names a widget it holds (UI-1001), so
+ * the header's background badge or `:jobs` show what they reveal.
+ */
+function useRevealSide(
+  tree: Exclude<LayoutTree, { kind: "widget" }>,
+  tabs: readonly { child: LayoutTree }[],
+  scope: Scope,
+): void {
+  const [request] = useWindowState(REVEAL_WIDGET);
+  const [, setSideCollapsed] = useWindowState(SIDE_COLLAPSED);
+  const reveals =
+    scope.area === undefined &&
+    isSideSlot(tree) &&
+    request !== undefined &&
+    tabs.some(({ child }) => containsWidget(child, [request.reference]));
+  const panel = sideKey(scope.workspaceId, scope.viewId);
+  useEffect(() => {
+    // Each new request (a new `nonce`) shows the panel again, even after the user hid it since.
+    if (request !== undefined && reveals) {
+      setSideCollapsed((list) => withSide(list, panel, false));
+    }
+  }, [request, reveals, panel, setSideCollapsed]);
 }
 
 /** Marks the edges of a tab list scrolled sideways with more tabs past them (`data-more-start`, `data-more-end`). */
@@ -379,6 +405,7 @@ function TabsNode({
   const own = tree.children.map((child, index) => ({ child, path: `${path}.${index}`, id: `layout:${keys[index]}` }));
   const opened = main ? openedTabs(files) : [];
   useRevealTab(own, select);
+  useRevealSide(tree, own, scope);
   const ids = [...own.map(({ id }) => id), ...opened.map(({ id }) => id)];
   const selected = chosen !== undefined && ids.includes(chosen) ? chosen : ids[0];
   const bar = useTabBar(selected);
@@ -520,6 +547,7 @@ function Cells({
   const { area } = scope;
   const key = sizesKey(scope.workspaceId, scope.viewId, path);
   const [own, setOwn] = useWindowState(PANE_SIZES);
+  const [sideCollapsed] = useWindowState(SIDE_COLLAPSED);
   const count = tree.children.length;
   const keys = childKeys(tree.children);
   const sizes = effectiveSizes(tree.props.sizes, own[key], count);
@@ -529,6 +557,12 @@ function Cells({
   const current = sizes ?? tree.children.map(() => 1);
   const phone = area !== undefined;
   const resizable = !phone && (tree.kind === "row" || tree.kind === "col");
+  // The view's side panel, collapsed by this window (UI-1001): kept mounted, hidden with its splitter.
+  const collapsedSide = !phone && sideCollapsed.includes(sideKey(scope.workspaceId, scope.viewId));
+  const gone = (index: number) => {
+    const child = tree.children[index];
+    return collapsedSide && child !== undefined && isSideSlot(child);
+  };
   const fixed = (index: number) => {
     const child = tree.children[index];
     return tree.kind === "col" && child?.kind === "widget" && FIXED_WIDGETS.includes(child.name);
@@ -600,7 +634,7 @@ function Cells({
         const after = shown?.[index] ?? 1;
         return (
           <Fragment key={keys[index]}>
-            {resizable && index > 0 && !fixed(index - 1) && !fixed(index) && (
+            {resizable && index > 0 && !fixed(index - 1) && !fixed(index) && !gone(index - 1) && !gone(index) && (
               <Resizer
                 orientation={tree.kind === "row" ? "vertical" : "horizontal"}
                 label={layoutText.splitter(tree.kind, path, index)}
@@ -622,7 +656,7 @@ function Cells({
             )}
             <div
               className="omfp-view__cell"
-              hidden={tabbed && index !== selected}
+              hidden={(tabbed && index !== selected) || gone(index)}
               style={shown === undefined || tabbed ? undefined : { flexGrow: shown[index] }}
             >
               <Node tree={child} path={id} scope={scope} />

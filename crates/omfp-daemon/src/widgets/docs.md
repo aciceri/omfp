@@ -7,9 +7,10 @@ lists, reloads a widget as soon as one of its files changes, and shows any error
 
 - `<workspace>/.omfp/views.json` — the views of the window (schema: `omfp://schemas/views.json`). Without it the window
   shows the default view:
-  `["row", { "sizes": [3, 1] }, ["col", {}, "omfp:header", ["tabs", { "id": "main" }, "omfp:chat"]], ["tabs", { "id": "side" }, "omfp:workspace", "omfp:changes", "omfp:background", "omfp:mcp"]]`.
-  A workspace that has its own `views.json` keeps it as it is (omfp never rewrites it): a widget the default view
-  gained later, such as `omfp:mcp`, comes in with `:widget add omfp:mcp` there, or an agent's
+  `["row", { "sizes": [3, 1] }, ["col", {}, "omfp:header", ["tabs", { "id": "main" }, "omfp:chat"]], ["tabs", { "id": "side" }, "omfp:canvas"]]`.
+  `omfp:canvas` is an empty panel saying what the agent can put there: replace it, or add tabs beside it, with
+  `omfp_ui_mount` or `:widget add <reference>`. A workspace that has its own `views.json` keeps it as it is (omfp never
+  rewrites it): a widget is added there with `:widget add <reference>`, or an agent's
   `omfp_ui_mount`. `:view-reset` replaces the whole file with the default view (after a confirmation), losing every
   view and mount the workspace added.
 - `<workspace>/.omfp/widgets/<name>/index.tsx` (or `index.ts`, `index.jsx`, `index.js`) — a workspace widget,
@@ -42,7 +43,8 @@ Built-in widgets: `omfp:header`, `omfp:chat` (transcript, interactions, queue an
 carries `interruptedAt`, its last turn was cut by a daemon restart or a crash of its omp and the transcript ends with a
 notice whose Resume is `thread.resume { threadId }`, which starts its omp and tells the agent what interrupted it, to
 check what was in progress and continue; any message to the thread clears the mark too), `omfp:transcript`,
-`omfp:interactions`, `omfp:composer`, `omfp:workspace`, `omfp:changes` (`{ repo? }`: changed files and diffs of the
+`omfp:interactions`, `omfp:composer`, `omfp:canvas` (the default view's empty side panel), `omfp:workspace`,
+`omfp:changes` (`{ repo? }`: changed files and diffs of the
 workspace's repositories, or of the repository named `repo` only), `omfp:background` (the selected thread's background
 jobs and subagents: state, duration, last output line; stop a job, cancel a subagent; a subagent's row opens its kind,
 use, transcript and, while it runs, a steer field under it), `omfp:todos`

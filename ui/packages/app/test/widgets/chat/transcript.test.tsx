@@ -774,7 +774,7 @@ describe("transcript", () => {
       calls()[1]?.resolve({ status: 200 });
       await Promise.resolve();
     });
-    expect(test.host.window.get(SUCCESSES).map((success) => success.text)).toEqual(["omp got the sign-in"]);
+    expect(test.host.window.get(SUCCESSES).map((success) => success.text)).toEqual(["oh-my-pi got the sign-in"]);
     expect(within(card).queryAllByTestId("oauth-callback").length).toBe(0);
   });
 

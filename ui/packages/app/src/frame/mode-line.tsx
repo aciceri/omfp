@@ -1,7 +1,8 @@
 /**
  * The mode line (UI-098): the keymap mode (UI-095) the focused element puts the window in — `THREADS`, `VIEW`,
  * `INSERT`, `COMMAND` — shown at the bottom left of the view area like vim's, and announced through the live region
- * when a key changed it (never the mouse); the window's views as small tabs when it has several (UI-301).
+ * when a key changed it (never the mouse); the window's views as small tabs (UI-301), on a phone only the current one,
+ * a button opening the view picker (UI-1003).
  */
 
 import {
@@ -10,6 +11,7 @@ import {
   ModeMessages,
   ModeNotice,
   ModeSegment,
+  ModeViewPick,
   ModeViews,
   StateMark,
   type VimMode,
@@ -36,6 +38,21 @@ import { strings } from "../strings/index.ts";
 import { displayTitle, statusLabel, threadMark, threadStatus } from "../vm/threads.ts";
 import { ThreadMoreButton, ThreadRename } from "../widgets/header/header.tsx";
 import { MESSAGES_COMMAND } from "./messages.tsx";
+
+/** A phone's view in the mode line (UI-1003): the current view's title, opening the view picker (`view.pick`), so a
+ * window with many views never cuts their tabs off. */
+function PhoneView({ views }: { views: ModeLineViews }): ReactNode {
+  const { commands } = useHost();
+  const title = views.views.find((view) => view.id === views.current)?.title ?? views.current ?? "";
+  return (
+    <ModeViewPick
+      title={title}
+      label={strings.shell.frame.pickViewLabel(title)}
+      data-testid="mode-view-pick"
+      onPress={() => commands.run("view.pick", [])}
+    />
+  );
+}
 
 const text = strings.shell.mode;
 
@@ -94,8 +111,9 @@ export interface ModeLineViews {
 /**
  * The window's mode line, the kit's (UI-167, UI-441): `lead` (Show threads while the wide left column is collapsed,
  * UI-986), the mode pill — the keymap's mode, or vim's while a file editor has the focus (`vim`, UI-112) — then the
- * selected thread's title and state, the window's views when it has several (UI-301), and the newest notice at the
- * right end (UI-192) with the messages button (UI-523); in command mode `children` (the `:` line or the file picker)
+ * selected thread's title and state, the window's views (UI-301), the newest notice at the right end (UI-192) with the
+ * messages button (UI-523), and `trail` after it (Hide/Show panel of the view's side panel, UI-1001); in
+ * command mode `children` (the `:` line or the file picker)
  * replace the segments, the views and the notice. On a phone (`phone`) it stands at the top in place of the chat
  * header (UI-419): the state is its mark, and the thread's `⋯` ends the line.
  */
@@ -105,6 +123,7 @@ export function WindowModeLine({
   bindings,
   views,
   lead,
+  trail,
   phone = false,
   children,
 }: {
@@ -114,6 +133,7 @@ export function WindowModeLine({
   bindings: readonly Binding[];
   views?: ModeLineViews | undefined;
   lead?: ReactNode;
+  trail?: ReactNode;
   phone?: boolean;
   children?: ReactNode;
 }): ReactNode {
@@ -131,7 +151,12 @@ export function WindowModeLine({
       views={
         mode !== "cmdline" &&
         views !== undefined &&
-        views.views.length > 1 && <ModeViews label={strings.shell.frame.viewTabs} data-testid="mode-views" {...views} />
+        views.views.length > 0 &&
+        (phone ? (
+          <PhoneView views={views} />
+        ) : (
+          <ModeViews label={strings.shell.frame.viewTabs} data-testid="mode-views" {...views} />
+        ))
       }
       notice={
         <>
@@ -139,6 +164,7 @@ export function WindowModeLine({
             <>
               <NoticeSlot bindings={bindings} open={open} />
               <MessagesButton />
+              {trail}
             </>
           )}
           {phone && <ThreadMore shown={mode !== "cmdline"} />}

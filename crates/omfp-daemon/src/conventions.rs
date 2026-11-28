@@ -217,7 +217,10 @@ pub fn control_note(thread_id: &str) -> String {
          - When you mention another thread (one you created, waited on or listed), link it as \
          [<title>]({link}/<id>): a click in the user's window selects it.\n\
          - MCP servers added (`/mcp add`, an MCP config file) or reauthorized (`/mcp reauth`) give you their tools \
-         from your next turn: omfp reloads your omp once you are idle, so never ask the user to restart.",
+         from your next turn: omfp reloads your omp once you are idle, so never ask the user to restart.\n\
+         - New threads start with omp's `modelRoles.default` of omfp's profile (omp's terminal `/model` → Roles does \
+         not exist here): `omp config set modelRoles '{{\"default\":\"<provider>/<id>\"}}'` sets the whole record \
+         (keep the other roles of `omp config get modelRoles --json`; `modelRoles.default` alone is refused).",
         call = crate::agent_tools::CALL,
         wait = crate::agent_tools::THREAD_WAIT,
         methods = crate::agent_tools::catalog::METHODS_URL,
@@ -437,7 +440,7 @@ mod tests {
             !text.contains("omfp_ui_"),
             "the widget tools are the widgets note's: {text}"
         );
-        assert!(text.lines().count() <= 7, "short: {text}");
+        assert!(text.lines().count() <= 8, "short: {text}");
         assert!(!text.ends_with('\n'));
     }
 
@@ -494,6 +497,19 @@ mod tests {
             "/mcp reauth",
             "from your next turn",
             "never ask the user to restart",
+        ] {
+            assert!(text.contains(rule), "{rule:?} missing: {text}");
+        }
+    }
+
+    // spec: AGT-045
+    #[test]
+    fn the_control_note_says_how_new_threads_default_model_is_set() {
+        let text = control_note("01THREAD");
+        for rule in [
+            "omp config set modelRoles '{\"default\":\"<provider>/<id>\"}'",
+            "`modelRoles.default` alone is refused",
+            "`/model` → Roles does not exist here",
         ] {
             assert!(text.contains(rule), "{rule:?} missing: {text}");
         }

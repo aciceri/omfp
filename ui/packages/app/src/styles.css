@@ -171,6 +171,25 @@
     overflow: hidden;
   }
 
+  /* The wide column's foot (UI-985): as tall as the mode line beside it, Hide threads at its start, where Show threads
+   * stands on the mode line once the column is collapsed. */
+  .omfp-frame__left-foot {
+    flex: none;
+    display: flex;
+    align-items: center;
+    box-sizing: border-box;
+    block-size: var(--omfp-status-h);
+    background: var(--omfp-bar-bg);
+  }
+
+  /* The daemon's version at the foot's end, quiet like the mode line's segments. */
+  .omfp-frame__version {
+    margin-inline: auto var(--omfp-s3);
+    font-size: var(--omfp-fs-2xs);
+    color: var(--omfp-on-surface-variant);
+    white-space: nowrap;
+  }
+
   /* The view area right of the left column, with the mode line at its bottom (UI-098). */
   .omfp-frame__main {
     position: relative;
@@ -213,6 +232,32 @@
   .omfp-welcome__keys {
     margin: 0;
     max-inline-size: 36rem;
+  }
+
+  /* The API key's file (DMN-914): its path breaks anywhere rather than widening the welcome; Check again under it. */
+  .omfp-welcome__keys {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--omfp-s1);
+  }
+
+  .omfp-welcome__keys p {
+    margin: 0;
+  }
+
+  .omfp-welcome__keys code {
+    overflow-wrap: anywhere;
+    color: var(--omfp-on-surface);
+  }
+
+  /* The canvas's sentences (UI-1000), one paragraph each inside the empty state's hint. */
+  .omfp-canvas__line {
+    display: block;
+  }
+
+  .omfp-canvas__line + .omfp-canvas__line {
+    margin-block-start: var(--omfp-s2);
   }
 
   .omfp-welcome__note,
@@ -323,13 +368,18 @@
     flex-direction: column;
   }
 
+  /* The paste dialog's first step (UI-384): the page's text on its own line, Open and Copy under it. */
   .omfp-login__page {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--omfp-s2);
-    margin-block-start: var(--omfp-s3);
+    margin-block-end: var(--omfp-s3);
     font-size: var(--omfp-fs-sm);
+  }
+
+  .omfp-login__page > span {
+    flex: 1 0 100%;
   }
 
   .omfp-login__loading {
@@ -600,19 +650,10 @@
     flex: none;
   }
 
-  .omfp-thread-header[data-compact] .omfp-thread-header__model {
-    flex: 0 1 auto;
-    min-inline-size: 0;
-    max-inline-size: 45%;
-  }
-
-  /* The model's name gives way (ellipsis) so the `⋯` always fits on the row. */
-  .omfp-thread-header[data-compact] .omfp-thread-header__model .omfp-select__button {
-    max-inline-size: 100%;
-  }
-
-  .omfp-thread-header[data-compact] .omfp-thread-header__model .omfp-select__value {
-    min-inline-size: 0;
+  /* The model's brain button (UI-030) stands at the title row's end, before `⋯`. */
+  .omfp-chat-header__top > .omfp-thread-header__model {
+    flex: none;
+    margin-inline-start: auto;
   }
 
   .omfp-thread-header__more .omfp-thread-header__actions,
@@ -633,20 +674,13 @@
     min-inline-size: 0;
   }
 
-  /* The workspace chip (UI-340): one button, its label cut with an ellipsis when the bar is short. */
-  .omfp-thread-header__workspace {
-    min-inline-size: 0;
-    max-inline-size: 100%;
-  }
-
-  .omfp-thread-header__workspace-label,
   .omfp-thread-header__lineage-label {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  /* A fork's lineage (UI-664): beside the workspace chip, giving way (ellipsis) like it. */
+  /* A fork's lineage (UI-664): gives way (ellipsis) to the session controls. */
   .omfp-thread-header__lineage {
     display: inline-flex;
     align-items: center;
@@ -656,8 +690,8 @@
     color: var(--omfp-on-surface-variant);
   }
 
-  /* The full header (UI-202) keeps two rows: its workspace chip gives way (ellipsis) to the session controls instead
-   * of the bar wrapping onto a third row. */
+  /* The full header (UI-202) keeps two rows: its chips give way (ellipsis) to the session controls instead of the bar
+   * wrapping onto a third row. */
   .omfp-thread-header:not([data-compact]) .omfp-chat-header__bar {
     flex-wrap: nowrap;
   }
@@ -667,11 +701,6 @@
     flex-wrap: nowrap;
     min-inline-size: 0;
     overflow: hidden;
-  }
-
-  .omfp-thread-header:not([data-compact]) .omfp-chat-header__bar .omfp-thread-header__workspace {
-    flex: 0 1 auto;
-    min-inline-size: 0;
   }
 
   .omfp-thread-header:not([data-compact]) .omfp-thread-header__session {
@@ -1034,6 +1063,11 @@
   /* The kit sizes a path field along a row (flex-basis); here it sits in a column. */
   .omfp-threads__new-workspace > .omfp-path-field {
     flex: none;
+  }
+
+  /* "+ workspace" below the last section (UI-170). */
+  .omfp-wsection + .omfp-threads__add-workspace {
+    margin-block-start: var(--omfp-s3);
   }
 
   .omfp-threads__list > .omfp-wsection:first-of-type {

@@ -32,6 +32,8 @@ mod local;
 #[cfg(any(target_os = "macos", test))]
 mod macos;
 #[cfg(target_os = "linux")]
+mod open;
+#[cfg(target_os = "linux")]
 mod portal;
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 mod web_views;
@@ -527,10 +529,11 @@ fn open_window(
     #[cfg(target_os = "linux")]
     let builder = builder.data_directory(webview_data.to_path_buf());
     // UI-283: the page zoom, which WebKitGTK has on no key and no wheel and the Linux window on no menu. UI-682: web
-    // views over the page.
+    // views over the page. UI-380: pages opened without a click (a login's page).
     #[cfg(target_os = "linux")]
     let builder = builder
         .initialization_script(zoom::zoom_script(&origin, &nonce))
+        .initialization_script(open::open_script(&origin, &nonce))
         .initialization_script(web_views::script(
             &origin,
             &nonce,
@@ -562,6 +565,8 @@ fn open_window(
     if let Err(error) = zoom::follow_zoom(&window, &nonce) {
         eprintln!("omfp desktop: no page zoom: {error}");
     }
+    #[cfg(target_os = "linux")]
+    open::follow_open(&window, &nonce, origin.clone());
     #[cfg(target_os = "linux")]
     web_views::follow(
         &window,

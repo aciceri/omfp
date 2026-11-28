@@ -129,7 +129,7 @@ export const chat = {
     noIssues: "No issues",
     /** Where omp looks for language servers (UI-918). */
     serverEnvironment:
-      "omp starts language servers from the omfp daemon's environment (its PATH), not from your shell: install the server where the daemon runs.",
+      "oh-my-pi starts language servers from the omfp daemon's environment (its PATH), not from your shell: install the server where the daemon runs.",
     commands: "Commands run",
     notApplied: "Preview: nothing was changed",
     /** A symbol rename whose call named no old name (UI-919). */
@@ -160,12 +160,12 @@ export const chat = {
     unknownError: "unknown error",
     sourced: (source: string, message: string) => `${source}: ${message}`,
     extensionError: (path: string, event: string, error: string) => `Extension ${path} failed on ${event}: ${error}`,
-    frameErrorOf: (kind: string, error: string) => `omp rejected a ${kind} frame: ${error}`,
-    frameError: (error: string) => `omp rejected a frame: ${error}`,
+    frameErrorOf: (kind: string, error: string) => `oh-my-pi rejected a ${kind} frame: ${error}`,
+    frameError: (error: string) => `oh-my-pi rejected a frame: ${error}`,
     unrecognizedOf: (kind: string) => `Unrecognized ${kind} frame`,
     unrecognized: "Unrecognized frame",
     /** An `open_url` request without instructions (UI-345). */
-    openUrl: "omp asks to open this page in a browser",
+    openUrl: "oh-my-pi asks to open this page in a browser",
     /** The command-output card (UI-345) and its opened URLs (UI-347). */
     commandOutput: "Command output",
     openedUrl: "Opened in the browser",
@@ -180,12 +180,12 @@ export const chat = {
     /** UI-347 when a URL's sign-in returns to omp's loopback listener: its address can be pasted (UI-761). */
     relayNote:
       "OAuth sign-ins send the browser back to a loopback address (localhost) on the daemon's host: if the daemon " +
-      "runs on another machine, that last page fails to load. Paste its address below and omfp hands it to omp.",
+      "runs on another machine, that last page fails to load. Paste its address below and omfp hands it to oh-my-pi.",
     /** The field of a sign-in's callback address (UI-761). */
     relayLabel: "Paste the address your browser ended on",
     relayPlaceholder: (callback: string) => `${callback}?code=…`,
     relayAction: "Send",
-    relayed: "omp got the sign-in",
+    relayed: "oh-my-pi got the sign-in",
   },
   composer: {
     label: "Message",
@@ -259,7 +259,7 @@ export const chat = {
           "Compact the conversation (:compact), focused on what follows; first soft, remote or snapcompact for that method",
         fork: "Fork this conversation into a new thread",
         copy: "Copy the conversation as Markdown (:copy)",
-        export: "Export the conversation as a Markdown file (:export); with a path, omp writes HTML on its host",
+        export: "Export the conversation as a Markdown file (:export); with a path, oh-my-pi writes HTML on its host",
         new: "New thread in the current workspace (:new)",
         hotkeys: "Show every key and command (:help)",
         resume: "Pick another thread (:threads)",
@@ -267,7 +267,7 @@ export const chat = {
       } as Readonly<Record<string, string>>,
       /** The argument hints of the routed commands omp does not announce. */
       routedHints: { login: "[<provider>]", logout: "[<provider>]" } as Readonly<Record<string, string>>,
-      tuiOnly: "Needs omp's terminal UI",
+      tuiOnly: "Needs oh-my-pi's terminal UI",
       /** The omfp way, after `tuiOnly`, by omp's name. */
       hints: {
         setup: ":login logs in to a provider",
@@ -357,7 +357,7 @@ export const chat = {
     recommended: "recommended",
     answerRequired: (question: string) => `Answer \u201c${question}\u201d`,
     answeredElsewhere: (client: string) => `Answered elsewhere by ${client}`,
-    closedByOmp: "Closed by omp (timed out or cancelled)",
+    closedByOmp: "Closed by oh-my-pi (timed out or cancelled)",
     timeLeft: "Time left",
     dismissClosed: "Dismiss",
   },

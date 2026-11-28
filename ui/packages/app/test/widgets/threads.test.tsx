@@ -319,7 +319,7 @@ describe("omfp:threads", () => {
     expect(host.window.get(DRAFT_THREAD)?.workspaceId).toBe("w1");
   });
 
-  // spec: UI-023
+  // spec: UI-020, UI-023
   test("+ workspace takes a name, or a path (/ or ~) completed on the daemon host that it links; Enter opens a draft", async () => {
     const { client, host, user } = setup();
     client.answers.set("workspaces.create", (params) => ({
@@ -327,14 +327,16 @@ describe("omfp:threads", () => {
       name: typeof params === "object" && params !== null && "name" in params ? String(params.name) : "workspace",
     }));
     client.answers.set("fs.complete", () => ({ entries: [{ name: "app", path: "/srv/app", isGitRoot: true }] }));
-    const field = screen.getByTestId("new-workspace-input");
-    await user.type(field, "billing{Enter}");
+    expect(screen.queryByTestId("new-workspace-input")).toBeNull();
+    await user.click(screen.getByTestId("add-workspace"));
+    await user.type(screen.getByTestId("new-workspace-input"), "billing{Enter}");
     expect(client.callsTo("workspaces.create").map((call) => call.params)).toEqual([{ name: "billing" }]);
     await waitFor(() => expect(host.window.get(DRAFT_THREAD)).toEqual({ workspaceId: "w9" }));
-    expect(field).toHaveProperty("value", "");
-    expect(screen.getByTestId("new-workspace").dataset.mode).toBe("name");
+    // Created, the field turns back into the row.
+    expect(screen.queryByTestId("new-workspace-input")).toBeNull();
     expect(screen.queryByTestId("new-workspace-existing")).toBeNull();
     act(() => host.window.set(DRAFT_THREAD, undefined));
+    await user.click(screen.getByTestId("add-workspace"));
     await user.type(screen.getByTestId("new-workspace-input"), "/srv/a");
     expect(screen.getByTestId("new-workspace").dataset.mode).toBe("path");
     const option = await screen.findByTestId("path-option");
@@ -348,36 +350,73 @@ describe("omfp:threads", () => {
       { link: "/srv/app" },
     ]);
     await waitFor(() => expect(host.window.get(DRAFT_THREAD)).toEqual({ workspaceId: "w9" }));
-    expect(screen.getByTestId("new-workspace").dataset.mode).toBe("name");
+    expect(screen.queryByTestId("new-workspace-input")).toBeNull();
   });
 
-  // spec: UI-023
+  // spec: UI-020
+  test("+ workspace's field turns back into the row on Escape (focus on the row) and when left empty", async () => {
+    const { user } = setup();
+    await user.click(screen.getByTestId("add-workspace"));
+    expect(document.activeElement?.getAttribute("data-testid")).toBe("new-workspace-input");
+    await user.keyboard("draft{Escape}");
+    expect(screen.queryByTestId("new-workspace-input")).toBeNull();
+    expect(document.activeElement?.getAttribute("data-testid")).toBe("add-workspace");
+    await user.click(screen.getByTestId("add-workspace"));
+    await user.click(screen.getByTestId("thread-filter"));
+    expect(screen.queryByTestId("new-workspace-input")).toBeNull();
+    // A field holding a name stays open when the focus leaves it.
+    await user.click(screen.getByTestId("add-workspace"));
+    await user.keyboard("kept");
+    await user.click(screen.getByTestId("thread-filter"));
+    expect(screen.getByTestId("new-workspace-input")).toHaveProperty("value", "kept");
+  });
+
+  // spec: UI-020, UI-023
   test("a failed workspace creation shows the error and keeps the name", async () => {
     const { client, user } = setup();
+    await user.click(screen.getByTestId("add-workspace"));
     await user.type(screen.getByTestId("new-workspace-input"), "dup{Enter}");
     act(() => client.callsTo("workspaces.create")[0]?.reject(new Error("name taken")));
     expect((await screen.findByTestId("new-workspace-error")).textContent).toBe("name taken");
     expect(screen.getByTestId("new-workspace-input")).toHaveProperty("value", "dup");
   });
 
-  // spec: UI-023
-  test("with no workspace yet, the column shows only the focused + workspace field and a hint", async () => {
-    setup({ workspaces: [], threads: [] });
-    expect(screen.getByTestId("no-workspaces-hint").textContent).toContain("No workspace yet");
-    expect(screen.queryByTestId("thread-filter")).toBeNull();
-    expect(screen.queryByTestId("workspace-section")).toBeNull();
-    await waitFor(() => expect(document.activeElement === screen.getByTestId("new-workspace-input")).toBe(true));
+  // spec: UI-020
+  test("+ workspace is a row after the last section, also with no workspace, beside the filter; pressed, a focused field", async () => {
+    setup();
+    const list = screen.getByTestId("sidebar").querySelector(".omfp-threads__list");
+    const items = [
+      ...(list?.querySelectorAll("[data-testid='workspace-section'], [data-testid='add-workspace']") ?? []),
+    ];
+    expect(items.at(-1)?.getAttribute("data-testid")).toBe("add-workspace");
+    expect(items.filter((item) => item.getAttribute("data-testid") === "workspace-section").length).toBe(2);
+    cleanup();
+
+    const empty = setup({ workspaces: [], threads: [] });
+    expect(screen.getByTestId("add-workspace").textContent).toBe("+ workspace");
+    expect(screen.getAllByTestId("thread-filter").length).toBe(1);
+    expect(
+      ["workspace-section", "no-threads", "no-workspaces-hint", "new-workspace-input"].map(
+        (testid) => screen.queryAllByTestId(testid).length,
+      ),
+    ).toEqual([0, 0, 0, 0]);
+    // Nothing takes the focus by itself.
+    expect(document.activeElement === document.body).toBe(true);
+    await empty.user.click(screen.getByTestId("add-workspace"));
+    const field = screen.getByTestId("new-workspace-input");
+    expect([document.activeElement === field, field.getAttribute("placeholder")]).toEqual([true, "Name or /path"]);
+    expect(screen.queryAllByTestId("add-workspace").length).toBe(0);
   });
 
-  // spec: UI-023, UI-092
-  test("the column is busy until the index arrives; the + workspace field then takes only a focus nobody has", () => {
+  // spec: UI-020, UI-092
+  test("the column is busy until the index arrives; + workspace then leaves the focus where it is", () => {
     const { client, flush } = setup(null, <input data-testid="elsewhere" />);
     expect(screen.getByTestId("sidebar").getAttribute("aria-busy")).toBe("true");
     act(() => screen.getByTestId("elsewhere").focus());
     client.index({ workspaces: [], threads: [] });
     flush();
     expect(screen.getByTestId("sidebar").getAttribute("aria-busy")).toBe("false");
-    expect(screen.getByTestId("no-workspaces-hint")).toBeDefined();
+    expect(screen.getByTestId("add-workspace")).toBeDefined();
     expect(document.activeElement?.getAttribute("data-testid")).toBe("elsewhere");
   });
 
@@ -595,7 +634,7 @@ describe("omfp:threads", () => {
     expect(focusedItem()).toBe("workspace-collapse w3");
     client.indexEvents({ kind: "workspace_removed", workspaceId: "w3" });
     flush();
-    expect(focusedItem()).toBe("new-workspace-input");
+    expect(focusedItem()).toBe("add-workspace");
   });
 
   // spec: UI-092, UI-286
@@ -609,8 +648,8 @@ describe("omfp:threads", () => {
     await waitFor(() => expect(focusedItem()).toBe("workspace-collapse w1"));
   });
 
-  // spec: UI-095, UI-989, UI-022, UI-023
-  test("Threads mode's moves step the threads from anywhere and Space w focuses the + workspace field", () => {
+  // spec: UI-095, UI-989, UI-022, UI-020
+  test("Threads mode's moves step the threads from anywhere and Space w opens and focuses the + workspace field", () => {
     const { host } = setup();
     const run = (name: string) =>
       act(() => {
@@ -632,6 +671,11 @@ describe("omfp:threads", () => {
     );
     run("workspace.new");
     expect(document.activeElement === screen.getByTestId("new-workspace-input")).toBe(true);
+    // Again from elsewhere (the field, left empty, closed): it opens and takes the focus again.
+    act(() => screen.getByTestId("thread-filter").focus());
+    expect(screen.queryAllByTestId("new-workspace-input").length).toBe(0);
+    run("workspace.new");
+    expect(document.activeElement === screen.getByTestId("new-workspace-input")).toBe(true);
   });
 
   // spec: UI-092
@@ -644,7 +688,7 @@ describe("omfp:threads", () => {
       ),
     });
     const reached = new Set<string>();
-    for (let step = 0; step < 24; step += 1) {
+    for (let step = 0; step < 40; step += 1) {
       await user.tab();
       const testid = document.activeElement?.closest("[data-testid]")?.getAttribute("data-testid");
       if (testid !== undefined && testid !== null) {
@@ -653,7 +697,7 @@ describe("omfp:threads", () => {
     }
     for (const testid of [
       "thread-filter",
-      "new-workspace-input",
+      "add-workspace",
       "workspace-collapse",
       "workspace-menu",
       "delete-workspace",

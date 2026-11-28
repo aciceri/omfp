@@ -152,6 +152,32 @@ export function ModeViews({ label, views, current, onSelect, className, ...props
   );
 }
 
+export interface ModeViewPickProps extends Omit<HTMLAttributes<HTMLButtonElement>, "title"> {
+  /** The current view's title. */
+  title: ReactNode;
+  /** Its accessible name (names the view and what a press does). */
+  label: string;
+  onPress: () => void;
+}
+
+/** A phone's view in the mode line (UI-1003): the current view's title and a chevron, `primary` bold like the current
+ * tab of {@link ModeViews}, cut with an ellipsis; a press opens the caller's view picker. */
+export function ModeViewPick({ title, label, onPress, className, ...props }: ModeViewPickProps) {
+  return (
+    <button
+      {...props}
+      type="button"
+      className={cx("omfp-modeline__view omfp-modeline__view-pick omfp-focus-inset", className)}
+      data-current
+      aria-label={label}
+      onClick={onPress}
+    >
+      {title}
+      <Icon name="chevron-down" />
+    </button>
+  );
+}
+
 /** The tone of a mode-line notice: a thread awaiting the user, a failure, a finished turn, anything else. */
 export type NoticeTone = "attention" | "error" | "ok" | "info";
 

@@ -464,11 +464,11 @@
   "commands": [
     {
       "id": "auth.import",
-      "title": "Copy omp's logins (:import-logins)",
+      "title": "Copy oh-my-pi's logins (:import-logins)",
       "aliases": [
         "import-logins"
       ],
-      "description": "Copies the provider logins of your standalone omp into omfp's omp, through omp's own auth export and import: only model-provider logins, never its configuration or MCP credentials. A browser (OAuth) login then lives in both apps: a provider that rotates its tokens may sign one of them out later, and you log in there again."
+      "description": "Copies the provider logins of your standalone oh-my-pi into omfp's, through oh-my-pi's own auth export and import: only model-provider logins, never its configuration or MCP credentials. A browser (OAuth) login then lives in both apps: a provider that rotates its tokens may sign one of them out later, and you log in there again."
     },
     {
       "id": "auth.login",
@@ -846,7 +846,7 @@
       "aliases": [
         "compact"
       ],
-      "description": "Has omp summarize the selected thread's conversation so far and continue from the summary, freeing context. Words after :compact tell the summary what to focus on; a first word soft, remote or snapcompact picks omp's method for this once (snapcompact takes no focus). Refused while the thread works; the transcript shows the compaction as a notice."
+      "description": "Has oh-my-pi summarize the selected thread's conversation so far and continue from the summary, freeing context. Words after :compact tell the summary what to focus on; a first word soft, remote or snapcompact picks oh-my-pi's method for this once (snapcompact takes no focus). Refused while the thread works; the transcript shows the compaction as a notice."
     },
     {
       "id": "thread.copy",
@@ -977,7 +977,7 @@
       "aliases": [
         "stop"
       ],
-      "description": "Ends the thread's omp process, with its background commands and live voice; Restart starts it again. To stop only the running turn, use Abort (ctrl+c)."
+      "description": "Ends the thread's oh-my-pi process, with its background commands and live voice; Restart starts it again. To stop only the running turn, use Abort (ctrl+c)."
     },
     {
       "id": "thread.stopSpawned",

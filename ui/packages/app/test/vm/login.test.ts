@@ -111,7 +111,7 @@ describe("login completions and outcomes", () => {
       "Logged out of Anthropic (Claude Pro/Max): removed 2 stored credentials.",
     );
     expect(logoutSummary({ providerId: "anthropic", removed: 0, remainingSource: "ANTHROPIC_API_KEY" }, name)).toBe(
-      "omp held no stored credential of Anthropic (Claude Pro/Max). Anthropic (Claude Pro/Max) still authenticates with ANTHROPIC_API_KEY.",
+      "oh-my-pi held no stored credential of Anthropic (Claude Pro/Max). Anthropic (Claude Pro/Max) still authenticates with ANTHROPIC_API_KEY.",
     );
   });
 
@@ -137,15 +137,15 @@ describe("login completions and outcomes", () => {
     ];
     const caveat = "A browser login then lives in both apps: if one of them gets signed out, log in there again.";
     expect(importOffer(keys)).toEqual({
-      button: "Use my omp logins (anthropic, openai)",
-      note: "Copies only omp's logins, nothing else.",
+      button: "Use my oh-my-pi logins (anthropic, openai)",
+      note: "Copies only oh-my-pi's logins, nothing else.",
     });
-    expect(importedSummary(keys)).toBe("Copied omp's logins: anthropic, openai");
+    expect(importedSummary(keys)).toBe("Copied oh-my-pi's logins: anthropic, openai");
     const browser = [{ providerId: "openai-codex", oauth: true }];
     expect(importOffer(browser)).toEqual({
-      button: "Use my omp logins (openai-codex)",
-      note: `Copies only omp's logins, nothing else. ${caveat}`,
+      button: "Use my oh-my-pi logins (openai-codex)",
+      note: `Copies only oh-my-pi's logins, nothing else. ${caveat}`,
     });
-    expect(importedSummary(browser)).toBe(`Copied omp's logins: openai-codex. ${caveat}`);
+    expect(importedSummary(browser)).toBe(`Copied oh-my-pi's logins: openai-codex. ${caveat}`);
   });
 });

@@ -457,7 +457,7 @@ while (scroller && !(scroller.scrollHeight > scroller.clientHeight &&
 if (!scroller) throw new Error('no overflowing thread list');
 const box = (e) => { const r = e.getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; };
 return {
-  header: ['.omfp-brand', '[data-testid=new-workspace-input]', '[data-testid=thread-filter]']
+  header: ['.omfp-brand', '[data-testid=thread-filter]']
     .map((css) => box(column.querySelector(css))),
   row: box(row), scroll: scroller.scrollTop, list: box(scroller),
   outer: column.scrollTop, page: document.scrollingElement.scrollTop,
@@ -594,8 +594,8 @@ async fn check_sidebar_controls(
     expected: &str,
     header: &serde_json::Value,
 ) -> anyhow::Result<()> {
-    // Both fields remain reachable, focusable and editable after scrolling.
-    journey.click("[data-testid=new-workspace-input]").await?;
+    // The filter and "+ workspace" (at the list's end) remain reachable, focusable and editable after scrolling.
+    journey.click("[data-testid=add-workspace]").await?;
     journey
         .type_into("[data-testid=new-workspace-input]", "Unsubmitted workspace")
         .await?;

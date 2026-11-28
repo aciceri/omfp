@@ -303,8 +303,6 @@ export {
   statusLabel,
   type ThreadStatus,
   threadMark,
-  type WorkspaceChip,
-  workspaceChip,
 } from "../vm/threads.ts";
 export { type GoalView, type TodoPhaseView, type TodoRow, type TodosView, todosView } from "../vm/todos.ts";
 export { type CardImage, expandedByDefault, formatDuration, type ToolCard, type Turn } from "../vm/tool.ts";

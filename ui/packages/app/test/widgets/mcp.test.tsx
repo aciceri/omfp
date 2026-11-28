@@ -83,7 +83,7 @@ describe("omfp:mcp", () => {
     expect(screen.getAllByTestId("mcp-server-error").map((line) => line.textContent)).toEqual([
       "ENOENT: no such file or directory, posix_spawn 'fs-server'",
     ]);
-    expect(screen.getByTestId("mcp-status").textContent).toBe("Checked by the thread's omp.");
+    expect(screen.getByTestId("mcp-status").textContent).toBe("Checked by the thread's oh-my-pi.");
     expect(client.callsTo("thread.mcp_servers").map((call) => call.params)).toEqual([{ threadId: "t1" }]);
     expect(screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent)).toEqual([
       "docs",
@@ -129,7 +129,7 @@ describe("omfp:mcp", () => {
   test("Reconnect restarts the thread for one server, which spins until the daemon answers", async () => {
     const { client, user } = setup();
     await waitFor(() => expect(boxes().length).toBe(3));
-    await user.click(screen.getByRole("button", { name: "Reconnect fs (restarts the thread's omp)" }));
+    await user.click(screen.getByRole("button", { name: "Reconnect fs (restarts the thread's oh-my-pi)" }));
 
     const [reconnect] = client.callsTo("thread.mcp_reconnect");
     expect(reconnect?.params).toEqual({ threadId: "t1", name: "fs" });
@@ -190,9 +190,9 @@ describe("omfp:mcp", () => {
   });
 
   // spec: UI-290, UI-300
-  test("a built-in `:widget add` offers, in the default view as the side tab after Background", () => {
+  test("a built-in `:widget add` offers, not in the default view", () => {
     expect(BUILTIN_WIDGETS.has("omfp:mcp")).toBe(true);
-    expect(JSON.stringify(DEFAULT_MANIFEST)).toContain('"omfp:background","omfp:mcp"]');
+    expect(JSON.stringify(DEFAULT_MANIFEST)).not.toContain("omfp:mcp");
   });
 
   // spec: UI-348

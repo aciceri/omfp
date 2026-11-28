@@ -6,6 +6,7 @@ export const BUILTINS: readonly { name: string; folder: string; part?: { file: s
   { name: "changes", folder: "changes" },
   { name: "background", folder: "background" },
   { name: "todos", folder: "todos" },
+  { name: "canvas", folder: "canvas" },
   { name: "debug", folder: "debug" },
   { name: "tree", folder: "tree" },
   { name: "activity", folder: "activity" },

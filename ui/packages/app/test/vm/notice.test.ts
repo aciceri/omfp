@@ -71,7 +71,7 @@ describe("notice rows", () => {
     });
     expect([open.kind, open.text, open.urls]).toEqual(["open-url", "Code: 42", ["https://a.example/y"]]);
     expect(noticeRow({ type: "open_url", data: { id: "2", url: "https://a.example/z" } }).text).toBe(
-      "omp asks to open this page in a browser",
+      "oh-my-pi asks to open this page in a browser",
     );
   });
 });

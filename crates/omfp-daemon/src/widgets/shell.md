@@ -7,8 +7,7 @@ built-in command with its title and `:` names.
 ## Left column
 
 The frame's own column, outside every view: one filter field at the top (thread titles, workspace and repository
-names and conversation text), "+ workspace" (a name, or a path starting with `/` or `~`, with
-completion), then one section per workspace — its name (the current one highlighted) and its thread count, which a
+names and conversation text), then one section per workspace — its name (the current one highlighted) and its thread count, which a
 menu to rename or remove it and a delete button replace on hover and focus, its threads with their state marks
 (running, awaiting input, failed, idle, unread) and "+ thread", which opens a draft thread there (the daemon creates
 the thread when its first message is sent). Then two collapsed rows, each toggled on its own: "Jobs (N)" when the
@@ -18,6 +17,9 @@ before deleting a workspace. A thread's `×`, the header's Delete, `:delete` and
 delete its history immediately, without confirmation, keeping its workspace. Middle-click never selects the thread
 first and never starts autoscroll. Deleting the selected thread clears the selection and its draft; deleting another
 leaves the selected thread alone. Use Archive instead to keep a conversation for reopening or unarchiving.
+"+ workspace", after the last section (the only row before the first workspace), opens its field when pressed or with
+`Space w`: a name, or a path starting with `/` or `~` (with completion) to link; Enter creates the workspace and opens
+a draft thread in it, Escape or leaving it empty turns it back into the row.
 Workspaces and threads keep the order the user gives them, the same in every window (new ones go last): drag a
 section by its head or a thread row (a long press first on a touch screen) to another place, a thread onto another
 workspace to move it there (its omp restarts in that folder); `Alt-ArrowUp` / `Alt-ArrowDown` move the focused row or
@@ -26,11 +28,12 @@ use `workspaces.reorder` and `threads.reorder`.
 Selecting a thread makes its workspace the **current workspace**: the view, the init file `.omfp/init.ts`, the keymap
 `.omfp/keymap.json` and `:widget add` all follow it. A splitter resizes the column (wide windows); under 1100 px it
 folds into a strip, on a phone it is one of the bottom bar's areas. In a wide window *Hide threads* (the button at the
-end of the logo's row) or `Space b` (`:threads.collapse`) collapses it to nothing, so the view takes the whole window;
+start of the column's foot, where the running omfp version shows at the other end) or `Space b`
+(`:threads.collapse`) collapses it to nothing, so the view takes the whole window;
 *Show threads* at the start of the mode line or `Space b` again brings it back, and the window remembers it across
 reloads. `Space t` focuses the selected row in a wide window (showing a collapsed column first) and toggles the
 column in a narrow one; then `za` folds its workspace and keeps focus on its head.
-In the detached column (narrow windows and phones), the logo, filter and "+ workspace" field stay visible while the
+In the detached column (narrow windows and phones), the logo and filter stay visible while the
 workspace sections and their threads scroll independently below them.
 
 Automatic thread titles are reconsidered after four new messages totaling at least 400 characters, no more often
@@ -54,7 +57,8 @@ The bar at the bottom of the view area, like vim's:
   field has the focus), `COMMAND` (the `:` line is open), or vim's own mode while a file editor has the focus. The
   mode follows the focus: a click in the view is View mode, on the left column Threads mode, in a field Insert mode;
 - the selected thread's title and state;
-- the **view tabs**, when the current workspace has several views: `Default · Review · Ops` by title, the current
+- the **view tabs**: `Default · Review · Ops` by title (one tab with a single view; on a phone only the current view's
+  name, which opens the view picker), the current
   one highlighted; a click switches the selected thread's view. Each thread keeps its view in this window across
   reloads; a thread shown for the first time, a new thread's draft and a thread whose view the workspace no longer has
   show the default view, and a thread created from a draft keeps the view chosen on it. Switching back to one of
@@ -63,7 +67,9 @@ The bar at the bottom of the view area, like vim's:
 - at the right end the newest **notice** (`◆ title body`, `+n` when more wait): a thread that needs the user, failed
   or finished while the user looked elsewhere, or what a widget, an init file or a thread's agent notified. `:notice`
   or a click opens its thread; it goes after 8 s;
-- last, once something was said, the **messages** button: it opens `:messages`.
+- last, once something was said, the **messages** button: it opens `:messages`;
+- after it, when the view has a side panel (`["tabs", { "id": "side" }, …]`, the default view's Canvas), *Hide panel*
+  or *Show panel*: it hides or shows that panel in this window, remembered per workspace and view.
 
 In command mode the `:` line (or the file picker) replaces the title, the view tabs and the notice.
 
@@ -75,7 +81,7 @@ first, each with its kind and time; Escape closes it.
 ## File and widget tabs
 
 Files open as tabs of the view's `main` tabs, after its own tabs (the chat in the default view). A widget the view does
-not show opens there too when something reveals it (the header's `N in background` badge, its workspace chip): a tab
+not show opens there too when something reveals it (the header's `N in background` badge): a tab
 titled with the widget's name after the files, selected, and selected again on the next reveal; a view showing the
 widget selects its own tab instead, and a view without `main` floats it in a panel. Each of these tabs has its own `×`;
 a middle click on a tab or Delete on the focused tab closes it too, without selecting it first. They stay open across
@@ -123,7 +129,7 @@ focus was before the line opened. Every built-in command id is a dotted `<area>.
 | `:view-reset` | Write the default `views.json` again (replacing the file, every view and mount), after a confirmation. |
 | `:widget add <reference>` | Add a widget to the current view (last side tab, else the end) and write `views.json`; refused on views that exist only in an init file. |
 | `:widget copy <reference> [<name>]` | Copy a built-in widget into `.omfp/widgets/<name>/`. |
-| `:theme [light\|dark\|system] [<theme>]`, `:density compact\|normal`, `:set <key>=<value>` | Appearance and the daemon's settings: the scheme is the window's, the theme (`synth`, `catppuccin`, `gruvbox`, `tokyo-night`, `nord`, `solarized`, `rose-pine`; the calm ones that suit the boring skin: `graphite`, `paper`, `clay`, `primer`; `accent`: the macOS window's system accent, Synth elsewhere; `matugen`: the user theme file `theme.css`, Synth without one) every window's (`[ui] theme`); the user theme shows only with `matugen`. |
+| `:theme [light\|dark\|system] [<theme>]`, `:density compact\|normal`, `:set <key>=<value>` | Appearance and the daemon's settings: the scheme is the window's, the theme (`synth`, `catppuccin`, `gruvbox`, `tokyo-night`, `nord`, `solarized`, `rose-pine`; the calm ones that suit the boring skin: `graphite`, `paper`, `clay`, `primer`; `accent`: the macOS window's system accent, Synth elsewhere; `matugen`: the user theme file `theme.css`, Synth without one) every window's (`[ui] theme`); the user theme shows only with `matugen`. Moving through `:theme`'s list with the arrows previews each scheme or theme on the window; Enter keeps it, Escape goes back. |
 | `:set skin=crush\|boring` | The look of every window (`[ui] skin`), live: Crush (the default: monospace chrome, box-drawing glyphs, gradients, motion) or the opt-in `boring` skin (system sans-serif, neutral gray chrome with the accent only for focus, links and progress, light borders, a gray bubble for your messages, plain chevrons, no decorative motion). Independent of the theme: any palette works with either. Widgets built on the kit follow it; a widget's own styles do not. |
 | `:set show_xdev_notices=true\|false` | Show/hide informational MCP tool command mount/unmount notices in new and retained transcripts, live (default `false`). Only presentation changes; other notices, startup inventory records, tools and omp configuration stay intact. The API field is `ui.showXdevNotices` in `settings.set`. |
 | `:set recent_threads=<n>\|all` | How many hidden threads each window keeps followed so switching back to one is instant (`[ui] recent_threads`, 0–100 or `all`, default 20), live; `all` keeps every thread shown in the window until it closes or reloads. A kept thread does not keep its omp running: idle, it stops after the idle timeout like an unwatched one, its transcript stays in the window. Each kept thread costs the window memory (about its snapshot: a few MB for a very long thread), so `all` can reach gigabytes after hundreds of long threads, too much for a phone. |
@@ -252,7 +258,9 @@ use, every window follows (`auth.status`).
 - A browser (OAuth) login copied this way then lives in both apps. A provider that rotates its tokens may later sign
   one of the two out; log in again there.
 
-Instead of logging in, give omp an API key: an environment variable such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or
+Instead of logging in, give omp an API key: a line such as `ANTHROPIC_API_KEY=…` in the profile's
+`<data-dir>/omp-profile/agent/.env` (the welcome shows its path; `Check again` then looks for usable models, and
+threads started afterwards read it), an environment variable such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or
 `GEMINI_API_KEY` in the daemon's environment (omp inherits it, so restart the daemon after setting one), providers and
 keys in `<data-dir>/omp-profile/agent/models.yml`, or keys stored in that profile's `agent.db`.
 
@@ -263,6 +271,20 @@ fresh profile: log in again, or copy standalone omp's provider logins as above; 
 there is no sharing switch or standalone fallback. Threads/history and workspace `.omp/` config are kept. `HOME` stays
 unchanged, and explicit API keys inherited from the daemon's environment still work. `:logout` affects only this
 profile's store.
+
+### Default model
+
+A thread starts with the model picked in its draft's header (the brain button), else with omp's default: the
+`default` role of `modelRoles` in the profile's `agent/config.yml`. omp's terminal `/model` → Roles does not exist in
+omfp. Set the default from a thread's shell, which runs with omfp's profile:
+
+```sh
+omp config get modelRoles --json                                  # the current roles, to keep the others
+omp config set modelRoles '{"default":"openai-codex/gpt-6-astra"}' # the whole record: `modelRoles.default` is refused
+```
+
+`<provider>/<id>` is a model of `auth.models` (or of the header's list). Threads started afterwards use it; running
+threads keep their model until it is changed in their header.
 
 ## Language servers
 

@@ -61,12 +61,41 @@ describe("the first run", () => {
     const welcome = screen.getByTestId("welcome");
     expect(welcome.querySelector("h1")?.textContent).toBe("Welcome to omfp");
     expect(screen.getByTestId("welcome-why").textContent).toBe(
-      "omp has no model it can use yet. Log in to a provider to start your first thread.",
+      "oh-my-pi, the agent behind omfp, has no model it can use yet. Log in to a provider to start your first thread.",
     );
-    expect(screen.getByTestId("welcome-keys").textContent).toContain("ANTHROPIC_API_KEY");
+    // The API key file shows once the daemon named it.
+    expect(screen.queryAllByTestId("welcome-keys").length).toBe(0);
     // The rest of the frame stays: the threads column and the mode line.
     expect(screen.queryAllByTestId("left-column").length).toBe(1);
     expect(screen.queryAllByTestId("mode-bar").length).toBe(1);
+  });
+
+  // spec: UI-500
+  test("the welcome names the file an API key goes in, from auth.status, and Check again asks the daemon to look again", async () => {
+    const test = setup(0);
+    const [asked] = test.client.callsTo("auth.status");
+    expect(asked?.params).toEqual({});
+    await act(async () => {
+      asked?.resolve({ models: 0, keysFile: "/home/me/.omfp/omp/agent/.env" });
+      await Promise.resolve();
+    });
+    const keys = screen.getByTestId("welcome-keys");
+    expect(keys.textContent).toContain("ANTHROPIC_API_KEY");
+    expect(screen.getByTestId("welcome-keys-file").textContent).toBe("/home/me/.omfp/omp/agent/.env");
+    expect(screen.queryAllByTestId("welcome-keys-none").length).toBe(0);
+    const check = screen.getByTestId("welcome-keys-check");
+    expect(check.textContent).toBe("Check again");
+
+    await test.user.click(check);
+    const [, recheck] = test.client.callsTo("auth.status");
+    expect(recheck?.params).toEqual({ recheck: true });
+    expect(screen.getByTestId("welcome-keys-check").dataset.pending).toBe("true");
+    await act(async () => {
+      recheck?.resolve({ models: 0, keysFile: "/home/me/.omfp/omp/agent/.env" });
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId("welcome-keys-none").textContent).toBe("Still no model oh-my-pi can use.");
+    expect(screen.getByTestId("welcome-keys-check").dataset.pending).toBeUndefined();
   });
 
   // spec: UI-501
@@ -206,7 +235,7 @@ describe("the first run", () => {
       second?.resolve({ providers: [{ providerId: "openai", oauth: false }] });
       await Promise.resolve();
     });
-    expect(screen.getByTestId("welcome-import").textContent).toBe("Use my omp logins (openai)");
+    expect(screen.getByTestId("welcome-import").textContent).toBe("Use my oh-my-pi logins (openai)");
   });
 
   // spec: UI-505
@@ -219,12 +248,12 @@ describe("the first run", () => {
     }));
     const button = await screen.findByTestId("welcome-import");
     expect([button.textContent, button.dataset.variant]).toEqual([
-      "Use my omp logins (anthropic, openai)",
+      "Use my oh-my-pi logins (anthropic, openai)",
       "secondary",
     ]);
     expect(screen.getByTestId("welcome-login").dataset.variant).toBe("primary");
     const note = screen.getByTestId("welcome-import-note");
-    expect(note.textContent).toBe("Copies only omp's logins, nothing else.");
+    expect(note.textContent).toBe("Copies only oh-my-pi's logins, nothing else.");
     expect(button.getAttribute("aria-describedby")).toBe(note.id);
     expect(note.id).not.toBe("");
 
@@ -237,7 +266,7 @@ describe("the first run", () => {
     }));
     await screen.findByTestId("welcome-import");
     expect(screen.getByTestId("welcome-import-note").textContent).toBe(
-      "Copies only omp's logins, nothing else. A browser login then lives in both apps: if one of them gets signed out, log in there again.",
+      "Copies only oh-my-pi's logins, nothing else. A browser login then lives in both apps: if one of them gets signed out, log in there again.",
     );
   });
 
@@ -255,7 +284,7 @@ describe("the first run", () => {
       copy?.resolve({ providers: [{ providerId: "anthropic", oauth: false }] });
       await Promise.resolve();
     });
-    expect(test.host.window.get(SUCCESSES).map((shown) => shown.text)).toEqual(["Copied omp's logins: anthropic"]);
+    expect(test.host.window.get(SUCCESSES).map((shown) => shown.text)).toEqual(["Copied oh-my-pi's logins: anthropic"]);
     expect(screen.getByTestId("welcome-import").dataset.pending).toBeUndefined();
   });
 });

@@ -131,37 +131,6 @@ describe("omfp:header", () => {
     }
   });
 
-  // spec: UI-340
-  test("one workspace chip: name and repository count, the repositories as its tooltip; a press shows omfp:workspace", async () => {
-    const test = setup();
-    const chip = screen.getByTestId("workspace-chip");
-    expect([chip.textContent, chip.dataset.repos]).toEqual(["w1 · 1 repo", "1"]);
-    const label = chip.querySelector("[title]");
-    expect(label?.getAttribute("title")).toBe("fe:main (worktree)");
-    const description = document.getElementById(chip.getAttribute("aria-describedby") ?? "");
-    expect(description?.textContent).toBe("fe:main (worktree)");
-    await test.user.click(chip);
-    expect(test.host.window.get(REVEAL_WIDGET)?.reference).toBe("omfp:workspace");
-  });
-
-  // spec: UI-484
-  test("the workspace chip is a bordered button; in the compact ⋯ a press closes the popover and shows omfp:workspace", async () => {
-    const restore = installResizeObserver();
-    try {
-      const test = setup();
-      const chip = screen.getByTestId("workspace-chip");
-      expect([chip.tagName, chip.dataset.variant]).toEqual(["BUTTON", "secondary"]);
-      resize(screen.getByTestId("thread-header"), 600);
-      await test.user.click(screen.getByTestId("header-more"));
-      const more = await screen.findByTestId("header-more-dialog");
-      await test.user.click(within(more).getByTestId("workspace-chip"));
-      expect(screen.queryAllByTestId("header-more-dialog").length).toBe(0);
-      expect(test.host.window.get(REVEAL_WIDGET)?.reference).toBe("omfp:workspace");
-    } finally {
-      restore();
-    }
-  });
-
   // spec: UI-030
   test("without a selected thread the header says so", () => {
     renderWithHost(<HeaderWidget />);
@@ -169,16 +138,42 @@ describe("omfp:header", () => {
   });
 
   // spec: UI-030, UI-020
-  test("it shows the title, chips, process state and the session's model, thinking and context; no tags", async () => {
+  test("it shows the title, process state and the session's model, thinking and context; no tags, no workspace", async () => {
     setup();
     expect(screen.getByTestId("thread-title").textContent).toBe("checkout");
     expect(screen.queryByTestId("edit-tags")).toBeNull();
-    expect(screen.getAllByTestId("workspace-chip").map((chip) => chip.textContent)).toEqual(["w1 · 1 repo"]);
+    expect(screen.queryAllByTestId("workspace-chip").length).toBe(0);
     expect(screen.getByTestId("thread-state").dataset.status).toBe("idle");
     await waitFor(() => expect(screen.getByTestId("context-usage").textContent).toBe("84k/200k"));
     expect(screen.getByTestId("context-usage").getAttribute("aria-label")).toBe("Context window usage: 42% of 200k");
     expect(within(screen.getByTestId("model-select")).getByRole("button").textContent).toContain("Opus (anthropic)");
     expect(within(screen.getByTestId("thinking-select")).getByRole("button").textContent).toContain("high");
+  });
+
+  // spec: UI-030
+  test("the model is a brain button whose tooltip names it; its list ends with a login to another provider", async () => {
+    const { client, host, user } = setup();
+    const model = screen.getByTestId("model-select");
+    const button = within(model).getByRole("button");
+    // Only the brain shows: the value stays the button's accessible text, visually hidden, with no chevron.
+    await waitFor(() => expect(button.textContent).toContain("Opus (anthropic)"));
+    const value = button.querySelector(".omfp-select__value");
+    expect([
+      model.dataset.iconOnly,
+      button.querySelector('[data-icon="brain"]') !== null,
+      value?.classList.contains("omfp-visually-hidden"),
+      button.querySelector(".omfp-select__chevron"),
+    ]).toEqual(["true", true, true, null]);
+    await user.click(button);
+    const options = await screen.findAllByRole("option");
+    expect(options.map((option) => option.textContent)).toEqual([
+      "Opus (anthropic)",
+      "Haiku (anthropic)",
+      "Log in to a provider…",
+    ]);
+    await user.click(screen.getByRole("option", { name: "Log in to a provider…" }));
+    expect(host.window.get(LOGIN)).toEqual({ providerId: undefined });
+    expect(client.callsTo("thread.set_model")).toEqual([]);
   });
 
   // spec: UI-202
@@ -340,19 +335,28 @@ describe("omfp:header", () => {
     expect(client.callsTo("threads.unarchive")).toHaveLength(1);
   });
 
-  // spec: UI-482
-  test("the title row: the title, the state, its one action and ⋯; rename, archive and delete only in the ⋯", async () => {
+  // spec: UI-482, UI-030
+  test("the title row: the title, the state, its one action, the model and ⋯; rename, archive and delete only in the ⋯", async () => {
     const { user } = setup();
     const top = screen.getByTestId("thread-header").querySelector(".omfp-chat-header__top");
     const ids = [...(top?.querySelectorAll("[data-testid]") ?? [])].map((e) => e.getAttribute("data-testid"));
-    expect(ids).toEqual(["thread-title", "thread-state", "process-action", "header-more"]);
+    // `hidden-select-container` is React Aria's hidden native select inside the model's.
+    expect(ids).toEqual([
+      "thread-title",
+      "thread-state",
+      "process-action",
+      "model-select",
+      "hidden-select-container",
+      "header-more",
+    ]);
+    expect(top?.querySelector(".omfp-thread-header__process [data-testid='model-select']")).toBeNull();
     await user.click(screen.getByTestId("header-more"));
     const more = await screen.findByTestId("header-more-dialog");
     expect(
-      ["rename-thread", "archive-thread", "delete-thread", "process-action", "thinking-select", "workspace-chip"].map(
+      ["rename-thread", "archive-thread", "delete-thread", "process-action", "thinking-select"].map(
         (testid) => within(more).queryAllByTestId(testid).length,
       ),
-    ).toEqual([1, 1, 1, 0, 0, 0]);
+    ).toEqual([1, 1, 1, 0, 0]);
   });
 
   // spec: UI-483
@@ -390,7 +394,7 @@ describe("omfp:header", () => {
           inHeader,
         ),
       ).toEqual([1, 1, 1, 1, 0, 0]);
-      expect(["thinking-select", "workspace-chip", "rename-thread"].map(inHeader)).toEqual([0, 0, 0]);
+      expect(["thinking-select", "rename-thread"].map(inHeader)).toEqual([0, 0]);
       await user.click(screen.getByTestId("header-more"));
       const more = await screen.findByTestId("header-more-dialog");
       expect(
@@ -398,11 +402,6 @@ describe("omfp:header", () => {
           (testid) => within(more).queryAllByTestId(testid).length,
         ),
       ).toEqual([1, 1, 1, 1, 1]);
-      expect(
-        within(more)
-          .getAllByTestId("workspace-chip")
-          .map((chip) => chip.textContent),
-      ).toEqual(["w1 · 1 repo"]);
       await user.click(within(more).getByTestId("rename-thread"));
       expect(screen.queryAllByTestId("header-more-dialog").length).toBe(0);
       expect(within(header).queryAllByTestId("title-input").length).toBe(1);

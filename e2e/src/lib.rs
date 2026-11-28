@@ -32,6 +32,14 @@ use thirtyfour::ChromeCapabilities;
 use thirtyfour::error::WebDriverErrorInner;
 use thirtyfour::prelude::*;
 
+/// The side tabs of the default view before it held only `omfp:canvas`, for [`Journey::side_widgets`].
+pub const OLD_SIDE_WIDGETS: [&str; 4] = [
+    "omfp:workspace",
+    "omfp:changes",
+    "omfp:background",
+    "omfp:mcp",
+];
+
 /// Longest wait for any condition (omp startup and a model turn included).
 pub const TIMEOUT: Duration = Duration::from_secs(60);
 const POLL: Duration = Duration::from_millis(50);
@@ -684,11 +692,15 @@ impl Journey {
         .await
     }
 
-    /// Creates a workspace holding a link to the repository at `path` from the "+ workspace" field (UI-023): types
-    /// `typed` (a prefix of `path` starting with `/`), picks `path` among the daemon's completions (DMN-021), presses
-    /// Enter and waits until the draft thread it opens has the composer focused.
+    /// Creates a workspace holding a link to the repository at `path` from the "+ workspace" field (UI-020, UI-023),
+    /// opening it from its `add-workspace` row while that shows: types `typed` (a prefix of `path` starting with `/`),
+    /// picks `path` among the daemon's completions (DMN-021), presses Enter and waits until the draft thread it opens
+    /// has the composer focused.
     pub async fn new_linked_workspace(&self, typed: &str, path: &str) -> anyhow::Result<()> {
         let input = "[data-testid=new-workspace-input]";
+        if self.count("[data-testid=add-workspace]").await? > 0 {
+            self.click("[data-testid=add-workspace]").await?;
+        }
         self.click(input).await?;
         self.pick_path(input, typed, path).await?;
         self.until("the picked path in the + workspace field", async |page| {
@@ -924,6 +936,73 @@ impl Journey {
             .await?;
         connection.close().await?;
         Ok(PathBuf::from(workspace.path))
+    }
+
+    /// Gives the shown workspace (the open thread's, else the open draft's) a default view whose side tabs hold
+    /// `widgets` (e.g. [`OLD_SIDE_WIDGETS`]) through `views.set`, and waits until the window shows every one of them:
+    /// for journeys about widgets the default view no longer holds.
+    pub async fn side_widgets(&self, widgets: &[&str]) -> anyhow::Result<()> {
+        let shown = self
+            .until("an open thread or draft", async |page| {
+                let value = page
+                    .eval(
+                        "const draft = document.querySelector('[data-testid=draft-thread-view][data-workspace-id]');
+                         if (draft) { return { workspace: draft.dataset.workspaceId }; }
+                         const thread = document.querySelector('[data-testid=thread][data-thread-id]');
+                         return thread ? { thread: thread.dataset.threadId } : null;",
+                        Vec::new(),
+                    )
+                    .await?;
+                Ok((!value.is_null()).then_some(value))
+            })
+            .await?;
+        let mut connection = self.connect().await?;
+        let workspace_id = match (shown["workspace"].as_str(), shown["thread"].as_str()) {
+            (Some(workspace), _) => workspace.to_owned(),
+            (None, Some(thread)) => {
+                connection
+                    .call::<omfp_protocol::method::ThreadsList>(omfp_protocol::ListThreadsParams {
+                        workspace_id: None,
+                        include_archived: false,
+                    })
+                    .await?
+                    .threads
+                    .into_iter()
+                    .find(|summary| summary.id == thread)
+                    .with_context(|| format!("thread {thread} is not listed"))?
+                    .workspace_id
+            }
+            (None, None) => bail!("neither a draft's workspace nor a thread: {shown}"),
+        };
+        let mut side = vec![json!("tabs"), json!({ "id": "side" })];
+        side.extend(widgets.iter().map(|widget| json!(widget)));
+        let manifest = json!({
+            "default": "default",
+            "views": {
+                "default": {
+                    "title": "Default",
+                    "layout": ["row", { "sizes": [3, 1] },
+                        ["col", {}, "omfp:header", ["tabs", { "id": "main" }, "omfp:chat"]],
+                        side]
+                }
+            }
+        });
+        connection
+            .call::<omfp_protocol::method::ViewsSet>(omfp_protocol::SetViewsParams {
+                workspace_id,
+                manifest,
+                expected: None,
+            })
+            .await?;
+        connection.close().await?;
+        for widget in widgets {
+            self.element(&format!(
+                "[data-testid=view] [data-testid=widget][data-widget={}]",
+                json!(widget)
+            ))
+            .await?;
+        }
+        Ok(())
     }
 
     /// Waits until `<html>` carries `data-color-scheme="<scheme>"`.

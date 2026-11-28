@@ -106,7 +106,7 @@ async fn an_agent_widget_follows_a_daemon_job_live_and_recovers_from_a_syntax_er
     let thread = journey.create_thread("widgets journey").await?;
     let folder = journey.workspace_folder(&thread).await?;
     journey
-        .element("[data-testid=view][data-view=default] [data-widget=\"omfp:workspace\"]")
+        .element("[data-testid=view][data-view=default] [data-widget=\"omfp:canvas\"]")
         .await?;
     journey.screenshot("m4-default-view").await?;
 
@@ -287,14 +287,13 @@ async fn the_user_adds_a_widget_and_replaces_a_built_in_with_a_copy() -> anyhow:
         serde_json::from_str(&std::fs::read_to_string(folder.join(".omfp/views.json"))?)?;
     assert_eq!(
         references(&written["views"]["default"]["layout"]).join(" "),
-        "omfp:header omfp:chat omfp:workspace omfp:changes omfp:background omfp:mcp"
+        "omfp:header omfp:chat omfp:canvas"
     );
 
     // `:widget add` puts a widget in the view: the last tab of the side tabs, written to views.json.
     journey.command("widget add omfp:todos").await?;
     let layout = written_layout(&journey, &folder, "the added todos", |layout| {
-        references(layout).join(" ")
-            == "omfp:header omfp:chat omfp:workspace omfp:changes omfp:background omfp:mcp omfp:todos"
+        references(layout).join(" ") == "omfp:header omfp:chat omfp:canvas omfp:todos"
     })
     .await?;
     assert_eq!(
@@ -303,7 +302,7 @@ async fn the_user_adds_a_widget_and_replaces_a_built_in_with_a_copy() -> anyhow:
             "row",
             { "sizes": [3, 1] },
             ["col", {}, "omfp:header", ["tabs", { "id": "main" }, "omfp:chat"]],
-            ["tabs", { "id": "side" }, "omfp:workspace", "omfp:changes", "omfp:background", "omfp:mcp", "omfp:todos"]
+            ["tabs", { "id": "side" }, "omfp:canvas", "omfp:todos"]
         ])
     );
     journey
@@ -315,7 +314,12 @@ async fn the_user_adds_a_widget_and_replaces_a_built_in_with_a_copy() -> anyhow:
         })
         .await?;
 
-    // A copy of the built-in workspace widget replaces it in this workspace; a change to the copy shows.
+    // A copy of the built-in workspace widget, added to the view, replaces it in this workspace; a change to the copy
+    // shows.
+    journey.command("widget add omfp:workspace").await?;
+    journey
+        .element("[data-testid=view] [data-testid=widget][data-widget=\"omfp:workspace\"]")
+        .await?;
     journey.command("widget copy omfp:workspace").await?;
     let copy = folder.join(".omfp/widgets/workspace");
     journey

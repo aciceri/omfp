@@ -66,10 +66,10 @@ describe("opened URLs", () => {
     if (toast === undefined) {
       throw new Error("no toast");
     }
-    expect([toast.textContent?.startsWith("omp opened login.example.com in the browser"), toast.dataset.url]).toEqual([
-      true,
-      LOGIN,
-    ]);
+    expect([
+      toast.textContent?.startsWith("oh-my-pi opened login.example.com in the browser"),
+      toast.dataset.url,
+    ]).toEqual([true, LOGIN]);
 
     const opened: unknown[][] = [];
     const copied: string[] = [];
@@ -142,7 +142,9 @@ describe("opened URLs", () => {
     });
     expect(toasts().map((toast) => toast.dataset.url)).toEqual([LOGIN]);
     await waitFor(() =>
-      expect(screen.getAllByTestId("success").map((success) => success.textContent)).toEqual(["omp got the sign-in"]),
+      expect(screen.getAllByTestId("success").map((success) => success.textContent)).toEqual([
+        "oh-my-pi got the sign-in",
+      ]),
     );
   });
 });

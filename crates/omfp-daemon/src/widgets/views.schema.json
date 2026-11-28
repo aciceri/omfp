@@ -60,7 +60,7 @@
     "reference": {
       "type": "string",
       "pattern": "\\S",
-      "description": "`omfp:<name>` (built-in: omfp:header, omfp:chat, omfp:transcript, omfp:interactions, omfp:composer, omfp:workspace, omfp:changes, omfp:background, omfp:todos, omfp:debug, omfp:tree, omfp:activity, omfp:mcp, omfp:file, omfp:terminal, omfp:jobs, omfp:web, omfp:browser; a workspace widget of the same name replaces it) or `./widgets/<name>` (<workspace>/.omfp/widgets/<name>/). An unknown reference shows an error in place of the widget."
+      "description": "`omfp:<name>` (built-in: omfp:header, omfp:chat, omfp:transcript, omfp:interactions, omfp:composer, omfp:canvas, omfp:workspace, omfp:changes, omfp:background, omfp:todos, omfp:debug, omfp:tree, omfp:activity, omfp:mcp, omfp:file, omfp:terminal, omfp:jobs, omfp:web, omfp:browser; a workspace widget of the same name replaces it) or `./widgets/<name>` (<workspace>/.omfp/widgets/<name>/). An unknown reference shows an error in place of the widget."
     },
     "props": {
       "type": "object",

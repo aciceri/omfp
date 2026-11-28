@@ -7,6 +7,8 @@ The version's section is also the source of the GitHub release notes.
 
 ## Unreleased
 
+## 0.4.7 — 2026-11-28
+
 ### Added
 
 - `Alt-l` and `Alt-h` switch to the next and previous view from anywhere, even while typing, as `Alt-j` and `Alt-k`

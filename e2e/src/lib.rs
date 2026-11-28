@@ -939,8 +939,9 @@ impl Journey {
     }
 
     /// Gives the shown workspace (the open thread's, else the open draft's) a default view whose side tabs hold
-    /// `widgets` (e.g. [`OLD_SIDE_WIDGETS`]) through `views.set`, and waits until the window shows every one of them:
-    /// for journeys about widgets the default view no longer holds.
+    /// `widgets` (e.g. [`OLD_SIDE_WIDGETS`]) through `views.set`, and waits until the window shows the first one with a
+    /// tab for each (a tab's widget mounts once its tab is chosen): for journeys about widgets the default view no
+    /// longer holds.
     pub async fn side_widgets(&self, widgets: &[&str]) -> anyhow::Result<()> {
         let shown = self
             .until("an open thread or draft", async |page| {
@@ -995,11 +996,21 @@ impl Journey {
             })
             .await?;
         connection.close().await?;
-        for widget in widgets {
+        if let Some(first) = widgets.first() {
             self.element(&format!(
                 "[data-testid=view] [data-testid=widget][data-widget={}]",
-                json!(widget)
+                json!(first)
             ))
+            .await?;
+        }
+        if widgets.len() > 1 {
+            let count = widgets.len();
+            self.until("a side tab per widget", async |page| {
+                let tabs = page
+                    .count("[data-testid=view] .omfp-view__tabs:not([data-slot]) [data-testid=view-tab]")
+                    .await?;
+                Ok((tabs == count).then_some(()))
+            })
             .await?;
         }
         Ok(())

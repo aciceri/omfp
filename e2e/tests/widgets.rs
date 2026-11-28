@@ -317,6 +317,21 @@ async fn the_user_adds_a_widget_and_replaces_a_built_in_with_a_copy() -> anyhow:
     // A copy of the built-in workspace widget, added to the view, replaces it in this workspace; a change to the copy
     // shows.
     journey.command("widget add omfp:workspace").await?;
+    // Its tab mounts its widget once chosen.
+    journey
+        .until("the Workspace tab, chosen", async |page| {
+            let clicked = page
+                .eval(
+                    "const tab = [...document.querySelectorAll('[data-testid=view] [data-testid=view-tab]')]
+                       .find(t => t.textContent.trim() === 'Workspace');
+                     if (tab) { tab.click(); }
+                     return tab !== undefined;",
+                    Vec::new(),
+                )
+                .await?;
+            Ok((clicked == json!(true)).then_some(()))
+        })
+        .await?;
     journey
         .element("[data-testid=view] [data-testid=widget][data-widget=\"omfp:workspace\"]")
         .await?;
